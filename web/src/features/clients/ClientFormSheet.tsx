@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/ui/base/button";
 import { Input } from "@/ui/base/input";
 import { FormField } from "@/ui/base/form-field";
+import { LimitNumberInput } from "./components/LimitNumberInput";
+import { QuotaInput } from "./components/QuotaInput";
 import { cn } from "@/ui/lib/cn";
 import type { ClientFormSheetProps } from "@/shared/api/types-pages/pages";
 
@@ -272,32 +274,27 @@ export function ClientFormSheet({
       {showLimits && (
         <div id="client-form-limits-section" className="grid grid-cols-3 gap-3">
           <FormField label={t("form.maxTcpConnsLabel")} variant="compact">
-            <Input
-              type="number"
+            <LimitNumberInput
               value={data.maxTcpConns}
-              onChange={(e) => update("maxTcpConns", Number(e.target.value))}
+              onValueChange={(v) => update("maxTcpConns", v)}
               placeholder={t("form.unlimitedPlaceholder")}
-              className="font-mono text-xs"
               disabled={loading}
+              ariaLabel={t("form.maxTcpConnsLabel")}
             />
           </FormField>
           <FormField label={t("form.maxUniqueIpsLabel")} variant="compact">
-            <Input
-              type="number"
+            <LimitNumberInput
               value={data.maxUniqueIps}
-              onChange={(e) => update("maxUniqueIps", Number(e.target.value))}
+              onValueChange={(v) => update("maxUniqueIps", v)}
               placeholder={t("form.unlimitedPlaceholder")}
-              className="font-mono text-xs"
               disabled={loading}
+              ariaLabel={t("form.maxUniqueIpsLabel")}
             />
           </FormField>
           <FormField label={t("form.dataQuotaLabel")} variant="compact">
-            <Input
-              type="number"
-              value={data.dataQuotaBytes}
-              onChange={(e) => update("dataQuotaBytes", Number(e.target.value))}
-              placeholder={t("form.unlimitedPlaceholder")}
-              className="font-mono text-xs"
+            <QuotaInput
+              bytes={data.dataQuotaBytes}
+              onBytesChange={(b) => update("dataQuotaBytes", b)}
               disabled={loading}
             />
           </FormField>
