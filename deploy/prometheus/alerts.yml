@@ -76,6 +76,26 @@ groups:
             Batch buffer {{ $labels.buffer }} has exceeded 5000 queued rows
             for 10 minutes. DB is likely slow or misconfigured.
 
+  - name: panvex.jobs
+    rules:
+      # Write-behind job persistence failures mean in-memory job state is
+      # ahead of the database: a control-plane restart in this window loses
+      # job/rollout progress. Any sustained occurrence is actionable.
+      - alert: PanvexJobPersistFailures
+        expr: increase(panvex_job_persist_failures_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: control-plane
+        annotations:
+          summary: "Job state is failing to persist"
+          description: |
+            The jobs service has failed to persist job/target updates for
+            5 minutes (panvex_job_persist_failures_total is growing). The
+            in-memory job state is ahead of storage; a restart now would
+            lose rollout progress. Check DB health and control-plane logs
+            for "persist latest job version failed".
+
   - name: panvex.auth
     rules:
       - alert: PanvexLockoutSurge

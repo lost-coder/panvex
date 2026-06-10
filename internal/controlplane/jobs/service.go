@@ -196,6 +196,28 @@ type Service struct {
 	jobStore                Store
 	startupErr              error
 	now                     func() time.Time
+	metrics                 MetricsSink
+}
+
+// MetricsSink receives job-persistence failure observations (C3).
+// Implemented by server.metricsCollectors; the noop default keeps the
+// store-less NewService path and tests free of Prometheus wiring —
+// same null-object pattern as server.batchMetricsSink.
+type MetricsSink interface {
+	ObserveJobPersistFailure()
+}
+
+type noopMetricsSink struct{}
+
+func (noopMetricsSink) ObserveJobPersistFailure() { /* null-object */ }
+
+// SetMetricsSink wires the failure counter. Call during boot, before
+// background traffic starts (matches SetNow's contract).
+func (s *Service) SetMetricsSink(sink MetricsSink) {
+	if sink == nil {
+		sink = noopMetricsSink{}
+	}
+	s.metrics = sink
 }
 
 // Store is the subset of the storage layer that the jobs Service depends on
@@ -235,6 +257,7 @@ func NewService() *Service {
 		jobVersion:              make(map[string]uint64),
 		latestSucceededByClient: make(map[string]Job),
 		now:                     time.Now,
+		metrics:                 noopMetricsSink{},
 	}
 }
 
@@ -249,6 +272,7 @@ func NewServiceWithStore(jobStore Store) *Service {
 		latestSucceededByClient: make(map[string]Job),
 		jobStore:                jobStore,
 		now:                     time.Now,
+		metrics:                 noopMetricsSink{},
 	}
 	service.startupErr = service.restore()
 	return service
@@ -1278,10 +1302,12 @@ func (s *Service) reindexAcknowledgedTargets(job Job) {
 
 func (s *Service) persistJob(ctx context.Context, job Job) error {
 	if err := s.jobStore.PutJob(ctx, jobToRecord(job)); err != nil {
+		s.metrics.ObserveJobPersistFailure()
 		return err
 	}
 	for _, target := range job.Targets {
 		if err := s.jobStore.PutJobTarget(ctx, jobTargetToRecord(job.ID, target)); err != nil {
+			s.metrics.ObserveJobPersistFailure()
 			return err
 		}
 	}

@@ -70,6 +70,11 @@ type metricsCollectors struct {
 	jobQueueDepth prometheus.Gauge
 	lockoutActive prometheus.Gauge
 
+	// C3: write-behind job persist failures. The jobs service retries on
+	// the next mutation, but a wedged DB used to be slog-only; this
+	// counter backs the PanvexJobPersistFailures alert.
+	jobPersistFailuresTotal prometheus.Counter
+
 	unsignedUpdateFallbackTotal prometheus.Counter
 
 	// P2-REL-04 / P2-REL-05: per-table row count deleted by the retention
@@ -129,6 +134,10 @@ var rateLimitScopes = []string{"login", "agent_bootstrap", "sensitive", "grpc_co
 var retentionPruneTables = []string{
 	"audit_events",
 	"metric_snapshots",
+	"jobs",
+	"webhook_outbox",
+	"agent_revocations",
+	"enrollment_tokens",
 }
 
 // knownBatchBuffers enumerates every batch buffer tracked by
@@ -210,13 +219,17 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_lockout_active",
 			Help: "Current number of usernames with an active account lockout.",
 		}),
+		jobPersistFailuresTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_job_persist_failures_total",
+			Help: "Total job write-behind persistence failures (PutJob/PutJobTarget). In-memory state stays ahead of storage until the next successful persist; sustained growth means job state is not durable.",
+		}),
 		unsignedUpdateFallbackTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "panvex_unsigned_update_fallback_total",
 			Help: "Total number of panel-update applications that fell back to an unsigned manifest.",
 		}),
 		retentionPrunedRowsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_retention_pruned_rows_total",
-			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots.",
+			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots, jobs, webhook_outbox.",
 		}, []string{"table"}),
 		panicRecoveredTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_goroutine_panic_recovered_total",
@@ -286,6 +299,7 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.agentInboundDropsTotal,
 		mc.jobQueueDepth,
 		mc.lockoutActive,
+		mc.jobPersistFailuresTotal,
 		mc.unsignedUpdateFallbackTotal,
 		mc.retentionPrunedRowsTotal,
 		mc.panicRecoveredTotal,
@@ -445,6 +459,14 @@ func (mc *metricsCollectors) ObserveFlushError(buffer, errorType string) {
 	}
 	mc.batchFlushErrorsTotal.WithLabelValues(buffer, errorType).Inc()
 	mc.batchPersistErrorsTotal.WithLabelValues(buffer, errorType).Inc()
+}
+
+// ObserveJobPersistFailure satisfies jobs.MetricsSink (C3).
+func (mc *metricsCollectors) ObserveJobPersistFailure() {
+	if mc == nil {
+		return
+	}
+	mc.jobPersistFailuresTotal.Inc()
 }
 
 // SetQueueDepth satisfies batchMetricsSink.

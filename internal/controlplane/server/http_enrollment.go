@@ -620,10 +620,6 @@ func (s *Server) issueEnrollmentTokenWithContext(ctx context.Context, scope secu
 	return token, nil
 }
 
-func (s *Server) consumeEnrollmentToken(value string, now time.Time) (security.EnrollmentToken, error) {
-	return s.consumeEnrollmentTokenWithContext(s.Context(), value, now)
-}
-
 // resolveConsumeConflict figures out the precise security error to surface
 // when ConsumeEnrollmentToken returned ErrConflict — the row could have
 // been consumed concurrently or revoked in the same window.
@@ -654,14 +650,15 @@ func tokenConsumePreCheck(token storage.EnrollmentTokenRecord, now time.Time) er
 	return nil
 }
 
-func (s *Server) consumeEnrollmentTokenWithContext(ctx context.Context, value string, now time.Time) (security.EnrollmentToken, error) {
-	// S8: consumption goes through the store only. The previous in-
-	// memory fallback was a source of latent bugs across restarts and
-	// replicas, and every production deploy wires a store anyway.
+// peekEnrollmentTokenWithContext validates the token WITHOUT consuming
+// it. enrollAgent calls this before certificate issuance; the actual
+// consume happens atomically with the agent row inside the enrollment
+// transaction (C2). Two concurrent enrolls may both pass the peek —
+// the loser then hits storage.ErrConflict inside the transaction.
+func (s *Server) peekEnrollmentTokenWithContext(ctx context.Context, value string, now time.Time) (security.EnrollmentToken, error) {
 	if s.store == nil {
 		return security.EnrollmentToken{}, errEnrollmentStoreUnavailable
 	}
-
 	token, err := s.store.GetEnrollmentToken(ctx, value)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
@@ -672,23 +669,11 @@ func (s *Server) consumeEnrollmentTokenWithContext(ctx context.Context, value st
 	if err := tokenConsumePreCheck(token, now); err != nil {
 		return security.EnrollmentToken{}, err
 	}
-
-	consumed, err := s.store.ConsumeEnrollmentToken(ctx, value, now.UTC())
-	if err != nil {
-		if errors.Is(err, storage.ErrConflict) {
-			return security.EnrollmentToken{}, s.resolveConsumeConflict(ctx, value)
-		}
-		if errors.Is(err, storage.ErrNotFound) {
-			return security.EnrollmentToken{}, security.ErrEnrollmentTokenInvalid
-		}
-		return security.EnrollmentToken{}, err
-	}
-
 	return security.EnrollmentToken{
-		Value:        consumed.Value,
-		FleetGroupID: consumed.FleetGroupID,
-		IssuedAt:     consumed.IssuedAt.UTC(),
-		ExpiresAt:    consumed.ExpiresAt.UTC(),
+		Value:        token.Value,
+		FleetGroupID: token.FleetGroupID,
+		IssuedAt:     token.IssuedAt.UTC(),
+		ExpiresAt:    token.ExpiresAt.UTC(),
 	}, nil
 }
 

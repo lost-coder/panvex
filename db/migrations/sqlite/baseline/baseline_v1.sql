@@ -33,16 +33,26 @@ CREATE TABLE agent_revocations (
     cert_expires_at_unix  INTEGER NOT NULL
 );
 
-CREATE TABLE agents (
+CREATE TABLE "agents" (
     id TEXT PRIMARY KEY,
     node_name TEXT NOT NULL,
     fleet_group_id TEXT,
     version TEXT NOT NULL DEFAULT '',
     read_only INTEGER NOT NULL DEFAULT 0,
     last_seen_at_unix INTEGER NOT NULL,
-    created_at_unix INTEGER NOT NULL DEFAULT 0, cert_issued_at_unix INTEGER, cert_expires_at_unix INTEGER, cert_serial TEXT NOT NULL DEFAULT '', transport_mode TEXT NOT NULL DEFAULT 'inbound'
-    CHECK (transport_mode IN ('inbound', 'outbound')), dial_address TEXT, bootstrap_state TEXT NOT NULL DEFAULT 'active'
-    CHECK (bootstrap_state IN ('pending', 'active', 'expired', 'revoked')), bootstrap_token_hash BLOB, bootstrap_expires_at INTEGER, cert_spki_sha256 BLOB NOT NULL DEFAULT x'',
+    created_at_unix INTEGER NOT NULL DEFAULT 0,
+    cert_issued_at_unix INTEGER,
+    cert_expires_at_unix INTEGER,
+    cert_serial TEXT NOT NULL DEFAULT '',
+    transport_mode TEXT NOT NULL DEFAULT 'inbound'
+        CHECK (transport_mode IN ('inbound', 'outbound')),
+    dial_address TEXT,
+    bootstrap_state TEXT NOT NULL DEFAULT 'active'
+        CHECK (bootstrap_state IN ('pending', 'active', 'expired', 'revoked')),
+    bootstrap_token_hash BLOB,
+    bootstrap_expires_at INTEGER,
+    cert_spki_sha256 BLOB NOT NULL DEFAULT x''
+        CHECK (length(cert_spki_sha256) IN (0, 32)),
     FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id)
 );
 
@@ -187,7 +197,8 @@ CREATE TABLE "enrollment_tokens" (
     issued_at_unix INTEGER NOT NULL,
     expires_at_unix INTEGER NOT NULL,
     consumed_at_unix INTEGER,
-    revoked_at_unix INTEGER
+    revoked_at_unix INTEGER,
+    FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id) ON DELETE SET NULL
 );
 
 CREATE TABLE fleet_group_integrations (
@@ -268,7 +279,8 @@ CREATE TABLE "panel_settings" (
     scope                 TEXT PRIMARY KEY,
     http_public_url       TEXT NOT NULL DEFAULT '',
     grpc_public_endpoint  TEXT NOT NULL DEFAULT '',
-    password_min_length   INTEGER NOT NULL DEFAULT 10,
+    password_min_length   INTEGER NOT NULL DEFAULT 10
+        CHECK (password_min_length >= 8 AND password_min_length <= 128),
     retention_json        TEXT NOT NULL DEFAULT '',
     geoip_json            TEXT NOT NULL DEFAULT '',
     geoip_state_json      TEXT NOT NULL DEFAULT '',
@@ -669,4 +681,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (46, 1),
   (47, 1),
   (48, 1),
-  (49, 1);
+  (49, 1),
+  (50, 1);
