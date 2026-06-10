@@ -268,7 +268,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 		}
 		return s.auth.SetSessionLookupKey(key)
 	})
-	s.trySetStartupErr(s.auth.RestoreSessions)
+	s.trySetStartupErr(func() error { return s.auth.RestoreSessions(s.serverCtx) })
 
 	// S7: wire the lockout tracker to the persistent backend and load any
 	// state that survived a restart. We attach the store before the restore
