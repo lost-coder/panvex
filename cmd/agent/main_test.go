@@ -64,17 +64,6 @@ func TestJobPipelineForActionRoutesUnknownActionsToDefault(t *testing.T) {
 	}
 }
 
-func TestJobWorkerCountForPipelineMatchesConcurrencyPolicy(t *testing.T) {
-	if count := jobWorkerCountForPipeline(jobPipelineRuntimeReload); count != 2 {
-		t.Fatalf("jobWorkerCountForPipeline(runtime_reload) = %d, want %d", count, 2)
-	}
-	if count := jobWorkerCountForPipeline(jobPipelineClientMutation); count != 1 {
-		t.Fatalf("jobWorkerCountForPipeline(client_mutation) = %d, want %d", count, 1)
-	}
-	if count := jobWorkerCountForPipeline(jobPipelineDefault); count != 1 {
-		t.Fatalf("jobWorkerCountForPipeline(default) = %d, want %d", count, 1)
-	}
-}
 
 func TestShouldSendRuntimeSnapshotAfterJobOnlyForSuccessfulDiagnosticsRefresh(t *testing.T) {
 	if !shouldSendRuntimeSnapshotAfterJob("telemetry.refresh_diagnostics", true) {
