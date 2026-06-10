@@ -137,7 +137,7 @@ dialing peer's leaf CN against `PanelClientCN`.
 go build ./...
 go test ./...
 go test ./internal/controlplane/auth ./internal/controlplane/jobs \
-        ./internal/controlplane/server ./internal/controlplane/state \
+        ./internal/controlplane/server \
         ./internal/controlplane/storage/... -v
 
 # Frontend
