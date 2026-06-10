@@ -345,7 +345,6 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 		return nil
 	})
 	s.trySetStartupErr(s.restoreStoredClients)
-	s.trySetStartupErr(s.restoreStoredDiscoveredClients)
 	s.trySetStartupErr(s.restoreStoredPanelSettings)
 	// SetPasswordPolicy is called unconditionally: even if restoreStoredPanelSettings
 	// failed and s.panelSettings is zero-valued, auth.effectivePolicy maps zero to

@@ -197,15 +197,9 @@ func (s *Service) NextDiscoveredID() string {
 	return newSequenceID("discovered", s.discoveredSeq)
 }
 
-// RecoverSequencesFromRecords seeds the Service's monotonic counters
-// from persisted record IDs so the next NextClientID / NextAssignmentID /
-// NextDiscoveredID call returns a value strictly greater than any
-// previously-issued ID. Safe to call multiple times.
-func (s *Service) RecoverSequencesFromRecords(
-	clientIDs, assignmentIDs, discoveredIDs []string,
-) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// recoverSequencesLocked seeds the monotonic counters from persisted
+// record IDs. Must be called with s.mu held for writing.
+func (s *Service) recoverSequencesLocked(clientIDs, assignmentIDs, discoveredIDs []string) {
 	for _, id := range clientIDs {
 		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", id)
 	}
@@ -217,15 +211,42 @@ func (s *Service) RecoverSequencesFromRecords(
 	}
 }
 
+// recoverSequencesFromRecords seeds the Service's monotonic counters
+// from persisted record IDs so the next NextClientID / NextAssignmentID /
+// NextDiscoveredID call returns a value strictly greater than any
+// previously-issued ID. Safe to call multiple times.
+func (s *Service) recoverSequencesFromRecords(
+	clientIDs, assignmentIDs, discoveredIDs []string,
+) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recoverSequencesLocked(clientIDs, assignmentIDs, discoveredIDs)
+}
+
 // --- Repository-backed mirror methods ---
 
 // Restore loads all clients (and their assignments, deployments, usage)
-// from the Repository into the in-memory mirror. Idempotent: subsequent
+// from the Repository into the in-memory mirror, and seeds the monotonic
+// ID sequence counters from the persisted records. Idempotent: subsequent
 // calls overwrite the mirror with the latest snapshot.
 func (s *Service) Restore(ctx context.Context) error {
 	list, err := s.repo.List(ctx)
 	if err != nil {
 		return fmt.Errorf("clients.Service.Restore: list clients: %w", err)
+	}
+
+	// Fetch discovered IDs before taking the lock (consistent with the
+	// repo.List call above — keeps lock-hold time free of I/O).
+	var discoveredIDs []string
+	if s.discoveredRepo != nil {
+		recs, err := s.discoveredRepo.List(ctx)
+		if err != nil {
+			return fmt.Errorf("clients.Service.Restore: list discovered: %w", err)
+		}
+		discoveredIDs = make([]string, 0, len(recs))
+		for _, r := range recs {
+			discoveredIDs = append(discoveredIDs, string(r.ID))
+		}
 	}
 
 	s.mu.Lock()
@@ -295,6 +316,21 @@ func (s *Service) Restore(ctx context.Context) error {
 			s.mirrorLastUsageSeq[u.AgentID] = u.LastSeq
 		}
 	}
+
+	// Seed the monotonic ID counters from the just-restored records so the
+	// next Next*ID call returns a value strictly greater than any persisted
+	// ID. recoverSequencesLocked is called here because s.mu is already held.
+	clientIDs := make([]string, 0, len(s.mirrorClients))
+	for id := range s.mirrorClients {
+		clientIDs = append(clientIDs, string(id))
+	}
+	var assignmentIDs []string
+	for _, as := range s.mirrorAssignments {
+		for _, a := range as {
+			assignmentIDs = append(assignmentIDs, string(a.ID))
+		}
+	}
+	s.recoverSequencesLocked(clientIDs, assignmentIDs, discoveredIDs)
 
 	return nil
 }
