@@ -42,6 +42,7 @@ export function DashboardPage({
   pendingDiscoveredCount,
   onDiscoveredClick,
   onViewAllServers,
+  onAddServer,
 }: Readonly<DashboardPageProps>) {
   const { t } = useTranslation("dashboard");
   const [createOpen, setCreateOpen] = useState(false);
@@ -101,6 +102,7 @@ export function DashboardPage({
                       data={overview}
                       onNodeClick={onNodeClick}
                       onViewAll={onViewAllServers}
+                      onAddServer={onAddServer}
                     />
                   </div>
                 ),
@@ -127,6 +129,7 @@ export function DashboardPage({
             data={overview}
             onNodeClick={onNodeClick}
             onViewAll={onViewAllServers}
+            onAddServer={onAddServer}
           />
           <TimelinePanel data={timeline} />
         </div>

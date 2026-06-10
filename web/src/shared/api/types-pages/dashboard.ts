@@ -49,4 +49,6 @@ export interface DashboardPageProps {
   /** Navigates to the full Servers list — wired to the "View all →" link
    *  in the Fleet card header. Optional so unit tests can skip it. */
   onViewAllServers?: (() => void) | undefined;
+  /** Navigates to the Add Server wizard — wired to the empty-fleet CTA. */
+  onAddServer?: (() => void) | undefined;
 }

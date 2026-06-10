@@ -18,6 +18,8 @@
     "issues_other": " · {{count}} issues",
     "viewAll": "View all →",
     "empty": "No servers registered yet.",
+    "emptyDescription": "Add the first Telemt node — it will appear here as soon as the agent connects.",
+    "addServer": "Add server",
     "sectionAttention": "Needs attention",
     "sectionHealthy": "Healthy",
     "more_one": "+ {{count}} more — open the Servers page to see the full fleet",

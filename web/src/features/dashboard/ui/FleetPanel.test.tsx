@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { DashboardNodeData, DashboardOverviewData } from "@/ui";
 import { FleetPanel } from "./FleetPanel";
@@ -62,6 +62,19 @@ describe("FleetPanel / FleetRow", () => {
 
     // 2. Down row carries the alarm-red left-border tint.
     expect(rowFor("edge-down").className).toContain("border-l-status-error");
+  });
+
+  it("renders an Add server CTA when the fleet is empty", async () => {
+    const onAddServer = vi.fn();
+    render(
+      <FleetPanel
+        data={{ kpis: [], trends: [], alerts: [], attentionNodes: [], healthyNodes: [] }}
+        onAddServer={onAddServer}
+      />,
+    );
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.click(screen.getByRole("button", { name: "Add server" }));
+    expect(onAddServer).toHaveBeenCalledTimes(1);
   });
 
   it("keeps pending and healthy rows calm (no error/warn tint)", () => {

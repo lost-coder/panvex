@@ -51,6 +51,7 @@ export function DashboardContainer() {
       pendingDiscoveredCount={pendingCount}
       onDiscoveredClick={() => navigate({ to: "/clients/discovered" })}
       onViewAllServers={() => navigate({ to: "/servers" })}
+      onAddServer={() => void navigate({ to: "/servers/add" })}
     />
   );
 }
