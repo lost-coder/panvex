@@ -1,3 +1,5 @@
+import { Check } from "lucide-react";
+
 import { cn } from "@/ui/lib/cn";
 import { StatusPill } from "@/ui/primitives/StatusPill";
 import type { PillTone } from "@/ui/tokens/colors";
@@ -22,11 +24,14 @@ export function StateBadge({ tone, glyph, label, className }: Readonly<StateBadg
       <span
         aria-hidden="true"
         className={cn(
-          "inline-flex h-5 w-5 items-center justify-center rounded-full bg-status-ok/15 text-status-ok text-micro font-bold shrink-0",
+          "inline-flex h-5 w-5 items-center justify-center rounded-full bg-status-ok/15 ring-1 ring-status-ok/50 text-status-ok shrink-0",
           className,
         )}
       >
-        {glyph}
+        {/* SVG icon (currentColor) instead of the unicode \u2713 \u2014 a text glyph
+            renders as a dark emoji on some platforms (Chrome/Win) and ignores
+            text-status-ok; the icon always honours the green token. */}
+        <Check className="h-3 w-3" strokeWidth={3} aria-hidden="true" />
       </span>
     );
   }
