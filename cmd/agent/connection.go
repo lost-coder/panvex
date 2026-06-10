@@ -213,7 +213,7 @@ func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName
 		if credentialRefreshTimer != nil {
 			defer credentialRefreshTimer.Stop()
 		}
-		startPollingWorkers(connectionCtx, &streamWG, schedule, agent, telemetryOutbound)
+		startPollingWorkers(connectionCtx, &streamWG, schedule, agent, criticalOutbound, telemetryOutbound)
 		startRuntimeEventsPusher(connectionCtx, &streamWG, agent.AgentID(), telemetryOutbound)
 
 		var loopErr error

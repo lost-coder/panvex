@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -181,4 +182,36 @@ func (r *recoveringTelemt) GetManagedConfig(context.Context) (map[string]any, st
 }
 func (r *recoveringTelemt) HealthReady(context.Context) (bool, string, error) {
 	return true, "", nil
+}
+
+// TestStartPollingWorkersRoutesHeartbeatToCriticalChannel guards D2:
+// heartbeats must ride the priority channel the outbound pump drains first.
+// The telemetry channel here is unbuffered with no reader — permanently
+// backpressured, exactly the condition that used to silently drop heartbeats
+// and flap a live agent to offline.
+func TestStartPollingWorkersRoutesHeartbeatToCriticalChannel(t *testing.T) {
+	agent := runtime.New(runtime.Config{AgentID: "agent-1", NodeName: "n"}, failingTelemt{})
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	defer cancel()
+
+	critical := make(chan *gatewayrpc.ConnectClientMessage, 4)
+	telemetry := make(chan *gatewayrpc.ConnectClientMessage) // full forever
+
+	// Only the heartbeat group enabled (20ms); every other interval 0 = off.
+	schedule := newConnectionSchedule(20*time.Millisecond, 0, 0, 0, 0, 0)
+	startPollingWorkers(ctx, &wg, schedule, agent, critical, telemetry)
+
+	select {
+	case msg := <-critical:
+		if msg.GetHeartbeat() == nil {
+			t.Fatalf("expected heartbeat on critical channel, got %T", msg.GetBody())
+		}
+		if msg.GetHeartbeat().AgentId != "agent-1" {
+			t.Fatalf("heartbeat agent_id = %q, want agent-1", msg.GetHeartbeat().AgentId)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("heartbeat never arrived on the critical channel")
+	}
 }
