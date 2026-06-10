@@ -314,10 +314,18 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	// degraded/offline (it "sticks" online after a real disconnect).
 	s.presence.Heartbeat(snapshot.AgentID, s.now().UTC())
 
-	s.events.Publish(eventbus.Event{
-		Type: "agents.updated",
-		Data: agent,
-	})
+	// D6b: coalesced — the background flusher publishes the latest value per
+	// agent on a 300ms tick instead of one bus broadcast per inbound
+	// snapshot. The nil-fallback keeps literal-constructed test Servers
+	// (which bypass newServerFromOptions) on the immediate-publish path.
+	if s.agentsUpdated != nil {
+		s.agentsUpdated.Offer(agent)
+	} else {
+		s.events.Publish(eventbus.Event{
+			Type: "agents.updated",
+			Data: agent,
+		})
+	}
 
 	return nil
 }

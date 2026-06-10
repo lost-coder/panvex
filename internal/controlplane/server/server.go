@@ -74,8 +74,9 @@ type Server struct {
 	uiFiles   fs.FS
 	jobs      *jobs.Service
 	presence  *presence.Tracker
-	events    *eventbus.Hub
-	authority *certificateAuthority
+	events        *eventbus.Hub
+	agentsUpdated *agentsUpdatedCoalescer
+	authority     *certificateAuthority
 	// enrollmentRec records per-attempt timeline events for inbound and
 	// outbound enrollment (Task 13 of the enrollment-logging Phase 1 plan).
 	// Nil when no persistent store with a *sql.DB handle is wired — handlers

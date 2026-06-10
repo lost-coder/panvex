@@ -102,7 +102,8 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		uiFiles:  options.UIFiles,
 		jobs:     jobs.NewService(),
 		presence: presence.NewTracker(30*time.Second, 90*time.Second),
-		events:   eventbus.NewHub(),
+		events:        eventbus.NewHub(),
+		agentsUpdated: newAgentsUpdatedCoalescer(),
 		// Runtime Events Phase 3: 500-event ring buffer per agent for
 		// slog records shipped over the Connect bidi-stream. Always
 		// constructed (independent of Store wiring) so the message
@@ -516,6 +517,9 @@ func (s *Server) startBackgroundWorkers() {
 	// entirely. Lives on rollupCtx for the same reason as the other
 	// long-lived loops above.
 	s.startEnrollmentCleanupWorker(rollupCtx, enrollmentRetention())
+
+	// D6b: latest-wins coalescer for agents.updated WS events.
+	s.startAgentsUpdatedFlusher(rollupCtx)
 }
 
 // enrollmentRetention resolves the attempt retention window from the
