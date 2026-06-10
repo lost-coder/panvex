@@ -25,8 +25,19 @@ func TestClientsRepositoryContract_Postgres(t *testing.T) {
 			t.Fatalf("Open() error = %v", err)
 		}
 		t.Cleanup(func() { _ = store.Close() })
-		if err := resetForTest(t.Context(), store); err != nil {
+		ctx := t.Context()
+		if err := resetForTest(ctx, store); err != nil {
 			t.Fatalf("resetForTest() error = %v", err)
+		}
+		// The UsageBulkRoundtrip contract subtest inserts client_usage rows
+		// referencing agent_id "a-1". Postgres enforces the FK agent_id →
+		// agents(id), so we seed that agent row here. The seed is harmless on
+		// SQLite (which may not enforce FKs at all).
+		if _, err := store.sqlDB.ExecContext(ctx,
+			`INSERT INTO agents (id, node_name, last_seen_at) VALUES ('a-1', 'a-1', NOW())
+			 ON CONFLICT (id) DO NOTHING`,
+		); err != nil {
+			t.Fatalf("seed agent a-1: %v", err)
 		}
 		return NewClientsRepository(store.DB())
 	}
