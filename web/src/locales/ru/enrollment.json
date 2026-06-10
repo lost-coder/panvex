@@ -36,6 +36,7 @@
     "subtitle_many": "{{count}} токенов · подключение серверов",
     "subtitle_other": "{{count}} токенов · подключение серверов",
     "newToken": "+ Новый токен",
+    "viewAttempts": "Журнал попыток",
     "pulse": {
       "active": "Активные",
       "consumed": "Использованные",

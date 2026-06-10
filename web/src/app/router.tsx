@@ -19,7 +19,7 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers } from "lucide-react";
+import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers, ScrollText } from "lucide-react";
 
 import { AppShell, ErrorBoundary, Spinner, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
@@ -55,22 +55,30 @@ function RootComponent() {
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: RootComponent });
 
 // UX-bottom-nav-limit (Material): the mobile BottomNav must stay ≤5 tabs.
-// Sidebar (desktop) renders the full NAV_ITEMS list; BottomNav renders
-// NAV_PRIMARY plus a "More" button that opens NAV_SECONDARY in a sheet.
-const NAV_PRIMARY: NavItem[] = [
-  { id: "/", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
-  { id: "/servers", label: "Servers", icon: <Server size={20} /> },
-  { id: "/fleet-groups", label: "Fleet groups", icon: <Layers size={20} /> },
-  { id: "/clients", label: "Clients", icon: <Users size={20} /> },
+// Labels are i18n keys (ui namespace) resolved inside ProtectedShell —
+// module scope has no hooks.
+interface NavSpec {
+  id: string;
+  labelKey: string;
+  icon: React.ReactNode;
+}
+
+const NAV_PRIMARY_SPEC: NavSpec[] = [
+  { id: "/", labelKey: "nav.dashboard", icon: <LayoutDashboard size={20} /> },
+  { id: "/servers", labelKey: "nav.servers", icon: <Server size={20} /> },
+  { id: "/fleet-groups", labelKey: "nav.fleetGroups", icon: <Layers size={20} /> },
+  { id: "/clients", labelKey: "nav.clients", icon: <Users size={20} /> },
 ];
 
-const NAV_SECONDARY: NavItem[] = [
-  { id: "/activity", label: "Activity", icon: <Activity size={20} /> },
-  { id: "/settings", label: "Settings", icon: <Settings size={20} /> },
-  { id: "/profile", label: "Profile", icon: <User size={20} /> },
+const NAV_SECONDARY_SPEC: NavSpec[] = [
+  { id: "/activity", labelKey: "nav.activity", icon: <Activity size={20} /> },
+  // Audit E1: /enrollment-attempts existed as an orphan route — operators
+  // debugging a failed enrollment could not reach it. Secondary nav slot
+  // next to Activity (it is an observability log, not a daily tab).
+  { id: "/enrollment-attempts", labelKey: "nav.enrollmentAttempts", icon: <ScrollText size={20} /> },
+  { id: "/settings", labelKey: "nav.settings", icon: <Settings size={20} /> },
+  { id: "/profile", labelKey: "nav.profile", icon: <User size={20} /> },
 ];
-
-const NAV_ITEMS: NavItem[] = [...NAV_PRIMARY, ...NAV_SECONDARY];
 
 function ProtectedShell() {
   const { data: me } = useQuery({
@@ -81,6 +89,10 @@ function ProtectedShell() {
   const queryClient = useQueryClient();
   const { location } = useRouterState();
   const confirm = useConfirm();
+  const { t } = useTranslation("ui");
+  const navPrimary: NavItem[] = NAV_PRIMARY_SPEC.map((i) => ({ id: i.id, icon: i.icon, label: t(i.labelKey) }));
+  const navSecondary: NavItem[] = NAV_SECONDARY_SPEC.map((i) => ({ id: i.id, icon: i.icon, label: t(i.labelKey) }));
+  const navItems: NavItem[] = [...navPrimary, ...navSecondary];
 
   // W6: move focus to the main landmark on every pathname change so
   // screen-reader and keyboard users land inside the new page instead
@@ -97,7 +109,7 @@ function ProtectedShell() {
   useKeyboardShortcut("g t", () => navigate({ to: "/settings" }));
 
   const activeId =
-    NAV_ITEMS.find(
+    navItems.find(
       (item) => item.id !== "/" && location.pathname.startsWith(item.id),
     )?.id ?? "/";
 
@@ -125,9 +137,9 @@ function ProtectedShell() {
   return (
     <AppearanceProvider userID={me?.id ?? ""}>
       <AppShell
-        navItems={NAV_ITEMS}
-        bottomNavItems={NAV_PRIMARY}
-        bottomNavMoreItems={NAV_SECONDARY}
+        navItems={navItems}
+        bottomNavItems={navPrimary}
+        bottomNavMoreItems={navSecondary}
         activeId={activeId}
         brand="Panvex"
         sidebarFooter={(expanded) => <ThemeToggleButton expanded={expanded} />}

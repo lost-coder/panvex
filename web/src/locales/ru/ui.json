@@ -10,5 +10,15 @@
     "collapse": "Свернуть боковую панель",
     "expand": "Развернуть боковую панель",
     "logout": "Выйти"
+  },
+  "nav": {
+    "dashboard": "Дашборд",
+    "servers": "Серверы",
+    "fleetGroups": "Fleet-группы",
+    "clients": "Клиенты",
+    "activity": "Активность",
+    "enrollmentAttempts": "Попытки подключения",
+    "settings": "Настройки",
+    "profile": "Профиль"
   }
 }

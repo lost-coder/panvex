@@ -120,4 +120,5 @@ export interface EnrollmentTokensPageProps {
   tokens: EnrollmentTokenData[];
   onCreateToken: () => void;
   onRevoke: (tokenValue: string) => void;
+  onViewAttempts?: (() => void) | undefined;
 }

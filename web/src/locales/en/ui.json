@@ -10,5 +10,15 @@
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "logout": "Log out"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "servers": "Servers",
+    "fleetGroups": "Fleet groups",
+    "clients": "Clients",
+    "activity": "Activity",
+    "enrollmentAttempts": "Enrollment attempts",
+    "settings": "Settings",
+    "profile": "Profile"
   }
 }

@@ -34,6 +34,7 @@
     "subtitle_one": "{{count}} token · agent bootstrap",
     "subtitle_other": "{{count}} tokens · agent bootstrap",
     "newToken": "+ New Token",
+    "viewAttempts": "Enrollment log",
     "pulse": {
       "active": "Active",
       "consumed": "Consumed",
