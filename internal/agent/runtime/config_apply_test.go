@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,13 +67,21 @@ func (f *fakeTelemt) HealthReady(context.Context) (bool, string, error) {
 }
 
 type fakeRestarter struct {
-	restartErr error
-	restarts   int
+	restartErr     error
+	restartErrSeq  []error // successive Restart results; consumed before restartErr
+	restarts       int
+	restartCtxErrs []error // ctx.Err() observed at each Restart call
 }
 
 func (f *fakeRestarter) Verify(context.Context) error { return nil }
-func (f *fakeRestarter) Restart(context.Context) error {
+func (f *fakeRestarter) Restart(ctx context.Context) error {
 	f.restarts++
+	f.restartCtxErrs = append(f.restartCtxErrs, ctx.Err())
+	if len(f.restartErrSeq) > 0 {
+		err := f.restartErrSeq[0]
+		f.restartErrSeq = f.restartErrSeq[1:]
+		return err
+	}
 	return f.restartErr
 }
 
@@ -203,5 +212,67 @@ func TestHandleConfigFetchJob(t *testing.T) {
 	}
 	if want := configcanon.Hash(sections); !strings.Contains(res.ResultJson, want) {
 		t.Fatalf("ResultJson missing hash %q: %q", want, res.ResultJson)
+	}
+}
+
+// TestConfigApplyRollbackSurvivesExpiredJobContext guards A5: when the job
+// ctx dies mid-health-poll, the rollback (restore + restart) must still run
+// to completion on a detached context — otherwise the config file is
+// restored on disk while Telemt keeps running the unverified config.
+func TestConfigApplyRollbackSurvivesExpiredJobContext(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true},
+		healthSeq:   []bool{true /* preflight */, false, false},
+	}
+	rest := &fakeRestarter{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the job deadline is already gone when the apply runs
+
+	res := runConfigApply(ctx, configApplyDeps{
+		telemt: tc, restarter: rest, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond,
+	}, configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
+
+	if res.success {
+		t.Fatalf("expected failure, got success: %q", res.message)
+	}
+	if rest.restarts != 2 {
+		t.Fatalf("expected forward restart + rollback restart, got %d", rest.restarts)
+	}
+	// Forward restart saw the dead job ctx; the rollback restart must have
+	// received a LIVE detached ctx.
+	if rest.restartCtxErrs[0] == nil {
+		t.Fatal("test setup broken: forward restart should observe the cancelled job ctx")
+	}
+	if rest.restartCtxErrs[1] != nil {
+		t.Fatalf("rollback restart ctx must be alive (detached), observed err: %v", rest.restartCtxErrs[1])
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != "tls_domain=\"orig\"\n" {
+		t.Fatalf("config not rolled back on disk: %q", got)
+	}
+}
+
+// TestConfigApplyFailedRestartRollsBackAndRestarts guards A5: a failed
+// forward restart must restore the previous config AND restart Telemt on it
+// — previously only the file was restored, leaving the process down or on
+// stale state.
+func TestConfigApplyFailedRestartRollsBackAndRestarts(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true}}
+	rest := &fakeRestarter{restartErrSeq: []error{errors.New("unit failed"), nil}}
+
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
+
+	if res.success {
+		t.Fatalf("expected failure, got success: %q", res.message)
+	}
+	if rest.restarts != 2 {
+		t.Fatalf("expected failed forward restart + rollback restart, got %d", rest.restarts)
+	}
+	if !strings.Contains(res.message, "rolled back") {
+		t.Fatalf("message = %q, want it to confirm rollback", res.message)
 	}
 }
