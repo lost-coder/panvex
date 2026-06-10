@@ -749,6 +749,7 @@ func TestRunBootstrapCommandAllowsOverwriteWithForce(t *testing.T) {
 }
 
 func TestRefreshRuntimeCredentialsIfNeededRenewsAndPersistsExpiringState(t *testing.T) {
+	ca := newTestCA(t)
 	statePath := filepath.Join(t.TempDir(), "agent-state.json")
 	now := time.Date(2026, time.March, 19, 10, 0, 0, 0, time.UTC)
 	current := agentstate.Credentials{
@@ -764,12 +765,16 @@ func TestRefreshRuntimeCredentialsIfNeededRenewsAndPersistsExpiringState(t *test
 		t.Fatalf("Save() error = %v", err)
 	}
 
+	// The renewer signs the CSR from the request so the returned cert pairs
+	// with the agent-generated key (A9: private keys never leave the agent).
+	renewAfter := now.Add(30 * 24 * time.Hour)
 	renewer := &fakeCertificateRenewer{
-		response: &gatewayrpc.RenewCertificateResponse{
-			CertificatePem: "new-cert",
-			PrivateKeyPem:  "new-key",
-			CaPem:          "new-ca",
-			ExpiresAtUnix:  now.Add(30 * 24 * time.Hour).Unix(),
+		signCSR: func(csrPEM string) *gatewayrpc.RenewCertificateResponse {
+			return &gatewayrpc.RenewCertificateResponse{
+				CertificatePem: ca.signCSRForTest(t, csrPEM),
+				CaPem:          string(ca.certPEM),
+				ExpiresAtUnix:  renewAfter.Unix(),
+			}
 		},
 	}
 
@@ -783,16 +788,26 @@ func TestRefreshRuntimeCredentialsIfNeededRenewsAndPersistsExpiringState(t *test
 	if renewer.request.GetAgentId() != current.AgentID {
 		t.Fatalf("renewer.request.AgentId = %q, want %q", renewer.request.GetAgentId(), current.AgentID)
 	}
-	if updated.CertificatePEM != "new-cert" {
-		t.Fatalf("updated.CertificatePEM = %q, want %q", updated.CertificatePEM, "new-cert")
+	if renewer.request.GetCsrPem() == "" {
+		t.Fatal("renewer.request.CsrPem is empty, want a CSR")
+	}
+	if updated.CertificatePEM == current.CertificatePEM {
+		t.Fatal("updated.CertificatePEM is unchanged, want new cert")
+	}
+	if updated.PrivateKeyPEM == current.PrivateKeyPEM {
+		t.Fatal("updated.PrivateKeyPEM is unchanged, want new key")
+	}
+	// Response must carry NO private key — the agent generated the key locally.
+	if renewer.request.GetCsrPem() == "" {
+		t.Fatal("no CSR sent in renewal request")
 	}
 
 	persisted, err := agentstate.Load(statePath)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if persisted.CertificatePEM != "new-cert" {
-		t.Fatalf("persisted.CertificatePEM = %q, want %q", persisted.CertificatePEM, "new-cert")
+	if persisted.CertificatePEM != updated.CertificatePEM {
+		t.Fatalf("persisted.CertificatePEM = %q, want %q", persisted.CertificatePEM, updated.CertificatePEM)
 	}
 }
 
@@ -814,7 +829,6 @@ func TestRefreshRuntimeCredentialsIfNeededSkipsZeroExpiryState(t *testing.T) {
 	renewer := &fakeCertificateRenewer{
 		response: &gatewayrpc.RenewCertificateResponse{
 			CertificatePem: "new-cert",
-			PrivateKeyPem:  "new-key",
 			CaPem:          "new-ca",
 			ExpiresAtUnix:  now.Add(30 * 24 * time.Hour).Unix(),
 		},
@@ -844,6 +858,10 @@ type fakeCertificateRenewer struct {
 	request  *gatewayrpc.RenewCertificateRequest
 	response *gatewayrpc.RenewCertificateResponse
 	err      error
+	// signCSR, when non-nil, is called with the CSR from the request and
+	// its return value replaces response. Use this to produce a cert that
+	// actually pairs with the agent-generated key (A9 unary path).
+	signCSR func(csrPEM string) *gatewayrpc.RenewCertificateResponse
 }
 
 type fakeAgentGatewayConnectClient struct {
@@ -1017,7 +1035,9 @@ func (r *fakeCertificateRenewer) RenewCertificate(_ context.Context, request *ga
 	if r.err != nil {
 		return nil, r.err
 	}
-
+	if r.signCSR != nil {
+		return r.signCSR(request.GetCsrPem()), nil
+	}
 	return r.response, nil
 }
 

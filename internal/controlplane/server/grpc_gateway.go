@@ -54,9 +54,9 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	}
 
 	now := s.now()
-	issued, err := s.authority.issueClientCertificate(agentID, now)
+	issued, err := s.authority.issueAgentCertificateFromCSR(request.GetCsrPem(), agentID, agentCertificateLifetime, true, now)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	// Update in-memory cert dates so the dashboard reflects the renewal.
@@ -82,7 +82,6 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 
 	return &gatewayrpc.RenewCertificateResponse{
 		CertificatePem: issued.CertificatePEM,
-		PrivateKeyPem:  issued.PrivateKeyPEM,
 		CaPem:          issued.CAPEM,
 		ExpiresAtUnix:  issued.ExpiresAt.Unix(),
 	}, nil

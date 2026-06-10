@@ -76,16 +76,35 @@ func refreshRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, cu
 		return current, nil
 	}
 
+	newKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return current, fmt.Errorf("unary renewal: generate key: %w", err)
+	}
+	csrPEM, err := buildCSRPEM(current.AgentID, newKey)
+	if err != nil {
+		return current, fmt.Errorf("unary renewal: build CSR: %w", err)
+	}
+
 	response, err := renewer.RenewCertificate(ctx, &gatewayrpc.RenewCertificateRequest{
 		AgentId: current.AgentID,
+		CsrPem:  csrPEM,
 	})
 	if err != nil {
 		return current, err
 	}
 
+	newKeyDER, err := x509.MarshalECPrivateKey(newKey)
+	if err != nil {
+		return current, fmt.Errorf("unary renewal: marshal key: %w", err)
+	}
+	newKeyPEM := encodeCertPEM("EC PRIVATE KEY", newKeyDER)
+	if _, err := tls.X509KeyPair([]byte(response.GetCertificatePem()), []byte(newKeyPEM)); err != nil {
+		return current, fmt.Errorf("unary renewal: cert/key mismatch: %w", err)
+	}
+
 	updated := current
 	updated.CertificatePEM = response.GetCertificatePem()
-	updated.PrivateKeyPEM = response.GetPrivateKeyPem()
+	updated.PrivateKeyPEM = newKeyPEM
 	updated.CAPEM = response.GetCaPem()
 	if response.GetExpiresAtUnix() > 0 {
 		updated.ExpiresAt = time.Unix(response.GetExpiresAtUnix(), 0).UTC()
