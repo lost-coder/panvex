@@ -205,8 +205,8 @@ func runServe(args []string) error {
 
 	// Шов 1: wire the install-command handler so POST /agents/{id}/install-command
 	// returns a curl | bash one-liner instead of 503. PanelURL is the gRPC
-	// endpoint agents dial. ScriptURL, PanelCAPin, and PanelCN are derived
-	// from the panel's CA certificate (same CA that signs agent certs).
+	// endpoint agents dial. ScriptURL and PanelCAPin are derived from the
+	// panel's CA certificate; PanelCN is the protocol-fixed client cert CN.
 	//
 	// Q-05: ScriptURL is the panel's own /install-agent.sh route — see
 	// internal/controlplane/server/install_script.go. The script is embedded
@@ -227,7 +227,7 @@ func runServe(args []string) error {
 			// rewrites /install-agent.sh therefore cannot escalate.
 			ScriptHash: server.InstallScriptSHA256(),
 			PanelCAPin: api.CAPINHex(),
-			PanelCN:    api.CACN(),
+			PanelCN:    server.PanelClientCN,
 			PanelURLFn: api.ResolveAgentGRPCEndpoint,
 			Now:        time.Now,
 		})
@@ -240,7 +240,7 @@ func runServe(args []string) error {
 		api.SetProvisionOutboundDeps(&server.ProvisionOutboundDeps{
 			Queries:    queries,
 			PanelCAPin: api.CAPINHex(),
-			PanelCN:    api.CACN(),
+			PanelCN:    server.PanelClientCN,
 			Now:        time.Now,
 		})
 	}
@@ -266,7 +266,7 @@ func runServe(args []string) error {
 			// callback can close over agentID and ctx for the storage
 			// pin lookup. store satisfies bootstrapPinReader via its
 			// GetAgentCertPin method.
-			bootstrapTLS := newBootstrapTLSConfig(ctx, agentID, store)
+			bootstrapTLS := newBootstrapTLSConfig(ctx, agentID, store, api.PanelClientCertificate())
 			return enrollDriver.Run(ctx, agentAddr, bootstrapTLS, agentID)
 		}
 		bootstrapStateFn := func(ctx context.Context, agentID string) (string, error) {

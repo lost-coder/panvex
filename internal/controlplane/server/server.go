@@ -521,15 +521,6 @@ func (s *Server) CertificateAuthority() bootstrap.CertificateAuthority {
 	return s.authority
 }
 
-// CACN returns the panel CA's Common Name. Agents verify the panel's TLS
-// certificate against this name during enrollment.
-func (s *Server) CACN() string {
-	if s.authority == nil {
-		return ""
-	}
-	return s.authority.certificate.Subject.CommonName
-}
-
 // CAPINHex returns the lower-hex SHA-256 fingerprint of the panel's CA DER
 // bytes. Agents that receive this value via the install command pin the panel
 // CA against it on first connect.
