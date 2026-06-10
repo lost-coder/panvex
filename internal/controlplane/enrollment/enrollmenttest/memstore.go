@@ -1,11 +1,7 @@
-// This file ships in the production binary (no `_test.go` suffix) so that
-// external test packages — e.g. internal/controlplane/server's HTTP-level
-// integration tests and internal/controlplane/agenttransport's outbound
-// integration test — can swap a MemStore into a Recorder without each
-// caller redefining its own fixture. Do not reference MemStore from
-// non-test production code.
-
-package enrollment
+// Package enrollmenttest provides an in-memory enrollment.Store for
+// tests in other packages (server HTTP integration, agenttransport
+// outbound). It must only be imported from _test.go files.
+package enrollmenttest
 
 import (
 	"context"
@@ -13,35 +9,35 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	enrollment "github.com/lost-coder/panvex/internal/controlplane/enrollment"
 )
 
 // MemStore is an in-memory Store implementation used by tests. It is
-// exported (rather than the previous unexported memStore) so that tests in
-// other packages can construct and inspect a recorder-backing store without
-// rebuilding their own copy.
+// exported so that tests in other packages can construct and inspect a
+// recorder-backing store without rebuilding their own copy.
 type MemStore struct {
 	mu       sync.Mutex
-	attempts map[string]*Attempt
-	events   map[string][]Event
+	attempts map[string]*enrollment.Attempt
+	events   map[string][]enrollment.Event
 }
 
-// NewMemStoreForTest returns a fresh in-memory Store suitable for tests. The
-// `ForTest` suffix exists to make accidental production use stand out.
-func NewMemStoreForTest() *MemStore {
+// NewMemStore returns a fresh in-memory Store suitable for tests.
+func NewMemStore() *MemStore {
 	return &MemStore{
-		attempts: map[string]*Attempt{},
-		events:   map[string][]Event{},
+		attempts: map[string]*enrollment.Attempt{},
+		events:   map[string][]enrollment.Event{},
 	}
 }
 
-func (m *MemStore) CreateAttempt(_ context.Context, a Attempt) error {
+func (m *MemStore) CreateAttempt(_ context.Context, a enrollment.Attempt) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.attempts[a.ID] = &a
 	return nil
 }
 
-func (m *MemStore) AppendEvent(_ context.Context, attemptID string, ev Event) error {
+func (m *MemStore) AppendEvent(_ context.Context, attemptID string, ev enrollment.Event) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.events[attemptID] = append(m.events[attemptID], ev)
@@ -60,19 +56,19 @@ func (m *MemStore) AttachAgent(_ context.Context, attemptID, agentID string) err
 func (m *MemStore) Complete(_ context.Context, attemptID string, finishedAt time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if a, ok := m.attempts[attemptID]; ok && a.Status == StatusInProgress {
-		a.Status = StatusSuccess
+	if a, ok := m.attempts[attemptID]; ok && a.Status == enrollment.StatusInProgress {
+		a.Status = enrollment.StatusSuccess
 		a.FinishedAt = finishedAt
 		return true, nil
 	}
 	return false, nil
 }
 
-func (m *MemStore) Fail(_ context.Context, attemptID string, finishedAt time.Time, code ErrorCode, msg string) (bool, error) {
+func (m *MemStore) Fail(_ context.Context, attemptID string, finishedAt time.Time, code enrollment.ErrorCode, msg string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if a, ok := m.attempts[attemptID]; ok && a.Status == StatusInProgress {
-		a.Status = StatusFailed
+	if a, ok := m.attempts[attemptID]; ok && a.Status == enrollment.StatusInProgress {
+		a.Status = enrollment.StatusFailed
 		a.FinishedAt = finishedAt
 		a.ErrorCode = code
 		a.ErrorMsg = msg
@@ -81,12 +77,25 @@ func (m *MemStore) Fail(_ context.Context, attemptID string, finishedAt time.Tim
 	return false, nil
 }
 
-// SnapshotAttempts returns a copy of the current attempts. Order is
-// unstable; callers should look up by ID or filter as needed.
-func (m *MemStore) SnapshotAttempts() []Attempt {
+// GetAttempt returns a copy of the attempt with the given ID, or nil if
+// not found. Used by external test packages to inspect attempt state
+// without access to the unexported map.
+func (m *MemStore) GetAttempt(id string) *enrollment.Attempt {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := make([]Attempt, 0, len(m.attempts))
+	if a, ok := m.attempts[id]; ok {
+		cp := *a
+		return &cp
+	}
+	return nil
+}
+
+// SnapshotAttempts returns a copy of the current attempts. Order is
+// unstable; callers should look up by ID or filter as needed.
+func (m *MemStore) SnapshotAttempts() []enrollment.Attempt {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]enrollment.Attempt, 0, len(m.attempts))
 	for _, a := range m.attempts {
 		out = append(out, *a)
 	}
@@ -95,20 +104,20 @@ func (m *MemStore) SnapshotAttempts() []Attempt {
 
 // SnapshotEvents returns a copy of the events recorded for attemptID in
 // insertion order.
-func (m *MemStore) SnapshotEvents(attemptID string) []Event {
+func (m *MemStore) SnapshotEvents(attemptID string) []enrollment.Event {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := make([]Event, len(m.events[attemptID]))
+	out := make([]enrollment.Event, len(m.events[attemptID]))
 	copy(out, m.events[attemptID])
 	return out
 }
 
 // ListAttempts returns matching attempts most-recent first. Filtering
 // happens in-memory because tests almost never exercise large fixtures.
-func (m *MemStore) ListAttempts(_ context.Context, f ListFilter) ([]AttemptDTO, error) {
+func (m *MemStore) ListAttempts(_ context.Context, f enrollment.ListFilter) ([]enrollment.AttemptDTO, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := []AttemptDTO{}
+	out := []enrollment.AttemptDTO{}
 	for _, a := range m.attempts {
 		if f.TokenID != nil && a.TokenID != *f.TokenID {
 			continue
@@ -157,18 +166,18 @@ func (m *MemStore) ListAttempts(_ context.Context, f ListFilter) ([]AttemptDTO, 
 
 // GetWithEvents returns the attempt + its full timeline. Returns
 // (nil, nil) when id is unknown so the HTTP handler can map that to 404.
-func (m *MemStore) GetWithEvents(_ context.Context, id string) (*AttemptWithEvents, error) {
+func (m *MemStore) GetWithEvents(_ context.Context, id string) (*enrollment.AttemptWithEvents, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	a, ok := m.attempts[id]
 	if !ok {
 		return nil, nil
 	}
-	evs := make([]EventDTO, 0, len(m.events[id]))
+	evs := make([]enrollment.EventDTO, 0, len(m.events[id]))
 	for _, e := range m.events[id] {
 		evs = append(evs, toEventDTO(e))
 	}
-	res := AttemptWithEvents{Attempt: toAttemptDTO(*a), Events: evs}
+	res := enrollment.AttemptWithEvents{Attempt: toAttemptDTO(*a), Events: evs}
 	return &res, nil
 }
 
@@ -192,15 +201,15 @@ func (m *MemStore) DeleteOlderThan(_ context.Context, cutoff time.Time) (int64, 
 // store. Tests that need to back-date an attempt's StartedAt (e.g. the
 // retention-worker test) use this helper instead of going through
 // Recorder.Begin, which always stamps the current clock.
-func (m *MemStore) InsertAttemptForTest(a Attempt) {
+func (m *MemStore) InsertAttemptForTest(a enrollment.Attempt) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cp := a
 	m.attempts[a.ID] = &cp
 }
 
-func toAttemptDTO(a Attempt) AttemptDTO {
-	dto := AttemptDTO{
+func toAttemptDTO(a enrollment.Attempt) enrollment.AttemptDTO {
+	dto := enrollment.AttemptDTO{
 		ID:           a.ID,
 		TokenID:      a.TokenID,
 		AgentID:      a.AgentID,
@@ -219,8 +228,8 @@ func toAttemptDTO(a Attempt) AttemptDTO {
 	return dto
 }
 
-func toEventDTO(e Event) EventDTO {
-	dto := EventDTO{Step: e.Step, Level: e.Level, Message: e.Message, Ts: e.Ts}
+func toEventDTO(e enrollment.Event) enrollment.EventDTO {
+	dto := enrollment.EventDTO{Step: e.Step, Level: e.Level, Message: e.Message, Ts: e.Ts}
 	if e.FieldsJSON != "" {
 		var f map[string]any
 		if err := json.Unmarshal([]byte(e.FieldsJSON), &f); err == nil {
@@ -228,8 +237,4 @@ func toEventDTO(e Event) EventDTO {
 		}
 	}
 	return dto
-}
-
-func fixedClock(t time.Time) func() time.Time {
-	return func() time.Time { return t }
 }
