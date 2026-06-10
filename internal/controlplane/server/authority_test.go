@@ -7,13 +7,16 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"math/big"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
@@ -194,5 +197,53 @@ func TestLegacyEnc1WithoutKeyFailsFast(t *testing.T) {
 	if !strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefix) ||
 		strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefixV2) {
 		t.Fatalf("blob prefix after failed load = %q, want untouched ENC:v1", record.PrivateKeyPEM[:10])
+	}
+}
+
+func TestSignCSRIssuesDualEKUServingCert(t *testing.T) {
+	now := time.Now()
+	authority, err := newCertificateAuthority(now)
+	if err != nil {
+		t.Fatalf("newCertificateAuthority: %v", err)
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	const agentID = "01890000-0000-7000-8000-000000000001"
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: agentID},
+	}, key)
+	if err != nil {
+		t.Fatalf("create csr: %v", err)
+	}
+	csrPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}))
+
+	certPEM, _, _, err := authority.SignCSR(csrPEM, agentID, time.Hour)
+	if err != nil {
+		t.Fatalf("SignCSR: %v", err)
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		t.Fatal("issued cert is not PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse issued cert: %v", err)
+	}
+
+	if !slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageClientAuth) {
+		t.Error("issued cert must keep ClientAuth EKU")
+	}
+	if !slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageServerAuth) {
+		t.Error("issued cert must carry ServerAuth EKU (listen mode serves TLS)")
+	}
+	wantSAN := agenttransport.AgentServerName(agentID)
+	if !slices.Contains(cert.DNSNames, wantSAN) {
+		t.Errorf("issued cert DNSNames = %v, want to contain %q", cert.DNSNames, wantSAN)
+	}
+	if cert.Subject.CommonName != agentID {
+		t.Errorf("CN = %q, want %q", cert.Subject.CommonName, agentID)
 	}
 }

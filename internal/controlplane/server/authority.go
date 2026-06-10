@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -348,52 +349,74 @@ func (a *certificateAuthority) issueClientCertificate(commonName string, now tim
 	}, nil
 }
 
-// SignCSR implements bootstrap.CertificateAuthority. It parses csrPEM,
-// validates that the request's CN matches agentID, signs a new certificate
-// using the panel CA, and returns the issued cert PEM, CA cert PEM, and
-// NotAfter. The issued cert is client-auth only so the agent can present it
-// on the post-enrollment mTLS dial.
-func (a *certificateAuthority) SignCSR(csrPEM, agentID string, validFor time.Duration) (certPEM, caPEM string, expiresAt time.Time, err error) {
+// issueAgentCertificateFromCSR is the single issuance path for agent leaf
+// certificates (A9): the agent generates the keypair, the panel signs the
+// CSR. The certificate is dual-EKU (ClientAuth + ServerAuth) and carries
+// the fixed DNS SAN AgentServerName(agentID) so it can serve the agent's
+// gRPC listener in reverse transport mode and still authenticate as a
+// client in dial mode (A1).
+//
+// requireCNMatch: renewal/recovery paths know the agent's identity from the
+// presented credentials and must bind the CSR CN to it; the initial HTTP
+// enrollment mints the agentID server-side AFTER the request arrives, so it
+// passes false and the template CN (always agentID) wins regardless of the
+// CSR subject.
+func (a *certificateAuthority) issueAgentCertificateFromCSR(csrPEM, agentID string, validFor time.Duration, requireCNMatch bool, now time.Time) (issuedCertificate, error) {
 	csrBlock, _ := pem.Decode([]byte(csrPEM))
 	if csrBlock == nil {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: invalid PEM block for agent %s", agentID)
+		return issuedCertificate{}, fmt.Errorf("sign csr: invalid PEM block for agent %s", agentID)
 	}
 	csr, err := x509.ParseCertificateRequest(csrBlock.Bytes)
 	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: parse: %w", err)
+		return issuedCertificate{}, fmt.Errorf("sign csr: parse: %w", err)
 	}
 	if err := csr.CheckSignature(); err != nil {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: signature check: %w", err)
+		return issuedCertificate{}, fmt.Errorf("sign csr: signature check: %w", err)
 	}
-	if csr.Subject.CommonName != agentID {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: CN mismatch: got %q, want %q", csr.Subject.CommonName, agentID)
+	if requireCNMatch && csr.Subject.CommonName != agentID {
+		return issuedCertificate{}, fmt.Errorf("sign csr: CN mismatch: got %q, want %q", csr.Subject.CommonName, agentID)
 	}
 
 	serial, err := randomSerial()
 	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: serial: %w", err)
+		return issuedCertificate{}, fmt.Errorf("sign csr: serial: %w", err)
 	}
 
-	now := time.Now()
-	expiresAt = now.Add(validFor)
+	expiresAt := now.Add(validFor)
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   agentID,
 			Organization: []string{"Panvex Agents"},
 		},
+		DNSNames:     []string{agenttransport.AgentServerName(agentID)},
 		NotBefore:    now.Add(-time.Minute),
 		NotAfter:     expiresAt,
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		SubjectKeyId: serial.Bytes(),
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, a.certificate, csr.PublicKey, a.privateKey)
 	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: create: %w", err)
+		return issuedCertificate{}, fmt.Errorf("sign csr: create: %w", err)
 	}
-	return encodePEM("CERTIFICATE", der), a.caPEM, expiresAt, nil
+	return issuedCertificate{
+		CertificatePEM: encodePEM("CERTIFICATE", der),
+		CAPEM:          a.caPEM,
+		ExpiresAt:      expiresAt,
+		Serial:         serial.Text(16),
+	}, nil
+}
+
+// SignCSR implements bootstrap.CertificateAuthority (reverse bootstrap +
+// in-stream renewal). CN must match agentID on these paths.
+func (a *certificateAuthority) SignCSR(csrPEM, agentID string, validFor time.Duration) (certPEM, caPEM string, expiresAt time.Time, err error) {
+	issued, err := a.issueAgentCertificateFromCSR(csrPEM, agentID, validFor, true, time.Now())
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	return issued.CertificatePEM, issued.CAPEM, issued.ExpiresAt, nil
 }
 
 func encodePEM(blockType string, bytes []byte) string {
