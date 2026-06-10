@@ -33,6 +33,14 @@ const (
 	// 50ms flush window in UpdateTransport — here the whole process dies,
 	// so the margin is much larger).
 	selfUpdateRestartDelay = 2 * time.Second
+	// A5: per-action execution budgets. config.apply = health-probe budget
+	// (from the payload, default 30s) + a restart allowance + safety margin;
+	// the blanket jobExecutionTimeout strangled the apply sequence and
+	// killed the ctx mid-health-poll. Self-update needs room for the
+	// archive download on slow links.
+	configApplyRestartAllowance = 30 * time.Second
+	configApplyBudgetMargin     = 30 * time.Second
+	selfUpdateExecutionTimeout  = 5 * time.Minute
 )
 
 var errRuntimeCredentialsRefreshed = errors.New("runtime credentials refreshed")

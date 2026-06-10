@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"sync"
 	"time"
@@ -47,6 +48,30 @@ func jobWorkerCountForPipeline(pipeline jobPipeline) int {
 		return 1
 	default:
 		return 1
+	}
+}
+
+// jobExecutionBudget returns the ctx deadline for executing one job.
+// config.apply derives its budget from the payload's health_timeout_s
+// (panel sends 30 by default) so the agent-side deadline always exceeds
+// the apply sequence it has to cover: preflight + PATCH + restart +
+// health polls. Everything else keeps the conservative default.
+func jobExecutionBudget(job *gatewayrpc.JobCommand) time.Duration {
+	switch job.GetAction() {
+	case "config.apply":
+		var p struct {
+			HealthTimeoutS int `json:"health_timeout_s"`
+		}
+		_ = json.Unmarshal([]byte(job.GetPayloadJson()), &p)
+		health := time.Duration(p.HealthTimeoutS) * time.Second
+		if health <= 0 {
+			health = 30 * time.Second
+		}
+		return health + configApplyRestartAllowance + configApplyBudgetMargin
+	case "agent.self-update":
+		return selfUpdateExecutionTimeout
+	default:
+		return jobExecutionTimeout
 	}
 }
 
@@ -172,7 +197,7 @@ func runJobWorker(
 		}
 		jobID := job.GetId()
 
-		jobCtx, cancelJob := context.WithTimeout(connectionCtx, jobExecutionTimeout)
+		jobCtx, cancelJob := context.WithTimeout(connectionCtx, jobExecutionBudget(job))
 		result := agent.HandleJob(jobCtx, job, time.Now())
 		cancelJob()
 		slog.Debug("job completed", "job_id", jobID, "action", job.GetAction(), "success", result.Success)
