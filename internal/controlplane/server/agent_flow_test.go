@@ -47,12 +47,15 @@ func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 	}
 }
 
-// TestServerEnrollAgentDoesNotBurnTokenWhenPersistFails (C2): a PutAgent
-// failure inside enrollment must roll back the token consumption.
-// Deleting the fleet group between token issue and enroll makes the
-// agents.fleet_group_id FK fail inside the persistence step, while the
-// token row itself survives (enrollment_tokens FK is ON DELETE SET NULL).
-func TestServerEnrollAgentDoesNotBurnTokenWhenPersistFails(t *testing.T) {
+// TestServerEnrollAgentRejectsAlreadyConsumedToken (C2): once a token is
+// consumed by a successful enrollment, a second enrollment with the same
+// token value must fail via the ConsumeEnrollmentToken conflict path and
+// must NOT reset or re-burn the already-consumed token. This guards the
+// idempotency half of the atomic consume; the rollback half (consume
+// rolls back together with a failed PutAgent inside the Transact) is
+// covered by the storagetest contract "consume token inside transact
+// rolls back with the tx".
+func TestServerEnrollAgentRejectsAlreadyConsumedToken(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
 	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
@@ -64,24 +67,66 @@ func TestServerEnrollAgentDoesNotBurnTokenWhenPersistFails(t *testing.T) {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
 
-	if err := server.store.DeleteFleetGroup(context.Background(), fleetGroupID); err != nil {
-		t.Fatalf("DeleteFleetGroup() error = %v", err)
-	}
-
+	// First enrollment must succeed.
 	if _, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
-	}, now.Add(10*time.Second)); err == nil {
-		t.Fatal("enrollAgent() error = nil, want persistence failure")
+	}, now.Add(10*time.Second)); err != nil {
+		t.Fatalf("first enrollAgent() error = %v", err)
 	}
 
+	// Second enrollment with the same (now-consumed) token must fail.
+	if _, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-b",
+		Version:  "1.0.0",
+	}, now.Add(20*time.Second)); err == nil {
+		t.Fatal("second enrollAgent() error = nil, want token-already-consumed error")
+	}
+
+	// The token must remain consumed — not double-burned or reset.
 	rec, err := server.store.GetEnrollmentToken(context.Background(), token.Value)
 	if err != nil {
 		t.Fatalf("GetEnrollmentToken() error = %v", err)
 	}
+	if rec.ConsumedAt == nil {
+		t.Fatal("token ConsumedAt = nil after successful first enrollment, want non-nil")
+	}
+}
+
+// TestServerEnrollTokenScopeNulledWhenFleetGroupDeleted (C1): verifies the
+// ON DELETE SET NULL behaviour introduced in migration 0050.  When the
+// fleet group that was baked into a token's scope is deleted, the token's
+// fleet_group_id becomes NULL rather than blocking the delete or cascading
+// to destroy the token, leaving the operator free to re-scope or revoke it.
+func TestServerEnrollTokenScopeNulledWhenFleetGroupDeleted(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	// Delete the fleet group — must succeed (SET NULL, not RESTRICT).
+	if err := server.store.DeleteFleetGroup(context.Background(), fleetGroupID); err != nil {
+		t.Fatalf("DeleteFleetGroup() error = %v, want nil (SET NULL should allow delete)", err)
+	}
+
+	// Token must survive with fleet_group_id = "" (null).
+	rec, err := server.store.GetEnrollmentToken(context.Background(), token.Value)
+	if err != nil {
+		t.Fatalf("GetEnrollmentToken() error = %v", err)
+	}
+	if rec.FleetGroupID != "" {
+		t.Fatalf("token FleetGroupID = %q after group delete, want empty (SET NULL)", rec.FleetGroupID)
+	}
 	if rec.ConsumedAt != nil {
-		t.Fatalf("token burned by failed enrollment: ConsumedAt = %v, want nil", rec.ConsumedAt)
+		t.Fatalf("token burned by group delete: ConsumedAt = %v, want nil", rec.ConsumedAt)
 	}
 }
 
