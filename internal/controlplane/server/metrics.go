@@ -134,6 +134,8 @@ var rateLimitScopes = []string{"login", "agent_bootstrap", "sensitive", "grpc_co
 var retentionPruneTables = []string{
 	"audit_events",
 	"metric_snapshots",
+	"jobs",
+	"webhook_outbox",
 }
 
 // knownBatchBuffers enumerates every batch buffer tracked by
@@ -225,7 +227,7 @@ func newMetricsCollectors() *metricsCollectors {
 		}),
 		retentionPrunedRowsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_retention_pruned_rows_total",
-			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots.",
+			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots, jobs, webhook_outbox.",
 		}, []string{"table"}),
 		panicRecoveredTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_goroutine_panic_recovered_total",

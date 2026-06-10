@@ -22,6 +22,10 @@ type RetentionSettings struct {
 	// expired) live in the jobs table before the rollup loop deletes
 	// them via PruneTerminalJobs (Q2.U-P-02).
 	JobsSeconds int `json:"jobs_seconds"`
+	// WebhookOutboxSeconds bounds how long terminal webhook_outbox rows
+	// (delivered or dead) are kept for operator audit before the rollup
+	// loop prunes them via webhooks.Storage.PruneOutbox (C4).
+	WebhookOutboxSeconds int `json:"webhook_outbox_seconds"`
 }
 
 func defaultRetentionSettings() RetentionSettings {
@@ -34,6 +38,7 @@ func defaultRetentionSettings() RetentionSettings {
 		AuditEventSeconds:     7776000, // 90d (P2-REL-04 / finding M-R2)
 		MetricSnapshotSeconds: 2592000, // 30d (P2-REL-05)
 		JobsSeconds:           2592000, // 30d (Q2.U-P-02)
+		WebhookOutboxSeconds:  2592000, // 30d
 	}
 }
 
@@ -50,6 +55,7 @@ func retentionSettingsToRecord(settings RetentionSettings) storage.RetentionSett
 		AuditEventSeconds:     settings.AuditEventSeconds,
 		MetricSnapshotSeconds: settings.MetricSnapshotSeconds,
 		JobsSeconds:           settings.JobsSeconds,
+		WebhookOutboxSeconds:  settings.WebhookOutboxSeconds,
 	}
 }
 
@@ -64,6 +70,7 @@ func retentionSettingsFromRecord(record storage.RetentionSettings) RetentionSett
 		AuditEventSeconds:     record.AuditEventSeconds,
 		MetricSnapshotSeconds: record.MetricSnapshotSeconds,
 		JobsSeconds:           record.JobsSeconds,
+		WebhookOutboxSeconds:  record.WebhookOutboxSeconds,
 	}
 }
 
@@ -148,6 +155,13 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	// targets are preserved so an in-flight rollout cannot be deleted
 	// mid-flight.
 	s.runRetentionPrune(ctx, "jobs", now, retention.JobsSeconds, s.store.PruneTerminalJobs)
+
+	// 10. Prune terminal webhook outbox rows (C4). The webhook outbox is
+	// a separate storage subsystem (webhooks.Storage), wired only when
+	// the serve path supplies a WebhookStorageFactory — hence the guard.
+	if s.webhookStorage != nil {
+		s.runRetentionPrune(ctx, "webhook_outbox", now, retention.WebhookOutboxSeconds, s.webhookStorage.PruneOutbox)
+	}
 }
 
 // rollupRecentHours rebuilds hourly aggregates for the previous 2 hours so

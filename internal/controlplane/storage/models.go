@@ -383,6 +383,10 @@ type RetentionSettingsRecord struct {
 	// them via PruneTerminalJobs (Q2.U-P-02). Zero disables job
 	// pruning so existing dev fixtures keep their full history.
 	JobsSeconds int `json:"jobs_seconds"`
+	// WebhookOutboxSeconds bounds how long terminal webhook_outbox rows
+	// (delivered or dead) are kept for operator audit before the rollup
+	// loop prunes them via webhooks.Storage.PruneOutbox (C4).
+	WebhookOutboxSeconds int `json:"webhook_outbox_seconds"`
 }
 
 // CertificateAuthorityRecord stores the persisted control-plane root CA material.
