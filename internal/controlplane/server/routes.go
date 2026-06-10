@@ -130,7 +130,6 @@ func (s *Server) routes() http.Handler {
 				authenticated.Get("/agents/{id}/runtime-events", s.handleListRuntimeEvents())
 				authenticated.Get("/instances", s.handleInstances())
 				authenticated.Get("/jobs", s.handleJobs())
-				authenticated.Get("/audit", s.handleAudit())
 				authenticated.Get("/metrics", s.handleMetrics())
 				authenticated.Get("/events", s.handleEvents())
 				authenticated.Get("/settings/appearance", s.handleGetUserAppearance())
@@ -150,6 +149,9 @@ func (s *Server) routes() http.Handler {
 
 				authenticated.Group(func(operator chi.Router) {
 					operator.Use(s.requireMinimumRole(auth.RoleOperator))
+					// Audit log contains actor names, actions, and targets —
+					// read access for viewers violates least-privilege (A5).
+					operator.Get("/audit", s.handleAudit())
 					operator.Post("/jobs", s.handleCreateJob())
 					operator.Get("/clients", s.handleClients())
 					// Q2.U-S-11: rate-limit ALL mutating client endpoints (create,
