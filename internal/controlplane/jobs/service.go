@@ -284,7 +284,10 @@ func NewService() *Service {
 }
 
 // NewServiceWithStore constructs a job service that persists state through the shared store.
-func NewServiceWithStore(jobStore Store) *Service {
+// ctx is the lifecycle context of the caller (serverCtx on the panel / context.Background() in
+// tests); a cancelled ctx surfaces context.Canceled via StartupError() so a Close() during
+// boot aborts the restore instead of hanging on storage.
+func NewServiceWithStore(ctx context.Context, jobStore Store) *Service {
 	service := &Service{
 		jobs:                    make(map[string]Job),
 		agentJobs:               make(map[string]map[string]struct{}),
@@ -296,7 +299,7 @@ func NewServiceWithStore(jobStore Store) *Service {
 		now:                     time.Now,
 		metrics:                 noopMetricsSink{},
 	}
-	service.startupErr = service.restore()
+	service.startupErr = service.restore(ctx)
 	return service
 }
 
@@ -886,13 +889,15 @@ func (s *Service) ListRecentWithContext(ctx context.Context, limit int) []Job {
 }
 
 // ExpireStale proactively expires jobs that exceeded their TTL.
-func (s *Service) ExpireStale() {
+// ctx is the lifecycle context of the caller (serverCtx on the panel / context.Background() in
+// tests) and is forwarded to storage writes so a Close() can abort in-flight persistence.
+func (s *Service) ExpireStale(ctx context.Context) {
 	s.mu.Lock()
 	candidates := s.expireJobsLocked(s.now().UTC())
 	s.mu.Unlock()
 
 	for _, candidate := range candidates {
-		s.persistLatestJobVersion(context.Background(), candidate.jobID, candidate.version, candidate.job)
+		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
 }
 
@@ -1368,8 +1373,10 @@ func jobShouldExpire(job Job, now time.Time) bool {
 	return now.After(job.CreatedAt.Add(job.TTL))
 }
 
-func (s *Service) restore() error {
-	ctx := context.Background()
+// restore loads persisted job state into memory.
+// ctx is the lifecycle context supplied by the caller (serverCtx / Background in tests);
+// a cancelled ctx surfaces as a startup error so boot does not hang on storage.
+func (s *Service) restore(ctx context.Context) error {
 	// Q2.U-P-02: ListJobs returns the un-pruned tail of the jobs table.
 	// PruneTerminalJobs (retention worker) keeps that tail bounded at
 	// intervals.JobsSeconds, so in steady state the restore loop sees

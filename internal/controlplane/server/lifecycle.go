@@ -205,7 +205,7 @@ func (s *Server) trySetStartupErr(fn func() error) {
 // short-circuited via trySetStartupErr.
 func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.Vault) {
 	store := options.Store
-	s.jobs = jobs.NewServiceWithStore(store)
+	s.jobs = jobs.NewServiceWithStore(s.serverCtx, store)
 	s.auth = auth.NewServiceWithStore(store)
 	// Wire the injected clock onto the freshly-constructed services BEFORE any
 	// restore runs. RestoreSessions -> restoreConsumedTotp (below, via line
