@@ -309,7 +309,7 @@ func newBlockingStubServer(t *testing.T) *blockingStubServer {
 func TestListenTransportAcceptsIncomingStream(t *testing.T) {
 	caCert, caKey := mustGenerateCA(t)
 	agentCert, agentKey := mustGenerateLeaf(t, caCert, caKey, "127.0.0.1")
-	panelCert, panelKey := mustGenerateLeaf(t, caCert, caKey, "panel.test")
+	panelCert, panelKey := mustGenerateLeaf(t, caCert, caKey, "control-plane.panvex.internal")
 
 	cfg := ListenConfig{
 		Addr: "127.0.0.1:0",
@@ -317,7 +317,8 @@ func TestListenTransportAcceptsIncomingStream(t *testing.T) {
 			Certificate: [][]byte{agentCert.Raw},
 			PrivateKey:  agentKey,
 		},
-		CAPEM: encodeCertPEM(caCert),
+		CAPEM:   encodeCertPEM(caCert),
+		PanelCN: "control-plane.panvex.internal",
 	}
 	tr := NewListenTransport(cfg).(*listenTransport)
 
@@ -382,6 +383,133 @@ func TestListenTransportAcceptsIncomingStream(t *testing.T) {
 	}
 }
 
+// TestListenTransportRejectsNonPanelClientCN: a leaked AGENT certificate
+// (CN=<agent_id>, signed by the same panel CA, ClientAuth EKU) must not be
+// able to open a session against a listen-mode agent. Only the panel's
+// client certificate (CN=PanelCN) may drive the job pipeline. (A1/RCE)
+func TestListenTransportRejectsNonPanelClientCN(t *testing.T) {
+	caCert, caKey := mustGenerateCA(t)
+	agentCert, agentKey := mustGenerateLeaf(t, caCert, caKey, "127.0.0.1")
+	// Panel client cert — CN matches PanelCN.
+	panelCert, panelKey := mustGenerateLeaf(t, caCert, caKey, "control-plane.panvex.internal")
+	// Stolen agent cert — same CA, but CN=<agent_id>; must be rejected.
+	stolenCert, stolenKey := mustGenerateLeaf(t, caCert, caKey, "stolen-agent-id")
+
+	cfg := ListenConfig{
+		Addr: "127.0.0.1:0",
+		Cert: tls.Certificate{
+			Certificate: [][]byte{agentCert.Raw},
+			PrivateKey:  agentKey,
+		},
+		CAPEM:   encodeCertPEM(caCert),
+		PanelCN: "control-plane.panvex.internal",
+	}
+
+	// --- Accept case: panel-CN client cert ---
+	t.Run("accept_panel_cn", func(t *testing.T) {
+		tr := NewListenTransport(cfg).(*listenTransport)
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		runnerInvoked := make(chan struct{}, 1)
+		runOnce := make(chan error, 1)
+		go func() {
+			runOnce <- tr.RunOnce(ctx, func(_ context.Context, stream BidiStream, _ gatewayrpc.AgentGatewayClient) error {
+				runnerInvoked <- struct{}{}
+				_, err := stream.Recv()
+				return err
+			})
+		}()
+
+		deadline := time.Now().Add(2 * time.Second)
+		for tr.Address() == "" && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if tr.Address() == "" {
+			t.Fatal("listener never bound")
+		}
+
+		clientTLS := &tls.Config{
+			ServerName: "127.0.0.1",
+			RootCAs:    certPoolFromCert(caCert),
+			Certificates: []tls.Certificate{{
+				Certificate: [][]byte{panelCert.Raw},
+				PrivateKey:  panelKey,
+			}},
+		}
+		conn, err := grpc.NewClient(tr.Address(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		defer conn.Close()
+		client := gatewayrpc.NewAgentGatewayClient(conn)
+		stream, err := client.Connect(ctx)
+		if err != nil {
+			t.Fatalf("panel Connect: %v", err)
+		}
+		_ = stream.SendMsg(&gatewayrpc.ConnectServerMessage{})
+		_ = stream.CloseSend()
+
+		select {
+		case <-runnerInvoked:
+			// good — runner was invoked for panel-CN cert
+		case <-time.After(2 * time.Second):
+			t.Fatal("runner was not invoked for panel-CN client cert")
+		}
+	})
+
+	// --- Reject case: stolen agent cert (CN=stolen-agent-id, same CA) ---
+	t.Run("reject_stolen_agent_cn", func(t *testing.T) {
+		tr := NewListenTransport(cfg).(*listenTransport)
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		runnerInvoked := make(chan struct{}, 1)
+		go func() {
+			_ = tr.RunOnce(ctx, func(_ context.Context, _ BidiStream, _ gatewayrpc.AgentGatewayClient) error {
+				runnerInvoked <- struct{}{}
+				return nil
+			})
+		}()
+
+		deadline := time.Now().Add(2 * time.Second)
+		for tr.Address() == "" && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if tr.Address() == "" {
+			t.Fatal("listener never bound")
+		}
+
+		stolenTLS := &tls.Config{
+			ServerName: "127.0.0.1",
+			RootCAs:    certPoolFromCert(caCert),
+			Certificates: []tls.Certificate{{
+				Certificate: [][]byte{stolenCert.Raw},
+				PrivateKey:  stolenKey,
+			}},
+		}
+		conn, err := grpc.NewClient(tr.Address(), grpc.WithTransportCredentials(credentials.NewTLS(stolenTLS)))
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+		defer conn.Close()
+		client := gatewayrpc.NewAgentGatewayClient(conn)
+		// Connect must fail — TLS handshake rejected due to CN mismatch.
+		_, connectErr := client.Connect(ctx)
+		if connectErr == nil {
+			t.Fatal("Connect succeeded with stolen agent cert; expected rejection")
+		}
+
+		// Confirm runner was never invoked.
+		select {
+		case <-runnerInvoked:
+			t.Fatal("runner was invoked despite stolen agent cert; CN check did not fire")
+		default:
+			// good — runner was never called
+		}
+	})
+}
+
 // ---- TLS helpers (mirrors internal/controlplane/agenttransport/outbound_test.go) ----
 
 func encodeCertPEM(cert *x509.Certificate) string {
@@ -438,7 +566,7 @@ func TestListenTransportRunOnceNoGoroutineLeak(t *testing.T) {
 
 	caCert, caKey := mustGenerateCA(t)
 	agentCert, agentKey := mustGenerateLeaf(t, caCert, caKey, "127.0.0.1")
-	panelCert, panelKey := mustGenerateLeaf(t, caCert, caKey, "panel.test")
+	panelCert, panelKey := mustGenerateLeaf(t, caCert, caKey, "control-plane.panvex.internal")
 	caPEM := encodeCertPEM(caCert)
 
 	cfg := ListenConfig{
@@ -447,7 +575,8 @@ func TestListenTransportRunOnceNoGoroutineLeak(t *testing.T) {
 			Certificate: [][]byte{agentCert.Raw},
 			PrivateKey:  agentKey,
 		},
-		CAPEM: caPEM,
+		CAPEM:   caPEM,
+		PanelCN: "control-plane.panvex.internal",
 	}
 
 	clientTLS := &tls.Config{

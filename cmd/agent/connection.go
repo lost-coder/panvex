@@ -26,6 +26,11 @@ type transportReloadState struct {
 	cancel  func()
 }
 
+// panelClientCN mirrors server.PanelClientCN — the protocol-fixed CN of the
+// control-plane's outbound client certificate. Duplicated as a literal
+// because cmd/agent must not import the control-plane server package.
+const panelClientCN = "control-plane.panvex.internal"
+
 // selectTransport returns either a listen-mode or dial-mode Transport based on
 // the TransportMode field of the credentials state. It is extracted as a
 // helper so it can be unit-tested independently of the full runConnection path.
@@ -36,9 +41,10 @@ func selectTransport(creds agentstate.Credentials, dialCfg agentTransport.DialCo
 			return nil, fmt.Errorf("agent: load TLS keypair for listen mode: %w", err)
 		}
 		return agentTransport.NewListenTransport(agentTransport.ListenConfig{
-			Addr:  creds.ListenAddr,
-			Cert:  cert,
-			CAPEM: creds.CAPEM,
+			Addr:    creds.ListenAddr,
+			Cert:    cert,
+			CAPEM:   creds.CAPEM,
+			PanelCN: panelClientCN,
 		}), nil
 	}
 	return agentTransport.NewDialTransport(dialCfg), nil
