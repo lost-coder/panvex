@@ -939,7 +939,6 @@ func TestEnqueueGeneratesIdempotencyKeyWhenEmpty(t *testing.T) {
 // agent-supplied ObservedAt froze redelivery for agents whose clock runs
 // ahead (UpdatedAt in the future => retry window never elapses).
 func TestUpdateTargetUsesPanelClockNotAgentClock(t *testing.T) {
-	const retryAfter = 30 * time.Second
 	panelNow := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
 	service := NewService()
 	service.SetNow(func() time.Time { return panelNow })

@@ -235,7 +235,9 @@ func runRuntime(args []string) error {
 				// exit NON-ZERO so the unit's Restart=on-failure relaunches
 				// the already-replaced binary — exit 0 would not be
 				// restarted, and 78 is RestartPreventExitStatus.
-				if err := exec.Command("systemctl", "restart", "panvex-agent").Start(); err != nil {
+				// Background ctx: this is a fire-and-forget restart from an
+				// AfterFunc with no parent ctx; we never want to cancel it.
+				if err := exec.CommandContext(context.Background(), "systemctl", "restart", "panvex-agent").Start(); err != nil {
 					slog.Error("self-update: systemctl restart failed; exiting non-zero for on-failure restart", "error", err)
 					os.Exit(1)
 				}
