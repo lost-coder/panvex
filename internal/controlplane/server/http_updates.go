@@ -493,6 +493,26 @@ func buildAgentDirectUpdatePayload(repo, version string) ([]byte, error) {
 	})
 }
 
+// agentSelfUpdateJobTTL bounds how long an agent.self-update job may stay
+// outstanding before its targets expire. A3: without a TTL (TTL<=0 means
+// "never expires" in jobs.Service) a wedged update job is re-dispatched
+// every retry window forever. 10 minutes comfortably covers the download
+// (selfUpdateExecutionTimeout on the agent is 5m) plus several retries.
+const agentSelfUpdateJobTTL = 10 * time.Minute
+
+// agentSelfUpdateJobInput builds the CreateJobInput for one agent
+// self-update dispatch. Extracted so the TTL contract is unit-testable
+// without the HTTP handler scaffolding.
+func agentSelfUpdateJobInput(agentID, payloadJSON, actorID string) jobs.CreateJobInput {
+	return jobs.CreateJobInput{
+		Action:         jobs.ActionAgentSelfUpdate,
+		TargetAgentIDs: []string{agentID},
+		TTL:            agentSelfUpdateJobTTL,
+		PayloadJSON:    payloadJSON,
+		ActorID:        actorID,
+	}
+}
+
 func (s *Server) handleAgentUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		agentID := chi.URLParam(r, "id")
@@ -547,12 +567,7 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 			return
 		}
 
-		job, err := s.jobs.Enqueue(r.Context(), jobs.CreateJobInput{
-			Action:         jobs.ActionAgentSelfUpdate,
-			TargetAgentIDs: []string{agentID},
-			PayloadJSON:    string(payloadJSON),
-			ActorID:        session.UserID,
-		}, s.now())
+		job, err := s.jobs.Enqueue(r.Context(), agentSelfUpdateJobInput(agentID, string(payloadJSON), session.UserID), s.now())
 		if err != nil {
 			s.logger.Error("agent update: enqueue job failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to create update job")
