@@ -2,6 +2,8 @@ package jobs
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -394,6 +396,15 @@ func (s *Service) SetNow(now func() time.Time) {
 	s.now = now
 }
 
+// NewIdempotencyKey returns a random 128-bit hex idempotency key. Enqueue
+// calls it when the caller omits the key; exported so HTTP handlers that
+// want to log/echo the key before enqueueing can reuse the same format.
+func NewIdempotencyKey() string {
+	var buf [16]byte
+	_, _ = rand.Read(buf[:])
+	return hex.EncodeToString(buf[:])
+}
+
 // Enqueue validates the job input and records the queued job.
 //
 // P2-PERF-04: The synchronous DB persist (PutJob / PutJobTarget) is performed
@@ -415,6 +426,14 @@ func (s *Service) SetNow(now func() time.Time) {
 // the idempotency-key reservation in s.keys lives across the out-of-lock
 // window, which is exactly what's needed to reject duplicate-key races.
 func (s *Service) Enqueue(ctx context.Context, input CreateJobInput, now time.Time) (Job, error) {
+	// A4: an empty key would be reserved as s.keys[""] and (because
+	// markKeyTerminalLocked skips empty keys) never evicted — every later
+	// empty-key Enqueue then fails as a duplicate. Generate a unique key
+	// instead so "no idempotency requested" callers never collide.
+	if input.IdempotencyKey == "" {
+		input.IdempotencyKey = NewIdempotencyKey()
+	}
+
 	s.mu.Lock()
 
 	if _, exists := s.keys[input.IdempotencyKey]; exists {
@@ -1200,15 +1219,19 @@ func (s *Service) installRestoredJob(job Job) {
 	s.jobs[job.ID] = job
 	s.syncJobTargetsIndexLocked(job)
 	s.reindexAcknowledgedTargets(job)
-	s.keys[job.IdempotencyKey] = job.ID
-	if isTerminalStatus(job.Status) {
-		// Record the terminal timestamp so the eviction worker can
-		// drop already-completed jobs that were restored from store.
-		// We cannot recover the exact completion time cheaply, so use
-		// the job's CreatedAt — older than cutoff means older TTL, and
-		// the worst case is eviction on next scan, which is the
-		// desired behaviour for jobs persisted long enough ago.
-		s.keyTerminalAt[job.IdempotencyKey] = job.CreatedAt
+	// A4 forward-fix: rows persisted before key auto-generation may carry
+	// an empty key; never let them re-poison the "" slot on restore.
+	if job.IdempotencyKey != "" {
+		s.keys[job.IdempotencyKey] = job.ID
+		if isTerminalStatus(job.Status) {
+			// Record the terminal timestamp so the eviction worker can
+			// drop already-completed jobs that were restored from store.
+			// We cannot recover the exact completion time cheaply, so use
+			// the job's CreatedAt — older than cutoff means older TTL, and
+			// the worst case is eviction on next scan, which is the
+			// desired behaviour for jobs persisted long enough ago.
+			s.keyTerminalAt[job.IdempotencyKey] = job.CreatedAt
+		}
 	}
 	// P-4: rebuild the per-client succeeded-job index from the restored
 	// state so LatestSucceededWithContext returns the correct entry after

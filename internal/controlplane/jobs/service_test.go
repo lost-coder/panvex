@@ -885,3 +885,44 @@ func TestConfigFetchActionValid(t *testing.T) {
 		t.Fatalf("config.fetch must be a valid action")
 	}
 }
+
+// TestEnqueueGeneratesIdempotencyKeyWhenEmpty guards A4: callers that omit
+// the idempotency key (config.apply rolling fan-out, self-update dispatch)
+// must each get a unique generated key instead of all colliding on "" —
+// previously the second empty-key Enqueue failed with
+// ErrDuplicateIdempotencyKey and the "" slot was never evicted.
+func TestEnqueueGeneratesIdempotencyKeyWhenEmpty(t *testing.T) {
+	now := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	first, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionConfigApply,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            5 * time.Minute,
+		IdempotencyKey: "",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue(first) error = %v", err)
+	}
+	second, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionConfigApply,
+		TargetAgentIDs: []string{"agent-2"},
+		TTL:            5 * time.Minute,
+		IdempotencyKey: "",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue(second) error = %v, want nil (empty keys must not collide)", err)
+	}
+	if first.IdempotencyKey == "" || second.IdempotencyKey == "" {
+		t.Fatalf("generated keys must be non-empty, got %q and %q", first.IdempotencyKey, second.IdempotencyKey)
+	}
+	if first.IdempotencyKey == second.IdempotencyKey {
+		t.Fatalf("generated keys must be unique, both = %q", first.IdempotencyKey)
+	}
+	if _, ok := service.keys[""]; ok {
+		t.Fatal("the empty-string key slot must never be reserved")
+	}
+}

@@ -97,7 +97,6 @@ func (s *Server) applyConfigToAgent(ctx context.Context, actorID, agentID string
 		Action:         jobs.ActionConfigApply,
 		TargetAgentIDs: []string{agentID},
 		TTL:            configApplyJobTTL,
-		IdempotencyKey: "",
 		ActorID:        actorID,
 		PayloadJSON:    string(payload),
 		ReadOnlyAgents: s.readOnlyAgents([]string{agentID}),
