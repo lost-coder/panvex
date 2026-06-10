@@ -291,6 +291,10 @@ type Server struct {
 	metricsScrapeToken  string
 	metricsPollerCancel context.CancelFunc
 	metricsPollerWG     sync.WaitGroup
+	// agentCertExpiryRefreshedAt is the last time refreshAgentCertExpiry
+	// ran a store query. Throttles the store hit to once per minute.
+	// Only written from the single poller goroutine — no locking needed.
+	agentCertExpiryRefreshedAt time.Time
 
 	// pprofListenerAddr is non-empty when the operator has opted into the
 	// separate-listener pprof mode (S-07). When set, the admin-router

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // newMetricsTestServer builds a server with a stable clock and optionally a
@@ -240,6 +241,38 @@ func TestOutboundSupervisorGaugeViaAddOutboundSupervisor(t *testing.T) {
 
 	if !strings.Contains(body, `panvex_outbound_supervisors_total{mode="outbound"} 1`) {
 		t.Errorf("expected outbound supervisor gauge = 1 after +1+1-1, got:\n%s", body)
+	}
+}
+
+func TestCertExpiryGaugesRegisteredAndPopulated(t *testing.T) {
+	srv := newMetricsTestServer(t, "devtoken")
+	srv.refreshPolledMetrics()
+
+	code, body := scrapeMetricsText(t, srv, "devtoken")
+	if code != http.StatusOK {
+		t.Fatalf("scrape status = %d", code)
+	}
+	for _, name := range []string{
+		"panvex_ca_cert_expiry_timestamp_seconds",
+		"panvex_server_cert_expiry_timestamp_seconds",
+		"panvex_agent_cert_earliest_expiry_timestamp_seconds",
+	} {
+		if !strings.Contains(body, name) {
+			t.Errorf("scrape body missing %s", name)
+		}
+	}
+	// The test server's fixed clock is 2026-04-17 12:00:00 UTC.
+	// The CA NotAfter is fixed+5yr ≈ 2031; the server cert NotAfter is
+	// fixed+1yr ≈ 2027. Both must be strictly after time.Now() (i.e. > 0
+	// and definitely after the fixed clock itself).
+	if v := testutil.ToFloat64(srv.obs.caCertExpiryTimestamp); v <= 0 {
+		t.Errorf("ca expiry %v not positive", v)
+	}
+	if v := testutil.ToFloat64(srv.obs.serverCertExpiryTimestamp); v <= 0 {
+		t.Errorf("server cert expiry %v not positive", v)
+	}
+	if v := testutil.ToFloat64(srv.obs.agentCertEarliestExpiryTimestamp); v != 0 {
+		t.Errorf("agent earliest expiry = %v, want 0 with no agents", v)
 	}
 }
 

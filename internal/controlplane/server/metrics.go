@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -120,6 +121,14 @@ type metricsCollectors struct {
 	// labelled by result. Bounded enum: ok|mismatch|missing.
 	// Pre-initialised to zero for PromQL alert stability. (S-02)
 	agentCertPinTotal *prometheus.CounterVec
+
+	// F3 (audit 2026-06-09): certificate expiry surfaced as unix
+	// timestamps so PromQL can alert on `x - time() < threshold`.
+	// 0 means "not yet sampled / no data" — alert rules must guard
+	// with `> 0`.
+	caCertExpiryTimestamp            prometheus.Gauge
+	serverCertExpiryTimestamp        prometheus.Gauge
+	agentCertEarliestExpiryTimestamp prometheus.Gauge
 }
 
 // rateLimitScopes enumerates every scope label that can appear on
@@ -283,6 +292,18 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_agent_cert_pin_total",
 			Help: "Dial-time SPKI pin verification outcomes per outbound agent TLS handshake. Bounded label enum: ok|mismatch|missing. (S-02)",
 		}, []string{"result"}),
+		caCertExpiryTimestamp: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "panvex_ca_cert_expiry_timestamp_seconds",
+			Help: "Unix timestamp at which the panel's embedded CA certificate expires.",
+		}),
+		serverCertExpiryTimestamp: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "panvex_server_cert_expiry_timestamp_seconds",
+			Help: "Unix timestamp at which the panel's gRPC server certificate expires.",
+		}),
+		agentCertEarliestExpiryTimestamp: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "panvex_agent_cert_earliest_expiry_timestamp_seconds",
+			Help: "Unix timestamp of the earliest cert_expires_at across enrolled agents. 0 when no agents are enrolled or the value has not been sampled yet.",
+		}),
 	}
 
 	reg.MustRegister(
@@ -315,6 +336,9 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.outboundSupervisorsTotal,
 		mc.bootstrapAttemptsTotal,
 		mc.agentCertPinTotal,
+		mc.caCertExpiryTimestamp,
+		mc.serverCertExpiryTimestamp,
+		mc.agentCertEarliestExpiryTimestamp,
 	)
 
 	// Pre-initialise the per-buffer series to zero so Prometheus rules that
@@ -725,7 +749,52 @@ func (s *Server) refreshPolledMetrics() {
 	if s.loginLockout != nil {
 		s.obs.lockoutActive.Set(float64(s.loginLockout.ActiveCount(s.now())))
 	}
+	if s.authority != nil {
+		s.obs.caCertExpiryTimestamp.Set(float64(s.authority.certificate.NotAfter.Unix()))
+		if na := s.authority.serverCertNotAfter(); !na.IsZero() {
+			s.obs.serverCertExpiryTimestamp.Set(float64(na.Unix()))
+		}
+	}
+	s.refreshAgentCertExpiry()
 	s.refreshPoolMetrics()
+}
+
+// refreshAgentCertExpiry samples the earliest agent certificate expiry.
+// Unlike the rest of refreshPolledMetrics this touches the store, so it
+// is throttled to once per minute (the poller ticks every 5s). Only
+// called from the single poller goroutine — no locking on the
+// timestamp field.
+func (s *Server) refreshAgentCertExpiry() {
+	if s.obs == nil || s.store == nil {
+		return
+	}
+	now := s.now()
+	if !s.agentCertExpiryRefreshedAt.IsZero() && now.Sub(s.agentCertExpiryRefreshedAt) < time.Minute {
+		return
+	}
+	s.agentCertExpiryRefreshedAt = now
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	agents, err := s.store.ListAgents(ctx)
+	if err != nil {
+		slog.Warn("metrics: list agents for cert expiry failed", "err", err)
+		return
+	}
+	var earliest time.Time
+	for _, a := range agents {
+		if a.CertExpiresAt == nil {
+			continue
+		}
+		if earliest.IsZero() || a.CertExpiresAt.Before(earliest) {
+			earliest = *a.CertExpiresAt
+		}
+	}
+	if earliest.IsZero() {
+		s.obs.agentCertEarliestExpiryTimestamp.Set(0)
+		return
+	}
+	s.obs.agentCertEarliestExpiryTimestamp.Set(float64(earliest.Unix()))
 }
 
 // refreshPoolMetrics snapshots the storage backend's connection-pool
