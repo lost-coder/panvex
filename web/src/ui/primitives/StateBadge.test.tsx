@@ -6,7 +6,12 @@ describe("StateBadge", () => {
   it("renders a quiet glyph chip (no label) for the ok tone", () => {
     render(<StateBadge tone="ok" glyph="✓" label="ACTIVE" />);
     expect(screen.queryByText("ACTIVE")).not.toBeInTheDocument();
-    expect(screen.getByText("✓")).toHaveAttribute("aria-hidden", "true");
+    // ok tone renders a quiet aria-hidden chip with a lucide check icon
+    // (replaced the unicode ✓ glyph, which rendered as a dark emoji on
+    // some platforms), not a labelled pill.
+    const chip = document.querySelector('span[aria-hidden="true"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.querySelector("svg")).toBeInTheDocument();
   });
   it("renders a loud pill with the label for a non-ok tone", () => {
     render(<StateBadge tone="error" glyph="⛔" label="EXPIRED" />);

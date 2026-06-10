@@ -128,8 +128,9 @@ describe("ClientDetailPage", () => {
 
   it("renders a quiet ✓ badge for a healthy active client", () => {
     renderWithClient(<ClientDetailPage {...makeProps({ enabled: true, expirationRfc3339: "" })} />);
-    // ok-tone StateBadge is a quiet ✓ glyph, not a labelled pill.
-    expect(screen.getAllByText("✓").length).toBeGreaterThan(0);
+    // ok-tone StateBadge is a quiet lucide check-icon chip (replaced the
+    // unicode ✓ glyph), not a labelled pill.
+    expect(document.querySelectorAll("svg.lucide-check").length).toBeGreaterThan(0);
     // No loud problem-pill label should appear for a healthy client.
     expect(screen.queryByText(/disabled|expired|over quota|deploy failed/i)).toBeNull();
   });

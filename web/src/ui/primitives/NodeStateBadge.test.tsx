@@ -6,7 +6,11 @@ describe("NodeStateBadge", () => {
   it("renders a quiet ok glyph chip (no label word) for ok", () => {
     render(<NodeStateBadge state="ok" label="OK" />);
     expect(screen.queryByText("OK")).not.toBeInTheDocument();
-    expect(screen.getByText("✓")).toHaveAttribute("aria-hidden", "true");
+    // ok tone renders a quiet aria-hidden chip with a lucide check icon
+    // (replaced the unicode ✓ glyph), not a labelled pill.
+    const chip = document.querySelector('span[aria-hidden="true"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.querySelector("svg")).toBeInTheDocument();
   });
   it("renders a loud pill with the label for a problem state", () => {
     render(<NodeStateBadge state="down" label="DOWN" />);
