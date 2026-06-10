@@ -290,6 +290,11 @@ type EnrollmentStore interface {
 	GetEnrollmentToken(ctx context.Context, value string) (EnrollmentTokenRecord, error)
 	ConsumeEnrollmentToken(ctx context.Context, value string, consumedAt time.Time) (EnrollmentTokenRecord, error)
 	RevokeEnrollmentToken(ctx context.Context, value string, revokedAt time.Time) (EnrollmentTokenRecord, error)
+	// PruneEnrollmentTokens deletes tokens that can never be consumed
+	// again: consumed or revoked before the cutoff, or expired before
+	// the cutoff while never consumed. Live tokens are never touched.
+	// Returns the number of deleted rows (C4).
+	PruneEnrollmentTokens(ctx context.Context, before time.Time) (int64, error)
 }
 
 // AgentCertificateRecoveryGrantStore persists administrator-approved certificate recovery windows.

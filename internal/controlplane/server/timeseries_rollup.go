@@ -26,6 +26,11 @@ type RetentionSettings struct {
 	// (delivered or dead) are kept for operator audit before the rollup
 	// loop prunes them via webhooks.Storage.PruneOutbox (C4).
 	WebhookOutboxSeconds int `json:"webhook_outbox_seconds"`
+	// EnrollmentTokenSeconds bounds how long dead enrollment tokens
+	// (consumed, revoked, or expired-unconsumed) are kept for operator
+	// forensics before the rollup loop prunes them via
+	// PruneEnrollmentTokens (C4).
+	EnrollmentTokenSeconds int `json:"enrollment_token_seconds"`
 }
 
 func defaultRetentionSettings() RetentionSettings {
@@ -38,7 +43,8 @@ func defaultRetentionSettings() RetentionSettings {
 		AuditEventSeconds:     7776000, // 90d (P2-REL-04 / finding M-R2)
 		MetricSnapshotSeconds: 2592000, // 30d (P2-REL-05)
 		JobsSeconds:           2592000, // 30d (Q2.U-P-02)
-		WebhookOutboxSeconds:  2592000, // 30d
+		WebhookOutboxSeconds:   2592000, // 30d
+		EnrollmentTokenSeconds: 2592000, // 30d
 	}
 }
 
@@ -47,30 +53,32 @@ func defaultRetentionSettings() RetentionSettings {
 // the helper exists so callers do not depend on the alias in storage/store.go.
 func retentionSettingsToRecord(settings RetentionSettings) storage.RetentionSettings {
 	return storage.RetentionSettings{
-		TSRawSeconds:          settings.TSRawSeconds,
-		TSHourlySeconds:       settings.TSHourlySeconds,
-		TSDCSeconds:           settings.TSDCSeconds,
-		IPHistorySeconds:      settings.IPHistorySeconds,
-		EventSeconds:          settings.EventSeconds,
-		AuditEventSeconds:     settings.AuditEventSeconds,
-		MetricSnapshotSeconds: settings.MetricSnapshotSeconds,
-		JobsSeconds:           settings.JobsSeconds,
-		WebhookOutboxSeconds:  settings.WebhookOutboxSeconds,
+		TSRawSeconds:           settings.TSRawSeconds,
+		TSHourlySeconds:        settings.TSHourlySeconds,
+		TSDCSeconds:            settings.TSDCSeconds,
+		IPHistorySeconds:       settings.IPHistorySeconds,
+		EventSeconds:           settings.EventSeconds,
+		AuditEventSeconds:      settings.AuditEventSeconds,
+		MetricSnapshotSeconds:  settings.MetricSnapshotSeconds,
+		JobsSeconds:            settings.JobsSeconds,
+		WebhookOutboxSeconds:   settings.WebhookOutboxSeconds,
+		EnrollmentTokenSeconds: settings.EnrollmentTokenSeconds,
 	}
 }
 
 // retentionSettingsFromRecord is the inverse of retentionSettingsToRecord.
 func retentionSettingsFromRecord(record storage.RetentionSettings) RetentionSettings {
 	return RetentionSettings{
-		TSRawSeconds:          record.TSRawSeconds,
-		TSHourlySeconds:       record.TSHourlySeconds,
-		TSDCSeconds:           record.TSDCSeconds,
-		IPHistorySeconds:      record.IPHistorySeconds,
-		EventSeconds:          record.EventSeconds,
-		AuditEventSeconds:     record.AuditEventSeconds,
-		MetricSnapshotSeconds: record.MetricSnapshotSeconds,
-		JobsSeconds:           record.JobsSeconds,
-		WebhookOutboxSeconds:  record.WebhookOutboxSeconds,
+		TSRawSeconds:           record.TSRawSeconds,
+		TSHourlySeconds:        record.TSHourlySeconds,
+		TSDCSeconds:            record.TSDCSeconds,
+		IPHistorySeconds:       record.IPHistorySeconds,
+		EventSeconds:           record.EventSeconds,
+		AuditEventSeconds:      record.AuditEventSeconds,
+		MetricSnapshotSeconds:  record.MetricSnapshotSeconds,
+		JobsSeconds:            record.JobsSeconds,
+		WebhookOutboxSeconds:   record.WebhookOutboxSeconds,
+		EnrollmentTokenSeconds: record.EnrollmentTokenSeconds,
 	}
 }
 
@@ -176,6 +184,11 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 			s.obs.retentionPrunedRowsTotal.WithLabelValues("agent_revocations").Add(float64(pruned))
 		}
 	}
+
+	// 12. Prune dead enrollment tokens (C4): consumed/revoked/expired
+	// rows are kept EnrollmentTokenSeconds for operator forensics, then
+	// dropped.
+	s.runRetentionPrune(ctx, "enrollment_tokens", now, retention.EnrollmentTokenSeconds, s.store.PruneEnrollmentTokens)
 }
 
 // rollupRecentHours rebuilds hourly aggregates for the previous 2 hours so

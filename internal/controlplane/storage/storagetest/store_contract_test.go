@@ -1169,6 +1169,20 @@ func (s *memoryStore) RevokeEnrollmentToken(_ context.Context, value string, rev
 	return token, nil
 }
 
+func (s *memoryStore) PruneEnrollmentTokens(_ context.Context, before time.Time) (int64, error) {
+	var pruned int64
+	for value, rec := range s.enrollmentTokens {
+		dead := (rec.ConsumedAt != nil && rec.ConsumedAt.Before(before)) ||
+			(rec.RevokedAt != nil && rec.RevokedAt.Before(before)) ||
+			(rec.ConsumedAt == nil && rec.RevokedAt == nil && rec.ExpiresAt.Before(before))
+		if dead {
+			delete(s.enrollmentTokens, value)
+			pruned++
+		}
+	}
+	return pruned, nil
+}
+
 func (s *memoryStore) PutAgentCertificateRecoveryGrant(_ context.Context, grant storage.AgentCertificateRecoveryGrantRecord) error {
 	s.agentCertificateRecoveryGrants[grant.AgentID] = grant
 	return nil

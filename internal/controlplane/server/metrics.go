@@ -137,6 +137,7 @@ var retentionPruneTables = []string{
 	"jobs",
 	"webhook_outbox",
 	"agent_revocations",
+	"enrollment_tokens",
 }
 
 // knownBatchBuffers enumerates every batch buffer tracked by

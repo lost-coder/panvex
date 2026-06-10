@@ -387,6 +387,11 @@ type RetentionSettingsRecord struct {
 	// (delivered or dead) are kept for operator audit before the rollup
 	// loop prunes them via webhooks.Storage.PruneOutbox (C4).
 	WebhookOutboxSeconds int `json:"webhook_outbox_seconds"`
+	// EnrollmentTokenSeconds bounds how long dead enrollment tokens
+	// (consumed, revoked, or expired-unconsumed) are kept for operator
+	// forensics before the rollup loop prunes them via
+	// PruneEnrollmentTokens (C4).
+	EnrollmentTokenSeconds int `json:"enrollment_token_seconds"`
 }
 
 // CertificateAuthorityRecord stores the persisted control-plane root CA material.
