@@ -130,9 +130,21 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 func newAgentCertificateRecoveryRequestForTest(t *testing.T, server *Server, agentID string, observedAt time.Time) map[string]any {
 	t.Helper()
 
-	issued, err := server.authority.issueClientCertificate(agentID, observedAt.Add(-time.Hour))
+	existingKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatalf("issueClientCertificate() error = %v", err)
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	existingCSRDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: agentID},
+	}, existingKey)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest() error = %v", err)
+	}
+	existingCSRPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: existingCSRDER}))
+
+	issued, err := server.authority.issueAgentCertificateFromCSR(existingCSRPEM, agentID, agentCertificateLifetime, true, observedAt.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("issueAgentCertificateFromCSR() error = %v", err)
 	}
 	certificate, err := parseRecoveryCertificate(issued.CertificatePEM)
 	if err != nil {
@@ -142,7 +154,7 @@ func newAgentCertificateRecoveryRequestForTest(t *testing.T, server *Server, age
 		t.Fatalf("verifyRecoveryCertificate() error = %v", err)
 	}
 
-	privateKey := parseRecoveryPrivateKeyForTest(t, issued.PrivateKeyPEM)
+	privateKey := existingKey
 	proofTimestampUnix := observedAt.Unix()
 	proofNonce := "recovery-nonce-123"
 	payload := recoveryProofPayload(agentID, proofTimestampUnix, proofNonce)
@@ -170,22 +182,6 @@ func newAgentCertificateRecoveryRequestForTest(t *testing.T, server *Server, age
 		"proof_signature":      base64.RawURLEncoding.EncodeToString(signature),
 		"csr_pem":              csrPEM,
 	}
-}
-
-func parseRecoveryPrivateKeyForTest(t *testing.T, privateKeyPEM string) *ecdsa.PrivateKey {
-	t.Helper()
-
-	block, _ := pem.Decode([]byte(privateKeyPEM))
-	if block == nil {
-		t.Fatal("pem.Decode(private key) = nil, want key block")
-	}
-
-	privateKey, err := x509.ParseECPrivateKey(block.Bytes)
-	if err != nil {
-		t.Fatalf("ParseECPrivateKey() error = %v", err)
-	}
-
-	return privateKey
 }
 
 func seedRecoveryTestAgent(t *testing.T, server *Server, store *sqlite.Store, now time.Time) {

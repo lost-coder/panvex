@@ -95,6 +95,14 @@ only the CSR, and validates the returned cert pairs with the new key before
 persisting. The dial-mode outer pre-connection `RenewCertificate` unary RPC is
 retained as a fallback but is skipped in listen mode.
 
+All issuance paths (HTTP enrollment, unary renewal, recovery) are CSR-based:
+the panel **never** generates agent private keys. When dialing listen-mode
+agents the panel presents a dedicated CLIENT certificate with
+CN=`control-plane.panvex.internal` (ClientAuth EKU only); agent certificates
+carry dual EKU (ClientAuth+ServerAuth) with SAN
+`<agent_id>.agents.panvex.internal`, and listen-mode agents verify the
+dialing peer's leaf CN against `PanelClientCN`.
+
 ## Tech stack
 
 - **Go 1.26**: chi/v5 router, pgx/v5, modernc.org/sqlite, gRPC, WebSocket

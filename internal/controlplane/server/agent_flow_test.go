@@ -1065,14 +1065,14 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 }
 
 // TestEnrollAgentCertIssuanceFailureLeavesNoPartialState pins D-1: when
-// issueClientCertificate fails, enrollAgent must not leave the agent
-// persisted in the DB or in the in-memory mirror. Pre-D-1 ordering wrote
-// PutAgent first and only then issued the cert, so a cert-issuance error
-// left a partial row + memory entry that required manual cleanup.
+// cert issuance fails, enrollAgent must not leave the agent persisted in
+// the DB or in the in-memory mirror. Pre-D-1 ordering wrote PutAgent first
+// and only then issued the cert, so a cert-issuance error left a partial
+// row + memory entry that required manual cleanup.
 //
-// We inject the failure by zeroing the authority's signing private key
-// after construction. x509.CreateCertificate then fails inside
-// issueClientCertificate before any cert bytes are produced.
+// We inject the failure by swapping the CA signing key for one on a
+// different curve so x509.CreateCertificate fails inside
+// issueAgentCertificateFromCSR before any cert bytes are produced.
 func TestEnrollAgentCertIssuanceFailureLeavesNoPartialState(t *testing.T) {
 	now := time.Date(2026, time.May, 12, 10, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)

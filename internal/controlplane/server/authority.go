@@ -40,7 +40,6 @@ const (
 
 type issuedCertificate struct {
 	CertificatePEM string
-	PrivateKeyPEM  string
 	CAPEM          string
 	ExpiresAt      time.Time
 	// Serial is the hex-encoded big-endian certificate serial. Used by
@@ -319,50 +318,6 @@ func (a *certificateAuthority) record(now time.Time, encryptionKey string) (stor
 		CAPEM:         a.caPEM,
 		PrivateKeyPEM: keyPEM,
 		UpdatedAt:     now.UTC(),
-	}, nil
-}
-
-func (a *certificateAuthority) issueClientCertificate(commonName string, now time.Time) (issuedCertificate, error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return issuedCertificate{}, err
-	}
-
-	serial, err := randomSerial()
-	if err != nil {
-		return issuedCertificate{}, err
-	}
-
-	expiresAt := now.Add(agentCertificateLifetime)
-	certificate := &x509.Certificate{
-		SerialNumber: serial,
-		Subject: pkix.Name{
-			CommonName:   commonName,
-			Organization: []string{"Panvex Agents"},
-		},
-		NotBefore:    now.Add(-time.Minute),
-		NotAfter:     expiresAt,
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-		SubjectKeyId: serial.Bytes(),
-	}
-
-	der, err := x509.CreateCertificate(rand.Reader, certificate, a.certificate, privateKey.Public(), a.privateKey)
-	if err != nil {
-		return issuedCertificate{}, err
-	}
-
-	privateDER, err := x509.MarshalECPrivateKey(privateKey)
-	if err != nil {
-		return issuedCertificate{}, err
-	}
-
-	return issuedCertificate{
-		CertificatePEM: encodePEM("CERTIFICATE", der),
-		PrivateKeyPEM:  encodePEM(pemTypeECPrivateKey, privateDER),
-		CAPEM:          a.caPEM,
-		ExpiresAt:      expiresAt,
-		Serial:         serial.Text(16),
 	}, nil
 }
 

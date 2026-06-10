@@ -2,8 +2,12 @@ package server
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"testing"
 	"time"
@@ -31,7 +35,19 @@ func TestPersistAgentCertPinStoresSPKIHash(t *testing.T) {
 	store := &pinRecordingStore{Store: srv.store, pins: map[string][]byte{}}
 	srv.store = store
 
-	issued, err := srv.authority.issueClientCertificate("agent-pin", now)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: "agent-pin"},
+	}, key)
+	if err != nil {
+		t.Fatalf("create csr: %v", err)
+	}
+	csrPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}))
+
+	issued, err := srv.authority.issueAgentCertificateFromCSR(csrPEM, "agent-pin", agentCertificateLifetime, true, now)
 	if err != nil {
 		t.Fatalf("issue cert: %v", err)
 	}
