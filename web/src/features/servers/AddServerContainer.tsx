@@ -115,6 +115,15 @@ export function AddServerContainer() {
   const tokenExpiresInSecs =
     tokenExpiresAtUnix === null ? 0 : Math.max(0, tokenExpiresAtUnix - nowSec);
 
+  // Bumping pollEpoch re-arms the step-3 polling effects after they
+  // returned on MAX_CONSECUTIVE_FAILURES — the "Retry" action in
+  // ConnectStep (audit E1: polling silently halted forever).
+  const [pollEpoch, setPollEpoch] = useState(0);
+  const handleRetryPolling = useCallback(() => {
+    setError(undefined);
+    setPollEpoch((e) => e + 1);
+  }, []);
+
   useEffect(() => {
     const first = fleetGroups[0];
     if (first && !selectedFleetGroup) {
@@ -355,7 +364,7 @@ export function AddServerContainer() {
     return () => {
       cancelled = true;
     };
-  }, [step, mode, tokenValue, nodeName, applyAgentStatus, t]);
+  }, [step, mode, tokenValue, nodeName, applyAgentStatus, t, pollEpoch]);
 
   // Outbound polling: the agent_id is already known (we created it).
   // We just wait for the panel's outbound supervisor to land a session
@@ -405,7 +414,7 @@ export function AddServerContainer() {
     return () => {
       cancelled = true;
     };
-  }, [step, mode, outboundData, applyAgentStatus, t]);
+  }, [step, mode, outboundData, applyAgentStatus, t, pollEpoch]);
 
   const fleetGroupOptions = fleetGroups.map((g) => ({
     id: g.id,
@@ -494,6 +503,8 @@ export function AddServerContainer() {
             }
           }}
           onCancel={goBack}
+          onRetryPolling={handleRetryPolling}
+          onViewAttempts={() => void navigate({ to: "/enrollment-attempts" })}
           loading={loading}
           error={error}
         />

@@ -13,6 +13,9 @@ export function ConnectStep({
   tokenExpiresInSecs,
   onViewDetails,
   onCancel,
+  onRetryPolling,
+  onViewAttempts,
+  error,
 }: Readonly<EnrollmentWizardProps>) {
   const { t } = useTranslation("enrollment");
   const allDone =
@@ -104,6 +107,24 @@ export function ConnectStep({
       )}
 
       <TokenFooter tokenValue={tokenValue} remainingSecs={tokenExpiresInSecs} />
+
+      {error && (
+        <div className="rounded-xs bg-status-error/8 border border-status-error/25 p-3 text-xs text-status-error flex flex-col gap-2">
+          <span>{error}</span>
+          <div className="flex gap-2">
+            {onRetryPolling && (
+              <Button size="sm" variant="ghost" onClick={onRetryPolling}>
+                {t("connect.retry")}
+              </Button>
+            )}
+            {onViewAttempts && (
+              <Button size="sm" variant="ghost" onClick={onViewAttempts}>
+                {t("connect.viewAttempts")}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       <Button variant="ghost" onClick={onCancel}>
         {t("connect.cancel")}

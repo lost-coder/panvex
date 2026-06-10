@@ -221,6 +221,8 @@
       }
     },
     "online": "is online. Redirecting to the server page…",
+    "retry": "Retry",
+    "viewAttempts": "Open enrollment log",
     "cancel": "Cancel"
   }
 }
