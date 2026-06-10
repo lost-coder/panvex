@@ -138,29 +138,6 @@ func TestSendInitialMessagesContinuesWhenUsageMetricsAreUnavailable(t *testing.T
 	}
 }
 
-func TestConnectStreamWithSetupTimeoutKeepsStreamContextAliveAfterSuccessfulConnect(t *testing.T) {
-	stream, err := connectStreamWithSetupTimeout(20*time.Millisecond, func(ctx context.Context) (gatewayrpc.AgentGateway_ConnectClient, error) {
-		return &fakeAgentGatewayConnectClient{ctx: ctx}, nil
-	})
-	if err != nil {
-		t.Fatalf("connectStreamWithSetupTimeout() error = %v", err)
-	}
-
-	select {
-	case <-stream.Context().Done():
-		t.Fatal("stream context canceled immediately after successful connect")
-	default:
-	}
-
-	time.Sleep(50 * time.Millisecond)
-
-	select {
-	case <-stream.Context().Done():
-		t.Fatal("stream context canceled after setup timeout elapsed")
-	default:
-	}
-}
-
 func TestRunJobWorkerSendsDiagnosticsSnapshotBeforeSuccessResult(t *testing.T) {
 	connectionCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()

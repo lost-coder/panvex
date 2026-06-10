@@ -152,36 +152,6 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 	return nil
 }
 
-// connectStreamWithSetupTimeout opens a gRPC bidi stream via connect, cancelling
-// the connect context if it does not return within timeout. On success the stream
-// owns its context; cancelling the returned cancel is a no-op after the call.
-func connectStreamWithSetupTimeout(
-	timeout time.Duration,
-	connect func(context.Context) (gatewayrpc.AgentGateway_ConnectClient, error),
-) (gatewayrpc.AgentGateway_ConnectClient, error) {
-	connectCtx, cancelConnect := context.WithCancel(context.Background())
-	var setupTimer *time.Timer
-	if timeout > 0 {
-		setupTimer = time.AfterFunc(timeout, cancelConnect)
-	}
-
-	stream, err := connect(connectCtx)
-	if setupTimer != nil {
-		setupTimer.Stop()
-	}
-	if err != nil {
-		cancelConnect()
-		return nil, err
-	}
-
-	// On success the stream owns connectCtx — cancelling it would kill the
-	// stream immediately because gRPC derives the stream context from the
-	// one passed to Connect(). The context will be released when the stream
-	// closes naturally.
-	_ = cancelConnect //nolint:ineffassign // cancel is transferred to the stream lifecycle
-	return stream, nil
-}
-
 func handleClientDataRequest(
 	connectionCtx context.Context,
 	agent *runtime.Agent,
