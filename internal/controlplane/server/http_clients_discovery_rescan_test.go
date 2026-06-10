@@ -34,9 +34,9 @@ func TestRescanDiscoveredClientsNudgesSessions(t *testing.T) {
 	cookies := loginResp.Result().Cookies()
 
 	// Register two live sessions — both should receive the rediscovery flag.
-	a, ua := s.sessions.Register("agent-a")
+	a, ua := s.sessions.Register("agent-a", nil)
 	t.Cleanup(ua)
-	b, ub := s.sessions.Register("agent-b")
+	b, ub := s.sessions.Register("agent-b", nil)
 	t.Cleanup(ub)
 
 	resp := performJSONRequest(t, s, http.MethodPost, "/api/discovered-clients/rescan", nil, cookies)
