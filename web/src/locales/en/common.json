@@ -7,6 +7,8 @@
     "pending": "PENDING"
   },
   "empty": "No data",
+  "toast": { "close": "Dismiss notification" },
+  "typeToConfirm": { "prompt": "To confirm, type" },
   "sortBy": "Sort by",
   "sortNone": "Default order",
   "sortAscending": "Sort ascending",

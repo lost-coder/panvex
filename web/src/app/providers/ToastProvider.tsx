@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { cn, type ToastVariant } from "@/ui";
 
 // Public API for app code. Consumers call useToast() and receive ToastAPI.
@@ -95,6 +96,7 @@ function StackedToast({
   entry: ToastEntry;
   onClose: () => void;
 }>) {
+  const { t } = useTranslation("common");
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -139,7 +141,7 @@ function StackedToast({
       ) : null}
       <button
         type="button"
-        aria-label="Закрыть уведомление"
+        aria-label={t("toast.close")}
         onClick={onClose}
         className={cn(
           "pointer-events-auto ml-2 shrink-0 inline-flex h-6 w-6 items-center justify-center rounded-xs",
