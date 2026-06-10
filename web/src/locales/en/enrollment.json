@@ -190,13 +190,15 @@
         "body": "Go back and generate a new token. Tokens are single-use and time-limited."
       }
     },
-    "footer": {
-      "token": "Token:",
-      "expiresIn": "Expires in:",
-      "minutes": "{{count}} min"
-    },
     "back": "← Back",
     "confirm": "I've run the command →"
+  },
+  "tokenFooter": {
+    "token": "Token:",
+    "expiresIn": "Expires in:",
+    "minutes": "{{count}} min",
+    "expired": "Token expired",
+    "regenerate": "New token"
   },
   "connect": {
     "stages": {
@@ -219,11 +221,6 @@
       }
     },
     "online": "is online. Redirecting to the server page…",
-    "footer": {
-      "token": "Token:",
-      "expiresIn": "Expires in:",
-      "minutes": "{{count}} min"
-    },
     "cancel": "Cancel"
   }
 }

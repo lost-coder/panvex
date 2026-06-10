@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { useNowSec } from "@/shared/hooks/useNowSec";
 import { EnrollmentWizard } from "@/features/enrollment/EnrollmentWizard";
 import type {
   EnrollmentWizardProps,
@@ -94,10 +95,10 @@ export function AddServerContainer() {
   // renders the pre-baked command verbatim and step 3 polls the
   // resulting agent_id. Mutually exclusive with tokenData.
   const [outboundData, setOutboundData] = useState<ProvisionOutboundAgentResponse | null>(null);
-  // Captured at token-generation time so the displayed countdown is a
-  // pure function of render. Calling Date.now() during render is flagged
-  // by react-hooks/purity (7.1.x) because the value drifts across renders.
-  const [tokenExpiresInSecs, setTokenExpiresInSecs] = useState(0);
+  // Expiry is stored as the absolute unix deadline; the rendered
+  // "Expires in N min" is derived from useNowSec so it stays live
+  // (30 s tick) instead of freezing at mint time (audit E1).
+  const [tokenExpiresAtUnix, setTokenExpiresAtUnix] = useState<number | null>(null);
 
   const [connectionStatus, setConnectionStatus] = useState<
     EnrollmentWizardProps["connectionStatus"]
@@ -109,6 +110,10 @@ export function AddServerContainer() {
   const [connectedAgent, setConnectedAgent] = useState<
     EnrollmentWizardProps["connectedAgent"] | undefined
   >();
+
+  const nowSec = useNowSec();
+  const tokenExpiresInSecs =
+    tokenExpiresAtUnix === null ? 0 : Math.max(0, tokenExpiresAtUnix - nowSec);
 
   useEffect(() => {
     const first = fleetGroups[0];
@@ -203,9 +208,7 @@ export function AddServerContainer() {
         });
         setOutboundData(result);
         setTokenData(null);
-        setTokenExpiresInSecs(
-          Math.max(0, result.expires_at_unix - Math.floor(Date.now() / 1000)),
-        );
+        setTokenExpiresAtUnix(result.expires_at_unix);
         setStep(2);
         return;
       }
@@ -215,9 +218,7 @@ export function AddServerContainer() {
       });
       setTokenData(result);
       setOutboundData(null);
-      setTokenExpiresInSecs(
-        Math.max(0, result.expires_at_unix - Math.floor(Date.now() / 1000)),
-      );
+      setTokenExpiresAtUnix(result.expires_at_unix);
       setStep(2);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("error.tokenCreateFailed"));

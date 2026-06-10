@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/ui/lib/cn";
 import { Button } from "@/ui/base/button";
 import type { EnrollmentWizardProps } from "@/shared/api/types-pages/pages";
+import { TokenFooter } from "./TokenFooter";
 
 export function ConnectStep({
   connectionStatus,
@@ -26,8 +27,6 @@ export function ConnectStep({
     }
     return undefined;
   }, [allDone, connectedAgent, onViewDetails]);
-
-  const expiresMin = Math.round(tokenExpiresInSecs / 60);
   const stages: Array<{
     key: string;
     label: string;
@@ -104,17 +103,7 @@ export function ConnectStep({
         </div>
       )}
 
-      <div className="flex items-center justify-between text-xs text-fg-muted rounded-xs bg-bg-card border border-divider px-3 py-2">
-        <span>
-          {t("connect.footer.token")} <span className="font-mono">{tokenValue.slice(0, 12)}…</span>
-        </span>
-        <span>
-          {t("connect.footer.expiresIn")}{" "}
-          <span className="text-status-warn">
-            {t("connect.footer.minutes", { count: expiresMin })}
-          </span>
-        </span>
-      </div>
+      <TokenFooter tokenValue={tokenValue} remainingSecs={tokenExpiresInSecs} />
 
       <Button variant="ghost" onClick={onCancel}>
         {t("connect.cancel")}

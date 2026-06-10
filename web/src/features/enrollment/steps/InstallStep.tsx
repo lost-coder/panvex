@@ -5,6 +5,7 @@ import { cn } from "@/ui/lib/cn";
 import { Button } from "@/ui/base/button";
 import { CopyButton } from "@/ui/primitives/CopyButton";
 import type { EnrollmentWizardProps } from "@/shared/api/types-pages/pages";
+import { TokenFooter } from "./TokenFooter";
 
 export function InstallStep({
   installCommand,
@@ -13,10 +14,10 @@ export function InstallStep({
   onBack,
   tokenValue,
   tokenExpiresInSecs,
+  onGenerateToken,
 }: Readonly<EnrollmentWizardProps>) {
   const { t } = useTranslation("enrollment");
   const [showTroubleshooting, setShowTroubleshooting] = useState(false);
-  const expiresMin = Math.round(tokenExpiresInSecs / 60);
 
   const requirements: Array<{
     label: string;
@@ -137,18 +138,11 @@ export function InstallStep({
         </div>
       )}
 
-      <div className="flex items-center justify-between text-xs text-fg-muted rounded-xs bg-bg-card border border-divider px-3 py-2">
-        <span>
-          {t("installCommand.footer.token")}{" "}
-          <span className="font-mono">{tokenValue.slice(0, 12)}…</span>
-        </span>
-        <span>
-          {t("installCommand.footer.expiresIn")}{" "}
-          <span className="text-status-warn">
-            {t("installCommand.footer.minutes", { count: expiresMin })}
-          </span>
-        </span>
-      </div>
+      <TokenFooter
+        tokenValue={tokenValue}
+        remainingSecs={tokenExpiresInSecs}
+        onRegenerate={onGenerateToken}
+      />
 
       <div className="flex gap-2">
         <Button variant="ghost" onClick={onBack}>
