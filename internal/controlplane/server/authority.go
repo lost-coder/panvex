@@ -194,6 +194,18 @@ func reEncryptCertificateAuthority(ctx context.Context, store storage.Certificat
 	return nil
 }
 
+// RotateCertificateAuthority mints a fresh CA and overwrites the stored
+// record. Used by the `rotate-ca` CLI subcommand — the only safe, operator-
+// acknowledged path for CA replacement. Every enrolled agent must re-enroll
+// after.
+func RotateCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) error {
+	if store == nil {
+		return errors.New("rotate-ca requires a persistent store")
+	}
+	_, err := persistNewCertificateAuthority(ctx, store, now, encryptionKey)
+	return err
+}
+
 // persistNewCertificateAuthority generates a fresh CA and stores it. Used by
 // the bootstrap path (no record yet) and by RotateCertificateAuthority (the
 // explicit rotate-ca subcommand). Expired CA records are no longer silently

@@ -224,6 +224,22 @@ func TestExpiredCAFailsLoudInsteadOfSilentRegen(t *testing.T) {
 	}
 }
 
+func TestRotateCertificateAuthorityReplacesRecord(t *testing.T) {
+	store := newCAStoreForTest(t)
+	seedExpiredCertificateAuthority(t, store)
+	before, _ := store.GetCertificateAuthority(context.Background())
+	if err := RotateCertificateAuthority(context.Background(), store, time.Now(), ""); err != nil {
+		t.Fatalf("RotateCertificateAuthority: %v", err)
+	}
+	after, err := store.GetCertificateAuthority(context.Background())
+	if err != nil {
+		t.Fatalf("get after rotate: %v", err)
+	}
+	if after.CAPEM == before.CAPEM {
+		t.Fatal("rotate must mint a fresh CA certificate")
+	}
+}
+
 func TestSignCSRIssuesDualEKUServingCert(t *testing.T) {
 	now := time.Now()
 	authority, err := newCertificateAuthority(now)
