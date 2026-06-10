@@ -14,11 +14,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "@tanstack/react-router";
 
 import { Button, Spinner } from "@/ui";
 import { SectionHeader } from "@/ui/layout/SectionHeader";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useUnsavedChangesGuard } from "@/shared/hooks";
+import { useServersList } from "@/features/servers/hooks/useServersList";
 
 import {
   useApplyGroupConfig,
@@ -66,6 +68,16 @@ function toDriftStatus(status: string): DriftStatus {
 export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
   const { t } = useTranslation("servers");
   const toast = useToast();
+  const navigate = useNavigate();
+
+  // The drift payload carries agent_id only (groupConfigNodeDrift on the
+  // backend has no node_name) — resolve display names from the cached
+  // agents list instead of showing raw UUIDs (audit E5).
+  const { servers } = useServersList();
+  const nameById = useMemo(
+    () => new Map(servers.map((s) => [s.id, s.name])),
+    [servers],
+  );
 
   const { data, isLoading, isError } = useGroupConfig(groupId);
   const putMutation = usePutGroupConfig(groupId);
@@ -181,9 +193,16 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
                 key={node.agent_id}
                 className="flex items-center justify-between gap-3 rounded-xs border border-divider px-3 py-2"
               >
-                <span className="font-mono text-xs text-fg truncate">
-                  {node.agent_id}
-                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void navigate({ to: "/servers/$serverId", params: { serverId: node.agent_id } })
+                  }
+                  className="font-mono text-xs text-fg truncate text-left hover:text-accent hover:underline"
+                  title={node.agent_id}
+                >
+                  {nameById.get(node.agent_id) ?? node.agent_id}
+                </button>
                 <DriftBadge status={toDriftStatus(node.status)} />
               </li>
             ))}

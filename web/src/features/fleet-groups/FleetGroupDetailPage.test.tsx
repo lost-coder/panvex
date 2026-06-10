@@ -17,7 +17,14 @@ vi.mock("@/app/providers/ToastProvider", () => ({
 }));
 // useUnsavedChangesGuard (audit E4) calls useBlocker + useConfirm.
 // Mock both so the page renders without a Router or ConfirmProvider.
-vi.mock("@tanstack/react-router", () => ({ useBlocker: vi.fn() }));
+vi.mock("@tanstack/react-router", () => ({
+  useBlocker: vi.fn(),
+  useNavigate: () => vi.fn(),
+}));
+
+vi.mock("@/features/servers/hooks/useServersList", () => ({
+  useServersList: () => ({ servers: [], agentVersions: {}, isLoading: false, error: null }),
+}));
 vi.mock("@/app/providers/ConfirmProvider", () => ({
   useConfirm: () => vi.fn().mockResolvedValue(true),
 }));
