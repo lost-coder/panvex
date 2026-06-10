@@ -384,6 +384,11 @@
     "confirmBody": "\"{{name}}\" will disconnect from the control-plane and stop receiving rollouts. Re-enrollment requires a new token.",
     "feedbackInitiated": "Update initiated"
   },
+  "bulk": {
+    "queued_one": "Action queued for {{count}} server.",
+    "queued_other": "Action queued for {{count}} servers.",
+    "viewActivity": "View in Activity"
+  },
   "config": {
     "tab": "Config",
     "section": {

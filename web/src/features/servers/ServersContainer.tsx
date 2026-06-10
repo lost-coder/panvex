@@ -13,6 +13,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
 import { useWsUpdateFlash } from "@/shared/hooks/useWsUpdateFlash";
 import { apiClient } from "@/shared/api/api";
+import { useToast } from "@/app/providers/ToastProvider";
 
 const BULK_ACTION_MAP: Record<BulkServerAction, string> = {
   reload: "runtime.reload",
@@ -28,6 +29,7 @@ export function ServersContainer() {
   const latestAgentVersion = updatesQuery.data?.state.latest_agent_version;
   const navigate = useNavigate();
   const flashing = useWsUpdateFlash();
+  const toast = useToast();
 
   const [bulkError, setBulkError] = useState<string | undefined>();
   const bulkMutation = useMutation({
@@ -47,7 +49,19 @@ export function ServersContainer() {
     },
     onError: (err: unknown) =>
       setBulkError(err instanceof Error ? err.message : t("error.bulkActionFailed")),
-    onSuccess: () => setBulkError(undefined),
+    onSuccess: (_data, vars) => {
+      setBulkError(undefined);
+      // Audit E5: bulk actions were fire-and-forget — confirm the enqueue
+      // and hand the operator a one-tap path to watch the rollout.
+      toast.withAction(
+        "success",
+        t("bulk.queued", { count: vars.agentIds.length }),
+        {
+          label: t("bulk.viewActivity"),
+          onClick: () => void navigate({ to: "/activity" }),
+        },
+      );
+    },
   });
 
   // P2-UX-05: persist viewMode in the URL so a shared link lands in the
