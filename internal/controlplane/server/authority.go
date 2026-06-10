@@ -419,6 +419,21 @@ func (s *Server) persistAgentCertPin(ctx context.Context, agentID, certPEM strin
 	}
 }
 
+// serverCertNotAfter parses the leaf of the panel's gRPC serving
+// certificate and returns its NotAfter. tls.X509KeyPair does not retain
+// Leaf, so this re-parses Certificate[0]; one small parse per metrics
+// poll tick (5s) is negligible. Zero time on any malformed state.
+func (ca *certificateAuthority) serverCertNotAfter() time.Time {
+	if ca == nil || len(ca.serverCertificate.Certificate) == 0 {
+		return time.Time{}
+	}
+	leaf, err := x509.ParseCertificate(ca.serverCertificate.Certificate[0])
+	if err != nil {
+		return time.Time{}
+	}
+	return leaf.NotAfter
+}
+
 func encodePEM(blockType string, bytes []byte) string {
 	return string(pem.EncodeToMemory(&pem.Block{
 		Type:  blockType,
