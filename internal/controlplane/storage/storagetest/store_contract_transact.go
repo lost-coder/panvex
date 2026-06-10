@@ -23,12 +23,12 @@ func runTransactContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		groupA := storage.FleetGroupRecord{
-			ID:        "tx-commit-group-a",
+			ID:        "00000000-0000-4000-8000-000000000009",
 			Name:      "tx-commit-group-a",
 			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		}
 		groupB := storage.FleetGroupRecord{
-			ID:        "tx-commit-group-b",
+			ID:        "00000000-0000-4000-8000-00000000000a",
 			Name:      "tx-commit-group-b",
 			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		}
@@ -57,12 +57,12 @@ func runTransactContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		groupA := storage.FleetGroupRecord{
-			ID:        "tx-rollback-group-a",
+			ID:        "00000000-0000-4000-8000-00000000000c",
 			Name:      "tx-rollback-group-a",
 			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		}
 		groupB := storage.FleetGroupRecord{
-			ID:        "tx-rollback-group-b",
+			ID:        "00000000-0000-4000-8000-00000000000d",
 			Name:      "tx-rollback-group-b",
 			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		}
@@ -92,7 +92,7 @@ func runTransactContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{
-			ID:        "tx-panic-group",
+			ID:        "00000000-0000-4000-8000-00000000000b",
 			Name:      "tx-panic-group",
 			CreatedAt: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		}
@@ -156,7 +156,7 @@ func runTransactContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 
-		const groupID = "tx-concurrent-group"
+		const groupID = "00000000-0000-4000-8000-00000000000e"
 		type result struct {
 			err    error
 			winner string
