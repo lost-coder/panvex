@@ -1051,3 +1051,105 @@ func TestExpiryWatermarkClearedWhenNothingCanExpire(t *testing.T) {
 		t.Fatal("fast path must stay negative with an empty watermark")
 	}
 }
+
+// TestEnqueueSupersedesOlderPendingClientJobs guards D4: a newer client.*
+// job for the same client_id terminates still-pending targets of older
+// client.* jobs (on the agents the new job covers), so a redelivered stale
+// payload can never clobber newer applied state.
+func TestEnqueueSupersedesOlderPendingClientJobs(t *testing.T) {
+	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return base })
+
+	older, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1", "agent-2"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "upd-1",
+		PayloadJSON:    `{"client_id":"c-1","max_tcp_conns":1}`,
+	}, base)
+	if err != nil {
+		t.Fatalf("enqueue older: %v", err)
+	}
+	otherClient, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "upd-other",
+		PayloadJSON:    `{"client_id":"c-2","max_tcp_conns":3}`,
+	}, base)
+	if err != nil {
+		t.Fatalf("enqueue other-client: %v", err)
+	}
+
+	newer, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "upd-2",
+		PayloadJSON:    `{"client_id":"c-1","max_tcp_conns":5}`,
+	}, base.Add(time.Second))
+	if err != nil {
+		t.Fatalf("enqueue newer: %v", err)
+	}
+
+	got, ok := service.Get(older.ID)
+	if !ok {
+		t.Fatalf("older job disappeared")
+	}
+	statusByAgent := map[string]JobTarget{}
+	for _, target := range got.Targets {
+		statusByAgent[target.AgentID] = target
+	}
+	if statusByAgent["agent-1"].Status != TargetStatusExpired {
+		t.Fatalf("agent-1 target status = %s, want expired (superseded)", statusByAgent["agent-1"].Status)
+	}
+	if want := "superseded by " + newer.ID; statusByAgent["agent-1"].ResultText != want {
+		t.Fatalf("agent-1 result_text = %q, want %q", statusByAgent["agent-1"].ResultText, want)
+	}
+	if statusByAgent["agent-2"].Status != TargetStatusQueued {
+		t.Fatalf("agent-2 target status = %s, want queued", statusByAgent["agent-2"].Status)
+	}
+
+	pendingIDs := map[string]bool{}
+	for _, job := range service.PendingForAgent(context.Background(), "agent-1", 30*time.Second) {
+		pendingIDs[job.ID] = true
+	}
+	if pendingIDs[older.ID] {
+		t.Fatal("superseded job must not be pending for agent-1")
+	}
+	if !pendingIDs[newer.ID] || !pendingIDs[otherClient.ID] {
+		t.Fatalf("pending for agent-1 = %v, want newer + other-client jobs", pendingIDs)
+	}
+}
+
+// TestEnqueueDoesNotSupersedeNonClientActions pins the scope: only client.*
+// payload-frozen jobs participate; node-level actions are untouched.
+func TestEnqueueDoesNotSupersedeNonClientActions(t *testing.T) {
+	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return base })
+
+	reload, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "reload-1",
+	}, base)
+	if err != nil {
+		t.Fatalf("enqueue reload: %v", err)
+	}
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "upd-3",
+		PayloadJSON:    `{"client_id":"c-9"}`,
+	}, base.Add(time.Second)); err != nil {
+		t.Fatalf("enqueue client update: %v", err)
+	}
+	got, _ := service.Get(reload.ID)
+	if got.Targets[0].Status != TargetStatusQueued {
+		t.Fatalf("runtime.reload target status = %s, want queued", got.Targets[0].Status)
+	}
+}

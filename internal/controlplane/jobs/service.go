@@ -527,7 +527,6 @@ func (s *Service) Enqueue(ctx context.Context, input CreateJobInput, now time.Ti
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	s.jobs[job.ID] = job
 	s.syncJobTargetsIndexLocked(job)
@@ -536,12 +535,25 @@ func (s *Service) Enqueue(ctx context.Context, input CreateJobInput, now time.Ti
 	s.jobVersion[job.ID] = s.updateSeq
 	s.noteJobExpiryLocked(job)
 
+	// D4: a client.* payload is frozen at enqueue and carries the FULL
+	// desired state of its client (the agent applies it as an upsert).
+	// Any older still-pending client.* job for the same client therefore
+	// holds stale data that a retryAfter redelivery would clobber newer
+	// state with — terminate those targets before the dispatch loop can
+	// re-send them.
+	supersededCandidates := s.supersedePendingClientJobsLocked(job, now.UTC())
+
 	slog.InfoContext(ctx, "job dispatched",
 		"job_id", job.ID,
 		"action", string(job.Action),
 		"target_agent_ids", job.TargetAgentIDs,
 		"actor_id", job.ActorID,
 	)
+	s.mu.Unlock()
+
+	for _, candidate := range supersededCandidates {
+		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
+	}
 
 	return job, nil
 }
@@ -634,6 +646,97 @@ func (s *Service) indexLatestSucceededLocked(job Job) {
 		}
 	}
 	s.latestSucceededByClient[clientID] = cloneJob(job)
+}
+
+// supersedePendingClientJobsLocked terminates still-pending targets of older
+// client.* jobs for the same client_id when a newer client.* job is enqueued.
+//
+// Why supersede instead of desired-state reconciliation: rendering payloads
+// from the clients store at DISPATCH time would make stale payloads
+// impossible by construction, but requires reworking the whole dispatch path
+// (frozen PayloadJSON, idempotency, job history) — deferred follow-up. This
+// fix closes the actual incident path (lost result of update#1 + completed
+// newer #2 + redelivered #1) inside the existing queue model, relying on the
+// already-true property that a client.* payload is a full-state upsert.
+//
+// Per-target semantics: only targets on agents the NEW job covers are
+// superseded — an agent outside the new target set still needs the older
+// payload as its latest desired state. The terminal status is expired (not a
+// new enum: that would cascade through the wire format, deriveJobStatus and
+// the dashboard) with ResultText carrying the precise reason.
+//
+// Caller must hold s.mu (write). Returns persist candidates for the
+// post-unlock fan-out, same contract as applyTargetMutationLocked.
+func (s *Service) supersedePendingClientJobsLocked(newJob Job, now time.Time) []persistCandidate {
+	clientID := clientIDFromPayload(newJob.Action, newJob.PayloadJSON)
+	if clientID == "" {
+		return nil
+	}
+	newTargets := make(map[string]struct{}, len(newJob.TargetAgentIDs))
+	for _, agentID := range newJob.TargetAgentIDs {
+		newTargets[agentID] = struct{}{}
+	}
+
+	var candidates []persistCandidate
+	for jobID, job := range s.jobs {
+		if jobID == newJob.ID {
+			continue
+		}
+		if job.CreatedAt.After(newJob.CreatedAt) {
+			continue
+		}
+		if job.CreatedAt.Equal(newJob.CreatedAt) && jobID > newJob.ID {
+			continue
+		}
+		if job.Status != StatusQueued && job.Status != StatusRunning {
+			continue
+		}
+		if clientIDFromPayload(job.Action, job.PayloadJSON) != clientID {
+			continue
+		}
+
+		changed := false
+		for index := range job.Targets {
+			target := &job.Targets[index]
+			if _, covered := newTargets[target.AgentID]; !covered {
+				continue
+			}
+			switch target.Status {
+			case TargetStatusQueued, TargetStatusSent, TargetStatusAcknowledged:
+				target.Status = TargetStatusExpired
+				target.ResultText = "superseded by " + newJob.ID
+				target.UpdatedAt = now
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+
+		job.Status = deriveJobStatus(job.Targets)
+		s.jobs[jobID] = job
+		s.syncJobTargetsIndexLocked(job)
+		if isTerminalStatus(job.Status) {
+			s.markKeyTerminalLocked(job.IdempotencyKey, now)
+		}
+		s.indexLatestSucceededLocked(job)
+		slog.Info("job target superseded by newer client job",
+			"superseded_job_id", jobID,
+			"new_job_id", newJob.ID,
+			"client_id", clientID,
+		)
+		if s.jobStore == nil {
+			continue
+		}
+		s.updateSeq++
+		s.jobVersion[jobID] = s.updateSeq
+		candidates = append(candidates, persistCandidate{
+			jobID:   jobID,
+			version: s.updateSeq,
+			job:     cloneJob(job),
+		})
+	}
+	return candidates
 }
 
 // List returns a snapshot of the queued jobs known to the service.
