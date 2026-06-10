@@ -26,6 +26,11 @@ type transportReloadState struct {
 	cancel  func()
 }
 
+// panelClientCN mirrors server.PanelClientCN — the protocol-fixed CN of the
+// control-plane's outbound client certificate. Duplicated as a literal
+// because cmd/agent must not import the control-plane server package.
+const panelClientCN = "control-plane.panvex.internal"
+
 // selectTransport returns either a listen-mode or dial-mode Transport based on
 // the TransportMode field of the credentials state. It is extracted as a
 // helper so it can be unit-tested independently of the full runConnection path.
@@ -36,15 +41,16 @@ func selectTransport(creds agentstate.Credentials, dialCfg agentTransport.DialCo
 			return nil, fmt.Errorf("agent: load TLS keypair for listen mode: %w", err)
 		}
 		return agentTransport.NewListenTransport(agentTransport.ListenConfig{
-			Addr:  creds.ListenAddr,
-			Cert:  cert,
-			CAPEM: creds.CAPEM,
+			Addr:    creds.ListenAddr,
+			Cert:    cert,
+			CAPEM:   creds.CAPEM,
+			PanelCN: panelClientCN,
 		}), nil
 	}
 	return agentTransport.NewDialTransport(dialCfg), nil
 }
 
-func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int, tr *transportReloadState, reporter *enrollmentReporter, jobInflight *jobInflightTracker) (agentstate.Credentials, error) {
+func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int, tr *transportReloadState, reporter *enrollmentReporter, jobInflight *jobInflightTracker, transportProbation time.Duration) (agentstate.Credentials, error) {
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
 		return credentialsState, err
@@ -85,6 +91,20 @@ func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName
 	dialCtx, cancelDial := context.WithCancel(supervisorCtx)
 	defer cancelDial()
 
+	// A2: while a transport switch is on probation, bound the accept/dial by
+	// the remaining probation window so the reconnect loop regains control
+	// and can roll the switch back if the panel never connects.
+	if credentialsState.PrevTransport != nil && credentialsState.TransportSwitchedAtUnix > 0 {
+		window := transportProbation
+		if window <= 0 {
+			window = defaultTransportProbation
+		}
+		deadline := time.Unix(credentialsState.TransportSwitchedAtUnix, 0).Add(window)
+		var cancelProbation context.CancelFunc
+		dialCtx, cancelProbation = context.WithDeadline(dialCtx, deadline)
+		defer cancelProbation()
+	}
+
 	var updatedCredentials agentstate.Credentials
 	runErr := t.RunOnce(dialCtx, func(_ context.Context, stream agentTransport.BidiStream, client gatewayrpc.AgentGatewayClient) error {
 		// gosec G706: slog uses structured key/value attributes — neither agent
@@ -92,6 +112,7 @@ func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName
 		// taint-analysis warning is a false positive.
 		//nolint:gosec // G706: structured logging, no format-string injection vector
 		slog.Info("connected to control-plane", "agent_id", agent.AgentID(), "gateway", gatewayAddr)
+		clearTransportProbation(stateFile, &credentialsState)
 
 		// Derive the connection context from the supervisor ctx so SIGTERM
 		// reaches every per-connection worker (outbound pump, inbound pump,

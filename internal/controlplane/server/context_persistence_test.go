@@ -41,6 +41,7 @@ func TestEnrollAgentWithContextUsesCallerContextForPersistence(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("enrollAgent() error = %v, want %v", err, context.Canceled)

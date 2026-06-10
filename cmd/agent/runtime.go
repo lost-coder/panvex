@@ -59,6 +59,7 @@ type runtimeFlags struct {
 	logLevel              string
 	logFormat             string
 	clientDataConcurrency int
+	transportProbation    time.Duration
 }
 
 // parseRuntimeFlags binds the agent CLI flags and parses the supplied args.
@@ -88,6 +89,7 @@ func parseRuntimeFlags(args []string) (runtimeFlags, error) {
 	flags.StringVar(&cfg.logFormat, "log-format", os.Getenv("PANVEX_LOG_FORMAT"),
 		"Log output format (text or json). Env: PANVEX_LOG_FORMAT.")
 	flags.IntVar(&cfg.clientDataConcurrency, "client-data-concurrency", clientDataConcurrencyDefault(), "Max concurrent in-flight ClientDataRequest goroutines (env: PANVEX_AGENT_CLIENT_DATA_CONCURRENCY)")
+	flags.DurationVar(&cfg.transportProbation, "transport-probation", defaultTransportProbation, "How long a transport-mode switch may go without a panel session before the agent reverts to the previous mode (0 = default 10m)")
 	if err := flags.Parse(args); err != nil {
 		return runtimeFlags{}, err
 	}
@@ -191,6 +193,17 @@ func runRuntime(args []string) error {
 			current, err := agentstate.Load(statePath)
 			if err != nil {
 				return fmt.Errorf("switch_transport_mode: load state: %w", err)
+			}
+			if current.TransportMode != mode {
+				// A2: snapshot the pre-switch state so the reconnect loop
+				// can roll back if the panel never reaches us in the new mode.
+				current.PrevTransport = &agentstate.TransportSnapshot{
+					Mode:           current.TransportMode,
+					ListenAddr:     current.ListenAddr,
+					GRPCEndpoint:   current.GRPCEndpoint,
+					GRPCServerName: current.GRPCServerName,
+				}
+				current.TransportSwitchedAtUnix = time.Now().Unix()
 			}
 			current.TransportMode = mode
 			current.ListenAddr = listenAddr
@@ -334,12 +347,48 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 			tr.mu.Unlock()
 		}
 
-		// In listen mode the agent has no outbound dial route, so the
-		// pre-connection unary RenewCertificate RPC cannot be used. In-stream
-		// renewal (via RenewalRequest/RenewalResponse over the Connect bidi-
-		// stream) handles cert refresh for listen-mode agents. Skip the dial-
-		// only pre-connection renewal when in listen mode; the in-stream path
-		// in runConnectionMainLoop covers that case.
+		// A2: probation expiry check. On revert, refresh the derived dial
+		// target the same way the transport-reload path above does.
+		if maybeRevertTransportSwitch(cfg.stateFile, credentialsState, cfg.transportProbation, time.Now()) {
+			if credentialsState.GRPCEndpoint != "" {
+				cfg.gatewayAddr = credentialsState.GRPCEndpoint
+			}
+			if credentialsState.GRPCServerName != "" {
+				cfg.gatewayServerName = credentialsState.GRPCServerName
+			}
+		}
+
+		// In listen mode the agent has no outbound dial route, so handle two
+		// distinct cert lifecycle windows differently:
+		//   - BEFORE expiry: in-stream renewal (RenewalRequest/RenewalResponse
+		//     over the Connect bidi-stream) closes the window; the dial-mode
+		//     unary pre-connection RenewCertificate RPC is skipped.
+		//   - AFTER expiry: the cert is dead — no mTLS handshake can complete
+		//     (neither the panel's dial-in nor in-stream renewal). Use the HTTP
+		//     recovery flow (recoverListenCredentialsIfExpired) which works over
+		//     plain HTTPS to PanelURL regardless of transport mode.
+		if credentialsState.TransportMode == "listen" {
+			refreshCtx, cancelRefresh := context.WithTimeout(supervisorCtx, certificateRefreshTimeout)
+			recovered, recErr := recoverListenCredentialsIfExpired(refreshCtx, cfg.stateFile, *credentialsState, nil, time.Now())
+			cancelRefresh()
+			if recErr != nil {
+				if supervisorCtx.Err() != nil {
+					return supervisorCtx.Err()
+				}
+				reconnectAttempt++
+				slog.Error("listen mode: certificate recovery failed; will retry",
+					"error", recErr,
+					"hint", "create a recovery grant: POST /api/agents/{id}/certificate-recovery-grants")
+				if waitErr := waitWithCancel(supervisorCtx, reconnectDelay(reconnectAttempt)); waitErr != nil {
+					return waitErr
+				}
+				continue
+			}
+			*credentialsState = recovered
+		}
+
+		// In dial mode: use the pre-connection unary RenewCertificate RPC for
+		// cert refresh. This path is skipped in listen mode (handled above).
 		if credentialsState.TransportMode != "listen" {
 			// Derive the refresh ctx from supervisorCtx so SIGTERM during
 			// the renewal RPC also unblocks promptly.
@@ -371,7 +420,7 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 			*credentialsState = refreshed
 		}
 
-		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr, reporter, jobInflight)
+		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr, reporter, jobInflight, cfg.transportProbation)
 		*credentialsState = afterConn
 		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0

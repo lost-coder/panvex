@@ -69,8 +69,12 @@ func (ClientDataRequest_RequestType) EnumDescriptor() ([]byte, []int) {
 }
 
 type RenewCertificateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	AgentId string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	// csr_pem carries a CERTIFICATE REQUEST built by the agent with a freshly
+	// generated keypair; the private key never leaves the agent (A9). CN must
+	// equal agent_id.
+	CsrPem        string `protobuf:"bytes,2,opt,name=csr_pem,json=csrPem,proto3" json:"csr_pem,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -112,10 +116,16 @@ func (x *RenewCertificateRequest) GetAgentId() string {
 	return ""
 }
 
+func (x *RenewCertificateRequest) GetCsrPem() string {
+	if x != nil {
+		return x.CsrPem
+	}
+	return ""
+}
+
 type RenewCertificateResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	CertificatePem string                 `protobuf:"bytes,1,opt,name=certificate_pem,json=certificatePem,proto3" json:"certificate_pem,omitempty"`
-	PrivateKeyPem  string                 `protobuf:"bytes,2,opt,name=private_key_pem,json=privateKeyPem,proto3" json:"private_key_pem,omitempty"`
 	CaPem          string                 `protobuf:"bytes,3,opt,name=ca_pem,json=caPem,proto3" json:"ca_pem,omitempty"`
 	ExpiresAtUnix  int64                  `protobuf:"varint,4,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -155,13 +165,6 @@ func (*RenewCertificateResponse) Descriptor() ([]byte, []int) {
 func (x *RenewCertificateResponse) GetCertificatePem() string {
 	if x != nil {
 		return x.CertificatePem
-	}
-	return ""
-}
-
-func (x *RenewCertificateResponse) GetPrivateKeyPem() string {
-	if x != nil {
-		return x.PrivateKeyPem
 	}
 	return ""
 }
@@ -3835,14 +3838,14 @@ var File_agent_gateway_proto protoreflect.FileDescriptor
 
 const file_agent_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x13agent_gateway.proto\x12\x11panvex.gateway.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"4\n" +
+	"\x13agent_gateway.proto\x12\x11panvex.gateway.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"M\n" +
 	"\x17RenewCertificateRequest\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\"\xaa\x01\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x17\n" +
+	"\acsr_pem\x18\x02 \x01(\tR\x06csrPem\"\x99\x01\n" +
 	"\x18RenewCertificateResponse\x12'\n" +
-	"\x0fcertificate_pem\x18\x01 \x01(\tR\x0ecertificatePem\x12&\n" +
-	"\x0fprivate_key_pem\x18\x02 \x01(\tR\rprivateKeyPem\x12\x15\n" +
+	"\x0fcertificate_pem\x18\x01 \x01(\tR\x0ecertificatePem\x12\x15\n" +
 	"\x06ca_pem\x18\x03 \x01(\tR\x05caPem\x12&\n" +
-	"\x0fexpires_at_unix\x18\x04 \x01(\x03R\rexpiresAtUnix\"\xd0\x01\n" +
+	"\x0fexpires_at_unix\x18\x04 \x01(\x03R\rexpiresAtUnixJ\x04\b\x02\x10\x03R\x0fprivate_key_pem\"\xd0\x01\n" +
 	"\tHeartbeat\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12$\n" +

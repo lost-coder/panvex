@@ -372,6 +372,10 @@ func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID strin
 			s.logger.Warn("in-stream cert renewal: persist cert serial failed", "agent_id", agentID, "error", err)
 		}
 	}
+	// In-stream renewal rotates the agent key — must persist the new SPKI pin
+	// or the fail-closed dial verifier (Task 5 / A1) would block the agent
+	// after its first in-stream renewal.
+	s.persistAgentCertPin(ctx, agentID, certPEM)
 
 	sendErr := sess.Send(&gatewayrpc.ConnectServerMessage{
 		Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{

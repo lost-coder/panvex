@@ -5,15 +5,19 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"math/big"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
@@ -194,5 +198,92 @@ func TestLegacyEnc1WithoutKeyFailsFast(t *testing.T) {
 	if !strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefix) ||
 		strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefixV2) {
 		t.Fatalf("blob prefix after failed load = %q, want untouched ENC:v1", record.PrivateKeyPEM[:10])
+	}
+}
+
+func TestAuthorityIssuesPanelClientCertificate(t *testing.T) {
+	now := time.Now()
+	authority, err := newCertificateAuthority(now)
+	if err != nil {
+		t.Fatalf("newCertificateAuthority: %v", err)
+	}
+
+	if len(authority.clientCertificate.Certificate) < 2 {
+		t.Fatalf("panel client cert chain length = %d, want >= 2 (leaf + CA for bootstrap pin verifier)", len(authority.clientCertificate.Certificate))
+	}
+	leaf, err := x509.ParseCertificate(authority.clientCertificate.Certificate[0])
+	if err != nil {
+		t.Fatalf("parse client leaf: %v", err)
+	}
+	if leaf.Subject.CommonName != PanelClientCN {
+		t.Errorf("client cert CN = %q, want %q", leaf.Subject.CommonName, PanelClientCN)
+	}
+	if !slices.Contains(leaf.ExtKeyUsage, x509.ExtKeyUsageClientAuth) {
+		t.Error("panel client cert must carry ClientAuth EKU")
+	}
+	if slices.Contains(leaf.ExtKeyUsage, x509.ExtKeyUsageServerAuth) {
+		t.Error("panel client cert must NOT carry ServerAuth EKU (outbound-dial-only identity)")
+	}
+
+	cfg := authority.outboundTLSConfig()
+	if cfg.RootCAs == nil {
+		t.Error("outbound TLS config must trust the panel CA via RootCAs")
+	}
+	if len(cfg.Certificates) != 1 {
+		t.Errorf("outbound TLS config Certificates = %d, want 1 (panel client cert)", len(cfg.Certificates))
+	}
+	if cfg.MinVersion != tls.VersionTLS13 {
+		t.Error("outbound TLS config must require TLS 1.3")
+	}
+	if cfg.ServerName != "" {
+		t.Error("base outbound config must leave ServerName empty (set per-dial by the supervisor)")
+	}
+}
+
+func TestSignCSRIssuesDualEKUServingCert(t *testing.T) {
+	now := time.Now()
+	authority, err := newCertificateAuthority(now)
+	if err != nil {
+		t.Fatalf("newCertificateAuthority: %v", err)
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	const agentID = "01890000-0000-7000-8000-000000000001"
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: agentID},
+	}, key)
+	if err != nil {
+		t.Fatalf("create csr: %v", err)
+	}
+	csrPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}))
+
+	certPEM, _, _, err := authority.SignCSR(csrPEM, agentID, time.Hour)
+	if err != nil {
+		t.Fatalf("SignCSR: %v", err)
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		t.Fatal("issued cert is not PEM")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("parse issued cert: %v", err)
+	}
+
+	if !slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageClientAuth) {
+		t.Error("issued cert must keep ClientAuth EKU")
+	}
+	if !slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageServerAuth) {
+		t.Error("issued cert must carry ServerAuth EKU (listen mode serves TLS)")
+	}
+	wantSAN := agenttransport.AgentServerName(agentID)
+	if !slices.Contains(cert.DNSNames, wantSAN) {
+		t.Errorf("issued cert DNSNames = %v, want to contain %q", cert.DNSNames, wantSAN)
+	}
+	if cert.Subject.CommonName != agentID {
+		t.Errorf("CN = %q, want %q", cert.Subject.CommonName, agentID)
 	}
 }

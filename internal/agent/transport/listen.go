@@ -8,10 +8,22 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
+)
+
+// Symmetric keepalive + message caps (A1): mirror the panel's inbound gRPC
+// server (cmd/control-plane/server_lifecycle.go) so reverse streams survive
+// NAT idle timeouts and >4 MiB snapshots.
+const (
+	listenKeepaliveTime    = 30 * time.Second
+	listenKeepaliveTimeout = 10 * time.Second
+	listenKeepaliveMinTime = 10 * time.Second
+	listenMaxMessageSize   = 16 * 1024 * 1024
 )
 
 // ListenConfig holds the inputs for the agent's mTLS gRPC server in
@@ -20,6 +32,12 @@ type ListenConfig struct {
 	Addr  string          // e.g. ":8443" or "0.0.0.0:8443"
 	Cert  tls.Certificate // agent's leaf cert (signed by panel CA after enrollment)
 	CAPEM string          // panel CA PEM — agent verifies the panel's client cert against this
+	// PanelCN is the CommonName the dialing panel's client certificate must
+	// carry (protocol constant "control-plane.panvex.internal"). Verified on
+	// top of RequireAndVerifyClientCert chain validation so a leaked AGENT
+	// certificate (same CA, CN=<agent_id>) cannot drive this agent's job
+	// pipeline (A1). Required: buildServerTLS fails on empty value.
+	PanelCN string
 }
 
 type listenTransport struct {
@@ -70,7 +88,19 @@ func (t *listenTransport) RunOnce(ctx context.Context, runner SessionRunner) err
 	t.listener = listener
 	t.mu.Unlock()
 
-	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsCfg)))
+	server := grpc.NewServer(
+		grpc.Creds(credentials.NewTLS(tlsCfg)),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    listenKeepaliveTime,
+			Timeout: listenKeepaliveTimeout,
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             listenKeepaliveMinTime,
+			PermitWithoutStream: true,
+		}),
+		grpc.MaxRecvMsgSize(listenMaxMessageSize),
+		grpc.MaxSendMsgSize(listenMaxMessageSize),
+	)
 
 	// Per-stream completion gate — once one Connect arrives and ends, RunOnce
 	// returns (mirroring dial-mode's "one connection per RunOnce" semantics).
@@ -123,11 +153,32 @@ func buildServerTLS(cfg ListenConfig) (*tls.Config, error) {
 	if !roots.AppendCertsFromPEM([]byte(cfg.CAPEM)) {
 		return nil, fmt.Errorf("listen: invalid CA PEM")
 	}
+	if cfg.PanelCN == "" {
+		return nil, fmt.Errorf("listen: PanelCN is required")
+	}
+	panelCN := cfg.PanelCN
 	return &tls.Config{
 		Certificates: []tls.Certificate{cfg.Cert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    roots,
 		MinVersion:   tls.VersionTLS13,
+		// VerifyConnection (not VerifyPeerCertificate) so the panel-CN check
+		// also runs on RESUMED TLS sessions — VerifyPeerCertificate is skipped
+		// on resumption, which would let a resumed session bypass the CN gate
+		// (gosec G123). Under RequireAndVerifyClientCert the standard chain
+		// verification has already populated VerifiedChains; we check the
+		// VERIFIED leaf, not the raw presented cert.
+		VerifyConnection: func(state tls.ConnectionState) error {
+			if len(state.VerifiedChains) == 0 || len(state.VerifiedChains[0]) == 0 {
+				return fmt.Errorf("listen: no verified client chain")
+			}
+			leaf := state.VerifiedChains[0][0]
+			if leaf.Subject.CommonName != panelCN {
+				return fmt.Errorf("listen: client cert CN %q is not the panel client CN %q",
+					leaf.Subject.CommonName, panelCN)
+			}
+			return nil
+		},
 	}, nil
 }
 

@@ -113,12 +113,15 @@ func buildEnrollmentScriptSources(panelURL string) createEnrollmentScriptSources
 type agentBootstrapRequest struct {
 	NodeName string `json:"node_name"`
 	Version  string `json:"version"`
+	// CSRPEM is the PEM-encoded CERTIFICATE REQUEST generated locally by
+	// the agent. A9: the panel signs it and returns only the certificate;
+	// the private key never crosses the wire.
+	CSRPEM string `json:"csr_pem"`
 }
 
 type agentBootstrapResponse struct {
 	AgentID        string `json:"agent_id"`
 	CertificatePEM string `json:"certificate_pem"`
-	PrivateKeyPEM  string `json:"private_key_pem"`
 	CAPEM          string `json:"ca_pem"`
 	GRPCEndpoint   string `json:"grpc_endpoint"`
 	GRPCServerName string `json:"grpc_server_name"`
@@ -137,6 +140,10 @@ type agentCertificateRecoveryRequest struct {
 	ProofTimestampUnix int64  `json:"proof_timestamp_unix"`
 	ProofNonce         string `json:"proof_nonce"`
 	ProofSignature     string `json:"proof_signature"`
+	// CSRPEM is the PEM-encoded CERTIFICATE REQUEST generated locally by
+	// the agent (A9). The panel validates CN == AgentID and signs it;
+	// the private key never crosses the wire.
+	CSRPEM string `json:"csr_pem"`
 }
 
 type agentCertificateRecoveryGrantRequest struct {
@@ -374,14 +381,14 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "invalid bootstrap payload")
 			return
 		}
-		if request.NodeName == "" || request.Version == "" {
+		if request.NodeName == "" || request.Version == "" || strings.TrimSpace(request.CSRPEM) == "" {
 			if s.enrollmentRec != nil && attemptID != "" {
 				s.mapAndFailEnrollment(ctx, attemptID, &enrollmentError{
 					code:   enrollment.ErrCSRInvalid,
-					fields: map[string]any{"reason": "missing node_name or version"},
+					fields: map[string]any{"reason": "missing node_name, version or csr_pem"},
 				})
 			}
-			writeError(w, http.StatusBadRequest, "node_name and version are required")
+			writeError(w, http.StatusBadRequest, "node_name, version and csr_pem are required")
 			return
 		}
 
@@ -389,6 +396,7 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 			Token:     token,
 			NodeName:  request.NodeName,
 			Version:   request.Version,
+			CSRPEM:    request.CSRPEM,
 			AttemptID: attemptID,
 		}, s.now())
 		if err != nil {
@@ -424,7 +432,6 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 		writeJSON(w, http.StatusOK, agentBootstrapResponse{
 			AgentID:        response.AgentID,
 			CertificatePEM: response.CertificatePEM,
-			PrivateKeyPEM:  response.PrivateKeyPEM,
 			CAPEM:          response.CAPEM,
 			GRPCEndpoint:   grpcEndpoint,
 			GRPCServerName: grpcServerName,

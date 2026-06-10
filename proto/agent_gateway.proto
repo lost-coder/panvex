@@ -15,11 +15,16 @@ service AgentGateway {
 
 message RenewCertificateRequest {
   string agent_id = 1;
+  // csr_pem carries a CERTIFICATE REQUEST built by the agent with a freshly
+  // generated keypair; the private key never leaves the agent (A9). CN must
+  // equal agent_id.
+  string csr_pem = 2;
 }
 
 message RenewCertificateResponse {
   string certificate_pem = 1;
-  string private_key_pem = 2;
+  reserved 2;            // was private_key_pem — keys are agent-generated now (A9)
+  reserved "private_key_pem";
   string ca_pem = 3;
   int64 expires_at_unix = 4;
 }

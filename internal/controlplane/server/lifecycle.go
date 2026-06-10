@@ -130,6 +130,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		csrfManager:               csrfManager,
 		loginTimingFloor:          resolveLoginTimingFloor(options.LoginTimingFloor),
 		revokedAgentIDs:           make(map[string]struct{}),
+		transportSwitchPendingAt:  map[string]time.Time{},
 		// live (A2/A1): single owner of agent live-state + instances. The
 		// clone funcs deep-copy every reference-type field of Agent/Instance
 		// so reads return isolated copies (see live_clone.go). instanceID /

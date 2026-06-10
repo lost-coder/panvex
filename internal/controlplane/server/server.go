@@ -209,6 +209,13 @@ type Server struct {
 	// empty, which is acceptable because the CA will not have issued new
 	// certificates for deleted agents and existing ones expire within 30 days.
 	revokedAgentIDs map[string]struct{}
+	// transportSwitchPendingAt tracks agents that were switched to outbound
+	// transport but have not yet accepted a new agent stream (A2 "switched
+	// but never reconnected"). The value is the time of the switch; it is
+	// cleared by markTransportSwitchResolved on the next accepted stream.
+	// In-memory only: the panel is single-instance and the agent-side
+	// probation window is the durable safety net.
+	transportSwitchPendingAt map[string]time.Time
 	// live is the single owner of agent live-state (full Agent value:
 	// identity + runtime telemetry) and per-agent Telemt instances, with
 	// replace/prune semantics and deep-copy isolation (A2/A1). It replaces
@@ -414,6 +421,20 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 	return s.authority.serverTLSConfig()
 }
 
+// OutboundGRPCTLSConfig returns the TLS configuration the panel uses when
+// DIALING listen-mode agents (A1). Distinct from GRPCTLSConfig (the
+// listener-side server config): RootCAs instead of ClientCAs, panel CLIENT
+// certificate instead of the server certificate.
+func (s *Server) OutboundGRPCTLSConfig() *tls.Config {
+	return s.authority.outboundTLSConfig()
+}
+
+// PanelClientCertificate returns the panel's outbound client identity for
+// the bootstrap (EnrollOutbound) dial path.
+func (s *Server) PanelClientCertificate() tls.Certificate {
+	return s.authority.clientCertificate
+}
+
 // SetInstallCommandHandler wires the bootstrap install-command handler. Safe
 // to call concurrently with HTTP requests. Nil h is accepted — the route
 // returns 503 until a non-nil handler is provided.
@@ -505,15 +526,6 @@ func (s *Server) handleAgentInstallCommand() http.HandlerFunc {
 // EnrollDriver for outbound-supervisor bootstrap exchanges.
 func (s *Server) CertificateAuthority() bootstrap.CertificateAuthority {
 	return s.authority
-}
-
-// CACN returns the panel CA's Common Name. Agents verify the panel's TLS
-// certificate against this name during enrollment.
-func (s *Server) CACN() string {
-	if s.authority == nil {
-		return ""
-	}
-	return s.authority.certificate.Subject.CommonName
 }
 
 // CAPINHex returns the lower-hex SHA-256 fingerprint of the panel's CA DER

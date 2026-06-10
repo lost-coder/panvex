@@ -195,17 +195,18 @@ func runServe(args []string) error {
 	// agenttransport.Manager owns outbound supervisors and (in a later task)
 	// the inbound dispatch path. Now wired with real DB queries so outbound
 	// supervisors are restored at startup and the enrollment pre-flight runs.
-	// The outbound TLS config is the panel's server-side mTLS config (agents
-	// must present a cert signed by the panel CA). The CA is available via
-	// api.GRPCTLSConfig() once the server is constructed above.
-	outboundTLS := api.GRPCTLSConfig()
+	// A1: outbound supervisors dial agents as a TLS CLIENT — they need the
+	// panel CA in RootCAs and the panel's CLIENT certificate, not the gRPC
+	// listener's server config (which has ClientCAs and a ServerAuth-only
+	// cert and can never verify an agent's serving cert).
+	outboundTLS := api.OutboundGRPCTLSConfig()
 	manager := agenttransport.NewManager(queries, api.RunAgentSession, outboundTLS, logger)
 	api.SetAgentTransportManager(manager)
 
 	// Шов 1: wire the install-command handler so POST /agents/{id}/install-command
 	// returns a curl | bash one-liner instead of 503. PanelURL is the gRPC
-	// endpoint agents dial. ScriptURL, PanelCAPin, and PanelCN are derived
-	// from the panel's CA certificate (same CA that signs agent certs).
+	// endpoint agents dial. ScriptURL and PanelCAPin are derived from the
+	// panel's CA certificate; PanelCN is the protocol-fixed client cert CN.
 	//
 	// Q-05: ScriptURL is the panel's own /install-agent.sh route — see
 	// internal/controlplane/server/install_script.go. The script is embedded
@@ -226,7 +227,7 @@ func runServe(args []string) error {
 			// rewrites /install-agent.sh therefore cannot escalate.
 			ScriptHash: server.InstallScriptSHA256(),
 			PanelCAPin: api.CAPINHex(),
-			PanelCN:    api.CACN(),
+			PanelCN:    server.PanelClientCN,
 			PanelURLFn: api.ResolveAgentGRPCEndpoint,
 			Now:        time.Now,
 		})
@@ -239,7 +240,7 @@ func runServe(args []string) error {
 		api.SetProvisionOutboundDeps(&server.ProvisionOutboundDeps{
 			Queries:    queries,
 			PanelCAPin: api.CAPINHex(),
-			PanelCN:    api.CACN(),
+			PanelCN:    server.PanelClientCN,
 			Now:        time.Now,
 		})
 	}
@@ -265,7 +266,7 @@ func runServe(args []string) error {
 			// callback can close over agentID and ctx for the storage
 			// pin lookup. store satisfies bootstrapPinReader via its
 			// GetAgentCertPin method.
-			bootstrapTLS := newBootstrapTLSConfig(ctx, agentID, store)
+			bootstrapTLS := newBootstrapTLSConfig(ctx, agentID, store, api.PanelClientCertificate())
 			return enrollDriver.Run(ctx, agentAddr, bootstrapTLS, agentID)
 		}
 		bootstrapStateFn := func(ctx context.Context, agentID string) (string, error) {
