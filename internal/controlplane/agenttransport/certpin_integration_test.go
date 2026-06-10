@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -123,51 +124,57 @@ func TestOutboundSupervisor_PinMismatch(t *testing.T) {
 	}
 }
 
-// TestOutboundSupervisor_EmptyPinSkips verifies that when the stored pin is
-// empty (agent enrolled pre-S-02), verification is skipped and the connection
-// succeeds. (S-02)
-func TestOutboundSupervisor_EmptyPinSkips(t *testing.T) {
-	stub := newAgentStubServer(t, "agent-noop")
+// TestOutboundSupervisor_PinMissingFailsClosed verifies that when no SPKI pin
+// is stored for the agent (ErrNotFound), the dial is rejected and the observer
+// sees "missing". Since every issuance path persists a pin (Task 4), a missing
+// pin means "never enrolled here" — the dial must be fail-closed. (A1)
+func TestOutboundSupervisor_PinMissingFailsClosed(t *testing.T) {
+	stub := newAgentStubServer(t, "agent-nopin")
 	defer stub.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var connectCount atomic.Int32
-	var missingCount atomic.Int32
-
 	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
 		connectCount.Add(1)
 		return nil
 	}
-
+	var observed []string
+	var mu sync.Mutex
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n1", AgentID: "agent-noop", DialAddress: stub.address},
+		NodeMeta{NodeID: "n-nopin", AgentID: "agent-nopin", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	sup.backoffInitialFn = func() time.Duration { return 10 * time.Millisecond }
 	sup.backoffMaxFn = func() time.Duration { return 50 * time.Millisecond }
-	// ErrNotFound → empty pin → skip verification.
-	sup.pinReader = &fakePinReader{pins: map[string][]byte{}} // no entry
+	sup.pinReader = &fakePinReader{pins: map[string][]byte{}} // ErrNotFound for everyone
 	sup.pinObserver = func(result string) {
-		if result == "missing" {
-			missingCount.Add(1)
-		}
+		mu.Lock()
+		observed = append(observed, result)
+		mu.Unlock()
 	}
-
 	go sup.run(ctx)
 
 	deadline := time.Now().Add(2 * time.Second)
-	for connectCount.Load() < 1 && time.Now().Before(deadline) {
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(observed)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if connectCount.Load() < 1 {
-		t.Fatal("expected at least one successful connection with empty pin (verification skipped)")
+	if connectCount.Load() != 0 {
+		t.Fatalf("session established with no stored pin (%d), want fail-closed reject", connectCount.Load())
 	}
-	if missingCount.Load() < 1 {
-		t.Fatal("expected at least one 'missing' pin observation")
+	mu.Lock()
+	defer mu.Unlock()
+	if len(observed) == 0 || observed[0] != "missing" {
+		t.Fatalf("pinObserver results = %v, want first = %q", observed, "missing")
 	}
 }
 

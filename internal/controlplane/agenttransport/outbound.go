@@ -285,13 +285,15 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 			if err != nil && !errors.Is(err, storage.ErrNotFound) {
 				return fmt.Errorf("agenttransport: cert pin lookup (node_id=%s): %w", agentID, err)
 			}
-			if len(pin) == 0 {
-				// No pin stored — agent enrolled before S-02 or pin not yet
-				// captured. Skip verification for this dial.
+			if errors.Is(err, storage.ErrNotFound) || len(pin) == 0 {
+				// Fail-closed (A1): no TOFU on the steady-state dial path.
+				// The bootstrap exchange (EnrollDriver) is the only place
+				// first-contact trust is established, gated by the
+				// operator-issued bootstrap token.
 				if pinObserver != nil {
 					pinObserver("missing")
 				}
-				return nil
+				return fmt.Errorf("%w (node_id=%s)", ErrCertPinMissing, agentID)
 			}
 			var leaf *x509.Certificate
 			if len(state.PeerCertificates) > 0 {
