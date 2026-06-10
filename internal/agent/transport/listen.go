@@ -162,14 +162,17 @@ func buildServerTLS(cfg ListenConfig) (*tls.Config, error) {
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    roots,
 		MinVersion:   tls.VersionTLS13,
-		// Runs AFTER standard chain verification: verifiedChains is always
-		// populated under RequireAndVerifyClientCert. Checks the VERIFIED
-		// leaf, not the raw presented cert.
-		VerifyPeerCertificate: func(_ [][]byte, verifiedChains [][]*x509.Certificate) error {
-			if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
+		// VerifyConnection (not VerifyPeerCertificate) so the panel-CN check
+		// also runs on RESUMED TLS sessions — VerifyPeerCertificate is skipped
+		// on resumption, which would let a resumed session bypass the CN gate
+		// (gosec G123). Under RequireAndVerifyClientCert the standard chain
+		// verification has already populated VerifiedChains; we check the
+		// VERIFIED leaf, not the raw presented cert.
+		VerifyConnection: func(state tls.ConnectionState) error {
+			if len(state.VerifiedChains) == 0 || len(state.VerifiedChains[0]) == 0 {
 				return fmt.Errorf("listen: no verified client chain")
 			}
-			leaf := verifiedChains[0][0]
+			leaf := state.VerifiedChains[0][0]
 			if leaf.Subject.CommonName != panelCN {
 				return fmt.Errorf("listen: client cert CN %q is not the panel client CN %q",
 					leaf.Subject.CommonName, panelCN)
