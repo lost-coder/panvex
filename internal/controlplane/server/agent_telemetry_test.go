@@ -104,3 +104,52 @@ func TestRuntimeFromCurrentRecordPropagatesTelemtUnreachable(t *testing.T) {
 		t.Fatalf("TelemtUnreachableSinceUnix = %d, want 1699999970", out.TelemtUnreachableSinceUnix)
 	}
 }
+
+// TestTelemetryWriteUnitCarriesForwardHashGatedDiagnostics guards D5
+// panel-side: a hash-only (body-less) diagnostics / security-inventory
+// snapshot must NOT overwrite the stored row; a blank record with an EMPTY
+// hash keeps the historical overwrite.
+func TestTelemetryWriteUnitCarriesForwardHashGatedDiagnostics(t *testing.T) {
+	agent := Agent{ID: "agent-1"}
+	observedAt := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	base := agentSnapshot{
+		AgentID:    "agent-1",
+		ObservedAt: observedAt,
+		HasRuntime: true,
+		Runtime:    &gatewayrpc.RuntimeSnapshot{},
+	}
+
+	gated := base
+	gated.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{ContentHash: "abc"}
+	gated.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{ContentHash: "def"}
+	unit := telemetryWriteUnitForRuntime(agent, gated)
+	if unit.diagnostics != nil {
+		t.Fatal("hash-only diagnostics must not overwrite the stored row")
+	}
+	if unit.security != nil {
+		t.Fatal("hash-only security inventory must not overwrite the stored row")
+	}
+
+	full := base
+	full.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
+		ContentHash: "abc", State: "ok", SystemInfoJson: `{"cpu":4}`,
+	}
+	full.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
+		ContentHash: "def", State: "ok", Enabled: true, EntriesJson: `[]`,
+	}
+	unit = telemetryWriteUnitForRuntime(agent, full)
+	if unit.diagnostics == nil || unit.diagnostics.SystemInfoJSON != `{"cpu":4}` {
+		t.Fatalf("full-body diagnostics must persist, got %+v", unit.diagnostics)
+	}
+	if unit.security == nil || !unit.security.Enabled {
+		t.Fatalf("full-body security inventory must persist, got %+v", unit.security)
+	}
+
+	blank := base
+	blank.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{}
+	blank.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{}
+	unit = telemetryWriteUnitForRuntime(agent, blank)
+	if unit.diagnostics == nil || unit.security == nil {
+		t.Fatal("empty-hash blank record must keep the historical overwrite semantics")
+	}
+}

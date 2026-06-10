@@ -276,6 +276,14 @@ message RuntimeDiagnosticsSnapshot {
   string minimal_all_json = 6;
   string me_pool_json = 7;
   string dcs_json = 8;
+  // content_hash is a SHA-256 over the (state, state_reason, *_json) tuple,
+  // sent on EVERY snapshot. When the tuple is unchanged since the agent's
+  // previous report, the body fields above are omitted (empty) and the panel
+  // must carry forward its stored diagnostics row instead of overwriting it
+  // with blanks (D5). An EMPTY hash keeps the historical overwrite
+  // semantics — that covers pre-gating agents and the deliberate blank
+  // record sent by BuildRuntimeUnreachableSnapshot.
+  string content_hash = 9;
 }
 
 message RuntimeSecurityInventorySnapshot {
@@ -284,6 +292,14 @@ message RuntimeSecurityInventorySnapshot {
   bool enabled = 3;
   int32 entries_total = 4;
   string entries_json = 5;
+  // content_hash is a SHA-256 over the (state, state_reason, *_json) tuple,
+  // sent on EVERY snapshot. When the tuple is unchanged since the agent's
+  // previous report, the body fields above are omitted (empty) and the panel
+  // must carry forward its stored diagnostics row instead of overwriting it
+  // with blanks (D5). An EMPTY hash keeps the historical overwrite
+  // semantics — that covers pre-gating agents and the deliberate blank
+  // record sent by BuildRuntimeUnreachableSnapshot.
+  string content_hash = 6;
 }
 
 message Snapshot {

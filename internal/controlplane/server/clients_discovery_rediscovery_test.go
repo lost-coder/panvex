@@ -14,7 +14,7 @@ func TestApplyTelemtReachabilityTransitionRequestsRediscovery(t *testing.T) {
 	t.Cleanup(s.Close)
 
 	const agentID = "agent-eu-1"
-	sess, unregister := s.sessions.Register(agentID)
+	sess, unregister := s.sessions.Register(agentID, nil)
 	t.Cleanup(unregister)
 
 	apply := func(unreachable bool) {

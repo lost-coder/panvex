@@ -967,3 +967,189 @@ func TestUpdateTargetUsesPanelClockNotAgentClock(t *testing.T) {
 		t.Fatalf("target.UpdatedAt = %v, want panel clock %v", got.Targets[0].UpdatedAt, panelNow)
 	}
 }
+
+// TestExpiryWatermarkTracksEnqueueAndExpiry guards B9e: the next-expiry
+// watermark must (a) hold the earliest CreatedAt+TTL across live jobs after
+// Enqueue, (b) keep the fast path negative before that deadline, and
+// (c) advance to the next live deadline after an expiry pass.
+func TestExpiryWatermarkTracksEnqueueAndExpiry(t *testing.T) {
+	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	current := base
+	service := NewService()
+	service.SetNow(func() time.Time { return current })
+
+	shortJob, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "wm-short",
+	}, current)
+	if err != nil {
+		t.Fatalf("enqueue short: %v", err)
+	}
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            2 * time.Minute,
+		IdempotencyKey: "wm-long",
+	}, current); err != nil {
+		t.Fatalf("enqueue long: %v", err)
+	}
+
+	service.mu.RLock()
+	watermark := service.nextExpiryAt
+	due := service.anyJobNeedsExpiryLocked(current)
+	service.mu.RUnlock()
+	if want := base.Add(time.Minute); !watermark.Equal(want) {
+		t.Fatalf("watermark after enqueue = %v, want %v", watermark, want)
+	}
+	if due {
+		t.Fatal("nothing should be due before the first TTL elapses")
+	}
+
+	current = base.Add(61 * time.Second)
+	service.ExpireStale()
+
+	got, ok := service.Get(shortJob.ID)
+	if !ok || got.Status != StatusExpired {
+		t.Fatalf("short job status = %v (ok=%v), want expired", got.Status, ok)
+	}
+	service.mu.RLock()
+	watermark = service.nextExpiryAt
+	service.mu.RUnlock()
+	if want := base.Add(2 * time.Minute); !watermark.Equal(want) {
+		t.Fatalf("watermark after expiry pass = %v, want %v", watermark, want)
+	}
+}
+
+// TestExpiryWatermarkClearedWhenNothingCanExpire pins the empty case: with
+// no TTL-bearing live jobs the watermark is zero and the fast path stays
+// O(1)-negative forever.
+func TestExpiryWatermarkClearedWhenNothingCanExpire(t *testing.T) {
+	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	current := base
+	service := NewService()
+	service.SetNow(func() time.Time { return current })
+
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "wm-only",
+	}, current); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	current = base.Add(2 * time.Minute)
+	service.ExpireStale()
+
+	service.mu.RLock()
+	defer service.mu.RUnlock()
+	if !service.nextExpiryAt.IsZero() {
+		t.Fatalf("watermark = %v, want zero after the only TTL job expired", service.nextExpiryAt)
+	}
+	if service.anyJobNeedsExpiryLocked(current.Add(time.Hour)) {
+		t.Fatal("fast path must stay negative with an empty watermark")
+	}
+}
+
+// TestEnqueueSupersedesOlderPendingClientJobs guards D4: a newer client.*
+// job for the same client_id terminates still-pending targets of older
+// client.* jobs (on the agents the new job covers), so a redelivered stale
+// payload can never clobber newer applied state.
+func TestEnqueueSupersedesOlderPendingClientJobs(t *testing.T) {
+	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return base })
+
+	older, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1", "agent-2"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "upd-1",
+		PayloadJSON:    `{"client_id":"c-1","max_tcp_conns":1}`,
+	}, base)
+	if err != nil {
+		t.Fatalf("enqueue older: %v", err)
+	}
+	otherClient, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "upd-other",
+		PayloadJSON:    `{"client_id":"c-2","max_tcp_conns":3}`,
+	}, base)
+	if err != nil {
+		t.Fatalf("enqueue other-client: %v", err)
+	}
+
+	newer, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "upd-2",
+		PayloadJSON:    `{"client_id":"c-1","max_tcp_conns":5}`,
+	}, base.Add(time.Second))
+	if err != nil {
+		t.Fatalf("enqueue newer: %v", err)
+	}
+
+	got, ok := service.Get(older.ID)
+	if !ok {
+		t.Fatalf("older job disappeared")
+	}
+	statusByAgent := map[string]JobTarget{}
+	for _, target := range got.Targets {
+		statusByAgent[target.AgentID] = target
+	}
+	if statusByAgent["agent-1"].Status != TargetStatusExpired {
+		t.Fatalf("agent-1 target status = %s, want expired (superseded)", statusByAgent["agent-1"].Status)
+	}
+	if want := "superseded by " + newer.ID; statusByAgent["agent-1"].ResultText != want {
+		t.Fatalf("agent-1 result_text = %q, want %q", statusByAgent["agent-1"].ResultText, want)
+	}
+	if statusByAgent["agent-2"].Status != TargetStatusQueued {
+		t.Fatalf("agent-2 target status = %s, want queued", statusByAgent["agent-2"].Status)
+	}
+
+	pendingIDs := map[string]bool{}
+	for _, job := range service.PendingForAgent(context.Background(), "agent-1", 30*time.Second) {
+		pendingIDs[job.ID] = true
+	}
+	if pendingIDs[older.ID] {
+		t.Fatal("superseded job must not be pending for agent-1")
+	}
+	if !pendingIDs[newer.ID] || !pendingIDs[otherClient.ID] {
+		t.Fatalf("pending for agent-1 = %v, want newer + other-client jobs", pendingIDs)
+	}
+}
+
+// TestEnqueueDoesNotSupersedeNonClientActions pins the scope: only client.*
+// payload-frozen jobs participate; node-level actions are untouched.
+func TestEnqueueDoesNotSupersedeNonClientActions(t *testing.T) {
+	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return base })
+
+	reload, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "reload-1",
+	}, base)
+	if err != nil {
+		t.Fatalf("enqueue reload: %v", err)
+	}
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "upd-3",
+		PayloadJSON:    `{"client_id":"c-9"}`,
+	}, base.Add(time.Second)); err != nil {
+		t.Fatalf("enqueue client update: %v", err)
+	}
+	got, _ := service.Get(reload.ID)
+	if got.Targets[0].Status != TargetStatusQueued {
+		t.Fatalf("runtime.reload target status = %s, want queued", got.Targets[0].Status)
+	}
+}

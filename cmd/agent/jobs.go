@@ -40,15 +40,21 @@ func shouldSendRuntimeSnapshotAfterJob(action string, success bool) bool {
 	return action == "telemetry.refresh_diagnostics"
 }
 
-func jobWorkerCountForPipeline(pipeline jobPipeline) int {
-	switch pipeline {
-	case jobPipelineRuntimeReload:
-		return 2
-	case jobPipelineClientMutation:
-		return 1
-	default:
-		return 1
-	}
+// jobWorkerCountForPipeline sets per-lane concurrency. Every lane is
+// single-worker BY DESIGN; the lanes exist for isolation (a slow lane cannot
+// head-of-line-block another), not for intra-lane parallelism:
+//
+//   - runtime_reload: runtime.reload and telemetry.refresh_diagnostics share
+//     this lane on purpose — both hit the same local Telemt admin API, and a
+//     reload racing a diagnostics refresh would let the refresh observe a
+//     half-reloaded config. One worker serialises them. (The previous
+//     unexplained value of 2 reintroduced exactly that race.)
+//   - client_mutation: per-client mutations must apply in delivery order;
+//     two workers would let client.update#2 overtake #1.
+//   - default: config.apply / self-update / transport switches are
+//     heavyweight node-level operations — one at a time is the safe default.
+func jobWorkerCountForPipeline(jobPipeline) int {
+	return 1
 }
 
 // jobExecutionBudget returns the ctx deadline for executing one job.

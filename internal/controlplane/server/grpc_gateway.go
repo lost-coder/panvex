@@ -211,7 +211,10 @@ func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentS
 		return err
 	}
 
-	session, unregisterSession := s.registerAgentSession(agentID)
+	connectionCtx, cancelConnection := context.WithCancel(ctx)
+	defer cancelConnection()
+
+	session, unregisterSession := s.registerAgentSession(agentID, cancelConnection)
 	defer unregisterSession()
 	// P2-LOG-12 / L-05: MarkConnected exactly once per stream open, here.
 	// applyAgentSnapshot now only calls Heartbeat so subsequent heartbeat
@@ -220,9 +223,6 @@ func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentS
 	// MarkConnected and the connectedAt timestamp moves forward.
 	s.presence.MarkConnected(agentID, s.now())
 	s.logger.Info("accepted agent stream", "agent_id", agentID)
-
-	connectionCtx, cancelConnection := context.WithCancel(ctx)
-	defer cancelConnection()
 
 	channels := newAgentStreamChannels()
 	processErrorAndCancel := func(err error) {
