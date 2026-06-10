@@ -1055,7 +1055,7 @@ func (a *Agent) handleSelfUpdateJob(ctx context.Context, job *gatewayrpc.JobComm
 		result.Message = fmt.Sprintf("invalid update payload: %v", err)
 		return result
 	}
-	if err := updater.Execute(ctx, payload, a.config.Version, slog.Default()); err != nil {
+	if _, err := updater.Execute(ctx, payload, a.config.Version, slog.Default()); err != nil {
 		result.Message = err.Error()
 		return result
 	}
