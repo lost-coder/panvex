@@ -945,3 +945,59 @@ func TestEnqueueRetryAfterTransientStoreError(t *testing.T) {
 		t.Fatalf("retry job status = %q, want queued", job.Status)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// C3: MetricsSink — persist failure counter
+// ---------------------------------------------------------------------------
+
+type recordingJobMetricsSink struct {
+	mu       sync.Mutex
+	failures int
+}
+
+func (r *recordingJobMetricsSink) ObserveJobPersistFailure() {
+	r.mu.Lock()
+	r.failures++
+	r.mu.Unlock()
+}
+
+func (r *recordingJobMetricsSink) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.failures
+}
+
+// TestServicePersistFailureNotifiesMetricsSink (C3): a write-behind
+// persist failure must increment the injected metrics sink — slog-only
+// surfacing leaves a wedged DB invisible to operators.
+func TestServicePersistFailureNotifiesMetricsSink(t *testing.T) {
+	now := time.Now().UTC()
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer sqliteStore.Close()
+
+	store := &failingJobStore{JobStore: sqliteStore}
+	service := jobs.NewServiceWithStore(store)
+	sink := &recordingJobMetricsSink{}
+	service.SetMetricsSink(sink)
+
+	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
+		Action:         jobs.ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "persist-failure-metric",
+		ActorID:        "user-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	store.putJobErr = errors.New("put job failed")
+	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
+
+	if got := sink.count(); got == 0 {
+		t.Fatalf("sink failures = %d, want >= 1 after persist failure", got)
+	}
+}

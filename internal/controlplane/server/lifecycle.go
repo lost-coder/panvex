@@ -642,6 +642,10 @@ func New(options Options) (*Server, error) {
 	server.handler = server.routes()
 	server.auth.SetNow(now)
 	server.jobs.SetNow(now)
+	// C3: surface write-behind job persist failures as a Prometheus
+	// counter. Must run after initStoreBackedSubsystems (which replaces
+	// s.jobs) and after newMetricsCollectors.
+	server.jobs.SetMetricsSink(server.obs)
 
 	// S-06: warn once at startup if the panel binds to a non-loopback
 	// address but no trusted-proxy CIDRs are configured. In that state
