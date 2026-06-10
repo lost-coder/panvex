@@ -52,6 +52,7 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 			return
 		}
 
+		s.persistAgentCertPin(r.Context(), request.AgentID, issued.CertificatePEM)
 		s.appendAuditWithContext(r.Context(), request.AgentID, "agents.certificate.recovered", request.AgentID, map[string]any{
 			"node_name": agent.NodeName,
 		})

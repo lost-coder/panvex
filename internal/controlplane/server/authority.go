@@ -436,6 +436,34 @@ func (a *certificateAuthority) SignCSR(csrPEM, agentID string, validFor time.Dur
 	return issued.CertificatePEM, issued.CAPEM, issued.ExpiresAt, nil
 }
 
+// persistAgentCertPin records the SHA-256 of the issued certificate's
+// SubjectPublicKeyInfo as the agent's SPKI pin. Called on EVERY issuance
+// path (HTTP enrollment, unary renewal, in-stream renewal, recovery) so the
+// outbound dial verifier can treat a missing pin as fail-closed (A1).
+// Best-effort: a failure is logged loudly but does not abort issuance — the
+// in-flight credential exchange must not be lost to a transient pin write
+// error; the next renewal retries.
+func (s *Server) persistAgentCertPin(ctx context.Context, agentID, certPEM string) {
+	if s.store == nil {
+		return
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		s.logger.Warn("persist agent cert pin: issued cert is not PEM", "agent_id", agentID)
+		return
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		s.logger.Warn("persist agent cert pin: parse issued cert failed", "agent_id", agentID, "error", err)
+		return
+	}
+	pin := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+	if err := s.store.UpdateAgentCertPin(ctx, agentID, pin[:]); err != nil {
+		s.logger.Warn("persist agent cert pin failed", "agent_id", agentID, "error", err,
+			"alert", "agent_cert_pin_persist_failed")
+	}
+}
+
 func encodePEM(blockType string, bytes []byte) string {
 	return string(pem.EncodeToMemory(&pem.Block{
 		Type:  blockType,

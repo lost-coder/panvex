@@ -78,6 +78,7 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 			s.logger.Warn("persist renewed agent cert serial failed", "agent_id", agentID, "error", err)
 		}
 	}
+	s.persistAgentCertPin(ctx, agentID, issued.CertificatePEM)
 
 	return &gatewayrpc.RenewCertificateResponse{
 		CertificatePem: issued.CertificatePEM,

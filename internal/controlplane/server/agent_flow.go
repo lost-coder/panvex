@@ -257,6 +257,9 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 		return agentEnrollmentResponse{}, err
 	}
 
+	// Best-effort: persist the SPKI pin outside the tx (fail-closed prereq, A1).
+	s.persistAgentCertPin(ctx, agentID, issued.CertificatePEM)
+
 	// Enrollment writes a fresh agent with no instances yet; ApplySnapshot
 	// with a nil instance set establishes the live-state baseline. No s.mu
 	// needed — the live store has its own lock.
