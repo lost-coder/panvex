@@ -35,5 +35,19 @@
     "title": "Log out of Panvex?",
     "body": "You'll be returned to the sign-in screen.",
     "confirm": "Log out"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "close": "Close",
+    "goDashboard": "Go to Dashboard",
+    "goServers": "Go to Servers",
+    "goFleetGroups": "Go to Fleet groups",
+    "goClients": "Go to Clients",
+    "goSettings": "Go to Settings",
+    "toggleHelp": "Show this shortcut list",
+    "closeDialog": "Close this dialog",
+    "inputsNote": "Shortcuts do not fire inside input fields. Press Esc to close.",
+    "hint": "Keyboard shortcuts",
+    "hintLabel": "Shortcuts"
   }
 }

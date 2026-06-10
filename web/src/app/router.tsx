@@ -6,6 +6,7 @@
 // only — the cost is HMR latency on router edits, not production
 // behaviour.
 /* eslint-disable react-refresh/only-export-components */
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { QueryClient} from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +20,7 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers, ScrollText } from "lucide-react";
+import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers, ScrollText, Keyboard } from "lucide-react";
 
 import { AppShell, ErrorBoundary, Spinner, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
@@ -90,6 +91,7 @@ function ProtectedShell() {
   const { location } = useRouterState();
   const confirm = useConfirm();
   const { t } = useTranslation("ui");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const navPrimary: NavItem[] = NAV_PRIMARY_SPEC.map((i) => ({ id: i.id, icon: i.icon, label: t(i.labelKey) }));
   const navSecondary: NavItem[] = NAV_SECONDARY_SPEC.map((i) => ({ id: i.id, icon: i.icon, label: t(i.labelKey) }));
   const navItems: NavItem[] = [...navPrimary, ...navSecondary];
@@ -102,6 +104,7 @@ function ProtectedShell() {
   // UX-13: vim-style navigation. Leader `g` + route letter jumps to the
   // matching page. Shortcuts are skipped while focus is inside an input,
   // so typing "g" into the search box does not teleport the operator.
+  // Keep in sync with src/app/shortcuts.ts (overlay + test derive from it).
   useKeyboardShortcut("g d", () => navigate({ to: "/" }));
   useKeyboardShortcut("g s", () => navigate({ to: "/servers" }));
   useKeyboardShortcut("g f", () => navigate({ to: "/fleet-groups" }));
@@ -142,7 +145,24 @@ function ProtectedShell() {
         bottomNavMoreItems={navSecondary}
         activeId={activeId}
         brand="Panvex"
-        sidebarFooter={(expanded) => <ThemeToggleButton expanded={expanded} />}
+        sidebarFooter={(expanded) => (
+          <div className="flex flex-col gap-1">
+            <ThemeToggleButton expanded={expanded} />
+            <button
+              type="button"
+              onClick={() => setShortcutsOpen(true)}
+              aria-label={t("shortcuts.hint")}
+              title={t("shortcuts.hint")}
+              className="flex items-center gap-2 w-full rounded-xs px-2 py-2 text-xs text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors"
+            >
+              <Keyboard size={18} className="shrink-0" aria-hidden="true" />
+              {expanded && <span>{t("shortcuts.hintLabel")}</span>}
+              {expanded && (
+                <kbd className="ml-auto rounded border border-border bg-bg px-1.5 font-mono text-nano">?</kbd>
+              )}
+            </button>
+          </div>
+        )}
         onNavigate={(id) => navigate({ to: id })}
         onLogout={handleLogout}
       >
@@ -159,7 +179,7 @@ function ProtectedShell() {
           <Outlet />
         </ErrorBoundary>
         {/* UX-13: keyboard-shortcut help dialog, toggled by `?`. */}
-        <ShortcutsOverlay />
+        <ShortcutsOverlay open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       </AppShell>
     </AppearanceProvider>
   );
