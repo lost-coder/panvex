@@ -263,7 +263,7 @@ describe("useClientMutations", () => {
 
       await vi.advanceTimersByTimeAsync(7001);
       expect(apiClient.deleteClient).not.toHaveBeenCalled();
-      expect(toastApi.info).toHaveBeenCalledWith("Удаление отменено.");
+      expect(toastApi.info).toHaveBeenCalledWith("Deletion cancelled.");
     });
   });
 });

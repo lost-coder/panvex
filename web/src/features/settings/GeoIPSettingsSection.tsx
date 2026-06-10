@@ -15,6 +15,7 @@ import type { TFunction } from "i18next";
 import { Globe } from "lucide-react";
 import { Button, Input, PageSection, SettingsRow, formatBytes } from "@/ui";
 import { useGeoIPSettings } from "./hooks/useGeoIPSettings";
+import { useUnsavedChangesGuard } from "@/shared/hooks";
 import type {
   GeoIPResponseParsed,
   GeoIPSettingsParsed,
@@ -102,6 +103,10 @@ function GeoIPForm({
   // Avoid pointless round-trips when the form is unchanged. Stringify is
   // adequate here — the object is shallow and ~6 fields.
   const isDirty = JSON.stringify(draft) !== JSON.stringify(initial.settings);
+
+  // Audit E4: guard in-app navigation while there are unsaved GeoIP changes.
+  useUnsavedChangesGuard(isDirty);
+
   const refreshSupported = draft.mode !== "";
 
   return (

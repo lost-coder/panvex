@@ -45,5 +45,5 @@ export function useEnrollmentTokens() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  return { tokens, isLoading: query.isLoading, error: query.error, createToken, revokeToken };
+  return { tokens, isLoading: query.isLoading, error: query.error, refetch: query.refetch, createToken, revokeToken };
 }

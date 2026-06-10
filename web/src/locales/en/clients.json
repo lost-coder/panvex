@@ -1,4 +1,9 @@
 {
+  "toasts": {
+    "deleteScheduled": "Client “{{name}}” will be deleted in 7 seconds.",
+    "undo": "Undo",
+    "deleteCancelled": "Deletion cancelled."
+  },
   "page": {
     "title": "Clients",
     "count_one": "{{count}} client",
@@ -101,7 +106,9 @@
     "limitsToggleExpanded": "▾ Limits (optional)",
     "maxTcpConnsLabel": "Max TCP Conns",
     "maxUniqueIpsLabel": "Max Unique IPs",
-    "dataQuotaLabel": "Data Quota (bytes)",
+    "dataQuotaLabel": "Data Quota",
+    "quotaUnitLabel": "Unit",
+    "quotaUnits": { "MB": "MB", "GB": "GB", "TB": "TB" },
     "unlimitedPlaceholder": "0 = unlimited",
     "cancel": "Cancel",
     "saving": "Saving...",

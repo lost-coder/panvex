@@ -91,7 +91,11 @@
     "ariaLabel": "Add server wizard",
     "close": "Close",
     "quickCreateTitle": "New fleet group",
-    "fleetGroupCreated": "Fleet group «{{label}}» created."
+    "fleetGroupCreated": "Fleet group «{{label}}» created.",
+    "closeConfirmTitle": "Cancel enrollment?",
+    "closeConfirmBody": "Wizard progress will be discarded. The minted token stays valid until its TTL expires — you can revoke it on the Enrollment tokens page.",
+    "closeConfirmAction": "Discard",
+    "closeConfirmCancel": "Keep going"
   },
   "detail": {
     "breadcrumbServers": "Servers",
@@ -379,6 +383,11 @@
     "confirmTitle": "Deregister this server?",
     "confirmBody": "\"{{name}}\" will disconnect from the control-plane and stop receiving rollouts. Re-enrollment requires a new token.",
     "feedbackInitiated": "Update initiated"
+  },
+  "bulk": {
+    "queued_one": "Action queued for {{count}} server.",
+    "queued_other": "Action queued for {{count}} servers.",
+    "viewActivity": "View in Activity"
   },
   "config": {
     "tab": "Config",

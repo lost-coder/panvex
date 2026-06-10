@@ -6,6 +6,7 @@
 // only — the cost is HMR latency on router edits, not production
 // behaviour.
 /* eslint-disable react-refresh/only-export-components */
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { QueryClient} from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +20,7 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers } from "lucide-react";
+import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers, ScrollText, Keyboard } from "lucide-react";
 
 import { AppShell, ErrorBoundary, Spinner, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
@@ -55,22 +56,30 @@ function RootComponent() {
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: RootComponent });
 
 // UX-bottom-nav-limit (Material): the mobile BottomNav must stay ≤5 tabs.
-// Sidebar (desktop) renders the full NAV_ITEMS list; BottomNav renders
-// NAV_PRIMARY plus a "More" button that opens NAV_SECONDARY in a sheet.
-const NAV_PRIMARY: NavItem[] = [
-  { id: "/", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
-  { id: "/servers", label: "Servers", icon: <Server size={20} /> },
-  { id: "/fleet-groups", label: "Fleet groups", icon: <Layers size={20} /> },
-  { id: "/clients", label: "Clients", icon: <Users size={20} /> },
+// Labels are i18n keys (ui namespace) resolved inside ProtectedShell —
+// module scope has no hooks.
+interface NavSpec {
+  id: string;
+  labelKey: string;
+  icon: React.ReactNode;
+}
+
+const NAV_PRIMARY_SPEC: NavSpec[] = [
+  { id: "/", labelKey: "nav.dashboard", icon: <LayoutDashboard size={20} /> },
+  { id: "/servers", labelKey: "nav.servers", icon: <Server size={20} /> },
+  { id: "/fleet-groups", labelKey: "nav.fleetGroups", icon: <Layers size={20} /> },
+  { id: "/clients", labelKey: "nav.clients", icon: <Users size={20} /> },
 ];
 
-const NAV_SECONDARY: NavItem[] = [
-  { id: "/activity", label: "Activity", icon: <Activity size={20} /> },
-  { id: "/settings", label: "Settings", icon: <Settings size={20} /> },
-  { id: "/profile", label: "Profile", icon: <User size={20} /> },
+const NAV_SECONDARY_SPEC: NavSpec[] = [
+  { id: "/activity", labelKey: "nav.activity", icon: <Activity size={20} /> },
+  // Audit E1: /enrollment-attempts existed as an orphan route — operators
+  // debugging a failed enrollment could not reach it. Secondary nav slot
+  // next to Activity (it is an observability log, not a daily tab).
+  { id: "/enrollment-attempts", labelKey: "nav.enrollmentAttempts", icon: <ScrollText size={20} /> },
+  { id: "/settings", labelKey: "nav.settings", icon: <Settings size={20} /> },
+  { id: "/profile", labelKey: "nav.profile", icon: <User size={20} /> },
 ];
-
-const NAV_ITEMS: NavItem[] = [...NAV_PRIMARY, ...NAV_SECONDARY];
 
 function ProtectedShell() {
   const { data: me } = useQuery({
@@ -81,6 +90,11 @@ function ProtectedShell() {
   const queryClient = useQueryClient();
   const { location } = useRouterState();
   const confirm = useConfirm();
+  const { t } = useTranslation("ui");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const navPrimary: NavItem[] = NAV_PRIMARY_SPEC.map((i) => ({ id: i.id, icon: i.icon, label: t(i.labelKey) }));
+  const navSecondary: NavItem[] = NAV_SECONDARY_SPEC.map((i) => ({ id: i.id, icon: i.icon, label: t(i.labelKey) }));
+  const navItems: NavItem[] = [...navPrimary, ...navSecondary];
 
   // W6: move focus to the main landmark on every pathname change so
   // screen-reader and keyboard users land inside the new page instead
@@ -90,6 +104,7 @@ function ProtectedShell() {
   // UX-13: vim-style navigation. Leader `g` + route letter jumps to the
   // matching page. Shortcuts are skipped while focus is inside an input,
   // so typing "g" into the search box does not teleport the operator.
+  // Keep in sync with src/app/shortcuts.ts (overlay + test derive from it).
   useKeyboardShortcut("g d", () => navigate({ to: "/" }));
   useKeyboardShortcut("g s", () => navigate({ to: "/servers" }));
   useKeyboardShortcut("g f", () => navigate({ to: "/fleet-groups" }));
@@ -97,7 +112,7 @@ function ProtectedShell() {
   useKeyboardShortcut("g t", () => navigate({ to: "/settings" }));
 
   const activeId =
-    NAV_ITEMS.find(
+    navItems.find(
       (item) => item.id !== "/" && location.pathname.startsWith(item.id),
     )?.id ?? "/";
 
@@ -108,9 +123,9 @@ function ProtectedShell() {
     // behind a confirm dialog (no type-to-confirm; the action is reversible
     // by signing back in).
     const ok = await confirm({
-      title: "Log out of Panvex?",
-      body: "You'll be returned to the sign-in screen.",
-      confirmLabel: "Log out",
+      title: t("logout.title"),
+      body: t("logout.body"),
+      confirmLabel: t("logout.confirm"),
       variant: "danger",
     });
     if (!ok) return;
@@ -125,12 +140,29 @@ function ProtectedShell() {
   return (
     <AppearanceProvider userID={me?.id ?? ""}>
       <AppShell
-        navItems={NAV_ITEMS}
-        bottomNavItems={NAV_PRIMARY}
-        bottomNavMoreItems={NAV_SECONDARY}
+        navItems={navItems}
+        bottomNavItems={navPrimary}
+        bottomNavMoreItems={navSecondary}
         activeId={activeId}
         brand="Panvex"
-        sidebarFooter={(expanded) => <ThemeToggleButton expanded={expanded} />}
+        sidebarFooter={(expanded) => (
+          <div className="flex flex-col gap-1">
+            <ThemeToggleButton expanded={expanded} />
+            <button
+              type="button"
+              onClick={() => setShortcutsOpen(true)}
+              aria-label={t("shortcuts.hint")}
+              title={t("shortcuts.hint")}
+              className="flex items-center gap-2 w-full rounded-xs px-2 py-2 text-xs text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors"
+            >
+              <Keyboard size={18} className="shrink-0" aria-hidden="true" />
+              {expanded && <span>{t("shortcuts.hintLabel")}</span>}
+              {expanded && (
+                <kbd className="ml-auto rounded border border-border bg-bg px-1.5 font-mono text-nano">?</kbd>
+              )}
+            </button>
+          </div>
+        )}
         onNavigate={(id) => navigate({ to: id })}
         onLogout={handleLogout}
       >
@@ -147,7 +179,7 @@ function ProtectedShell() {
           <Outlet />
         </ErrorBoundary>
         {/* UX-13: keyboard-shortcut help dialog, toggled by `?`. */}
-        <ShortcutsOverlay />
+        <ShortcutsOverlay open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       </AppShell>
     </AppearanceProvider>
   );

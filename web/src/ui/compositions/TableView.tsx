@@ -74,6 +74,7 @@ export function TableView({
   className,
 }: Readonly<TableViewProps>) {
   const { t } = useTranslation("pagination");
+  const { t: tc } = useTranslation("common");
   const hasFilters = filters && filters.length > 0;
   const hasViewMode = viewMode !== undefined;
   const hasColumnPicker = columns !== undefined && columns.available.length > 0;
@@ -102,7 +103,7 @@ export function TableView({
             type="search"
             value={search?.value ?? ""}
             onChange={(e) => search?.onChange(e.target.value)}
-            placeholder={search?.placeholder ?? "Search…"}
+            placeholder={search?.placeholder ?? tc("search.placeholder")}
             className="pl-9"
           />
         </div>

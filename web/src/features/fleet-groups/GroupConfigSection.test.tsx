@@ -3,6 +3,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GroupConfig } from "@/shared/api/schemas/config";
 
+// useUnsavedChangesGuard (added by audit E4) calls useBlocker + useConfirm.
+// Mock both so the section can be tested without a Router or ConfirmProvider.
+const navigateSpy = vi.fn();
+vi.mock("@tanstack/react-router", () => ({
+  useBlocker: vi.fn(),
+  useNavigate: () => navigateSpy,
+}));
+
+vi.mock("@/features/servers/hooks/useServersList", () => ({
+  useServersList: () => ({ servers: [], agentVersions: {}, isLoading: false, error: null }),
+}));
+vi.mock("@/app/providers/ConfirmProvider", () => ({
+  useConfirm: () => vi.fn().mockResolvedValue(true),
+}));
+
 // Mock the global toast channel the same way the sibling config tests do.
 const toastApi = {
   success: vi.fn(),

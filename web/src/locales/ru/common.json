@@ -7,6 +7,8 @@
     "pending": "ЗАПУСК"
   },
   "empty": "Нет данных",
+  "toast": { "close": "Закрыть уведомление" },
+  "typeToConfirm": { "prompt": "Чтобы подтвердить, введите" },
   "sortBy": "Сортировка",
   "sortNone": "По умолчанию",
   "sortAscending": "По возрастанию",
@@ -17,6 +19,8 @@
     "hoursAgo": "{{count}} ч назад",
     "daysAgo": "{{count}} д назад"
   },
+  "search": { "placeholder": "Поиск…" },
+  "errorState": { "title": "Что-то пошло не так", "retry": "Повторить" },
   "reason": {
     "offline": "Агент не на связи",
     "telemtUnreachable": "Telemt API недоступен с",
@@ -33,5 +37,13 @@
     "noUpstreams": "Upstream'ы не настроены",
     "allUpstreamsDown": "Все upstream'ы недоступны",
     "someUpstreamsUnhealthy": "Часть upstream'ов неисправна"
-  }
+  },
+  "unsaved": {
+    "title": "Уйти без сохранения?",
+    "body": "На этой странице есть несохранённые изменения. Если уйти сейчас, они будут потеряны.",
+    "leave": "Уйти без сохранения",
+    "stay": "Остаться"
+  },
+  "copy": { "copy": "Копировать", "copied": "Скопировано" },
+  "bulkBar": { "clear": "Снять выделение" }
 }

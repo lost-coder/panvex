@@ -5,6 +5,7 @@
 // `./components/` so this file stays focused on data orchestration.
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Users } from "lucide-react";
 
 import { DiscoveredClientsBanner } from "@/features/clients/DiscoveredClientsBanner";
 import { ClientsCreateSheet } from "@/features/clients/components/ClientsCreateSheet";
@@ -165,7 +166,7 @@ export function ClientsPage({
           // only needs to explain what operators should do next.
           <div className="py-10">
             <EmptyState
-              icon="👥"
+              icon={<Users size={28} aria-hidden="true" />}
               title={t("empty.title")}
               description={t("empty.description")}
             />

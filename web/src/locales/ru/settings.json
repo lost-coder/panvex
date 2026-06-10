@@ -1,4 +1,11 @@
 {
+  "toasts": {
+    "geoipSaved": "Настройки GeoIP сохранены.",
+    "geoipRefreshed": "Базы GeoIP обновлены.",
+    "retentionSaved": "Настройки хранения сохранены.",
+    "saveFailed": "Не удалось сохранить: {{message}}",
+    "refreshFailed": "Не удалось обновить: {{message}}"
+  },
   "page": {
     "title": "Настройки",
     "subtitle": "Управление панелью",

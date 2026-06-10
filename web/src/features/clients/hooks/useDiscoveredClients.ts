@@ -143,6 +143,7 @@ export function useDiscoveredClients() {
     groupCounts,
     isLoading: query.isLoading,
     error: query.error,
+    refetch: query.refetch,
     adopt: adoptMutation.mutateAsync,
     ignore: ignoreMutation.mutateAsync,
     adoptMany: adoptManyMutation.mutateAsync,

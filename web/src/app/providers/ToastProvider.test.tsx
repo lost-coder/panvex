@@ -75,7 +75,7 @@ describe("ToastProvider", () => {
     await user.click(screen.getByText("push info"));
     expect(screen.getByText("heads up")).toBeInTheDocument();
 
-    const [firstClose] = screen.getAllByLabelText("Закрыть уведомление");
+    const [firstClose] = screen.getAllByLabelText("Dismiss notification");
     if (!firstClose) throw new Error("close button missing");
     await user.click(firstClose);
 

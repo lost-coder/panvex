@@ -22,6 +22,7 @@ import type { SettingsPageProps } from "@/shared/api/types-pages/pages";
 import { RestartBanner, RegistrySection, SettingsLegend, namespaceOf } from "@/features/settings/registry";
 import type { RegistrySectionField } from "@/features/settings/registry";
 import { AdminBadge, RetentionSection, SystemInfoSection } from "@/features/settings/SettingsSections";
+import { useUnsavedChangesGuard } from "@/shared/hooks";
 
 // Operational namespaces rendered as schema-driven sections.
 const OPERATIONAL_NAMESPACES = ["http", "agents", "auth", "jobs", "observability", "storage"] as const;
@@ -41,6 +42,9 @@ export function SettingsPage({
 }: Readonly<SettingsPageProps>) {
   const { t } = useTranslation("settings");
   const hasAdmin = !!(onManageUsers || (retentionSettings && onRetentionChange) || onRestart);
+
+  // Audit E4: guard in-app navigation while the registry has unsaved drafts.
+  useUnsavedChangesGuard(Boolean(registry?.isDirty));
 
   return (
     <div className="flex flex-col">

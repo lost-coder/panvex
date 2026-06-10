@@ -1,4 +1,9 @@
 {
+  "toasts": {
+    "deleteScheduled": "Клиент «{{name}}» будет удалён через 7 секунд.",
+    "undo": "Отменить",
+    "deleteCancelled": "Удаление отменено."
+  },
   "page": {
     "title": "Клиенты",
     "count_one": "{{count}} клиент",
@@ -102,7 +107,9 @@
     "limitsToggleExpanded": "▾ Лимиты (опционально)",
     "maxTcpConnsLabel": "Макс. TCP-соединений",
     "maxUniqueIpsLabel": "Макс. уникальных IP",
-    "dataQuotaLabel": "Квота трафика (байт)",
+    "dataQuotaLabel": "Квота трафика",
+    "quotaUnitLabel": "Единица",
+    "quotaUnits": { "MB": "МБ", "GB": "ГБ", "TB": "ТБ" },
     "unlimitedPlaceholder": "0 = без ограничений",
     "cancel": "Отмена",
     "saving": "Сохраняем…",

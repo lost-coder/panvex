@@ -5,12 +5,14 @@
 // real estate during the 99%+ happy-path. The banner is intentionally
 // unobtrusive — a single line at the top of the main content area.
 
+import { useTranslation } from "react-i18next";
 import { usePrefersReducedMotion } from "@/ui";
 import { useWsStatus } from "@/app/providers/EventsSynchronizer";
 
 export function WsStatusBanner() {
   const { status, reconnectAttempts } = useWsStatus();
   const reduceMotion = usePrefersReducedMotion();
+  const { t } = useTranslation("ui");
 
   if (status === "open" || status === "connecting") {
     return null;
@@ -18,9 +20,9 @@ export function WsStatusBanner() {
 
   const isReconnecting = status === "reconnecting";
   const label = (() => {
-    if (!isReconnecting) return "Live feed disconnected. Data may be stale.";
-    if (reconnectAttempts > 1) return `Reconnecting to live feed (attempt ${reconnectAttempts})...`;
-    return "Reconnecting to live feed...";
+    if (!isReconnecting) return t("wsBanner.disconnected");
+    if (reconnectAttempts > 1) return t("wsBanner.reconnectingAttempt", { count: reconnectAttempts });
+    return t("wsBanner.reconnecting");
   })();
 
   return (

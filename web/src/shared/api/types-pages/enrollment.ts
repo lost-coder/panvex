@@ -90,6 +90,10 @@ export interface EnrollmentWizardProps {
   } | undefined;
   onViewDetails: () => void;
   onCancel: () => void;
+  /** Restart the step-3 polling loop after it halted on consecutive failures. */
+  onRetryPolling?: (() => void) | undefined;
+  /** Open the fleet-wide /enrollment-attempts log (failure diagnostics). */
+  onViewAttempts?: (() => void) | undefined;
   // Shared
   loading?: boolean | undefined;
   error?: string | undefined;
@@ -116,4 +120,5 @@ export interface EnrollmentTokensPageProps {
   tokens: EnrollmentTokenData[];
   onCreateToken: () => void;
   onRevoke: (tokenValue: string) => void;
+  onViewAttempts?: (() => void) | undefined;
 }

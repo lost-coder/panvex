@@ -37,6 +37,13 @@ vi.mock("@/app/providers/ToastProvider", () => ({
   useToast: () => toastApi,
 }));
 
+// useUnsavedChangesGuard (audit E4) calls useBlocker + useConfirm.
+// Mock both so the section renders without a Router or ConfirmProvider.
+vi.mock("@tanstack/react-router", () => ({ useBlocker: vi.fn() }));
+vi.mock("@/app/providers/ConfirmProvider", () => ({
+  useConfirm: () => vi.fn().mockResolvedValue(true),
+}));
+
 import { apiClient } from "@/shared/api/api";
 import { GeoIPSettingsSection } from "./GeoIPSettingsSection";
 

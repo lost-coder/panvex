@@ -7,6 +7,8 @@
     "pending": "PENDING"
   },
   "empty": "No data",
+  "toast": { "close": "Dismiss notification" },
+  "typeToConfirm": { "prompt": "To confirm, type" },
   "sortBy": "Sort by",
   "sortNone": "Default order",
   "sortAscending": "Sort ascending",
@@ -17,6 +19,8 @@
     "hoursAgo": "{{count}}h ago",
     "daysAgo": "{{count}}d ago"
   },
+  "search": { "placeholder": "Search…" },
+  "errorState": { "title": "Something went wrong", "retry": "Retry" },
   "reason": {
     "offline": "Agent offline",
     "telemtUnreachable": "Telemt API unreachable since",
@@ -33,5 +37,13 @@
     "noUpstreams": "No upstreams configured",
     "allUpstreamsDown": "All upstreams down",
     "someUpstreamsUnhealthy": "Some upstreams unhealthy"
-  }
+  },
+  "unsaved": {
+    "title": "Discard unsaved changes?",
+    "body": "You have unsaved changes on this page. If you leave now, they will be lost.",
+    "leave": "Discard and leave",
+    "stay": "Stay"
+  },
+  "copy": { "copy": "Copy", "copied": "Copied" },
+  "bulkBar": { "clear": "Clear selection" }
 }

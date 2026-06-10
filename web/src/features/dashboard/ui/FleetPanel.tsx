@@ -1,6 +1,8 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  Button,
+  EmptyState,
   MiniChart,
   NodeStateBadge,
   formatBytes,
@@ -119,11 +121,13 @@ function FleetList({
   attention,
   healthy,
   onNodeClick,
+  onAddServer,
   maxHealthy = 12,
 }: Readonly<{
   attention: DashboardNodeData[];
   healthy: DashboardNodeData[];
   onNodeClick?: ((id: string) => void) | undefined;
+  onAddServer?: (() => void) | undefined;
   maxHealthy?: number | undefined;
 }>) {
   const { t } = useTranslation("dashboard");
@@ -132,8 +136,20 @@ function FleetList({
   const totalShown = attention.length + trimmedHealthy.length;
 
   if (totalShown === 0) {
+    // Audit E1: the post-login landing said "no servers" with no way
+    // forward; mirror the Servers-page empty state with the same CTA.
     return (
-      <div className="py-12 text-center text-sm text-fg-muted">{t("fleet.empty")}</div>
+      <EmptyState
+        title={t("fleet.empty")}
+        description={t("fleet.emptyDescription")}
+        action={
+          onAddServer ? (
+            <Button size="sm" onClick={onAddServer}>
+              {t("fleet.addServer")}
+            </Button>
+          ) : undefined
+        }
+      />
     );
   }
 
@@ -180,7 +196,8 @@ export function FleetPanel({
   data,
   onNodeClick,
   onViewAll,
-}: OverviewPanelProps & { onViewAll?: (() => void) | undefined }) {
+  onAddServer,
+}: OverviewPanelProps & { onViewAll?: (() => void) | undefined; onAddServer?: (() => void) | undefined }) {
   const { t } = useTranslation("dashboard");
   const totalFleet = data.attentionNodes.length + data.healthyNodes.length;
   const issues = data.attentionNodes.length;
@@ -212,6 +229,7 @@ export function FleetPanel({
         attention={data.attentionNodes}
         healthy={data.healthyNodes}
         onNodeClick={onNodeClick}
+        onAddServer={onAddServer}
       />
     </section>
   );
