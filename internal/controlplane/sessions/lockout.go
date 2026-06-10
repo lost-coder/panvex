@@ -309,7 +309,7 @@ func (t *LockoutTracker) RecordFailureWithContext(ctx context.Context, username 
 // CheckAndRecordFailure atomically checks lockout and records a failure.
 // Returns true if the account is locked (failure is NOT recorded when locked).
 //
-// Note: preferCheckAndRecordFailureWithContext from request handlers.
+// Note: prefer CheckAndRecordFailureWithContext from request handlers.
 func (t *LockoutTracker) CheckAndRecordFailure(username string, now time.Time) bool {
 	return t.CheckAndRecordFailureWithContext(context.Background(), username, now)
 }
@@ -363,7 +363,7 @@ func (t *LockoutTracker) ActiveCount(now time.Time) int {
 
 // RecordSuccess clears the failure counter after a successful login.
 //
-// Note: preferRecordSuccessWithContext from request handlers.
+// Note: prefer RecordSuccessWithContext from request handlers.
 func (t *LockoutTracker) RecordSuccess(username string) {
 	t.RecordSuccessWithContext(context.Background(), username)
 }

@@ -338,6 +338,25 @@ groups:
             weeks (offline, or renewal is broken). Identify it via the
             fleet page (sort by cert expiry) before it falls off the CA.
 
+      # A1 follow-up: the fail-closed outbound dial verifier treats a missing
+      # SPKI pin as a hard reject. If issuance persisted a cert but failed to
+      # write its pin, the affected listen-mode agent becomes unreachable on
+      # the next panel dial until a later renewal succeeds.
+      - alert: PanvexAgentCertPinPersistFailures
+        expr: increase(panvex_agent_cert_pin_persist_failures_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Agent SPKI pin failed to persist after issuance"
+          description: |
+            UpdateAgentCertPin errored while recording a freshly issued
+            agent certificate's pin (panvex_agent_cert_pin_persist_failures_total
+            is growing). The fail-closed reverse dial may reject affected
+            listen-mode agents until their next successful renewal. Check DB
+            health and control-plane logs for "persist agent cert pin failed".
+
   - name: panvex.jobs.execution
     rules:
       # Execution failures (job reached the failed terminal status), as

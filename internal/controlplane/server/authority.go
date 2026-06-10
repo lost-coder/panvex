@@ -403,6 +403,7 @@ func (s *Server) persistAgentCertPin(ctx context.Context, agentID, certPEM strin
 	}
 	pin := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 	if err := s.store.UpdateAgentCertPin(ctx, agentID, pin[:]); err != nil {
+		s.obs.ObserveAgentCertPinPersistFailure()
 		s.logger.Warn("persist agent cert pin failed", "agent_id", agentID, "error", err,
 			"alert", "agent_cert_pin_persist_failed")
 	}

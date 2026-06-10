@@ -450,7 +450,12 @@ func (s *Service) SetNow(now func() time.Time) {
 // want to log/echo the key before enqueueing can reuse the same format.
 func NewIdempotencyKey() string {
 	var buf [16]byte
-	_, _ = rand.Read(buf[:])
+	if _, err := rand.Read(buf[:]); err != nil {
+		// crypto/rand failing means the OS CSPRNG is unavailable; the
+		// process cannot safely mint keys and must not silently emit a
+		// predictable one.
+		panic("jobs: crypto/rand unavailable: " + err.Error())
+	}
 	return hex.EncodeToString(buf[:])
 }
 

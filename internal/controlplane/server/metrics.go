@@ -124,6 +124,12 @@ type metricsCollectors struct {
 	// labelled by result. Bounded enum: ok|mismatch|missing.
 	// Pre-initialised to zero for PromQL alert stability. (S-02)
 	agentCertPinTotal *prometheus.CounterVec
+	// agentCertPinPersistFailuresTotal counts issuance-time failures to
+	// persist an agent's SPKI pin. A growing value means certs were issued
+	// whose pins never reached the store, so the fail-closed outbound dial
+	// verifier may reject those agents until the next successful renewal
+	// (A1 follow-up).
+	agentCertPinPersistFailuresTotal prometheus.Counter
 
 	// F3 (audit 2026-06-09): certificate expiry surfaced as unix
 	// timestamps so PromQL can alert on `x - time() < threshold`.
@@ -245,7 +251,7 @@ func newMetricsCollectors() *metricsCollectors {
 		}),
 		retentionPrunedRowsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_retention_pruned_rows_total",
-			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots, jobs, webhook_outbox.",
+			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots, jobs, webhook_outbox, agent_revocations, enrollment_tokens.",
 		}, []string{"table"}),
 		panicRecoveredTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_goroutine_panic_recovered_total",
@@ -299,6 +305,10 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_agent_cert_pin_total",
 			Help: "Dial-time SPKI pin verification outcomes per outbound agent TLS handshake. Bounded label enum: ok|mismatch|missing. (S-02)",
 		}, []string{"result"}),
+		agentCertPinPersistFailuresTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_agent_cert_pin_persist_failures_total",
+			Help: "Issuance-time failures to persist an agent SPKI pin (UpdateAgentCertPin errored). A fail-closed outbound dial may reject affected agents until the next successful renewal.",
+		}),
 		caCertExpiryTimestamp: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "panvex_ca_cert_expiry_timestamp_seconds",
 			Help: "Unix timestamp at which the panel's embedded CA certificate expires.",
@@ -344,6 +354,7 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.outboundSupervisorsTotal,
 		mc.bootstrapAttemptsTotal,
 		mc.agentCertPinTotal,
+		mc.agentCertPinPersistFailuresTotal,
 		mc.caCertExpiryTimestamp,
 		mc.serverCertExpiryTimestamp,
 		mc.agentCertEarliestExpiryTimestamp,
@@ -424,6 +435,15 @@ func (mc *metricsCollectors) ObserveAgentCertPin(result string) {
 		return
 	}
 	mc.agentCertPinTotal.WithLabelValues(result).Inc()
+}
+
+// ObserveAgentCertPinPersistFailure records a failure to persist a freshly
+// issued agent's SPKI pin. Safe to call on a nil receiver (metrics disabled).
+func (mc *metricsCollectors) ObserveAgentCertPinPersistFailure() {
+	if mc == nil {
+		return
+	}
+	mc.agentCertPinPersistFailuresTotal.Inc()
 }
 
 // AddOutboundSupervisor increments the outbound supervisor gauge by delta.
@@ -789,15 +809,18 @@ func (s *Server) refreshAgentCertExpiry(ctx context.Context) {
 	if !s.agentCertExpiryRefreshedAt.IsZero() && now.Sub(s.agentCertExpiryRefreshedAt) < time.Minute {
 		return
 	}
-	s.agentCertExpiryRefreshedAt = now
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	agents, err := s.store.ListAgents(ctx)
 	if err != nil {
+		// Don't advance the throttle stamp on a transient store error —
+		// retry on the next poller tick instead of blacking out the gauge
+		// for a full minute.
 		slog.Warn("metrics: list agents for cert expiry failed", "err", err)
 		return
 	}
+	s.agentCertExpiryRefreshedAt = now
 	var earliest time.Time
 	for _, a := range agents {
 		if a.CertExpiresAt == nil {
