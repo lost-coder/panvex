@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -219,6 +220,26 @@ func runRuntime(args []string) error {
 			// after reconnect — out of scope for this fix.
 			time.AfterFunc(50*time.Millisecond, cancel)
 			return nil
+		},
+		ScheduleSelfRestart: func() {
+			// A3: the JobResult must reach the panel BEFORE this process
+			// goes away, otherwise the panel re-dispatches the job to the
+			// restarted agent (whose completedJobs cache is empty) in an
+			// infinite update/restart loop. Delay the restart so the job
+			// worker can flush the result onto the stream — same
+			// flush-window pattern as UpdateTransport above, with a much
+			// larger margin because systemd kills the whole process.
+			time.AfterFunc(selfUpdateRestartDelay, func() {
+				slog.Info("self-update: restarting via systemd")
+				// On success systemd tears this process down. On failure
+				// exit NON-ZERO so the unit's Restart=on-failure relaunches
+				// the already-replaced binary — exit 0 would not be
+				// restarted, and 78 is RestartPreventExitStatus.
+				if err := exec.Command("systemctl", "restart", "panvex-agent").Start(); err != nil {
+					slog.Error("self-update: systemctl restart failed; exiting non-zero for on-failure restart", "error", err)
+					os.Exit(1)
+				}
+			})
 		},
 	}, telemtClient)
 

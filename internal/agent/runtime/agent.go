@@ -78,6 +78,13 @@ type Config struct {
 	// Making it optional ensures existing tests constructing Config{} continue to
 	// compile without change.
 	UpdateTransport func(mode, listenAddr, panelURL string) error
+	// ScheduleSelfRestart, if non-nil, is invoked after a successful
+	// agent.self-update binary swap, AFTER the handler has produced the
+	// JobResult. The implementation must delay the actual process restart
+	// long enough for the worker to flush the result onto the gRPC stream
+	// (see cmd/agent/runtime.go) — restarting synchronously re-creates the
+	// A3 infinite update loop. nil (tests) means no restart is scheduled.
+	ScheduleSelfRestart func()
 }
 
 type runtimeLifecycleState struct {
@@ -1048,19 +1055,36 @@ func marshalResetQuotaResult(payload clientResetQuotaJobResult) string {
 	return string(bytes)
 }
 
-// handleSelfUpdateJob runs the agent.self-update action.
+// selfUpdateExecute is swapped in tests so handler-level behaviour can be
+// exercised without touching the network.
+var selfUpdateExecute = updater.Execute
+
+// handleSelfUpdateJob runs the agent.self-update action. A3 contract: the
+// JobResult is RETURNED (and flushed by the job worker) before any restart
+// happens; the restart itself is delegated to Config.ScheduleSelfRestart.
 func (a *Agent) handleSelfUpdateJob(ctx context.Context, job *gatewayrpc.JobCommand, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
 	var payload updater.Payload
 	if err := json.Unmarshal([]byte(job.GetPayloadJson()), &payload); err != nil {
 		result.Message = fmt.Sprintf("invalid update payload: %v", err)
 		return result
 	}
-	if _, err := updater.Execute(ctx, payload, a.config.Version, slog.Default()); err != nil {
+	outcome, err := selfUpdateExecute(ctx, payload, a.config.Version, slog.Default())
+	if err != nil {
 		result.Message = err.Error()
 		return result
 	}
+	if outcome == updater.OutcomeNoop {
+		result.Success = true
+		result.Message = fmt.Sprintf("already at target version %s", a.config.Version)
+		return result
+	}
 	result.Success = true
-	result.Message = "self-update initiated"
+	result.Message = "self-update applied; restart scheduled"
+	if a.config.ScheduleSelfRestart == nil {
+		slog.Warn("self-update: no restart hook configured; new binary takes effect on next process restart")
+		return result
+	}
+	a.config.ScheduleSelfRestart()
 	return result
 }
 
