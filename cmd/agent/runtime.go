@@ -358,12 +358,37 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 			}
 		}
 
-		// In listen mode the agent has no outbound dial route, so the
-		// pre-connection unary RenewCertificate RPC cannot be used. In-stream
-		// renewal (via RenewalRequest/RenewalResponse over the Connect bidi-
-		// stream) handles cert refresh for listen-mode agents. Skip the dial-
-		// only pre-connection renewal when in listen mode; the in-stream path
-		// in runConnectionMainLoop covers that case.
+		// In listen mode the agent has no outbound dial route, so handle two
+		// distinct cert lifecycle windows differently:
+		//   - BEFORE expiry: in-stream renewal (RenewalRequest/RenewalResponse
+		//     over the Connect bidi-stream) closes the window; the dial-mode
+		//     unary pre-connection RenewCertificate RPC is skipped.
+		//   - AFTER expiry: the cert is dead — no mTLS handshake can complete
+		//     (neither the panel's dial-in nor in-stream renewal). Use the HTTP
+		//     recovery flow (recoverListenCredentialsIfExpired) which works over
+		//     plain HTTPS to PanelURL regardless of transport mode.
+		if credentialsState.TransportMode == "listen" {
+			refreshCtx, cancelRefresh := context.WithTimeout(supervisorCtx, certificateRefreshTimeout)
+			recovered, recErr := recoverListenCredentialsIfExpired(refreshCtx, cfg.stateFile, *credentialsState, nil, time.Now())
+			cancelRefresh()
+			if recErr != nil {
+				if supervisorCtx.Err() != nil {
+					return supervisorCtx.Err()
+				}
+				reconnectAttempt++
+				slog.Error("listen mode: certificate recovery failed; will retry",
+					"error", recErr,
+					"hint", "create a recovery grant: POST /api/agents/{id}/certificate-recovery-grants")
+				if waitErr := waitWithCancel(supervisorCtx, reconnectDelay(reconnectAttempt)); waitErr != nil {
+					return waitErr
+				}
+				continue
+			}
+			*credentialsState = recovered
+		}
+
+		// In dial mode: use the pre-connection unary RenewCertificate RPC for
+		// cert refresh. This path is skipped in listen mode (handled above).
 		if credentialsState.TransportMode != "listen" {
 			// Derive the refresh ctx from supervisorCtx so SIGTERM during
 			// the renewal RPC also unblocks promptly.
