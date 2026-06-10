@@ -100,7 +100,8 @@ func newCertificateAuthority(now time.Time) (*certificateAuthority, error) {
 }
 
 // loadOrCreateCertificateAuthority resolves the panel CA: load the persisted
-// record, regenerate if expired, otherwise mint a new one and persist it.
+// record (aborting startup with an actionable error if expired), otherwise
+// mint a new one and persist it.
 //
 // ctx is the boot-time lifecycle context (s.serverCtx) so Close() during a
 // wedged storage call aborts the goroutine instead of leaking it past
@@ -157,16 +158,19 @@ func loadExistingCertificateAuthority(ctx context.Context, store storage.Certifi
 	return authority, nil
 }
 
-// handleCertificateAuthorityExpiry returns (true, regenerated, err) when
-// the stored CA has expired so the caller short-circuits to a freshly
-// regenerated authority. Otherwise it logs the expiring-soon warning
-// (when remaining <30d) and returns (false, nil, nil).
-func handleCertificateAuthorityExpiry(ctx context.Context, store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string) (bool, *certificateAuthority, error) {
+// handleCertificateAuthorityExpiry returns (true, nil, err) when the stored
+// CA has expired — startup is aborted with an actionable error that names the
+// recovery command. Silent regeneration would invalidate every enrolled agent
+// without warning (audit 2026-06-09, A5). Use `rotate-ca --confirm` instead.
+// Otherwise it logs the expiring-soon warning (when remaining <30d) and
+// returns (false, nil, nil).
+func handleCertificateAuthorityExpiry(_ context.Context, _ storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, _ string) (bool, *certificateAuthority, error) {
 	remaining := authority.certificate.NotAfter.Sub(now)
 	if remaining <= 0 {
-		slog.Warn("control-plane CA certificate expired, regenerating", "expired_ago", (-remaining).String())
-		regen, err := persistNewCertificateAuthority(ctx, store, now, encryptionKey)
-		return true, regen, err
+		return true, nil, fmt.Errorf(
+			"control-plane CA certificate expired %s ago; refusing to start: regenerating would invalidate every enrolled agent. Run `panvex-control-plane rotate-ca --confirm` to mint a new CA (all agents must re-enroll afterwards)",
+			(-remaining).Round(time.Hour),
+		)
 	}
 	if remaining < 30*24*time.Hour {
 		slog.Warn("control-plane CA certificate expiring soon", "remaining", remaining.Round(time.Hour).String())
@@ -191,10 +195,9 @@ func reEncryptCertificateAuthority(ctx context.Context, store storage.Certificat
 }
 
 // persistNewCertificateAuthority generates a fresh CA and stores it. Used by
-// both the bootstrap path (no record yet) and the regeneration path (existing
-// record expired or unrecoverable) — the body is identical, so there is one
-// implementation. The two call sites read better with the shared name than
-// with two trivial wrappers.
+// the bootstrap path (no record yet) and by RotateCertificateAuthority (the
+// explicit rotate-ca subcommand). Expired CA records are no longer silently
+// regenerated here; see handleCertificateAuthorityExpiry.
 func persistNewCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
 	authority, err := newCertificateAuthority(now)
 	if err != nil {

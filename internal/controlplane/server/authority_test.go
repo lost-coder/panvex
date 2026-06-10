@@ -174,6 +174,56 @@ func TestAuthorityIssuesPanelClientCertificate(t *testing.T) {
 	}
 }
 
+// newCAStoreForTest opens a fresh in-memory SQLite store scoped to the test.
+func newCAStoreForTest(t *testing.T) storage.CertificateAuthorityStore {
+	t.Helper()
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	return store
+}
+
+// seedExpiredCertificateAuthority plants a CA record whose certificate has
+// already expired (NotAfter in the past) so the expiry check triggers.
+func seedExpiredCertificateAuthority(t *testing.T, store storage.CertificateAuthorityStore) {
+	t.Helper()
+	// Build a real CA that was valid 10 years ago and expired 5 years ago.
+	past := time.Now().Add(-10 * 365 * 24 * time.Hour)
+	authority, err := newCertificateAuthority(past)
+	if err != nil {
+		t.Fatalf("newCertificateAuthority(past): %v", err)
+	}
+	rec, err := authority.record(past, "")
+	if err != nil {
+		t.Fatalf("authority.record: %v", err)
+	}
+	if err := store.PutCertificateAuthority(context.Background(), rec); err != nil {
+		t.Fatalf("PutCertificateAuthority: %v", err)
+	}
+}
+
+// TestExpiredCAFailsLoudInsteadOfSilentRegen: an expired CA must abort
+// startup with an actionable error. Silent regeneration invalidated the
+// whole fleet without warning (audit 2026-06-09, A5 follow-up).
+func TestExpiredCAFailsLoudInsteadOfSilentRegen(t *testing.T) {
+	store := newCAStoreForTest(t)
+	seedExpiredCertificateAuthority(t, store)
+	_, err := loadOrCreateCertificateAuthority(context.Background(), store, time.Now(), "")
+	if err == nil {
+		t.Fatal("expired CA: err = nil, want loud startup failure")
+	}
+	if !strings.Contains(err.Error(), "rotate-ca") {
+		t.Fatalf("err = %q, want recovery instruction mentioning rotate-ca", err)
+	}
+	// The stored record must be untouched (no silent overwrite).
+	rec, getErr := store.GetCertificateAuthority(context.Background())
+	if getErr != nil || rec.PrivateKeyPEM == "" {
+		t.Fatalf("stored CA must survive: %v", getErr)
+	}
+}
+
 func TestSignCSRIssuesDualEKUServingCert(t *testing.T) {
 	now := time.Now()
 	authority, err := newCertificateAuthority(now)
