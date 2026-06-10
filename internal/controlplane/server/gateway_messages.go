@@ -155,13 +155,13 @@ func (s *Server) processRegularAgentMessage(
 
 // handleRuntimeEventsBatch converts a proto RuntimeEventsBatch into the
 // panel-side runtimeevents.Event shape, appends the events to the
-// per-agent ring buffer, and publishes one runtime.event entry per
-// record on the events bus. The dashboard's /events websocket
-// subscribes to that bus so warnings and errors surface live without
-// polling. The buffer is constructed unconditionally in
-// newServerFromOptions; a nil-check is kept for defence in depth so a
-// future code path that constructs a Server without going through the
-// canonical constructor cannot panic here.
+// per-agent ring buffer, and publishes one runtime.events batch event
+// on the events bus. The dashboard's /events websocket subscribes to
+// that bus so warnings and errors surface live without polling. The
+// buffer is constructed unconditionally in newServerFromOptions; a
+// nil-check is kept for defence in depth so a future code path that
+// constructs a Server without going through the canonical constructor
+// cannot panic here.
 func (s *Server) handleRuntimeEventsBatch(agentID string, batch *gatewayrpc.RuntimeEventsBatch) {
 	if batch == nil {
 		return
@@ -198,18 +198,28 @@ func (s *Server) handleRuntimeEventsBatch(agentID string, batch *gatewayrpc.Runt
 	if s.events == nil {
 		return
 	}
+	// D6a: one bus event per inbound batch instead of one per record. A
+	// chatty agent shipping 50 records per push used to cost 50 hub
+	// broadcasts × N subscribers and burn 50 of the 64 per-subscriber buffer
+	// slots in a single burst; now it costs one. The dashboard's per-agent
+	// hook (useAgentRuntimeEvents) consumes the batched shape.
+	records := make([]map[string]any, 0, len(events))
 	for _, ev := range events {
-		s.events.Publish(eventbus.Event{
-			Type: "runtime.event",
-			Data: map[string]any{
-				"agent_id": agentID,
-				"ts":       ev.Ts,
-				"level":    ev.Level,
-				"message":  ev.Message,
-				"fields":   ev.Fields,
-			},
+		records = append(records, map[string]any{
+			"agent_id": agentID,
+			"ts":       ev.Ts,
+			"level":    ev.Level,
+			"message":  ev.Message,
+			"fields":   ev.Fields,
 		})
 	}
+	s.events.Publish(eventbus.Event{
+		Type: "runtime.events",
+		Data: map[string]any{
+			"agent_id": agentID,
+			"events":   records,
+		},
+	})
 }
 
 func (s *Server) processPriorityAgentMessage(ctx context.Context, agentID string, message *gatewayrpc.ConnectClientMessage) error {
