@@ -343,6 +343,9 @@ jobs:
       - name: Lint frontend
         working-directory: web
         run: npm ci && npm run lint
+      - name: i18n parity + hardcoded-Cyrillic guard
+        working-directory: web
+        run: npm run check:i18n
 
   frontend-e2e:
     name: Frontend E2E (Playwright)

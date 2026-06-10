@@ -86,6 +86,9 @@ npm run build
 echo "=== Pre-push: Frontend lint ==="
 npm run lint
 
+echo "=== Pre-push: Frontend i18n parity + hardcoded-Cyrillic guard ==="
+npm run check:i18n
+
 echo "=== Pre-push: Frontend state tests (node --test) ==="
 npm run test:state
 
