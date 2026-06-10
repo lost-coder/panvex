@@ -1125,6 +1125,40 @@ func TestEnqueueSupersedesOlderPendingClientJobs(t *testing.T) {
 
 // TestEnqueueDoesNotSupersedeNonClientActions pins the scope: only client.*
 // payload-frozen jobs participate; node-level actions are untouched.
+func TestJobFailureHookFiresOnTerminalFailure(t *testing.T) {
+	now := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	svc := NewService()
+	svc.SetNow(func() time.Time { return now })
+
+	var fired int
+	svc.SetJobFailureHook(func() { fired++ })
+
+	job, err := svc.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Hour,
+		IdempotencyKey: "fail-hook-1",
+	}, now)
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	svc.MarkDelivered(context.Background(), "agent-1", job.ID, now)
+	svc.MarkAcknowledged(context.Background(), "agent-1", job.ID, now)
+	if !svc.RecordResult(context.Background(), "agent-1", job.ID, false, "boom", "", now) {
+		t.Fatal("RecordResult = false, want true")
+	}
+
+	if fired != 1 {
+		t.Fatalf("failure hook fired %d times, want 1", fired)
+	}
+
+	// Re-reporting the same terminal state must not double-count.
+	svc.RecordResult(context.Background(), "agent-1", job.ID, false, "boom again", "", now)
+	if fired != 1 {
+		t.Fatalf("failure hook fired %d times after re-report, want 1 (no double-count)", fired)
+	}
+}
+
 func TestEnqueueDoesNotSupersedeNonClientActions(t *testing.T) {
 	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
 	service := NewService()

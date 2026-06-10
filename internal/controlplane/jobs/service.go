@@ -206,6 +206,9 @@ type Service struct {
 	startupErr              error
 	now                     func() time.Time
 	metrics                 MetricsSink
+	// onJobFailed is invoked (under s.mu) every time a job transitions INTO
+	// StatusFailed. Nil when not set. Must be cheap and non-blocking.
+	onJobFailed func()
 }
 
 // MetricsSink receives job-persistence failure observations (C3).
@@ -227,6 +230,16 @@ func (s *Service) SetMetricsSink(sink MetricsSink) {
 		sink = noopMetricsSink{}
 	}
 	s.metrics = sink
+}
+
+// SetJobFailureHook registers fn to be invoked (under s.mu) every time a
+// job transitions INTO the failed terminal status. Used by the server to
+// bump panvex_job_failures_total without making this package depend on
+// Prometheus. fn must be cheap and non-blocking.
+func (s *Service) SetJobFailureHook(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onJobFailed = fn
 }
 
 // Store is the subset of the storage layer that the jobs Service depends on
@@ -713,7 +726,11 @@ func (s *Service) supersedePendingClientJobsLocked(newJob Job, now time.Time) []
 			continue
 		}
 
+		prevStatus := job.Status
 		job.Status = deriveJobStatus(job.Targets)
+		if job.Status == StatusFailed && prevStatus != StatusFailed && s.onJobFailed != nil {
+			s.onJobFailed()
+		}
 		s.jobs[jobID] = job
 		s.syncJobTargetsIndexLocked(job)
 		if isTerminalStatus(job.Status) {
@@ -1060,7 +1077,11 @@ func expireAcknowledgedTargets(job *Job, cutoff, now time.Time) int {
 // queues a persist candidate for the post-unlock fan-out. Caller must
 // hold s.mu.
 func (s *Service) commitPrunedJobLocked(jobID string, job Job, now time.Time, candidates []persistCandidate) []persistCandidate {
+	prevStatus := job.Status
 	job.Status = deriveJobStatus(job.Targets)
+	if job.Status == StatusFailed && prevStatus != StatusFailed && s.onJobFailed != nil {
+		s.onJobFailed()
+	}
 	s.jobs[jobID] = job
 	s.syncJobTargetsIndexLocked(job)
 	s.keys[job.IdempotencyKey] = jobID
@@ -1214,7 +1235,11 @@ func (s *Service) applyTargetMutationLocked(job Job, agentID string, now time.Ti
 		return nil
 	}
 
+	prevStatus := job.Status
 	job.Status = deriveJobStatus(job.Targets)
+	if job.Status == StatusFailed && prevStatus != StatusFailed && s.onJobFailed != nil {
+		s.onJobFailed()
+	}
 	s.jobs[job.ID] = job
 	s.syncJobTargetsIndexLocked(job)
 	s.keys[job.IdempotencyKey] = job.ID

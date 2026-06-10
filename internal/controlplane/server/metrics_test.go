@@ -244,6 +244,15 @@ func TestOutboundSupervisorGaugeViaAddOutboundSupervisor(t *testing.T) {
 	}
 }
 
+func TestJobFailuresTotalRegistered(t *testing.T) {
+	srv := newMetricsTestServer(t, "devtoken")
+
+	_, body := scrapeMetricsText(t, srv, "devtoken")
+	if !strings.Contains(body, "panvex_job_failures_total") {
+		t.Errorf("scrape body missing panvex_job_failures_total")
+	}
+}
+
 func TestCertExpiryGaugesRegisteredAndPopulated(t *testing.T) {
 	srv := newMetricsTestServer(t, "devtoken")
 	srv.refreshPolledMetrics()

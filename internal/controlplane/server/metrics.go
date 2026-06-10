@@ -76,6 +76,9 @@ type metricsCollectors struct {
 	// counter backs the PanvexJobPersistFailures alert.
 	jobPersistFailuresTotal prometheus.Counter
 
+	// F3 (audit 2026-06-09): count jobs that enter the failed terminal status.
+	jobFailuresTotal prometheus.Counter
+
 	unsignedUpdateFallbackTotal prometheus.Counter
 
 	// P2-REL-04 / P2-REL-05: per-table row count deleted by the retention
@@ -232,6 +235,10 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_job_persist_failures_total",
 			Help: "Total job write-behind persistence failures (PutJob/PutJobTarget). In-memory state stays ahead of storage until the next successful persist; sustained growth means job state is not durable.",
 		}),
+		jobFailuresTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_job_failures_total",
+			Help: "Jobs that entered the failed terminal status (at least one target failed and none can still succeed).",
+		}),
 		unsignedUpdateFallbackTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "panvex_unsigned_update_fallback_total",
 			Help: "Total number of panel-update applications that fell back to an unsigned manifest.",
@@ -321,6 +328,7 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.jobQueueDepth,
 		mc.lockoutActive,
 		mc.jobPersistFailuresTotal,
+		mc.jobFailuresTotal,
 		mc.unsignedUpdateFallbackTotal,
 		mc.retentionPrunedRowsTotal,
 		mc.panicRecoveredTotal,
@@ -491,6 +499,15 @@ func (mc *metricsCollectors) ObserveJobPersistFailure() {
 		return
 	}
 	mc.jobPersistFailuresTotal.Inc()
+}
+
+// IncJobFailure bumps panvex_job_failures_total. Wired into
+// jobs.Service via SetJobFailureHook; safe on a nil receiver.
+func (mc *metricsCollectors) IncJobFailure() {
+	if mc == nil {
+		return
+	}
+	mc.jobFailuresTotal.Inc()
 }
 
 // SetQueueDepth satisfies batchMetricsSink.
