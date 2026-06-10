@@ -17,7 +17,6 @@
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium firefox webkit",
     "test:e2e:integration": "playwright test --config=playwright.integration.config.ts",
-    "test:e2e:update-snapshots": "playwright test --update-snapshots",
     "size": "size-limit",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
