@@ -727,14 +727,14 @@ func (s *Server) startMetricsPoller(ctx context.Context, interval time.Duration)
 		// Refresh once immediately so the first scrape after startup has
 		// non-zero values (otherwise a test that scrapes right after New()
 		// sees only zeros and cannot tell polling is wired).
-		s.refreshPolledMetrics()
+		s.refreshPolledMetrics(ctx)
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.refreshPolledMetrics()
+				s.refreshPolledMetrics(ctx)
 			}
 		}
 	}()
@@ -750,7 +750,7 @@ type poolStatsProvider interface {
 // refreshPolledMetrics samples in-memory state and updates the corresponding
 // Prometheus gauges. Kept intentionally lock-light: reads use the same RLocks
 // as the HTTP handlers.
-func (s *Server) refreshPolledMetrics() {
+func (s *Server) refreshPolledMetrics(ctx context.Context) {
 	if s.obs == nil {
 		return
 	}
@@ -772,7 +772,7 @@ func (s *Server) refreshPolledMetrics() {
 			s.obs.serverCertExpiryTimestamp.Set(float64(na.Unix()))
 		}
 	}
-	s.refreshAgentCertExpiry()
+	s.refreshAgentCertExpiry(ctx)
 	s.refreshPoolMetrics()
 }
 
@@ -781,7 +781,7 @@ func (s *Server) refreshPolledMetrics() {
 // is throttled to once per minute (the poller ticks every 5s). Only
 // called from the single poller goroutine — no locking on the
 // timestamp field.
-func (s *Server) refreshAgentCertExpiry() {
+func (s *Server) refreshAgentCertExpiry(ctx context.Context) {
 	if s.obs == nil || s.store == nil {
 		return
 	}
@@ -791,7 +791,7 @@ func (s *Server) refreshAgentCertExpiry() {
 	}
 	s.agentCertExpiryRefreshedAt = now
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	agents, err := s.store.ListAgents(ctx)
 	if err != nil {

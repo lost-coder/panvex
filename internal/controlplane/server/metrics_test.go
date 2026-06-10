@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -255,7 +256,7 @@ func TestJobFailuresTotalRegistered(t *testing.T) {
 
 func TestCertExpiryGaugesRegisteredAndPopulated(t *testing.T) {
 	srv := newMetricsTestServer(t, "devtoken")
-	srv.refreshPolledMetrics()
+	srv.refreshPolledMetrics(context.Background())
 
 	code, body := scrapeMetricsText(t, srv, "devtoken")
 	if code != http.StatusOK {
