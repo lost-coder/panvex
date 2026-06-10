@@ -355,7 +355,8 @@ func TestServiceMarkAcknowledgedIgnoresQueuedTarget(t *testing.T) {
 
 func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 	const retryAfter = 30 * time.Second
-	now := time.Date(2026, time.March, 19, 9, 0, 0, 0, time.UTC)
+	start := time.Date(2026, time.March, 19, 9, 0, 0, 0, time.UTC)
+	now := start
 	service := NewService()
 	service.SetNow(func() time.Time {
 		return now
@@ -367,7 +368,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 		TTL:            time.Hour,
 		IdempotencyKey: "pending-queued",
 		ActorID:        "user-1",
-	}, now.Add(-3*time.Minute))
+	}, start.Add(-3*time.Minute))
 	if err != nil {
 		t.Fatalf("Enqueue(queued) error = %v", err)
 	}
@@ -377,7 +378,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 		TTL:            time.Hour,
 		IdempotencyKey: "pending-stale-sent",
 		ActorID:        "user-1",
-	}, now.Add(-2*time.Minute))
+	}, start.Add(-2*time.Minute))
 	if err != nil {
 		t.Fatalf("Enqueue(staleSent) error = %v", err)
 	}
@@ -387,7 +388,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 		TTL:            time.Hour,
 		IdempotencyKey: "pending-recent-sent",
 		ActorID:        "user-1",
-	}, now.Add(-time.Minute))
+	}, start.Add(-time.Minute))
 	if err != nil {
 		t.Fatalf("Enqueue(recentSent) error = %v", err)
 	}
@@ -397,13 +398,18 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 		TTL:            time.Hour,
 		IdempotencyKey: "pending-other-agent",
 		ActorID:        "user-1",
-	}, now.Add(-30*time.Second))
+	}, start.Add(-30*time.Second))
 	if err != nil {
 		t.Fatalf("Enqueue(otherAgent) error = %v", err)
 	}
 
-	service.MarkDelivered(context.Background(), "agent-1", staleSent.ID, now.Add(-(retryAfter + time.Second)))
-	service.MarkDelivered(context.Background(), "agent-1", recentSent.ID, now.Add(-(retryAfter - time.Second)))
+	// D3: staleness is simulated by moving the panel clock — UpdatedAt is
+	// stamped with s.now(), the agent-reported observedAt is ignored.
+	now = start.Add(-(retryAfter + time.Second))
+	service.MarkDelivered(context.Background(), "agent-1", staleSent.ID, now)
+	now = start.Add(-(retryAfter - time.Second))
+	service.MarkDelivered(context.Background(), "agent-1", recentSent.ID, now)
+	now = start
 
 	pending := service.PendingForAgent(context.Background(), "agent-1", retryAfter)
 	if len(pending) != 2 {
@@ -924,5 +930,41 @@ func TestEnqueueGeneratesIdempotencyKeyWhenEmpty(t *testing.T) {
 	}
 	if _, ok := service.keys[""]; ok {
 		t.Fatal("the empty-string key slot must never be reserved")
+	}
+}
+
+// TestUpdateTargetUsesPanelClockNotAgentClock guards D3: redelivery gating
+// in targetIsPending compares target.UpdatedAt with the panel's s.now(),
+// so UpdatedAt must be stamped with the panel clock. Stamping the
+// agent-supplied ObservedAt froze redelivery for agents whose clock runs
+// ahead (UpdatedAt in the future => retry window never elapses).
+func TestUpdateTargetUsesPanelClockNotAgentClock(t *testing.T) {
+	const retryAfter = 30 * time.Second
+	panelNow := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return panelNow })
+
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Hour,
+		IdempotencyKey: "panel-clock",
+		ActorID:        "user-1",
+	}, panelNow)
+	if err != nil {
+		t.Fatalf("Enqueue() error = %v", err)
+	}
+
+	// Agent clock is 2h ahead. With agent-clock stamping the target looks
+	// "fresh" for two extra hours and scheduled redelivery never fires.
+	agentObservedAt := panelNow.Add(2 * time.Hour)
+	service.MarkDelivered(context.Background(), "agent-1", job.ID, agentObservedAt)
+
+	got, ok := service.Get(job.ID)
+	if !ok {
+		t.Fatalf("job %q not found", job.ID)
+	}
+	if !got.Targets[0].UpdatedAt.Equal(panelNow) {
+		t.Fatalf("target.UpdatedAt = %v, want panel clock %v", got.Targets[0].UpdatedAt, panelNow)
 	}
 }

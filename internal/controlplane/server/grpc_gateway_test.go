@@ -55,6 +55,10 @@ func TestServerPendingJobsForAgentSkipsRecentlySentTarget(t *testing.T) {
 
 	job := enqueueJobForAgent(t, server, "agent-1", "sent-recent", currentTime)
 	deliveredAt := currentTime.Add(2 * time.Second)
+	// D3: target.UpdatedAt is stamped with the panel clock, so advance the
+	// clock to the delivery moment before marking delivered — the
+	// agent-reported observedAt no longer drives redelivery gating.
+	currentTime = deliveredAt
 	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, deliveredAt)
 
 	currentTime = deliveredAt.Add(jobDispatchRetryAfter - time.Second)
