@@ -223,6 +223,7 @@ func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentS
 	// disconnects. On reconnect, the next Connect() call produces a fresh
 	// MarkConnected and the connectedAt timestamp moves forward.
 	s.presence.MarkConnected(agentID, s.now())
+	s.markTransportSwitchResolved(agentID)
 	s.logger.Info("accepted agent stream", "agent_id", agentID)
 
 	channels := newAgentStreamChannels()
@@ -263,6 +264,15 @@ func authenticatedAgentID(ctx context.Context) (string, error) {
 }
 
 // authenticatedAgentIdentity returns the (agent_id, serial-hex) pair
+// markTransportSwitchResolved clears the A2 "switched but never reconnected"
+// marker: any accepted agent stream (inbound or outbound) proves the agent
+// is reachable in its current transport mode.
+func (s *Server) markTransportSwitchResolved(agentID string) {
+	s.mu.Lock()
+	delete(s.transportSwitchPendingAt, agentID)
+	s.mu.Unlock()
+}
+
 // for the peer's client certificate. The CN is the agent_id; the
 // serial is hex-encoded big-endian so callers can compare it against
 // the persisted pin (Q4.U-S-04).

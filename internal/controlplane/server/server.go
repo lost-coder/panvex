@@ -209,6 +209,13 @@ type Server struct {
 	// empty, which is acceptable because the CA will not have issued new
 	// certificates for deleted agents and existing ones expire within 30 days.
 	revokedAgentIDs map[string]struct{}
+	// transportSwitchPendingAt tracks agents that were switched to outbound
+	// transport but have not yet accepted a new agent stream (A2 "switched
+	// but never reconnected"). The value is the time of the switch; it is
+	// cleared by markTransportSwitchResolved on the next accepted stream.
+	// In-memory only: the panel is single-instance and the agent-side
+	// probation window is the durable safety net.
+	transportSwitchPendingAt map[string]time.Time
 	// live is the single owner of agent live-state (full Agent value:
 	// identity + runtime telemetry) and per-agent Telemt instances, with
 	// replace/prune semantics and deep-copy isolation (A2/A1). It replaces
