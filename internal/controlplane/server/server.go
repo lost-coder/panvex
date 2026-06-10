@@ -57,6 +57,11 @@ const (
 	httpLoginRateLimitPerWindow          = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
 	grpcConnectRateLimitPerWindow        = 30
+	// httpInstallScriptRateLimitPerWindow caps unauthenticated fetches of
+	// /install-agent.sh per source IP. The route is intentionally public
+	// (curl|bash one-liner) but without a limit it is a cheap amplification
+	// vector; 60/min is generous for legitimate use and tight against scanners.
+	httpInstallScriptRateLimitPerWindow = 60
 	// httpSensitiveRateLimitPerWindow caps how often a single authenticated
 	// user (or client IP if no session) may hit privileged write endpoints
 	// (TOTP enable/disable/setup, user CRUD, enrollment-token create, client
@@ -96,6 +101,7 @@ type Server struct {
 	agentBootstrapRateLimiter *fixedWindowRateLimiter
 	grpcConnectRateLimiter    *fixedWindowRateLimiter
 	sensitiveRateLimiter      *fixedWindowRateLimiter
+	installScriptRateLimiter  *fixedWindowRateLimiter
 	loginLockout              *accountLockoutTracker
 	totpLockout               *totpLockoutTracker
 	// ipLockout counts failed login attempts per source IP over a 15-minute

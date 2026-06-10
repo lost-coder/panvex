@@ -68,8 +68,11 @@ func (s *Server) routes() http.Handler {
 	// path so the generated `curl <panel>/install-agent.sh | bash` works as
 	// pasted, with no /api prefix to remember. Unauthenticated by design — the
 	// per-agent bootstrap token (single-use, 5min TTL) is on the curl arg, not
-	// here. See install_script.go for rationale.
-	router.Get("/install-agent.sh", s.handleInstallAgentScript())
+	// here. See install_script.go for rationale. Coarse per-IP rate limit
+	// (no auth by design — see install_script.go); the bootstrap token on the
+	// curl arg is the real gate.
+	router.With(s.withRateLimit(s.installScriptRateLimiter, "install_script", s.requestClientRateLimitKey)).
+		Get("/install-agent.sh", s.handleInstallAgentScript())
 	// /metrics is registered at the top level (outside the /api group) so
 	// Prometheus does not need session cookies. It is bearer-token gated in
 	// handleMetrics; when no token is configured, the route is omitted.

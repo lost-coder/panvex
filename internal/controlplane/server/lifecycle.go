@@ -116,6 +116,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
 		grpcConnectRateLimiter:    newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
 		sensitiveRateLimiter:      newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
+		installScriptRateLimiter:  newFixedWindowRateLimiter(httpInstallScriptRateLimitPerWindow, defaultRateLimitWindow),
 		loginLockout:              newAccountLockoutTracker(),
 		totpLockout:               newTOTPLockoutTracker(),
 		ipLockout:                 newIPLockoutTracker(),
