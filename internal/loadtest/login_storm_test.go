@@ -165,7 +165,7 @@ func runLoginStorm(tb testing.TB, goodWorkers, badWorkers int) (good, bad *laten
 	// race between RecordFailure increment and IsLocked read can let one
 	// or two extra attempts through under heavy contention; the spec is
 	// "lockout activation correctness" not "exact counter".
-	lockoutFired = tracker.IsLocked(loginStormUsername, time.Now())
+	lockoutFired = tracker.IsLockedWithContext(context.Background(), loginStormUsername, time.Now())
 	return good, bad, lockoutFired, goodOK.Load(), lockoutBlock.Load()
 }
 
