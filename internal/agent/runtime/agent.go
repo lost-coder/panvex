@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -113,7 +114,9 @@ type Agent struct {
 	restarter configRestarter
 	mu        sync.RWMutex
 
-	observedConfig observedConfigReporter
+	observedConfig   observedConfigReporter
+	diagnosticsGate  contentHashGate
+	securityGate     contentHashGate
 
 	clientNames                        map[string]string
 	lastOctets                         map[string]uint64
@@ -347,22 +350,47 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 		"connections": uint64(state.Connections),
 	}
 	snapshot.Runtime = buildRuntimeSnapshotProto(state, dcs, upstreamRows, recentEvents, wasRestarting)
-	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
-		State:               state.Diagnostics.State,
-		StateReason:         state.Diagnostics.StateReason,
-		SystemInfoJson:      state.Diagnostics.SystemInfoJSON,
-		EffectiveLimitsJson: state.Diagnostics.EffectiveLimitsJSON,
-		SecurityPostureJson: state.Diagnostics.SecurityPostureJSON,
-		MinimalAllJson:      state.Diagnostics.MinimalAllJSON,
-		MePoolJson:          state.Diagnostics.MEPoolJSON,
-		DcsJson:             state.Diagnostics.DcsJSON,
+	diagHash, sendDiagnosticsBody := a.diagnosticsGate.next(
+		state.Diagnostics.State,
+		state.Diagnostics.StateReason,
+		state.Diagnostics.SystemInfoJSON,
+		state.Diagnostics.EffectiveLimitsJSON,
+		state.Diagnostics.SecurityPostureJSON,
+		state.Diagnostics.MinimalAllJSON,
+		state.Diagnostics.MEPoolJSON,
+		state.Diagnostics.DcsJSON,
+	)
+	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{ContentHash: diagHash}
+	if sendDiagnosticsBody {
+		snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
+			ContentHash:         diagHash,
+			State:               state.Diagnostics.State,
+			StateReason:         state.Diagnostics.StateReason,
+			SystemInfoJson:      state.Diagnostics.SystemInfoJSON,
+			EffectiveLimitsJson: state.Diagnostics.EffectiveLimitsJSON,
+			SecurityPostureJson: state.Diagnostics.SecurityPostureJSON,
+			MinimalAllJson:      state.Diagnostics.MinimalAllJSON,
+			MePoolJson:          state.Diagnostics.MEPoolJSON,
+			DcsJson:             state.Diagnostics.DcsJSON,
+		}
 	}
-	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
-		State:        state.SecurityInventory.State,
-		StateReason:  state.SecurityInventory.StateReason,
-		Enabled:      state.SecurityInventory.Enabled,
-		EntriesTotal: int32(state.SecurityInventory.EntriesTotal),
-		EntriesJson:  state.SecurityInventory.EntriesJSON,
+	securityHash, sendSecurityBody := a.securityGate.next(
+		state.SecurityInventory.State,
+		state.SecurityInventory.StateReason,
+		strconv.FormatBool(state.SecurityInventory.Enabled),
+		strconv.Itoa(state.SecurityInventory.EntriesTotal),
+		state.SecurityInventory.EntriesJSON,
+	)
+	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{ContentHash: securityHash}
+	if sendSecurityBody {
+		snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
+			ContentHash:  securityHash,
+			State:        state.SecurityInventory.State,
+			StateReason:  state.SecurityInventory.StateReason,
+			Enabled:      state.SecurityInventory.Enabled,
+			EntriesTotal: int32(state.SecurityInventory.EntriesTotal),
+			EntriesJson:  state.SecurityInventory.EntriesJSON,
+		}
 	}
 	snapshot.TotalActiveConnections = int32(state.ConnectionTotals.CurrentConnections)
 	snapshot.TotalActiveUsers = int32(state.ConnectionTotals.ActiveUsers)
@@ -385,6 +413,13 @@ func (a *Agent) BuildRuntimeUnreachableSnapshot(observedAt, since time.Time) *ga
 	}
 	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{}
 	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{}
+	// The panel deliberately blanks its stored diagnostics row on an
+	// unreachable snapshot (empty hash = historical overwrite semantics).
+	// Reset the gates so the first post-recovery snapshot re-sends full
+	// bodies — otherwise an unchanged hash would leave the panel blank
+	// forever (D5).
+	a.diagnosticsGate.reset()
+	a.securityGate.reset()
 	return snapshot
 }
 

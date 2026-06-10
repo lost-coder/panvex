@@ -2022,8 +2022,16 @@ type RuntimeDiagnosticsSnapshot struct {
 	MinimalAllJson      string                 `protobuf:"bytes,6,opt,name=minimal_all_json,json=minimalAllJson,proto3" json:"minimal_all_json,omitempty"`
 	MePoolJson          string                 `protobuf:"bytes,7,opt,name=me_pool_json,json=mePoolJson,proto3" json:"me_pool_json,omitempty"`
 	DcsJson             string                 `protobuf:"bytes,8,opt,name=dcs_json,json=dcsJson,proto3" json:"dcs_json,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// content_hash is a SHA-256 over the (state, state_reason, *_json) tuple,
+	// sent on EVERY snapshot. When the tuple is unchanged since the agent's
+	// previous report, the body fields above are omitted (empty) and the panel
+	// must carry forward its stored diagnostics row instead of overwriting it
+	// with blanks (D5). An EMPTY hash keeps the historical overwrite
+	// semantics — that covers pre-gating agents and the deliberate blank
+	// record sent by BuildRuntimeUnreachableSnapshot.
+	ContentHash   string `protobuf:"bytes,9,opt,name=content_hash,json=contentHash,proto3" json:"content_hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RuntimeDiagnosticsSnapshot) Reset() {
@@ -2112,13 +2120,28 @@ func (x *RuntimeDiagnosticsSnapshot) GetDcsJson() string {
 	return ""
 }
 
+func (x *RuntimeDiagnosticsSnapshot) GetContentHash() string {
+	if x != nil {
+		return x.ContentHash
+	}
+	return ""
+}
+
 type RuntimeSecurityInventorySnapshot struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	State         string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
-	StateReason   string                 `protobuf:"bytes,2,opt,name=state_reason,json=stateReason,proto3" json:"state_reason,omitempty"`
-	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	EntriesTotal  int32                  `protobuf:"varint,4,opt,name=entries_total,json=entriesTotal,proto3" json:"entries_total,omitempty"`
-	EntriesJson   string                 `protobuf:"bytes,5,opt,name=entries_json,json=entriesJson,proto3" json:"entries_json,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	State        string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	StateReason  string                 `protobuf:"bytes,2,opt,name=state_reason,json=stateReason,proto3" json:"state_reason,omitempty"`
+	Enabled      bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	EntriesTotal int32                  `protobuf:"varint,4,opt,name=entries_total,json=entriesTotal,proto3" json:"entries_total,omitempty"`
+	EntriesJson  string                 `protobuf:"bytes,5,opt,name=entries_json,json=entriesJson,proto3" json:"entries_json,omitempty"`
+	// content_hash is a SHA-256 over the (state, state_reason, *_json) tuple,
+	// sent on EVERY snapshot. When the tuple is unchanged since the agent's
+	// previous report, the body fields above are omitted (empty) and the panel
+	// must carry forward its stored diagnostics row instead of overwriting it
+	// with blanks (D5). An EMPTY hash keeps the historical overwrite
+	// semantics — that covers pre-gating agents and the deliberate blank
+	// record sent by BuildRuntimeUnreachableSnapshot.
+	ContentHash   string `protobuf:"bytes,6,opt,name=content_hash,json=contentHash,proto3" json:"content_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2184,6 +2207,13 @@ func (x *RuntimeSecurityInventorySnapshot) GetEntriesTotal() int32 {
 func (x *RuntimeSecurityInventorySnapshot) GetEntriesJson() string {
 	if x != nil {
 		return x.EntriesJson
+	}
+	return ""
+}
+
+func (x *RuntimeSecurityInventorySnapshot) GetContentHash() string {
+	if x != nil {
+		return x.ContentHash
 	}
 	return ""
 }
@@ -3997,7 +4027,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x12ConnectionTopEntry\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12 \n" +
 	"\vconnections\x18\x02 \x01(\x05R\vconnections\x12)\n" +
-	"\x10throughput_bytes\x18\x03 \x01(\x04R\x0fthroughputBytes\"\xce\x02\n" +
+	"\x10throughput_bytes\x18\x03 \x01(\x04R\x0fthroughputBytes\"\xf1\x02\n" +
 	"\x1aRuntimeDiagnosticsSnapshot\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12!\n" +
 	"\fstate_reason\x18\x02 \x01(\tR\vstateReason\x12(\n" +
@@ -4007,13 +4037,15 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x10minimal_all_json\x18\x06 \x01(\tR\x0eminimalAllJson\x12 \n" +
 	"\fme_pool_json\x18\a \x01(\tR\n" +
 	"mePoolJson\x12\x19\n" +
-	"\bdcs_json\x18\b \x01(\tR\adcsJson\"\xbd\x01\n" +
+	"\bdcs_json\x18\b \x01(\tR\adcsJson\x12!\n" +
+	"\fcontent_hash\x18\t \x01(\tR\vcontentHash\"\xe0\x01\n" +
 	" RuntimeSecurityInventorySnapshot\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12!\n" +
 	"\fstate_reason\x18\x02 \x01(\tR\vstateReason\x12\x18\n" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12#\n" +
 	"\rentries_total\x18\x04 \x01(\x05R\fentriesTotal\x12!\n" +
-	"\fentries_json\x18\x05 \x01(\tR\ventriesJson\"\xf5\a\n" +
+	"\fentries_json\x18\x05 \x01(\tR\ventriesJson\x12!\n" +
+	"\fcontent_hash\x18\x06 \x01(\tR\vcontentHash\"\xf5\a\n" +
 	"\bSnapshot\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12$\n" +
