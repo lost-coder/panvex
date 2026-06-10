@@ -19,12 +19,12 @@ test.describe("Offline detection", () => {
 
     await context.setOffline(true);
     await expect(
-      page.getByText(/соединение потеряно/i, { exact: false }),
+      page.getByText(/connection lost/i, { exact: false }),
     ).toBeVisible();
 
     await context.setOffline(false);
     await expect(
-      page.getByText(/соединение потеряно/i, { exact: false }),
+      page.getByText(/connection lost/i, { exact: false }),
     ).toBeHidden();
   });
 });
