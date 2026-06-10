@@ -37,5 +37,11 @@
     "noUpstreams": "No upstreams configured",
     "allUpstreamsDown": "All upstreams down",
     "someUpstreamsUnhealthy": "Some upstreams unhealthy"
+  },
+  "unsaved": {
+    "title": "Discard unsaved changes?",
+    "body": "You have unsaved changes on this page. If you leave now, they will be lost.",
+    "leave": "Discard and leave",
+    "stay": "Stay"
   }
 }

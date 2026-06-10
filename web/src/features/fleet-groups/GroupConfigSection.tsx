@@ -18,6 +18,7 @@ import { useTranslation } from "react-i18next";
 import { Button, Spinner } from "@/ui";
 import { SectionHeader } from "@/ui/layout/SectionHeader";
 import { useToast } from "@/app/providers/ToastProvider";
+import { useUnsavedChangesGuard } from "@/shared/hooks";
 
 import {
   useApplyGroupConfig,
@@ -91,6 +92,9 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
     () => diffPaths(initialValues, values),
     [initialValues, values],
   );
+
+  // Audit E4: guard in-app navigation while there are unsaved config changes.
+  useUnsavedChangesGuard(changedPaths.length > 0);
 
   // What Apply will roll out: the persisted target's own paths. Feeding these
   // to ApplyConfigButton lets it decide whether a restart-warning confirm is
