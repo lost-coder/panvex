@@ -20,5 +20,20 @@
     "enrollmentAttempts": "Enrollment attempts",
     "settings": "Settings",
     "profile": "Profile"
+  },
+  "wsBanner": {
+    "disconnected": "Live feed disconnected. Data may be stale.",
+    "reconnecting": "Reconnecting to live feed…",
+    "reconnectingAttempt": "Reconnecting to live feed (attempt {{count}})…"
+  },
+  "errorFallback": {
+    "title": "Something went wrong",
+    "body": "The dashboard hit an unexpected error and can't continue. Reload the page to recover. If the problem persists, check the browser console and report the error ID below.",
+    "reload": "Reload"
+  },
+  "logout": {
+    "title": "Log out of Panvex?",
+    "body": "You'll be returned to the sign-in screen.",
+    "confirm": "Log out"
   }
 }

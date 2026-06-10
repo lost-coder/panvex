@@ -19,6 +19,8 @@
     "hoursAgo": "{{count}} ч назад",
     "daysAgo": "{{count}} д назад"
   },
+  "search": { "placeholder": "Поиск…" },
+  "errorState": { "title": "Что-то пошло не так", "retry": "Повторить" },
   "reason": {
     "offline": "Агент не на связи",
     "telemtUnreachable": "Telemt API недоступен с",

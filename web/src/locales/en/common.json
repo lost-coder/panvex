@@ -19,6 +19,8 @@
     "hoursAgo": "{{count}}h ago",
     "daysAgo": "{{count}}d ago"
   },
+  "search": { "placeholder": "Search…" },
+  "errorState": { "title": "Something went wrong", "retry": "Retry" },
   "reason": {
     "offline": "Agent offline",
     "telemtUnreachable": "Telemt API unreachable since",

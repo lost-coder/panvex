@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 interface ErrorStateProps {
   /** Short error headline. Falls back to "Something went wrong". */
   title?: string;
@@ -7,7 +9,8 @@ interface ErrorStateProps {
 }
 
 export function ErrorState({ title, description, onRetry }: Readonly<ErrorStateProps>) {
-  const headline = title ?? "Something went wrong";
+  const { t } = useTranslation("common");
+  const headline = title ?? t("errorState.title");
   const detail = description;
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-16 px-6 text-center">
@@ -27,7 +30,7 @@ export function ErrorState({ title, description, onRetry }: Readonly<ErrorStateP
           onClick={onRetry}
           className="mt-1 px-3 py-1.5 text-xs border border-border-hi rounded-xs text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors"
         >
-          Retry
+          {t("errorState.retry")}
         </button>
       )}
     </div>

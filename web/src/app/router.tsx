@@ -120,9 +120,9 @@ function ProtectedShell() {
     // behind a confirm dialog (no type-to-confirm; the action is reversible
     // by signing back in).
     const ok = await confirm({
-      title: "Log out of Panvex?",
-      body: "You'll be returned to the sign-in screen.",
-      confirmLabel: "Log out",
+      title: t("logout.title"),
+      body: t("logout.body"),
+      confirmLabel: t("logout.confirm"),
       variant: "danger",
     });
     if (!ok) return;
