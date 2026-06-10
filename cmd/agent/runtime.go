@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -276,7 +277,7 @@ func runRuntime(args []string) error {
 
 	// Supervisor context: cancelled on SIGINT/SIGTERM so the reconnect
 	// backoff sleep, gRPC stream context, and all derived workers exit
-	// promptly instead of waiting out the full ~15-30s backoff window.
+	// promptly instead of waiting out the full ~45s backoff window.
 	supervisorCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -402,7 +403,7 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 
 // waitWithCancel sleeps for d, returning early with ctx.Err() if the
 // supervisor ctx is cancelled. Replaces bare time.Sleep so a SIGTERM
-// during the reconnect backoff (up to 15s) does not hold up shutdown.
+// during the reconnect backoff (up to 45s) does not hold up shutdown.
 func waitWithCancel(ctx context.Context, d time.Duration) error {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
@@ -414,13 +415,29 @@ func waitWithCancel(ctx context.Context, d time.Duration) error {
 	}
 }
 
+// reconnectBaseDelay / reconnectMaxDelay bound the exponential backoff of the
+// agent's outer reconnect loop. The cap stays well below the panel's 90s
+// offline threshold (presence tracker defaults, lifecycle.go), so even an
+// agent sleeping a full max window keeps its presence within "degraded".
+const (
+	reconnectBaseDelay = time.Second
+	reconnectMaxDelay  = 45 * time.Second
+)
+
+// reconnectDelay returns the backoff for the given attempt with full jitter:
+// the deterministic exponential value is the ceiling and the actual sleep is
+// uniform in [ceiling/2, ceiling]. Mirrors agenttransport/outbound.go's
+// jitter() so both transport directions damp herd reconnects identically.
+// Without jitter a panel restart made the whole fleet retry in lockstep
+// waves (D1). The attempt counter is reset by the caller on any successful
+// connection (runRuntimeReconnectLoop).
 func reconnectDelay(attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1
 	}
-	delay := time.Second << min(attempt-1, 4)
-	if delay > 15*time.Second {
-		return 15 * time.Second
+	delay := reconnectBaseDelay << min(attempt-1, 6)
+	if delay > reconnectMaxDelay {
+		delay = reconnectMaxDelay
 	}
-	return delay
+	return delay/2 + time.Duration(rand.Int64N(int64(delay/2+1)))
 }

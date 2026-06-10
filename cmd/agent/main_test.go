@@ -471,22 +471,50 @@ func TestLoadRuntimeCredentialsRequiresBootstrapState(t *testing.T) {
 	}
 }
 
-func TestReconnectDelayCapsBackoff(t *testing.T) {
-	if delay := reconnectDelay(1); delay != time.Second {
-		t.Fatalf("reconnectDelay(1) = %v, want %v", delay, time.Second)
+// TestReconnectDelayJitterBounds guards D1: each attempt's delay must be
+// full-jittered within [ceiling/2, ceiling], where the ceiling follows the
+// exponential schedule capped at reconnectMaxDelay. Mirrors the panel-side
+// jitter() in agenttransport/outbound.go so both transport directions
+// de-synchronise herd reconnects the same way.
+func TestReconnectDelayJitterBounds(t *testing.T) {
+	cases := []struct {
+		attempt int
+		ceiling time.Duration
+	}{
+		{attempt: 0, ceiling: time.Second}, // clamped to attempt 1
+		{attempt: 1, ceiling: time.Second},
+		{attempt: 3, ceiling: 4 * time.Second},
+		{attempt: 6, ceiling: 32 * time.Second},
+		{attempt: 7, ceiling: reconnectMaxDelay},
+		{attempt: 50, ceiling: reconnectMaxDelay},
 	}
-	if delay := reconnectDelay(3); delay != 4*time.Second {
-		t.Fatalf("reconnectDelay(3) = %v, want %v", delay, 4*time.Second)
+	for _, tc := range cases {
+		for i := 0; i < 200; i++ {
+			delay := reconnectDelay(tc.attempt)
+			if delay < tc.ceiling/2 || delay > tc.ceiling {
+				t.Fatalf("reconnectDelay(%d) = %v, want within [%v, %v]",
+					tc.attempt, delay, tc.ceiling/2, tc.ceiling)
+			}
+		}
 	}
-	if delay := reconnectDelay(10); delay != 15*time.Second {
-		t.Fatalf("reconnectDelay(10) = %v, want %v", delay, 15*time.Second)
+}
+
+// TestReconnectDelayIsJittered asserts the delay actually varies between
+// calls — a deterministic implementation (the D1 bug) returns one value.
+func TestReconnectDelayIsJittered(t *testing.T) {
+	seen := make(map[time.Duration]struct{})
+	for i := 0; i < 100; i++ {
+		seen[reconnectDelay(10)] = struct{}{}
+	}
+	if len(seen) < 2 {
+		t.Fatal("expected jittered delays to vary across 100 samples, got a single value")
 	}
 }
 
 // TestWaitWithCancelHonoursContextCancellation verifies that the helper
 // replacing the bare time.Sleep in runRuntimeReconnectLoop returns
 // promptly when the supervisor ctx is cancelled, rather than waiting
-// out the full backoff delay (~15s in production at max attempt).
+// out the full backoff delay (~45s in production at max attempt).
 func TestWaitWithCancelHonoursContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -495,7 +523,7 @@ func TestWaitWithCancelHonoursContextCancellation(t *testing.T) {
 	start := time.Now()
 
 	go func() {
-		// 30s mirrors the worst-case backoff window the bug report cites.
+		// 60s mirrors the worst-case backoff window the bug report cites.
 		done <- waitWithCancel(ctx, 30*time.Second)
 	}()
 
@@ -531,7 +559,7 @@ func TestWaitWithCancelExpiresOnTimer(t *testing.T) {
 // pattern (the loop's inner select{timer, ctx.Done}) directly, asserting
 // that a cancellation while sitting in the backoff sleep unblocks the
 // loop within milliseconds — not after the full reconnectDelay (up to
-// 15s). This guards against regressions to the bare-time.Sleep code
+// 45s). This guards against regressions to the bare-time.Sleep code
 // path that this task removed.
 func TestReconnectBackoffHonoursContextCancellation(t *testing.T) {
 	t.Parallel()
@@ -555,7 +583,7 @@ func TestReconnectBackoffHonoursContextCancellation(t *testing.T) {
 				return
 			}
 			// Saturate at the max backoff so a regression that ignored
-			// ctx would block this goroutine for 15s.
+			// ctx would block this goroutine for 45s.
 			if attempt > 5 {
 				done <- errors.New("loop did not exit despite ctx cancellation")
 				return
