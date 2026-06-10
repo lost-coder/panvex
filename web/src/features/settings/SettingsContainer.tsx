@@ -24,7 +24,7 @@ export function SettingsContainer() {
   if (isLoading || !settings) {
     return (
       <div className="px-4 md:px-8 py-8">
-        <SkeletonRows count={5} label="Загрузка настроек…" />
+        <SkeletonRows count={5} />
       </div>
     );
   }

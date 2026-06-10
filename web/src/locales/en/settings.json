@@ -1,4 +1,11 @@
 {
+  "toasts": {
+    "geoipSaved": "GeoIP settings saved.",
+    "geoipRefreshed": "GeoIP databases refreshed.",
+    "retentionSaved": "Retention settings saved.",
+    "saveFailed": "Save failed: {{message}}",
+    "refreshFailed": "Refresh failed: {{message}}"
+  },
   "page": {
     "title": "Settings",
     "subtitle": "Configure your control plane",

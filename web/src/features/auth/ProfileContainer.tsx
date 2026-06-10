@@ -26,7 +26,7 @@ export function ProfileContainer() {
   if (profileLoading || settingsLoading || !profile || !settings) {
     return (
       <div className="px-4 md:px-8 py-8">
-        <SkeletonRows count={4} label="Загрузка профиля…" />
+        <SkeletonRows count={4} />
       </div>
     );
   }
