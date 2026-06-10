@@ -55,20 +55,16 @@ func (s *Server) markJobDelivered(ctx context.Context, agentID string, jobID str
 }
 
 // Test-only convenience wrappers. Production code drives these flows
-// through processPriorityAgentMessageAsync which calls the
-// recordJobResultState / recordJobAcknowledgedState halves directly with
-// the connection ctx, plus the WithContext audit/result effects helpers.
-// The appendAudit helper used here still routes through context.Background()
-// internally; it will gain ctx in a later remediation pass.
+// through processPriorityAgentMessageAsync with the connection ctx.
 func (s *Server) recordJobAcknowledged(ctx context.Context, agentID string, jobID string, observedAt time.Time) {
 	s.recordJobAcknowledgedState(ctx, agentID, jobID, observedAt)
-	s.appendAudit(agentID, auditJobsAcknowledged, jobID, map[string]any{}) //nolint:contextcheck
+	s.appendAuditWithContext(ctx, agentID, auditJobsAcknowledged, jobID, map[string]any{})
 }
 
 func (s *Server) recordJobResult(ctx context.Context, agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
 	s.recordJobResultState(ctx, agentID, jobID, success, message, resultJSON, observedAt)
 	s.recordClientJobResultWithContext(ctx, agentID, jobID, success, message, resultJSON, observedAt)
-	s.appendAudit(agentID, auditJobsResult, jobID, map[string]any{ //nolint:contextcheck
+	s.appendAuditWithContext(ctx, agentID, auditJobsResult, jobID, map[string]any{
 		"success": success,
 		"message": message,
 	})
