@@ -414,6 +414,20 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 	return s.authority.serverTLSConfig()
 }
 
+// OutboundGRPCTLSConfig returns the TLS configuration the panel uses when
+// DIALING listen-mode agents (A1). Distinct from GRPCTLSConfig (the
+// listener-side server config): RootCAs instead of ClientCAs, panel CLIENT
+// certificate instead of the server certificate.
+func (s *Server) OutboundGRPCTLSConfig() *tls.Config {
+	return s.authority.outboundTLSConfig()
+}
+
+// PanelClientCertificate returns the panel's outbound client identity for
+// the bootstrap (EnrollOutbound) dial path.
+func (s *Server) PanelClientCertificate() tls.Certificate {
+	return s.authority.clientCertificate
+}
+
 // SetInstallCommandHandler wires the bootstrap install-command handler. Safe
 // to call concurrently with HTTP requests. Nil h is accepted — the route
 // returns 503 until a non-nil handler is provided.

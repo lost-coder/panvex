@@ -31,6 +31,11 @@ const (
 	// (RFC 5915). Centralised so the cert-issuing helpers all encode
 	// the same header (Sonar S1192).
 	pemTypeECPrivateKey = "EC PRIVATE KEY"
+
+	// PanelClientCN is the protocol-fixed CommonName of the control-plane's
+	// outbound client certificate. Listen-mode agents verify the dialing peer's
+	// leaf CN against this value; it is not operator-configurable.
+	PanelClientCN = "control-plane.panvex.internal"
 )
 
 type issuedCertificate struct {
@@ -50,6 +55,12 @@ type certificateAuthority struct {
 	privateKey        *ecdsa.PrivateKey
 	caPEM             string
 	serverCertificate tls.Certificate
+	// clientCertificate is the panel's OUTBOUND identity (ClientAuth EKU,
+	// CN=PanelClientCN). Presented when the panel dials listen-mode agents
+	// and during the reverse bootstrap exchange. The chain includes the CA
+	// DER so the agent's bootstrap SPKI-pin verifier finds the pinned cert
+	// in the presented chain.
+	clientCertificate tls.Certificate
 }
 
 func newCertificateAuthority(now time.Time) (*certificateAuthority, error) {
@@ -275,11 +286,17 @@ func buildCertificateAuthority(certificate *x509.Certificate, privateKey *ecdsa.
 		return nil, err
 	}
 
+	clientPair, err := issuePanelClientCertificate(certificate, privateKey, now)
+	if err != nil {
+		return nil, err
+	}
+
 	return &certificateAuthority{
 		certificate:       certificate,
 		privateKey:        privateKey,
 		caPEM:             caPEM,
 		serverCertificate: serverPair,
+		clientCertificate: clientPair,
 	}, nil
 }
 
@@ -481,6 +498,54 @@ func issueServerCertificate(caCertificate *x509.Certificate, caKey *ecdsa.Privat
 		[]byte(encodePEM("CERTIFICATE", der)),
 		[]byte(encodePEM(pemTypeECPrivateKey, privateDER)),
 	)
+}
+
+// issuePanelClientCertificate mints the panel's outbound client identity.
+// ClientAuth-only: this keypair must never be usable to impersonate the
+// panel's gRPC SERVER endpoint.
+func issuePanelClientCertificate(caCertificate *x509.Certificate, caKey *ecdsa.PrivateKey, now time.Time) (tls.Certificate, error) {
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	serial, err := randomSerial()
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	template := &x509.Certificate{
+		SerialNumber: serial,
+		Subject: pkix.Name{
+			CommonName:   PanelClientCN,
+			Organization: []string{"Panvex"},
+		},
+		NotBefore:   now.Add(-time.Minute),
+		NotAfter:    now.Add(serverCertificateLifetime),
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, caCertificate, privateKey.Public(), caKey)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{
+		// Leaf first, then the CA: the reverse-bootstrap verifier on the
+		// agent pins the CA's SPKI and needs it present in the chain.
+		Certificate: [][]byte{der, caCertificate.Raw},
+		PrivateKey:  privateKey,
+	}, nil
+}
+
+// outboundTLSConfig is the base config for panel-dials-agent connections:
+// trust = panel CA only, identity = panel client cert. ServerName is set
+// per-dial by the outbound supervisor (AgentServerName(agentID)).
+func (a *certificateAuthority) outboundTLSConfig() *tls.Config {
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM([]byte(a.caPEM))
+	return &tls.Config{
+		Certificates: []tls.Certificate{a.clientCertificate},
+		RootCAs:      pool,
+		MinVersion:   tls.VersionTLS13,
+	}
 }
 
 // caFingerprint returns the lower-hex SHA-256 fingerprint of cert.Raw. Used

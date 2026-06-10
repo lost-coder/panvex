@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -197,6 +198,45 @@ func TestLegacyEnc1WithoutKeyFailsFast(t *testing.T) {
 	if !strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefix) ||
 		strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefixV2) {
 		t.Fatalf("blob prefix after failed load = %q, want untouched ENC:v1", record.PrivateKeyPEM[:10])
+	}
+}
+
+func TestAuthorityIssuesPanelClientCertificate(t *testing.T) {
+	now := time.Now()
+	authority, err := newCertificateAuthority(now)
+	if err != nil {
+		t.Fatalf("newCertificateAuthority: %v", err)
+	}
+
+	if len(authority.clientCertificate.Certificate) < 2 {
+		t.Fatalf("panel client cert chain length = %d, want >= 2 (leaf + CA for bootstrap pin verifier)", len(authority.clientCertificate.Certificate))
+	}
+	leaf, err := x509.ParseCertificate(authority.clientCertificate.Certificate[0])
+	if err != nil {
+		t.Fatalf("parse client leaf: %v", err)
+	}
+	if leaf.Subject.CommonName != PanelClientCN {
+		t.Errorf("client cert CN = %q, want %q", leaf.Subject.CommonName, PanelClientCN)
+	}
+	if !slices.Contains(leaf.ExtKeyUsage, x509.ExtKeyUsageClientAuth) {
+		t.Error("panel client cert must carry ClientAuth EKU")
+	}
+	if slices.Contains(leaf.ExtKeyUsage, x509.ExtKeyUsageServerAuth) {
+		t.Error("panel client cert must NOT carry ServerAuth EKU (outbound-dial-only identity)")
+	}
+
+	cfg := authority.outboundTLSConfig()
+	if cfg.RootCAs == nil {
+		t.Error("outbound TLS config must trust the panel CA via RootCAs")
+	}
+	if len(cfg.Certificates) != 1 {
+		t.Errorf("outbound TLS config Certificates = %d, want 1 (panel client cert)", len(cfg.Certificates))
+	}
+	if cfg.MinVersion != tls.VersionTLS13 {
+		t.Error("outbound TLS config must require TLS 1.3")
+	}
+	if cfg.ServerName != "" {
+		t.Error("base outbound config must leave ServerName empty (set per-dial by the supervisor)")
 	}
 }
 
