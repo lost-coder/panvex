@@ -760,26 +760,6 @@ func (s *Server) ignoreDiscoveredClient(ctx context.Context, id, actorID string,
 	return nil
 }
 
-func (s *Server) restoreStoredDiscoveredClients() error {
-	if s.discoveredRepo == nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(s.serverCtx, 30*time.Second)
-	defer cancel()
-	recs, err := s.discoveredRepo.List(ctx)
-	if err != nil {
-		return err
-	}
-	discoveredIDs := make([]string, 0, len(recs))
-	for _, r := range recs {
-		discoveredIDs = append(discoveredIDs, string(r.ID))
-	}
-	// Seed the clients.Service discovered-seq cursor so the next
-	// NextDiscoveredID returns a value strictly greater than any persisted ID.
-	s.clientsSvc.RecoverSequencesFromRecords(nil, nil, discoveredIDs)
-	return nil
-}
-
 // sendClientDataRequest sends a FULL_SNAPSHOT request to the agent stream.
 func sendClientDataRequest(sess agenttransport.AgentSession, requestID string) error {
 	return sess.Send(&gatewayrpc.ConnectServerMessage{

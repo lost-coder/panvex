@@ -183,14 +183,6 @@ func buildRestarter(spec string) configRestarter {
 	return r
 }
 
-// UsageSeq returns the last monotonic sequence number emitted on a client-usage
-// snapshot. Exposed for tests and observability.
-func (a *Agent) UsageSeq() uint64 {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.usageSeq
-}
-
 // AgentID returns the persistent control-plane identity of the agent.
 func (a *Agent) AgentID() string {
 	return a.config.AgentID

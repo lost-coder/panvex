@@ -116,6 +116,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
 		grpcConnectRateLimiter:    newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
 		sensitiveRateLimiter:      newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
+		installScriptRateLimiter:  newFixedWindowRateLimiter(httpInstallScriptRateLimitPerWindow, defaultRateLimitWindow),
 		loginLockout:              newAccountLockoutTracker(),
 		totpLockout:               newTOTPLockoutTracker(),
 		ipLockout:                 newIPLockoutTracker(),
@@ -205,7 +206,7 @@ func (s *Server) trySetStartupErr(fn func() error) {
 // short-circuited via trySetStartupErr.
 func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.Vault) {
 	store := options.Store
-	s.jobs = jobs.NewServiceWithStore(store)
+	s.jobs = jobs.NewServiceWithStore(s.serverCtx, store)
 	s.auth = auth.NewServiceWithStore(store)
 	// Wire the injected clock onto the freshly-constructed services BEFORE any
 	// restore runs. RestoreSessions -> restoreConsumedTotp (below, via line
@@ -268,7 +269,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 		}
 		return s.auth.SetSessionLookupKey(key)
 	})
-	s.trySetStartupErr(s.auth.RestoreSessions)
+	s.trySetStartupErr(func() error { return s.auth.RestoreSessions(s.serverCtx) })
 
 	// S7: wire the lockout tracker to the persistent backend and load any
 	// state that survived a restart. We attach the store before the restore
@@ -344,7 +345,6 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 		return nil
 	})
 	s.trySetStartupErr(s.restoreStoredClients)
-	s.trySetStartupErr(s.restoreStoredDiscoveredClients)
 	s.trySetStartupErr(s.restoreStoredPanelSettings)
 	// SetPasswordPolicy is called unconditionally: even if restoreStoredPanelSettings
 	// failed and s.panelSettings is zero-valued, auth.effectivePolicy maps zero to

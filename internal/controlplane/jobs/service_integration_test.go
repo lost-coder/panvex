@@ -96,7 +96,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKeyAfterRestart(t *testing.T) 
 	}
 	defer store.Close()
 
-	first := jobs.NewServiceWithStore(store)
+	first := jobs.NewServiceWithStore(context.Background(), store)
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
@@ -108,7 +108,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKeyAfterRestart(t *testing.T) 
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	restored := jobs.NewServiceWithStore(store)
+	restored := jobs.NewServiceWithStore(context.Background(), store)
 	if _, err := restored.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
@@ -135,7 +135,7 @@ func TestServiceRecordResultPersistsTargetsAcrossRestart(t *testing.T) {
 	}
 	defer store.Close()
 
-	first := jobs.NewServiceWithStore(store)
+	first := jobs.NewServiceWithStore(context.Background(), store)
 	first.SetNow(func() time.Time { return now })
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
@@ -153,7 +153,7 @@ func TestServiceRecordResultPersistsTargetsAcrossRestart(t *testing.T) {
 	first.RecordResult(context.Background(), "agent-1", job.ID, true, "ok", "", now.Add(10*time.Second))
 	first.RecordResult(context.Background(), "agent-2", job.ID, false, "reload failed", "", now.Add(11*time.Second))
 
-	restored := jobs.NewServiceWithStore(store)
+	restored := jobs.NewServiceWithStore(context.Background(), store)
 	restored.SetNow(func() time.Time { return now.Add(20 * time.Second) })
 	list := restored.List()
 	if len(list) != 1 {
@@ -181,7 +181,7 @@ func TestServicePersistsStructuredClientPayloadAndResultAcrossRestart(t *testing
 	}
 	defer store.Close()
 
-	first := jobs.NewServiceWithStore(store)
+	first := jobs.NewServiceWithStore(context.Background(), store)
 	first.SetNow(func() time.Time { return now })
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionClientCreate,
@@ -198,7 +198,7 @@ func TestServicePersistsStructuredClientPayloadAndResultAcrossRestart(t *testing
 	first.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
 	first.RecordResult(context.Background(), "agent-1", job.ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=secret-1"]}`, now.Add(10*time.Second))
 
-	restored := jobs.NewServiceWithStore(store)
+	restored := jobs.NewServiceWithStore(context.Background(), store)
 	restored.SetNow(func() time.Time { return now.Add(20 * time.Second) })
 	list := restored.List()
 	if len(list) != 1 {
@@ -224,7 +224,7 @@ func TestServiceMarkDeliveredKeepsInMemoryStateWhenPersistenceFails(t *testing.T
 	defer sqliteStore.Close()
 
 	store := &failingJobStore{JobStore: sqliteStore}
-	service := jobs.NewServiceWithStore(store)
+	service := jobs.NewServiceWithStore(context.Background(), store)
 	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
@@ -260,7 +260,7 @@ func TestServicePendingForAgentWorksAfterRestore(t *testing.T) {
 	}
 	defer store.Close()
 
-	first := jobs.NewServiceWithStore(store)
+	first := jobs.NewServiceWithStore(context.Background(), store)
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
@@ -272,7 +272,7 @@ func TestServicePendingForAgentWorksAfterRestore(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	restored := jobs.NewServiceWithStore(store)
+	restored := jobs.NewServiceWithStore(context.Background(), store)
 	restored.SetNow(func() time.Time { return now.Add(time.Minute) })
 	pending := restored.PendingForAgent(context.Background(), "agent-1", retryAfter)
 	if len(pending) != 1 {
@@ -291,7 +291,7 @@ func TestServiceListPersistsExpiredQueuedJobsAcrossRestart(t *testing.T) {
 	}
 	defer store.Close()
 
-	first := jobs.NewServiceWithStore(store)
+	first := jobs.NewServiceWithStore(context.Background(), store)
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-1"},
@@ -315,7 +315,7 @@ func TestServiceListPersistsExpiredQueuedJobsAcrossRestart(t *testing.T) {
 		t.Fatalf("jobs[0].Targets[0].Status = %q, want %q", list[0].Targets[0].Status, jobs.TargetStatusExpired)
 	}
 
-	restored := jobs.NewServiceWithStore(store)
+	restored := jobs.NewServiceWithStore(context.Background(), store)
 	restoredList := restored.List()
 	if len(restoredList) != 1 {
 		t.Fatalf("len(restored.List()) = %d, want %d", len(restoredList), 1)
@@ -340,7 +340,7 @@ func TestServiceListAllowsConcurrentUpdateWhileExpirationPersistenceBlocks(t *te
 	defer sqliteStore.Close()
 
 	store := &blockingJobStore{JobStore: sqliteStore}
-	service := jobs.NewServiceWithStore(store)
+	service := jobs.NewServiceWithStore(context.Background(), store)
 	expiredJob, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
 		TargetAgentIDs: []string{"agent-expired"},
@@ -429,7 +429,7 @@ func TestServiceMarkDeliveredAllowsConcurrentListWhilePersistenceBlocks(t *testi
 	defer sqliteStore.Close()
 
 	store := &blockingJobStore{JobStore: sqliteStore}
-	service := jobs.NewServiceWithStore(store)
+	service := jobs.NewServiceWithStore(context.Background(), store)
 	service.SetNow(func() time.Time { return now.Add(10 * time.Second) })
 	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
@@ -496,7 +496,7 @@ func TestServiceUpdateTargetPersistsLatestVersionAfterOutOfOrderWrites(t *testin
 	defer sqliteStore.Close()
 
 	store := &blockingJobStore{JobStore: sqliteStore}
-	service := jobs.NewServiceWithStore(store)
+	service := jobs.NewServiceWithStore(context.Background(), store)
 	service.SetNow(func() time.Time { return now.Add(10 * time.Second) })
 	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
@@ -535,7 +535,7 @@ func TestServiceUpdateTargetPersistsLatestVersionAfterOutOfOrderWrites(t *testin
 		t.Fatal("MarkDelivered() did not complete after persistence release")
 	}
 
-	restored := jobs.NewServiceWithStore(sqliteStore)
+	restored := jobs.NewServiceWithStore(context.Background(), sqliteStore)
 	restoredList := restored.List()
 	if len(restoredList) != 1 {
 		t.Fatalf("len(restored.List()) = %d, want %d", len(restoredList), 1)
@@ -559,7 +559,7 @@ func TestNewServiceWithStoreRecordsRestoreError(t *testing.T) {
 		listJobsErr: errors.New("list jobs failed"),
 	}
 
-	service := jobs.NewServiceWithStore(store)
+	service := jobs.NewServiceWithStore(context.Background(), store)
 
 	if service.StartupError() == nil {
 		t.Fatal("StartupError() = nil, want restore failure")
@@ -579,7 +579,7 @@ func TestEnqueueReleasesLockDuringPersist(t *testing.T) {
 	defer sqliteStore.Close()
 
 	store := &blockingJobStore{JobStore: sqliteStore}
-	service := jobs.NewServiceWithStore(store)
+	service := jobs.NewServiceWithStore(context.Background(), store)
 	service.SetNow(func() time.Time { return now })
 
 	putJobStarted := make(chan struct{})
@@ -664,7 +664,7 @@ func TestEnqueueDuplicateKeyRejectedDuringOutOfLockWindow(t *testing.T) {
 	defer sqliteStore.Close()
 
 	store := &blockingJobStore{JobStore: sqliteStore}
-	service := jobs.NewServiceWithStore(store)
+	service := jobs.NewServiceWithStore(context.Background(), store)
 
 	putJobStarted := make(chan struct{})
 	releasePutJob := make(chan struct{})
@@ -743,7 +743,7 @@ func TestEnqueueDuplicateKeyConcurrentExactlyOneWins(t *testing.T) {
 	}
 	defer sqliteStore.Close()
 
-	service := jobs.NewServiceWithStore(sqliteStore)
+	service := jobs.NewServiceWithStore(context.Background(), sqliteStore)
 
 	const workers = 16
 	var wg sync.WaitGroup
@@ -802,7 +802,7 @@ func TestEnqueuePersistFailureRollsBack(t *testing.T) {
 
 	putErr := errors.New("simulated put-job failure")
 	store := &failingJobStore{JobStore: sqliteStore, putJobErr: putErr}
-	service := jobs.NewServiceWithStore(store)
+	service := jobs.NewServiceWithStore(context.Background(), store)
 
 	_, err = service.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
@@ -858,7 +858,7 @@ func TestAcknowledgedJobsAreRedispatchedAfterRestart(t *testing.T) {
 	}
 	defer store.Close()
 
-	first := jobs.NewServiceWithStore(store)
+	first := jobs.NewServiceWithStore(context.Background(), store)
 	first.SetNow(func() time.Time { return now })
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
@@ -883,7 +883,7 @@ func TestAcknowledgedJobsAreRedispatchedAfterRestart(t *testing.T) {
 	// Simulate dual restart: new service instance rebuilds from the same
 	// store, clock advances enough that the ack retryAfter window has
 	// elapsed (mirrors real "CP restarted, then agent restarted" timing).
-	restored := jobs.NewServiceWithStore(store)
+	restored := jobs.NewServiceWithStore(context.Background(), store)
 	restored.SetNow(func() time.Time { return now.Add(5 * time.Minute) })
 
 	pending := restored.PendingForAgent(context.Background(), "agent-1", retryAfter)
@@ -911,7 +911,7 @@ func TestEnqueueRetryAfterTransientStoreError(t *testing.T) {
 	defer sqliteStore.Close()
 
 	store := &failingJobStore{JobStore: sqliteStore}
-	service := jobs.NewServiceWithStore(store)
+	service := jobs.NewServiceWithStore(context.Background(), store)
 
 	store.putJobErr = errors.New("transient")
 
@@ -979,7 +979,7 @@ func TestServicePersistFailureNotifiesMetricsSink(t *testing.T) {
 	defer sqliteStore.Close()
 
 	store := &failingJobStore{JobStore: sqliteStore}
-	service := jobs.NewServiceWithStore(store)
+	service := jobs.NewServiceWithStore(context.Background(), store)
 	sink := &recordingJobMetricsSink{}
 	service.SetMetricsSink(sink)
 

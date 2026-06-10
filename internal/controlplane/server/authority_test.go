@@ -23,11 +23,12 @@ import (
 )
 
 // seedLegacyEnc1CA plants a CertificateAuthorityRecord whose private key is
-// encrypted with the legacy "ENC:v1" (SHA-256, no salt) derivation. The CA
-// certificate itself is a freshly-generated P-256 ECDSA root with a
-// long-enough validity that loadOrCreateCertificateAuthority does not
-// regenerate it during the test.
-func seedLegacyEnc1CA(t *testing.T, store storage.CertificateAuthorityStore, passphrase string, now time.Time) {
+// stored with a raw "ENC:" prefix (simulating a pre-release ENC:v1 blob)
+// without any real encryption — the value is just prefixed so the loader
+// recognises and rejects it. The CA certificate itself is a freshly-generated
+// P-256 ECDSA root with a long-enough validity that loadOrCreateCertificateAuthority
+// does not regenerate it during the test.
+func seedLegacyEnc1CA(t *testing.T, store storage.CertificateAuthorityStore, now time.Time) {
 	t.Helper()
 
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -54,39 +55,24 @@ func seedLegacyEnc1CA(t *testing.T, store storage.CertificateAuthorityStore, pas
 	if err != nil {
 		t.Fatalf("CreateCertificate: %v", err)
 	}
-	privDER, err := x509.MarshalECPrivateKey(priv)
-	if err != nil {
-		t.Fatalf("MarshalECPrivateKey: %v", err)
-	}
 
-	keyPEM := encodePEM("EC PRIVATE KEY", privDER)
-	legacy, err := encryptPEMWithKey(keyPEM, deriveKeyV1(passphrase), encryptedPEMPrefix)
-	if err != nil {
-		t.Fatalf("encryptPEMWithKey: %v", err)
-	}
-	if !strings.HasPrefix(legacy, encryptedPEMPrefix) || strings.HasPrefix(legacy, encryptedPEMPrefixV2) {
-		prefixLen := 10
-		if len(legacy) < prefixLen {
-			prefixLen = len(legacy)
-		}
-		t.Fatalf("seed payload must be ENC:v1, got prefix %q", legacy[:prefixLen])
-	}
-
+	// Plant an ENC:-prefixed blob (pre-release format). The content is
+	// intentionally opaque — we only need the prefix to trigger rejection.
 	caPEM := encodePEM("CERTIFICATE", der)
 	if err := store.PutCertificateAuthority(context.Background(), storage.CertificateAuthorityRecord{
 		CAPEM:         caPEM,
-		PrivateKeyPEM: legacy,
+		PrivateKeyPEM: encryptedPEMPrefix + "AAAA",
 		UpdatedAt:     now.UTC(),
 	}); err != nil {
 		t.Fatalf("PutCertificateAuthority: %v", err)
 	}
 }
 
-// TestLegacyEnc1BlobAutoMigrates seeds a legacy ENC:v1 blob, then loads the
-// authority with an encryption key configured. The stored blob must be
-// rewritten as ENC2: in place — never retained as ENC:v1 when a key is
-// available. (P2-SEC-05)
-func TestLegacyEnc1BlobAutoMigrates(t *testing.T) {
+// TestLegacyEnc1BlobFailsLoud verifies that a stored CA record with the
+// pre-release "ENC:" prefix causes loadOrCreateCertificateAuthority to fail
+// with a loud error mentioning "no longer supported", both with and without a
+// passphrase. The record must NEVER be silently treated as plaintext.
+func TestLegacyEnc1BlobFailsLoud(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 9, 0, 0, 0, time.UTC)
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
 	if err != nil {
@@ -94,45 +80,24 @@ func TestLegacyEnc1BlobAutoMigrates(t *testing.T) {
 	}
 	defer store.Close()
 
-	passphrase := "test-migration-passphrase"
-	seedLegacyEnc1CA(t, store, passphrase, now)
+	seedLegacyEnc1CA(t, store, now)
 
-	// Sanity: the seeded blob is ENC:v1 before migration.
-	before, err := store.GetCertificateAuthority(context.Background())
-	if err != nil {
-		t.Fatalf("GetCertificateAuthority before: %v", err)
+	// With a passphrase: decryptPEM must reject ENC: loudly.
+	_, err = loadOrCreateCertificateAuthority(context.Background(), store, now, "some-passphrase")
+	if err == nil {
+		t.Fatal("loadOrCreateCertificateAuthority(ENC:v1, with key) error = nil, want loud rejection")
 	}
-	if !strings.HasPrefix(before.PrivateKeyPEM, encryptedPEMPrefix) ||
-		strings.HasPrefix(before.PrivateKeyPEM, encryptedPEMPrefixV2) {
-		t.Fatalf("seeded blob prefix must be ENC:v1, got %q", before.PrivateKeyPEM[:10])
+	if !strings.Contains(err.Error(), "no longer supported") {
+		t.Fatalf("error = %q, want mention of removed ENC:v1 support", err)
 	}
 
-	// Run the load path with the matching encryption key configured.
-	authority, err := loadOrCreateCertificateAuthority(context.Background(), store, now, passphrase)
-	if err != nil {
-		t.Fatalf("loadOrCreateCertificateAuthority: %v", err)
+	// Without a passphrase: the blob must also be rejected (not mistaken for plaintext).
+	_, err = loadOrCreateCertificateAuthority(context.Background(), store, now, "")
+	if err == nil {
+		t.Fatal("loadOrCreateCertificateAuthority(ENC:v1, no key) error = nil, want loud rejection")
 	}
-	if authority == nil || authority.certificate == nil {
-		t.Fatal("loadOrCreateCertificateAuthority returned nil authority")
-	}
-
-	// After startup the stored blob must be ENC2:, not ENC:v1.
-	after, err := store.GetCertificateAuthority(context.Background())
-	if err != nil {
-		t.Fatalf("GetCertificateAuthority after: %v", err)
-	}
-	if !strings.HasPrefix(after.PrivateKeyPEM, encryptedPEMPrefixV2) {
-		t.Fatalf("post-migrate blob prefix = %q, want %s", after.PrivateKeyPEM[:10], encryptedPEMPrefixV2)
-	}
-
-	// The re-encrypted value must still decrypt with the same passphrase
-	// and yield the original PEM.
-	decrypted, err := decryptPEM(after.PrivateKeyPEM, passphrase)
-	if err != nil {
-		t.Fatalf("decryptPEM(migrated): %v", err)
-	}
-	if !strings.Contains(decrypted, "EC PRIVATE KEY") {
-		t.Fatalf("migrated plaintext does not contain PEM header: %q", decrypted)
+	if !strings.Contains(err.Error(), "no longer supported") {
+		t.Fatalf("error (no key) = %q, want mention of removed ENC:v1 support", err)
 	}
 }
 
@@ -169,37 +134,6 @@ func TestLoadOrCreateCertificateAuthority_RespectsContextCancellation(t *testing
 	}
 }
 
-// TestLegacyEnc1WithoutKeyFailsFast verifies that a legacy ENC:v1 blob with
-// no --encryption-key-file configured produces a fatal startup error instead
-// of silently continuing with the weaker derivation. (P2-SEC-05)
-func TestLegacyEnc1WithoutKeyFailsFast(t *testing.T) {
-	now := time.Date(2026, time.April, 17, 9, 0, 0, 0, time.UTC)
-	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
-	if err != nil {
-		t.Fatalf("sqlite.Open: %v", err)
-	}
-	defer store.Close()
-
-	seedLegacyEnc1CA(t, store, "doesnt-matter", now)
-
-	_, err = loadOrCreateCertificateAuthority(context.Background(), store, now, "")
-	if err == nil {
-		t.Fatal("loadOrCreateCertificateAuthority(ENC:v1, no key) error = nil, want fatal")
-	}
-	if !errors.Is(err, ErrLegacyEnc1RequiresKey) {
-		t.Fatalf("error = %v, want ErrLegacyEnc1RequiresKey", err)
-	}
-
-	// The stored blob must remain untouched (we must not silently delete it).
-	record, err := store.GetCertificateAuthority(context.Background())
-	if err != nil {
-		t.Fatalf("GetCertificateAuthority after fail: %v", err)
-	}
-	if !strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefix) ||
-		strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefixV2) {
-		t.Fatalf("blob prefix after failed load = %q, want untouched ENC:v1", record.PrivateKeyPEM[:10])
-	}
-}
 
 func TestAuthorityIssuesPanelClientCertificate(t *testing.T) {
 	now := time.Now()
@@ -237,6 +171,72 @@ func TestAuthorityIssuesPanelClientCertificate(t *testing.T) {
 	}
 	if cfg.ServerName != "" {
 		t.Error("base outbound config must leave ServerName empty (set per-dial by the supervisor)")
+	}
+}
+
+// newCAStoreForTest opens a fresh in-memory SQLite store scoped to the test.
+func newCAStoreForTest(t *testing.T) storage.CertificateAuthorityStore {
+	t.Helper()
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	return store
+}
+
+// seedExpiredCertificateAuthority plants a CA record whose certificate has
+// already expired (NotAfter in the past) so the expiry check triggers.
+func seedExpiredCertificateAuthority(t *testing.T, store storage.CertificateAuthorityStore) {
+	t.Helper()
+	// Build a real CA that was valid 10 years ago and expired 5 years ago.
+	past := time.Now().Add(-10 * 365 * 24 * time.Hour)
+	authority, err := newCertificateAuthority(past)
+	if err != nil {
+		t.Fatalf("newCertificateAuthority(past): %v", err)
+	}
+	rec, err := authority.record(past, "")
+	if err != nil {
+		t.Fatalf("authority.record: %v", err)
+	}
+	if err := store.PutCertificateAuthority(context.Background(), rec); err != nil {
+		t.Fatalf("PutCertificateAuthority: %v", err)
+	}
+}
+
+// TestExpiredCAFailsLoudInsteadOfSilentRegen: an expired CA must abort
+// startup with an actionable error. Silent regeneration invalidated the
+// whole fleet without warning (audit 2026-06-09, A5 follow-up).
+func TestExpiredCAFailsLoudInsteadOfSilentRegen(t *testing.T) {
+	store := newCAStoreForTest(t)
+	seedExpiredCertificateAuthority(t, store)
+	_, err := loadOrCreateCertificateAuthority(context.Background(), store, time.Now(), "")
+	if err == nil {
+		t.Fatal("expired CA: err = nil, want loud startup failure")
+	}
+	if !strings.Contains(err.Error(), "rotate-ca") {
+		t.Fatalf("err = %q, want recovery instruction mentioning rotate-ca", err)
+	}
+	// The stored record must be untouched (no silent overwrite).
+	rec, getErr := store.GetCertificateAuthority(context.Background())
+	if getErr != nil || rec.PrivateKeyPEM == "" {
+		t.Fatalf("stored CA must survive: %v", getErr)
+	}
+}
+
+func TestRotateCertificateAuthorityReplacesRecord(t *testing.T) {
+	store := newCAStoreForTest(t)
+	seedExpiredCertificateAuthority(t, store)
+	before, _ := store.GetCertificateAuthority(context.Background())
+	if err := RotateCertificateAuthority(context.Background(), store, time.Now(), ""); err != nil {
+		t.Fatalf("RotateCertificateAuthority: %v", err)
+	}
+	after, err := store.GetCertificateAuthority(context.Background())
+	if err != nil {
+		t.Fatalf("get after rotate: %v", err)
+	}
+	if after.CAPEM == before.CAPEM {
+		t.Fatal("rotate must mint a fresh CA certificate")
 	}
 }
 

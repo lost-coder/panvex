@@ -243,15 +243,15 @@ func (s *Server) handleForceUpdateCheck() http.HandlerFunc {
 
 		// Detached from r.Context() on purpose: the admin-triggered check must
 		// outlive the HTTP request, otherwise closing the browser tab would
-		// abort the poll. The package-level ctx is not reachable from the
-		// handler so we start fresh; the worker honours its own deadlines via
-		// the timeout in checkForUpdates -> FetchLatestVersions. N-1: tracked
+		// abort the poll. Rooted in the server lifecycle ctx so a Close()
+		// cancels it; the worker also honours its own deadlines via the
+		// timeout in checkForUpdates -> FetchLatestVersions. N-1: tracked
 		// in bgWG so a graceful Shutdown waits for it to finish.
 		s.bgWG.Add(1)
-		//nolint:contextcheck,gosec // intentionally detached from request lifecycle
+		//nolint:contextcheck,gosec // intentionally detached from request lifecycle, rooted in server lifecycle
 		go func() {
 			defer s.bgWG.Done()
-			s.checkForUpdates(context.Background())
+			s.checkForUpdates(s.Context())
 		}()
 
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "checking"})
@@ -297,10 +297,12 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 		// downloads, verifies, and replaces the running binary; killing it
 		// when the operator's HTTP request ends would leave the panel in a
 		// half-applied state. The 202 response above already tells the
-		// caller the work continues asynchronously. N-1: tracked in bgWG so
-		// shutdown waits for the binary swap to complete.
+		// caller the work continues asynchronously. Rooted in the server
+		// lifecycle ctx so Close() aborts a stalled download; a
+		// half-downloaded archive is discarded atomically. N-1: tracked in
+		// bgWG so shutdown waits for the binary swap to complete.
 		s.bgWG.Add(1)
-		//nolint:contextcheck,gosec // intentionally detached from request lifecycle
+		//nolint:contextcheck,gosec // intentionally detached from request lifecycle, rooted in server lifecycle
 		go func() {
 			defer s.bgWG.Done()
 			s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, settings.GitHubToken)
@@ -356,7 +358,7 @@ func (s *Server) resolvePanelDownloadAssets(w http.ResponseWriter, r *http.Reque
 // performPanelUpdate downloads, verifies the SHA-256 checksum (mandatory), and
 // installs a new panel binary, then requests a service restart.
 func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, token string) {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	expectedChecksum, ok := s.fetchExpectedChecksum(ctx, checksumURL, token)
 	if !ok {

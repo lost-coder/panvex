@@ -137,7 +137,7 @@ type metricsCollectors struct {
 // rateLimitScopes enumerates every scope label that can appear on
 // panvex_ratelimit_rejected_total. Pre-initialised to zero at startup
 // (keeps PromQL alerts deterministic).
-var rateLimitScopes = []string{"login", "agent_bootstrap", "sensitive", "grpc_connect"}
+var rateLimitScopes = []string{"login", "agent_bootstrap", "sensitive", "grpc_connect", "install_script"}
 
 // retentionPruneTables enumerates every table whose retention worker feeds
 // panvex_retention_pruned_rows_total. Adding a new retention worker requires
