@@ -101,7 +101,10 @@ export function AppShell({
         id="main-content"
         tabIndex={-1}
         className={cn(
-          "pb-16 md:pb-0 min-h-screen outline-none transition-[margin] duration-200",
+          // U-19: reserve the bottom-nav height PLUS the iOS safe-area inset
+          // so the last card (e.g. 2FA on Profile) doesn't tuck under the
+          // nav or the home-indicator. Desktop drops the reserve entirely.
+          "pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0 min-h-screen outline-none transition-[margin] duration-200",
           expanded ? "md:ml-56" : "md:ml-16",
         )}
       >

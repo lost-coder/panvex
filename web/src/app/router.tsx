@@ -108,6 +108,18 @@ function ProtectedShell() {
   const navSecondary: NavItem[] = NAV_SECONDARY_SPEC.map((i) => ({ id: i.id, icon: i.icon, label: t(i.labelKey) }));
   const navItems: NavItem[] = [...navPrimary, ...navSecondary];
 
+  // U-17: the mobile bottom-nav slots must reflect daily-use frequency, not
+  // the sidebar's grouping. Clients (the main working surface) and Activity
+  // (the "what just happened?" log) earn the four primary slots; Fleet
+  // groups — a rarely-touched reference list — moves into the More sheet.
+  const BOTTOM_NAV_PRIMARY_IDS = ["/", "/servers", "/clients", "/activity"];
+  const bottomNavPrimary: NavItem[] = BOTTOM_NAV_PRIMARY_IDS
+    .map((id) => navItems.find((n) => n.id === id))
+    .filter((n): n is NavItem => Boolean(n));
+  const bottomNavMore: NavItem[] = navItems.filter(
+    (n) => !BOTTOM_NAV_PRIMARY_IDS.includes(n.id),
+  );
+
   // W6: move focus to the main landmark on every pathname change so
   // screen-reader and keyboard users land inside the new page instead
   // of staying on the sidebar link they just activated.
@@ -153,8 +165,8 @@ function ProtectedShell() {
     <AppearanceProvider userID={me?.id ?? ""}>
       <AppShell
         navItems={navItems}
-        bottomNavItems={navPrimary}
-        bottomNavMoreItems={navSecondary}
+        bottomNavItems={bottomNavPrimary}
+        bottomNavMoreItems={bottomNavMore}
         activeId={activeId}
         brand="Panvex"
         sidebarFooter={(expanded) => (

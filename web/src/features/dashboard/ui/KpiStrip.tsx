@@ -39,6 +39,10 @@ export function KpiStrip({ kpis }: Readonly<{ kpis: DashboardOverviewData["kpis"
               >
                 {k.value}
               </span>
+              {/* U-15: the sub-line ("all online", "within limits") was
+                  desktop-only — mobile lost the context that explains the
+                  bare number. */}
+              {k.sub && <span className="text-nano font-mono text-fg-muted">{k.sub}</span>}
             </div>
           );
         })}

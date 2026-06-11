@@ -173,23 +173,26 @@ export function ClientDetailPage({
 
         {/* Mobile: swipe tabs keep the scroll bounded on narrow viewports. */}
         <div className="md:hidden">
+          {/* U-17: Deployments first — handing out a connection link is the
+              primary task. Secret (a service action) moves last. */}
           <SwipeTabView
             tabs={[
-              { id: "secret", label: t("detail.tabs.secret"), content: secretSection },
               { id: "deploy", label: t("detail.tabs.deploy"), content: deployLinks },
-              { id: "ips", label: t("detail.tabs.ips"), content: ipHistoryCard },
               { id: "limits", label: t("detail.tabs.limits"), content: limitsCard },
+              { id: "ips", label: t("detail.tabs.ips"), content: ipHistoryCard },
+              { id: "secret", label: t("detail.tabs.secret"), content: secretSection },
             ]}
           />
           {resetHistoryCard}
         </div>
 
-        {/* Desktop: stacked sections in reading order. */}
+        {/* Desktop: stacked sections, deployments-first to match the
+            primary task (U-17); secret drops below the fold. */}
         <div className="hidden md:flex flex-col gap-5">
-          {secretSection}
           {deployLinks}
-          {ipHistoryCard}
           {limitsCard}
+          {ipHistoryCard}
+          {secretSection}
           {resetHistoryCard}
         </div>
       </div>

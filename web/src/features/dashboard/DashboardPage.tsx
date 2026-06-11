@@ -58,12 +58,15 @@ export function DashboardPage({
             {/* Phase-7 live indicator: mirrors the 15s refetch interval of
                 useDashboardData so the operator can see that the page is
                 pulling fresh telemetry. */}
+            {/* U-15: the live indicator was hidden below sm, so mobile gave
+                no signal the data was live. Keep the pulsing dot at every
+                width and reveal the "live · 15s refresh" label from sm up. */}
             <span
               aria-live="polite"
-              className="hidden sm:flex items-center gap-1.5 text-micro font-mono text-fg-muted"
+              className="flex items-center gap-1.5 text-micro font-mono text-fg-muted"
             >
               <StatusDot status="ok" className="animate-pulse" />
-              {t("page.live")}
+              <span className="hidden sm:inline">{t("page.live")}</span>
             </span>
             {onCreate && (
               <Button

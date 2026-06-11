@@ -6,7 +6,12 @@ import { SkeletonRows } from "@/ui";
 
 export function ActivityContainer() {
   const { jobs, auditEvents, isLoading, error, lookupError, refetch } = useActivity();
-  const [activeTab, setActiveTab] = useState("jobs");
+  // U-17: don't hard-default to Jobs — landing on an empty Jobs tab while
+  // the Audit trail holds hundreds of entries is a dead first screen. Until
+  // the operator explicitly picks a tab, show whichever has content (Jobs
+  // when something is in flight, otherwise the always-populated Audit log).
+  const [activeTab, setActiveTab] = useState<string | null>(null);
+  const effectiveTab = activeTab ?? (jobs.length > 0 ? "jobs" : "audit");
 
   if (isLoading) {
     return (
@@ -24,7 +29,7 @@ export function ActivityContainer() {
     <ActivityPage
       jobs={jobs}
       auditEvents={auditEvents}
-      activeTab={activeTab}
+      activeTab={effectiveTab}
       onTabChange={setActiveTab}
       lookupError={lookupError}
     />
