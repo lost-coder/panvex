@@ -66,6 +66,12 @@ export function ConfigTab({
     () => flattenSections(data?.override ?? {}),
     [data?.override],
   );
+  // U-13: effective config powers placeholder hints so an un-overridden
+  // (empty) field reads as "inherits this value", not "blank/wipe".
+  const effectiveValues = useMemo(
+    () => flattenSections(data?.effective ?? {}),
+    [data?.effective],
+  );
   const [values, setValues] = useState<Record<string, unknown>>(initialValues);
 
   // Re-seed the editor whenever a fresh override arrives (initial load or a
@@ -144,9 +150,14 @@ export function ConfigTab({
         )}
       </div>
 
+      {/* U-13: clarify that the editor holds overrides, and empty fields
+          inherit the effective value shown as a placeholder. */}
+      <p className="text-micro text-fg-muted -mt-2">{t("config.overrideHint")}</p>
+
       {/* Override editor — the curated CONFIG_FIELDS, fully controlled. */}
       <ConfigSectionEditor
         values={values}
+        effective={effectiveValues}
         onChange={(path, value) =>
           setValues((prev) => ({ ...prev, [path]: value }))
         }

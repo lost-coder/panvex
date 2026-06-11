@@ -419,6 +419,7 @@
     },
     "save": "Save",
     "saved": "Configuration saved",
+    "overrideHint": "These are per-node overrides. Leave a field empty to inherit the effective value shown as its placeholder.",
     "unsavedHint": "Save before applying",
     "apply": {
       "button": "Apply to node",
