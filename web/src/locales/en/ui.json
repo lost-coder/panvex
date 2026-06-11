@@ -11,6 +11,10 @@
     "expand": "Expand sidebar",
     "logout": "Log out"
   },
+  "bottomNav": {
+    "more": "More",
+    "moreLabel": "More navigation"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "servers": "Servers",

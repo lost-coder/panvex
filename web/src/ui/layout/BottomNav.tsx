@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { MoreHorizontal, LogOut } from "lucide-react";
 import { cn } from "@/ui/lib/cn";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody } from "@/ui/base/sheet";
@@ -26,6 +27,7 @@ export function BottomNav({
   onLogout,
   className,
 }: Readonly<BottomNavProps>) {
+  const { t } = useTranslation("ui");
   const [moreOpen, setMoreOpen] = useState(false);
   const hasMoreItems = !!moreItems && moreItems.length > 0;
   // The "More" affordance must also appear when the only overflow action
@@ -80,7 +82,7 @@ export function BottomNav({
         {hasMore && (
           <button
             type="button"
-            aria-label="More navigation"
+            aria-label={t("bottomNav.moreLabel")}
             aria-haspopup="dialog"
             aria-expanded={moreOpen}
             aria-current={moreActive ? "page" : undefined}
@@ -95,7 +97,7 @@ export function BottomNav({
             <span className="text-lg leading-none" aria-hidden="true">
               <MoreHorizontal size={20} />
             </span>
-            <span>More</span>
+            <span>{t("bottomNav.more")}</span>
           </button>
         )}
       </nav>
@@ -104,7 +106,7 @@ export function BottomNav({
         <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
           <SheetContent side="bottom" className="md:hidden">
             <SheetHeader>
-              <SheetTitle>More</SheetTitle>
+              <SheetTitle>{t("bottomNav.more")}</SheetTitle>
             </SheetHeader>
             <SheetBody>
               <ul className="flex flex-col gap-0.5">
@@ -138,7 +140,7 @@ export function BottomNav({
                   <li className={cn(hasMoreItems && "mt-1 pt-1 border-t border-border")}>
                     <button
                       type="button"
-                      aria-label="Log out"
+                      aria-label={t("sidebar.logout")}
                       onClick={handleLogout}
                       className={cn(
                         "w-full flex items-center gap-3 px-3 py-3 rounded-xs text-sm",
@@ -150,7 +152,7 @@ export function BottomNav({
                       <span className="text-lg leading-none" aria-hidden="true">
                         <LogOut size={20} />
                       </span>
-                      <span>Log out</span>
+                      <span>{t("sidebar.logout")}</span>
                     </button>
                   </li>
                 )}
