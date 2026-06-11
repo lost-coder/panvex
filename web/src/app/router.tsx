@@ -15,6 +15,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  isRedirect,
   lazyRouteComponent,
   redirect,
   useNavigate,
@@ -325,6 +326,23 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
   component: LoginContainer,
+  // U-29: an already-authenticated operator hitting /login (bookmark, stale
+  // tab, back button) should land on the dashboard, not stare at a login
+  // form for a session they already hold. A 401 means "not logged in" —
+  // swallow it and render the form as normal.
+  beforeLoad: async ({ context }) => {
+    try {
+      await context.queryClient.ensureQueryData({
+        queryKey: authKeys.me(),
+        queryFn: () => apiClient.me(),
+        staleTime: 30_000,
+      });
+      throw redirect({ to: "/" });
+    } catch (err) {
+      if (isRedirect(err)) throw err; // re-throw the redirect to the dashboard
+      // Not authenticated (401) — stay on the login form.
+    }
+  },
 });
 
 const dashboardRoute = createRoute({

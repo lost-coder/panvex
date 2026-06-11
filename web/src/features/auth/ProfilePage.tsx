@@ -8,6 +8,7 @@ import { notifyMutationError } from "@/shared/api/http";
 import {
   Badge,
   Button,
+  CopyButton,
   PageHeader,
   PageSection,
   Select,
@@ -15,6 +16,7 @@ import {
   Sheet,
   SheetBody,
   SheetContent,
+  Toggle,
 } from "@/ui";
 import { TotpSetupSheet } from "@/features/auth/TotpSetupSheet";
 import { TotpDisableSheet } from "@/features/auth/TotpDisableSheet";
@@ -78,11 +80,14 @@ export function ProfilePage({
               ) : (
                 <Badge variant="warn">{t("profile.badges.totpDisabled")}</Badge>
               )}
-              <span
-                className="font-mono text-nano text-fg-muted truncate"
-                title={user.id}
-              >
-                {t("profile.idShort", { id: user.id.slice(0, 8) })}
+              {/* U-32: full id is rarely readable at a glance but operators
+                  do need to copy it (support, API calls). Show the short
+                  form, copy the full value on tap. */}
+              <span className="inline-flex items-center gap-1">
+                <span className="font-mono text-nano text-fg-muted truncate" title={user.id}>
+                  {t("profile.idShort", { id: user.id.slice(0, 8) })}
+                </span>
+                <CopyButton text={user.id} />
               </span>
             </div>
           </div>
@@ -130,14 +135,12 @@ export function ProfilePage({
               />
             </SettingsRow>
             <SettingsRow label={t("profile.appearance.swipeLabel")} description={t("profile.appearance.swipeDescription")}>
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
+              <Toggle
                 checked={appearance.swipeNavigation}
-                onChange={(e) =>
+                onChange={(checked) =>
                   onAppearanceChange?.({
                     ...appearance,
-                    swipeNavigation: e.target.checked,
+                    swipeNavigation: checked,
                   })
                 }
               />

@@ -2,7 +2,8 @@
 // The kit at `@/ui` ships primitives/components/compositions only;
 // page composition lives in features/.
 import * as React from "react";
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Input, type LoginPageProps } from "@/ui";
 
@@ -27,6 +28,10 @@ function CredentialsPanel({
   const usernameId = useId();
   const passwordId = useId();
   const usernameRef = useRef<HTMLInputElement>(null);
+  // U-31: reveal toggle — typing a password blind on a phone keyboard is
+  // error-prone, and this is a single-operator admin panel where briefly
+  // showing the secret is an acceptable trade.
+  const [showPassword, setShowPassword] = useState(false);
 
   // Replaces autoFocus on the username input. Initial focus is still
   // useful (operators land on the panel ready to type), but the
@@ -59,16 +64,29 @@ function CredentialsPanel({
         <span className="text-xs font-medium text-fg-muted uppercase tracking-wider">
           {t("login.credentials.passwordLabel")}
         </span>
-        <Input
-          id={passwordId}
-          type="password"
-          autoComplete="current-password"
-          placeholder={t("login.credentials.passwordPlaceholder")}
-          value={password}
-          onChange={(e) => onPasswordChange(e.target.value)}
-          disabled={loading}
-          required
-        />
+        <div className="relative">
+          <Input
+            id={passwordId}
+            type={showPassword ? "text" : "password"}
+            autoComplete="current-password"
+            placeholder={t("login.credentials.passwordPlaceholder")}
+            value={password}
+            onChange={(e) => onPasswordChange(e.target.value)}
+            disabled={loading}
+            required
+            className="pr-10"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            aria-label={t(showPassword ? "login.credentials.hidePassword" : "login.credentials.showPassword")}
+            aria-pressed={showPassword}
+            tabIndex={-1}
+            className="absolute inset-y-0 right-0 flex items-center px-3 text-fg-muted hover:text-fg transition-colors"
+          >
+            {showPassword ? <EyeOff size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+          </button>
+        </div>
       </label>
 
       <Button type="submit" className="w-full mt-2" disabled={loading || !username || !password}>
