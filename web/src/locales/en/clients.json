@@ -132,6 +132,12 @@
   "detail": {
     "breadcrumb": "Clients",
     "subtitle": "{{expires}}",
+    "expiresRelative": {
+      "never": "never",
+      "today": "today",
+      "inDays": "in {{days}}d",
+      "daysAgo": "{{days}}d ago"
+    },
     "actions": {
       "edit": "Edit",
       "more": "More actions",

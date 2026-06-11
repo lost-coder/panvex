@@ -134,6 +134,12 @@
   "detail": {
     "breadcrumb": "Клиенты",
     "subtitle": "{{expires}}",
+    "expiresRelative": {
+      "never": "никогда",
+      "today": "сегодня",
+      "inDays": "через {{days}} дн.",
+      "daysAgo": "{{days}} дн. назад"
+    },
     "actions": {
       "edit": "Изменить",
       "more": "Ещё действия",
