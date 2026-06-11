@@ -4,7 +4,7 @@
 
 import type { TFunction } from "i18next";
 
-import { MonoValue, StatusDot, type ClientListItem } from "@/ui";
+import { MonoValue, type ClientListItem } from "@/ui";
 
 import {
   ClientExpiryCell,
@@ -61,11 +61,12 @@ export function buildClientColumns(
     {
       key: "client",
       header: t("table.client"),
+      // U-21: the enabled/disabled dot here duplicated the richer
+      // ClientStateBadge in the Status column (which already encodes
+      // disabled among its states). Drop the dot to remove the
+      // two-circles-mean-the-same-thing redundancy.
       render: (c: ClientListItem) => (
-        <div className="flex items-center gap-2 min-w-0">
-          <StatusDot status={c.enabled ? "ok" : "error"} />
-          <span className="font-medium text-fg truncate">{c.name}</span>
-        </div>
+        <span className="font-medium text-fg truncate block min-w-0">{c.name}</span>
       ),
       className: "w-[28%]",
     },

@@ -14,7 +14,7 @@
   },
   "empty": {
     "title": "No clients yet",
-    "description": "Create your first client to start assigning it to Telemt nodes."
+    "description": "Create your first client to start assigning it to your servers."
   },
   "row": {
     "totalClients": "Total clients",
