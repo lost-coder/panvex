@@ -297,6 +297,7 @@
     "pendingSection_one": "Pending ({{count}})",
     "pendingSection_other": "Pending ({{count}})",
     "reviewedSection": "Previously reviewed ({{count}})",
+    "loadMore": "Show more ({{count}} remaining)",
     "selection": {
       "summary_one": "{{count}} client selected",
       "summary_other": "{{count}} clients selected",

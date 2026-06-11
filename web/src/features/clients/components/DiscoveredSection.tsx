@@ -3,9 +3,17 @@
 // columns, and selection state; this file owns only the responsive
 // switch between MobileRow and DataTable.
 
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, DataTable, cn } from "@/ui";
+
+// U-11: cap how many pending cards the mobile list renders at once. A fresh
+// fleet can surface 150+ discovered clients; rendering every heavy card on a
+// budget phone janks the scroll. Reveal more on demand (no silent cap — the
+// button states how many remain). Selection/bulk operate on the full set, so
+// limiting what's rendered doesn't change what Adopt/Ignore act on.
+const MOBILE_PAGE = 24;
 import type { DiscoveredGroup } from "@/features/clients/lib/groupDiscovered";
 
 import { DiscoveredMobileRow } from "./DiscoveredMobileRow";
@@ -32,6 +40,7 @@ export interface DiscoveredPendingSectionProps {
 
 export function DiscoveredPendingSection(props: Readonly<DiscoveredPendingSectionProps>) {
   const { t } = useTranslation("clients");
+  const [mobileVisible, setMobileVisible] = useState(MOBILE_PAGE);
   const {
     rows,
     columns,
@@ -87,18 +96,30 @@ export function DiscoveredPendingSection(props: Readonly<DiscoveredPendingSectio
       </div>
       {rows.length > 0 && (
         <>
-          <div className="md:hidden rounded-xs bg-bg-card border border-border overflow-hidden">
-            {rows.map((g) => (
-              <DiscoveredMobileRow
-                key={g.key}
-                row={g}
-                selected={selected.has(g.key)}
-                onToggleSelect={onToggleSelect}
-                onAdopt={onAdopt}
-                onIgnore={onIgnore}
-                busy={busy}
-              />
-            ))}
+          <div className="md:hidden flex flex-col gap-2">
+            <div className="rounded-xs bg-bg-card border border-border overflow-hidden">
+              {rows.slice(0, mobileVisible).map((g) => (
+                <DiscoveredMobileRow
+                  key={g.key}
+                  row={g}
+                  selected={selected.has(g.key)}
+                  onToggleSelect={onToggleSelect}
+                  onAdopt={onAdopt}
+                  onIgnore={onIgnore}
+                  busy={busy}
+                />
+              ))}
+            </div>
+            {rows.length > mobileVisible && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="self-center"
+                onClick={() => setMobileVisible((n) => n + MOBILE_PAGE)}
+              >
+                {t("discovered.loadMore", { count: rows.length - mobileVisible })}
+              </Button>
+            )}
           </div>
           <div className="hidden md:block rounded-xs bg-bg-card border border-border overflow-hidden">
             <DataTable

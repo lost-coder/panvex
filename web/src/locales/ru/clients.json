@@ -303,6 +303,7 @@
     "pendingSection_few": "Ожидают ({{count}})",
     "pendingSection_many": "Ожидают ({{count}})",
     "reviewedSection": "Ранее просмотренные ({{count}})",
+    "loadMore": "Показать ещё (осталось {{count}})",
     "selection": {
       "summary_one": "Выбран {{count}} клиент",
       "summary_few": "Выбрано {{count}} клиента",
