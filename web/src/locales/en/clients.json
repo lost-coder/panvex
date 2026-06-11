@@ -101,6 +101,7 @@
     "fleetGroupsLabel": "Fleet groups",
     "pinnedAgentsLabel": "Pinned agents",
     "pinnedAgentsDescription": "Override for nodes outside the selected groups",
+    "defaultGroup": "Default",
     "agentOffline": "offline",
     "limitsToggleCollapsed": "▸ Limits (optional)",
     "limitsToggleExpanded": "▾ Limits (optional)",

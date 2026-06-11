@@ -70,6 +70,15 @@ export function ClientFormSheet({
     return map;
   }, [agents]);
 
+  // U-30: resolve a fleet-group id to its human label for the pinned-agents
+  // group headers (they showed the raw UUID otherwise). Mirrors the
+  // label ?? name ?? id fallback used by the fleet-groups checkbox list.
+  const groupLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const g of fleetGroups ?? []) map.set(g.id, g.label ?? g.name ?? g.id);
+    return (id: string) => (id === "default" ? t("form.defaultGroup", "Default") : map.get(id) ?? id);
+  }, [fleetGroups, t]);
+
   const hasDeploymentTargets =
     data.fleetGroupIds.length > 0 || data.agentIds.length > 0;
 
@@ -181,7 +190,11 @@ export function ClientFormSheet({
               {t("form.deploymentTargets")}
             </span>
             {!hasDeploymentTargets && (
-              <span className="text-micro text-status-warn">{t("form.deploymentTargetsHint")}</span>
+              // U-28: neutral guidance, not an alarm. It shows on a fresh form
+              // before the operator has done anything, so the loud orange read
+              // as a validation error for an action not yet taken. The submit
+              // button stays disabled to actually enforce the requirement.
+              <span className="text-micro text-fg-muted">{t("form.deploymentTargetsHint")}</span>
             )}
           </div>
 
@@ -228,7 +241,7 @@ export function ClientFormSheet({
                 {Array.from(agentsByGroup.entries()).map(([groupId, list]) => (
                   <div key={groupId} className="flex flex-col">
                     <div className="px-2 py-1 text-nano uppercase tracking-wide text-fg-muted bg-bg-muted/40">
-                      {groupId}
+                      {groupLabel(groupId)}
                     </div>
                     {(list ?? []).map((a) => {
                       const active = data.agentIds.includes(a.id);

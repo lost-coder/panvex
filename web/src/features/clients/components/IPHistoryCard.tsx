@@ -23,6 +23,52 @@ export function IPHistoryCard({
   totalUnique: number;
 }>) {
   const { t } = useTranslation("clients");
+  // U-37: GeoIP enrichment is optional — when no row carries country/city/ASN
+  // there's no point rendering three columns of "—". Hide them entirely until
+  // data lands (and only then drop the "not available" note).
+  const hasGeo = ips.some((r) => r.countryCode || r.countryName || r.city || r.asn);
+  const geoColumns = hasGeo
+    ? [
+        {
+          key: "country",
+          header: t("ipHistory.country"),
+          render: (row: Readonly<IPRow>) =>
+            row.countryName || row.countryCode ? (
+              <span className="text-xs text-fg">
+                {row.countryCode && (
+                  <span className="font-mono text-nano text-fg-muted mr-1">{row.countryCode}</span>
+                )}
+                {row.countryName ?? ""}
+              </span>
+            ) : (
+              <span className="text-xs text-fg-faint">—</span>
+            ),
+          className: "hidden md:table-cell w-[160px]",
+        },
+        {
+          key: "city",
+          header: t("ipHistory.city"),
+          render: (row: Readonly<IPRow>) =>
+            row.city ? (
+              <span className="text-xs text-fg">{row.city}</span>
+            ) : (
+              <span className="text-xs text-fg-faint">—</span>
+            ),
+          className: "hidden lg:table-cell w-[140px]",
+        },
+        {
+          key: "asn",
+          header: t("ipHistory.asn"),
+          render: (row: Readonly<IPRow>) =>
+            row.asn ? (
+              <MonoValue className="text-xs">{row.asn}</MonoValue>
+            ) : (
+              <span className="text-xs text-fg-faint">—</span>
+            ),
+          className: "hidden xl:table-cell w-[120px]",
+        },
+      ]
+    : [];
   const columns = [
     {
       key: "ip",
@@ -30,44 +76,7 @@ export function IPHistoryCard({
       render: (row: Readonly<IPRow>) => <MonoValue>{row.ip}</MonoValue>,
       className: "w-[160px]",
     },
-    {
-      key: "country",
-      header: t("ipHistory.country"),
-      render: (row: Readonly<IPRow>) =>
-        row.countryName || row.countryCode ? (
-          <span className="text-xs text-fg">
-            {row.countryCode && (
-              <span className="font-mono text-nano text-fg-muted mr-1">{row.countryCode}</span>
-            )}
-            {row.countryName ?? ""}
-          </span>
-        ) : (
-          <span className="text-xs text-fg-faint">—</span>
-        ),
-      className: "hidden md:table-cell w-[160px]",
-    },
-    {
-      key: "city",
-      header: t("ipHistory.city"),
-      render: (row: Readonly<IPRow>) =>
-        row.city ? (
-          <span className="text-xs text-fg">{row.city}</span>
-        ) : (
-          <span className="text-xs text-fg-faint">—</span>
-        ),
-      className: "hidden lg:table-cell w-[140px]",
-    },
-    {
-      key: "asn",
-      header: t("ipHistory.asn"),
-      render: (row: Readonly<IPRow>) =>
-        row.asn ? (
-          <MonoValue className="text-xs">{row.asn}</MonoValue>
-        ) : (
-          <span className="text-xs text-fg-faint">—</span>
-        ),
-      className: "hidden xl:table-cell w-[120px]",
-    },
+    ...geoColumns,
     {
       key: "firstSeen",
       header: t("ipHistory.firstSeen"),
@@ -98,9 +107,11 @@ export function IPHistoryCard({
             {t("ipHistory.uniqueCount", { count: totalUnique })}
           </span>
         </div>
-        <span className="text-nano font-mono text-fg-muted truncate">
-          {t("ipHistory.geoipNote")}
-        </span>
+        {!hasGeo && (
+          <span className="text-nano font-mono text-fg-muted truncate">
+            {t("ipHistory.geoipNote")}
+          </span>
+        )}
       </header>
       {ips.length === 0 ? (
         <div className="px-4 py-8 text-sm text-fg-muted text-center">

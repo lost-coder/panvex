@@ -102,6 +102,7 @@
     "fleetGroupsLabel": "Группы серверов",
     "pinnedAgentsLabel": "Закреплённые агенты",
     "pinnedAgentsDescription": "Переопределение для нод вне выбранных групп",
+    "defaultGroup": "По умолчанию",
     "agentOffline": "оффлайн",
     "limitsToggleCollapsed": "▸ Лимиты (опционально)",
     "limitsToggleExpanded": "▾ Лимиты (опционально)",
