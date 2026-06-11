@@ -30,6 +30,7 @@ import { AuthProvider } from "@/app/providers/AuthProvider";
 import { ConfirmProvider, useConfirm } from "@/app/providers/ConfirmProvider";
 import { EventsSynchronizer } from "@/app/providers/EventsSynchronizer";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { PullToRefresh } from "@/components/PullToRefresh";
 import { ShortcutsOverlay } from "@/components/ShortcutsOverlay";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { WsStatusBanner } from "@/components/WsStatusBanner";
@@ -196,6 +197,9 @@ function ProtectedShell() {
         <OfflineBanner />
         {/* P2-UX-10: surface reconnection state above all page content. */}
         <WsStatusBanner />
+        {/* Stage 5: mobile pull-to-refresh → revalidate every active query.
+            No-ops on desktop (hover-capable) devices. */}
+        <PullToRefresh onRefresh={() => queryClient.invalidateQueries()} />
         {/* Route-level error boundary: a crash in one page renders an inline
             fallback while the shell (nav, banners) stays usable, instead of
             the root boundary blowing the whole app to a full-screen reload.
