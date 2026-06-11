@@ -250,7 +250,7 @@
     "mePool": {
       "unavailable": "ME Pool is not available on this server.",
       "coverage": "Coverage",
-      "coverageCaption": "{{alive}} / {{required}} writers alive",
+      "coverageCaption": "{{alive}} alive · {{required}} required",
       "freshCoverage": "Fresh coverage",
       "freshCoverageCaption": "{{count}} fresh-alive",
       "endpoints": "Endpoints",
@@ -289,7 +289,8 @@
         "clients": "Clients",
         "idle": "Idle"
       },
-      "writerEmpty": "No writers match this filter"
+      "writerEmpty": "No writers match this filter",
+      "writersUnavailable": "Per-writer detail isn't reported by this agent."
     },
     "upstreamsTab": {
       "id": "#",

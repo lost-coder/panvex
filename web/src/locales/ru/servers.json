@@ -260,7 +260,7 @@
     "mePool": {
       "unavailable": "ME-пул недоступен на этом сервере.",
       "coverage": "Покрытие",
-      "coverageCaption": "{{alive}} / {{required}} писателей живы",
+      "coverageCaption": "{{alive}} живо · {{required}} требуется",
       "freshCoverage": "Свежее покрытие",
       "freshCoverageCaption": "{{count}} свежих живых",
       "endpoints": "Эндпоинты",
@@ -299,7 +299,8 @@
         "clients": "Клиенты",
         "idle": "Простой"
       },
-      "writerEmpty": "Под фильтр писатели не подходят"
+      "writerEmpty": "Под фильтр писатели не подходят",
+      "writersUnavailable": "Этот агент не передаёт детализацию по писателям."
     },
     "upstreamsTab": {
       "id": "#",
