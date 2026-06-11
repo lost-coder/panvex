@@ -233,7 +233,11 @@
       "tls": "TLS",
       "secure": "Secure",
       "classic": "Classic",
-      "none": "No links generated yet."
+      "none": "No links generated yet.",
+      "qr": "Show QR code",
+      "share": "Share link",
+      "shareTitle": "Panvex connection link",
+      "qrTitle": "Scan to connect"
     }
   },
   "ipHistory": {
