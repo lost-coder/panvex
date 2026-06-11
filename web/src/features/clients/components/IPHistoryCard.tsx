@@ -3,7 +3,7 @@
 // the page's local state, so a clean component move was sufficient.
 import { useTranslation } from "react-i18next";
 
-import { DataTable, MonoValue } from "@/ui";
+import { DataTable, MonoValue, formatDateTime } from "@/ui";
 
 export interface IPRow {
   ip: string;
@@ -73,7 +73,7 @@ export function IPHistoryCard({
       header: t("ipHistory.firstSeen"),
       render: (row: Readonly<IPRow>) => (
         <span className="text-micro font-mono text-fg-muted tabular-nums">
-          {new Date(row.firstSeen).toLocaleString()}
+          {formatDateTime(row.firstSeen)}
         </span>
       ),
       className: "hidden md:table-cell w-[170px]",
@@ -83,7 +83,7 @@ export function IPHistoryCard({
       header: t("ipHistory.lastSeen"),
       render: (row: Readonly<IPRow>) => (
         <span className="text-micro font-mono text-fg tabular-nums">
-          {new Date(row.lastSeen).toLocaleString()}
+          {formatDateTime(row.lastSeen)}
         </span>
       ),
       className: "w-[170px]",

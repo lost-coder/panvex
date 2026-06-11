@@ -219,7 +219,7 @@
     "rotating": "Rotating…",
     "reveal": "Reveal",
     "hide": "Hide",
-    "absent": "Current secret isn't returned by the detail API — extract it from a fresh connection link below, or rotate to get a new one.",
+    "absent": "For security, the current secret isn't shown here. Copy a connection link from the Deployments tab, or rotate to issue a new secret.",
     "pendingRedeploy": "Secret rotated — wait for agents to re-apply before distributing new links."
   },
   "deployments": {
@@ -239,7 +239,7 @@
   "ipHistory": {
     "title": "IP history",
     "uniqueCount": "{{count}} unique",
-    "geoipNote": "GeoIP enrichment pending — see backend-followup #3",
+    "geoipNote": "GeoIP enrichment isn't available yet.",
     "empty": "No IP activity recorded.",
     "emptyShort": "No IPs",
     "ip": "IP",

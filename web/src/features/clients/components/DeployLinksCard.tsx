@@ -16,6 +16,7 @@ import {
   deployVariant,
   formatAge,
   formatBytes,
+  formatDateTime,
   formatQuota,
   type ClientDeploymentData,
 } from "@/ui";
@@ -339,7 +340,7 @@ export function DeployLinksCard({
                 )}
                 <span className="ml-auto text-micro font-mono text-fg-muted tabular-nums">
                   {d.lastAppliedAtUnix > 0
-                    ? new Date(d.lastAppliedAtUnix * 1000).toLocaleString()
+                    ? formatDateTime(d.lastAppliedAtUnix * 1000)
                     : t("deployments.neverApplied")}
                 </span>
               </div>

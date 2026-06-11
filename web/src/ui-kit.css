@@ -24,7 +24,11 @@
   --panvex-bg-hover: #1e2430;
   --panvex-fg: #f3f5f9;
   --panvex-fg-muted: #9aa3b2;
-  --panvex-fg-faint: #2a3040;
+  /* U-16: was #2a3040 — a divider-level tone (~1.34:1) that left counts,
+     timestamps and empty-state glyphs effectively invisible. Lifted to a
+     legible gray (~4.9:1 on the darkest surface) while staying a step
+     below --panvex-fg-muted so the faint/muted hierarchy survives. */
+  --panvex-fg-faint: #79828f;
   --panvex-border: rgba(255, 255, 255, 0.06);
   --panvex-border-hi: rgba(255, 255, 255, 0.1);
   /* Visible row divider for lists/cards. Stronger than --panvex-border-hi
@@ -48,6 +52,14 @@
   --panvex-accent-muted: rgba(96, 165, 250, 0.15);
 }
 
+/* U-01: the runtime sets the theme via the `data-theme` attribute on
+   <html> (shared/lib/appearance.ts), NOT a `.light` class. The legacy
+   styles.css palette already keyed off `[data-theme="light"]`, but this
+   UI-kit token palette only matched `.light`, so the new `--color-*`
+   tokens (bg-bg, bg-card, text-fg…) never swapped — switching to Light
+   produced dark surfaces with light-theme text. Match both selectors so
+   the attribute-driven toggle actually flips the whole token set. */
+:root[data-theme="light"],
 .light {
   color-scheme: light;
   --panvex-bg: #f5f6f8;
@@ -56,7 +68,10 @@
   --panvex-bg-hover: #e9eaef;
   --panvex-fg: #1a1d23;
   --panvex-fg-muted: #5b6470;
-  --panvex-fg-faint: #dfe1e6;
+  /* U-16: was #dfe1e6 — near-white, ~1.2:1 on light surfaces. Darkened to
+     a legible gray (~5.3:1 on white) for the same counts/timestamps that
+     were illegible in the dark theme. */
+  --panvex-fg-faint: #5f6773;
   --panvex-border: rgba(0, 0, 0, 0.08);
   --panvex-border-hi: rgba(0, 0, 0, 0.14);
   --panvex-divider: rgba(0, 0, 0, 0.18);

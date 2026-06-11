@@ -1,3 +1,21 @@
+import i18next from "i18next";
+
+/**
+ * BCP-47 locale for the active UI language. Date/time formatting must
+ * follow the operator's chosen language (Profile → Language), not the
+ * browser/OS locale — otherwise an English UI renders Russian dates and
+ * native pickers (U-06). Defaults to en-US before i18n initialises.
+ */
+export function activeLocale(): string {
+  return i18next.language?.startsWith("ru") ? "ru-RU" : "en-US";
+}
+
+/** Format a date/epoch/RFC3339 value as a locale-aware date + time. */
+export function formatDateTime(input: number | string | Date): string {
+  const d = input instanceof Date ? input : new Date(input);
+  return d.toLocaleString(activeLocale());
+}
+
 /**
  * Format byte count to a human-readable string. Decimal (SI) base — this is
  * the single canonical byte formatter for the whole dashboard; do not
@@ -37,7 +55,7 @@ export function formatUptime(seconds: number): string {
 
 /** Format unix epoch seconds to locale time string */
 export function formatTime(epochSecs: number): string {
-  return new Date(epochSecs * 1000).toLocaleTimeString();
+  return new Date(epochSecs * 1000).toLocaleTimeString(activeLocale());
 }
 
 /** Format byte quota: 0 = "Unlimited", otherwise human-readable */
@@ -49,7 +67,7 @@ export function formatQuota(bytes: number): string {
 /** Format RFC3339 expiry: empty = "Never", otherwise locale date */
 export function formatExpiry(rfc3339: string): string {
   if (!rfc3339) return "Never";
-  return new Date(rfc3339).toLocaleDateString();
+  return new Date(rfc3339).toLocaleDateString(activeLocale());
 }
 
 /** Format unix timestamp as relative age ("just now", "5m ago", "2d ago") */

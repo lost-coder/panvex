@@ -3,7 +3,7 @@
 
 import { useTranslation } from "react-i18next";
 
-import { Button, cn, formatBytes } from "@/ui";
+import { Button, cn, formatBytes, formatDateTime } from "@/ui";
 import type { DiscoveredGroup } from "@/features/clients/lib/groupDiscovered";
 
 import { DiscoveredStatusPill } from "./DiscoveredColumns";
@@ -58,7 +58,7 @@ export function DiscoveredMobileRow({
           {t("table.ipsSuffix")} · {formatBytes(row.totalOctets)}
         </span>
         {Number.isFinite(row.discoveredAtUnix) && row.discoveredAtUnix > 0 && (
-          <span>{new Date(row.discoveredAtUnix * 1000).toLocaleString()}</span>
+          <span>{formatDateTime(row.discoveredAtUnix * 1000)}</span>
         )}
       </div>
       {interactive && (

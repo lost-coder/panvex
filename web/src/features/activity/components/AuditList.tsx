@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   EmptyState,
+  activeLocale,
   cn,
   formatTime,
 } from "@/ui";
@@ -28,7 +29,7 @@ export function groupByDay(events: AuditListItem[]) {
   const groups = new Map<string, AuditListItem[]>();
   for (const e of events) {
     const d = new Date(e.createdAtUnix * 1000);
-    const key = d.toLocaleDateString(undefined, {
+    const key = d.toLocaleDateString(activeLocale(), {
       year: "numeric",
       month: "short",
       day: "numeric",

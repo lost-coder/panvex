@@ -81,7 +81,7 @@ function SystemChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
         />
         <YAxis
           domain={[0, 100]}
-          tick={{ fontSize: 11 }}
+          tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }}
           tickFormatter={(v) => `${v}%`}
           className="text-fg-muted"
         />
@@ -141,7 +141,7 @@ function ConnectionsChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
           tickFormatter={formatTime}
           tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }}
         />
-        <YAxis tick={{ fontSize: 11 }} className="text-fg-muted" />
+        <YAxis tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }} className="text-fg-muted" />
         <Tooltip
           contentStyle={{
             backgroundColor: "var(--color-bg-card)",
@@ -189,7 +189,7 @@ function NetworkChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
         />
         <YAxis
           domain={[0, 100]}
-          tick={{ fontSize: 11 }}
+          tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }}
           tickFormatter={(v) => `${v}%`}
           className="text-fg-muted"
         />
@@ -230,7 +230,7 @@ function TrafficChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
           tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }}
         />
         <YAxis
-          tick={{ fontSize: 11 }}
+          tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }}
           tickFormatter={(v) => `${v.toFixed(1)}`}
           className="text-fg-muted"
         />
