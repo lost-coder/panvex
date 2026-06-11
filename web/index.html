@@ -2,8 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Panvex Control Room</title>
+    <!-- Mobile browser chrome (Stage 5 down-payment): tint the address bar /
+         status bar to match the active theme and allow add-to-home-screen
+         to launch standalone. viewport-fit=cover pairs with the
+         env(safe-area-inset-*) padding the layout already reserves.
+         Full PWA install (icon set + manifest), push, and an actionable
+         dashboard remain separate feature efforts — see the review doc. -->
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b0d12" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f6f8" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Panvex" />
     <!-- Fonts are self-hosted via @fontsource and bundled by Vite from
          src/ui-kit.css; no external font CDN. -->
   </head>
