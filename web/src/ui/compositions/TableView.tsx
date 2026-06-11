@@ -119,7 +119,7 @@ export function TableView({
                     key={f.key}
                     role="tablist"
                     aria-label={f.placeholder ?? "Filter"}
-                    className="inline-flex items-center gap-0.5 p-0.5 rounded-xs border border-border-hi bg-bg overflow-x-auto"
+                    className="inline-flex items-center gap-0.5 p-0.5 rounded-xs border border-border-hi bg-bg overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   >
                     {f.options.map((o) => {
                       const active = o.value === f.value;

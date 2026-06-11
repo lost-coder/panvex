@@ -285,7 +285,7 @@ export function ClientFormSheet({
         {showLimits ? t("form.limitsToggleExpanded") : t("form.limitsToggleCollapsed")}
       </button>
       {showLimits && (
-        <div id="client-form-limits-section" className="grid grid-cols-3 gap-3">
+        <div id="client-form-limits-section" className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <FormField label={t("form.maxTcpConnsLabel")} variant="compact">
             <LimitNumberInput
               value={data.maxTcpConns}
