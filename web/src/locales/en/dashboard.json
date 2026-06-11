@@ -28,7 +28,12 @@
   },
   "timeline": {
     "title": "Recent Events",
-    "live": "live"
+    "live": "live",
+    "filterLabel": "Event filter",
+    "filterAlerts": "Alerts",
+    "filterAll": "All",
+    "allQuiet": "No alerts — all quiet.",
+    "empty": "No events recorded yet."
   },
   "metrics": {
     "noData": "No data available for this time range",

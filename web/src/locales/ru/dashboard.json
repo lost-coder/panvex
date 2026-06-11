@@ -31,7 +31,12 @@
   },
   "timeline": {
     "title": "Последние события",
-    "live": "live"
+    "live": "live",
+    "filterLabel": "Фильтр событий",
+    "filterAlerts": "Важные",
+    "filterAll": "Все",
+    "allQuiet": "Тревог нет — всё спокойно.",
+    "empty": "Событий пока нет."
   },
   "metrics": {
     "noData": "Нет данных за выбранный период",
