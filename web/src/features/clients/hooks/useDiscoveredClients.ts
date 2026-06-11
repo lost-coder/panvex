@@ -29,7 +29,7 @@ import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
  * triggered ad_tag auto-generation on the trailing PUT. Both classes
  * of bug are gone with the bulk path.
  */
-export function useDiscoveredClients() {
+export function useDiscoveredClients(options?: Readonly<{ pausePolling?: boolean }>) {
   const queryClient = useQueryClient();
   const { t } = useTranslation("clients");
   // Each mutation here is fire-and-forget from the container, so failures
@@ -37,7 +37,12 @@ export function useDiscoveredClients() {
   // the button they clicked actually hit an error.
   const toast = useToast();
 
-  const refetchInterval = useEventAwareInterval(90_000, 30_000);
+  const liveInterval = useEventAwareInterval(90_000, 30_000);
+  // U-05: while the operator has rows selected, freeze the poll. A 15-30s
+  // refetch re-renders and reflows the list under the finger, turning a
+  // tap on "Adopt" into a mis-tap on a neighbouring row. `false` disables
+  // React Query's interval entirely; it resumes once selection clears.
+  const refetchInterval = options?.pausePolling ? false : liveInterval;
 
   const query = useQuery({
     queryKey: clientsKeys.discovered,

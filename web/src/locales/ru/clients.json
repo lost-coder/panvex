@@ -135,6 +135,7 @@
     "subtitle": "{{expires}}",
     "actions": {
       "edit": "Изменить",
+      "more": "Ещё действия",
       "disable": "Отключить",
       "enable": "Включить",
       "redeploy": "Перевыкатить",
@@ -298,9 +299,10 @@
     "pendingSection_many": "Ожидают ({{count}})",
     "reviewedSection": "Ранее просмотренные ({{count}})",
     "selection": {
-      "summary_one": "{{count}} выбран · {{records}} записей",
-      "summary_few": "{{count}} выбрано · {{records}} записей",
-      "summary_many": "{{count}} выбрано · {{records}} записей",
+      "summary_one": "Выбран {{count}} клиент",
+      "summary_few": "Выбрано {{count}} клиента",
+      "summary_many": "Выбрано {{count}} клиентов",
+      "summaryRecords": "в {{records}} развёртываниях",
       "adopt": "Принять",
       "ignore": "Игнорировать",
       "clear": "Очистить"

@@ -34,6 +34,12 @@ export interface DiscoveredClientsPageProps {
   onIgnoreMany?: ((ids: string[]) => void) | undefined;
   onBack?: (() => void) | undefined;
   onRescan?: (() => void) | undefined;
+  /**
+   * U-05: fired when the bulk-selection set transitions between empty and
+   * non-empty. The container uses it to pause the live poll while a
+   * selection is in progress so the list does not reflow under the finger.
+   */
+  onSelectionActiveChange?: ((active: boolean) => void) | undefined;
   busy?: boolean | undefined;
   rescanning?: boolean | undefined;
 }

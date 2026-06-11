@@ -9,9 +9,15 @@
 // `trailing` slot — mirroring ServerHero / ServerDetailPage.
 
 import { useTranslation } from "react-i18next";
+import { MoreVertical } from "lucide-react";
 
 import {
   Button,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   HeroStrip,
   PageHeader,
   type HeroMetaPill,
@@ -59,6 +65,58 @@ export function ClientDetailHero({
   resetEverywherePending,
 }: Readonly<ClientDetailHeroProps>) {
   const { t } = useTranslation("clients");
+
+  // U-04: on desktop the full action list lives in the hero's `actions`
+  // strip, but the mobile PageHeader only had room for Edit — leaving
+  // Disable/Redeploy/Reset/Delete unreachable from a phone. Surface them
+  // in a kebab menu so client lifecycle is manageable on mobile too.
+  const hasMobileMenu =
+    !!onDisable ||
+    (hasFailedDeployment && !!onRedeploy) ||
+    !!onResetQuotaEverywhere ||
+    !!onDelete;
+  const mobileMenu = hasMobileMenu ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label={t("detail.actions.more")}
+          className="px-2"
+        >
+          <MoreVertical size={18} aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {onDisable && (
+          <DropdownMenuItem onSelect={onDisable}>
+            {enabled ? t("detail.actions.disable") : t("detail.actions.enable")}
+          </DropdownMenuItem>
+        )}
+        {hasFailedDeployment && onRedeploy && (
+          <DropdownMenuItem onSelect={onRedeploy} disabled={!!redeploying}>
+            {redeploying ? t("detail.actions.redeploying") : t("detail.actions.redeploy")}
+          </DropdownMenuItem>
+        )}
+        {onResetQuotaEverywhere && (
+          <DropdownMenuItem onSelect={onResetQuotaEverywhere} disabled={!!resetEverywherePending}>
+            {resetEverywherePending
+              ? t("detail.quota.resetting")
+              : t("detail.quota.resetEverywhereButton")}
+          </DropdownMenuItem>
+        )}
+        {onDelete && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem danger onSelect={onDelete}>
+              {t("detail.actions.delete")}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null;
+
   const actions = (
     <>
       {onEdit && (
@@ -116,13 +174,14 @@ export function ClientDetailHero({
           title={name}
           subtitle={t("detail.subtitle", { expires: expiresSuffix(expirationRfc3339) })}
           trailing={
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <ClientStateBadge state={state} />
               {onEdit && (
                 <Button size="sm" onClick={onEdit}>
                   {t("detail.actions.edit")}
                 </Button>
               )}
+              {mobileMenu}
             </div>
           }
         />

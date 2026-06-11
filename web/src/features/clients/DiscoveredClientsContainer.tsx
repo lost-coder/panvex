@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DiscoveredClientsPage } from "./DiscoveredClientsPage";
 import { useDiscoveredClients } from "./hooks/useDiscoveredClients";
@@ -11,8 +11,11 @@ import { groupDiscovered } from "./lib/groupDiscovered";
 
 export function DiscoveredClientsContainer() {
   const { t } = useTranslation("clients");
+  // U-05: pause the live poll while the operator has a selection active so
+  // the list does not reflow under their finger mid-triage.
+  const [selectionActive, setSelectionActive] = useState(false);
   const { discoveredClients, isLoading, error, refetch, adopt, ignore, adoptMany, ignoreMany, rescan, isAdopting, isIgnoring, isRescanning } =
-    useDiscoveredClients();
+    useDiscoveredClients({ pausePolling: selectionActive });
   const navigate = useNavigate();
   const confirm = useConfirm();
 
@@ -93,6 +96,7 @@ export function DiscoveredClientsContainer() {
       onIgnoreMany={handleIgnoreMany}
       onBack={() => navigate({ to: "/clients" })}
       onRescan={() => rescan()}
+      onSelectionActiveChange={setSelectionActive}
       busy={isAdopting || isIgnoring}
       rescanning={isRescanning}
     />

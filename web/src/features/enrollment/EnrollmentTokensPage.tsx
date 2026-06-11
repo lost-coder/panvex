@@ -76,7 +76,8 @@ export function EnrollmentTokensPage({
       if (statusFilter !== "all" && tok.status !== statusFilter) return false;
       if (!q) return true;
       return (
-        tok.value.toLowerCase().includes(q) ||
+        tok.maskedValue.toLowerCase().includes(q) ||
+        tok.handle.toLowerCase().includes(q) ||
         (tok.fleetGroupId ?? "").toLowerCase().includes(q)
       );
     });

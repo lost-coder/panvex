@@ -19,6 +19,7 @@ import {
   buildClientCounts,
 } from "@/features/clients/components/ClientsPagePulse";
 import { ClientsTableBody } from "@/features/clients/components/ClientsTableBody";
+import { ClientCardView } from "@/features/clients/components/ClientCardView";
 import { buildClientColumns } from "@/features/clients/components/ClientsTableColumns";
 import { useClientSelection } from "@/features/clients/components/useClientSelection";
 import { useNowSec } from "@/shared/hooks/useNowSec";
@@ -220,19 +221,48 @@ export function ClientsPage({
                 onChange: setPage,
               }}
             >
-              <ClientsTableBody
-                rows={paginated}
-                columns={columns}
-                selection={{
-                  selected: sel.selected,
-                  onToggle: sel.toggleOne,
-                  onToggleAll: sel.toggleAllOnPage,
-                  allSelected: sel.allSelected,
-                  someSelected: sel.someSelected,
-                }}
-                onClientClick={onClientClick}
-                nowMs={nowMs}
-              />
+              {effectiveMode === "cards" ? (
+                <>
+                  {/* Mobile keeps the compact rows (cards add no value on a
+                      narrow column); desktop renders the responsive grid. */}
+                  <div className="md:hidden">
+                    <ClientsTableBody
+                      rows={paginated}
+                      columns={columns}
+                      selection={{
+                        selected: sel.selected,
+                        onToggle: sel.toggleOne,
+                        onToggleAll: sel.toggleAllOnPage,
+                        allSelected: sel.allSelected,
+                        someSelected: sel.someSelected,
+                      }}
+                      onClientClick={onClientClick}
+                      nowMs={nowMs}
+                    />
+                  </div>
+                  <div className="hidden md:block">
+                    <ClientCardView
+                      clients={paginated}
+                      onClientClick={onClientClick}
+                      nowMs={nowMs}
+                    />
+                  </div>
+                </>
+              ) : (
+                <ClientsTableBody
+                  rows={paginated}
+                  columns={columns}
+                  selection={{
+                    selected: sel.selected,
+                    onToggle: sel.toggleOne,
+                    onToggleAll: sel.toggleAllOnPage,
+                    allSelected: sel.allSelected,
+                    someSelected: sel.someSelected,
+                  }}
+                  onClientClick={onClientClick}
+                  nowMs={nowMs}
+                />
+              )}
             </TableView>
           </>
         )}

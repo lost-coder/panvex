@@ -5,7 +5,7 @@
 
 import { useTranslation } from "react-i18next";
 
-import { Button, DataTable } from "@/ui";
+import { Button, DataTable, cn } from "@/ui";
 import type { DiscoveredGroup } from "@/features/clients/lib/groupDiscovered";
 
 import { DiscoveredMobileRow } from "./DiscoveredMobileRow";
@@ -59,13 +59,18 @@ export function DiscoveredPendingSection(props: Readonly<DiscoveredPendingSectio
               {t("discovered.rescan.button")}
             </Button>
           )}
+          {/* Desktop: inline bulk bar in the section header. The mobile
+              equivalent is a sticky bar pinned above the bottom-nav (U-05)
+              so it stays reachable after scrolling a long pending list. */}
           {selected.size > 0 && (
-            <div className="flex items-center gap-2 rounded-xs bg-bg-card border border-accent/40 px-3 py-1.5">
-              <span className="text-xs font-mono text-fg">
-                {t("discovered.selection.summary", {
-                  count: selected.size,
-                  records: selectedRecordCount,
-                })}
+            <div className="hidden md:flex items-center gap-2 rounded-xs bg-bg-card border border-accent/40 px-3 py-1.5">
+              <span className="flex flex-col leading-tight">
+                <span className="text-xs font-mono text-fg">
+                  {t("discovered.selection.summary", { count: selected.size })}
+                </span>
+                <span className="text-nano text-fg-muted">
+                  {t("discovered.selection.summaryRecords", { records: selectedRecordCount })}
+                </span>
               </span>
               <Button size="sm" disabled={busy} onClick={onBulkAdopt}>
                 {t("discovered.selection.adopt")}
@@ -103,6 +108,38 @@ export function DiscoveredPendingSection(props: Readonly<DiscoveredPendingSectio
             />
           </div>
         </>
+      )}
+
+      {/* Mobile sticky bulk bar (U-05): pinned just above the bottom-nav so
+          Adopt/Ignore stay reachable no matter how far the operator has
+          scrolled into a long pending list. */}
+      {selected.size > 0 && (
+        <div
+          className={cn(
+            "md:hidden fixed inset-x-0 z-30 px-4",
+            "bottom-[calc(3.5rem+env(safe-area-inset-bottom))]",
+          )}
+        >
+          <div className="flex items-center gap-2 rounded-sm bg-bg-card border border-accent/40 shadow-xl px-3 py-2">
+            <span className="flex flex-col leading-tight min-w-0 flex-1">
+              <span className="text-xs font-mono text-fg truncate">
+                {t("discovered.selection.summary", { count: selected.size })}
+              </span>
+              <span className="text-nano text-fg-muted truncate">
+                {t("discovered.selection.summaryRecords", { records: selectedRecordCount })}
+              </span>
+            </span>
+            <Button size="sm" disabled={busy} onClick={onBulkAdopt}>
+              {t("discovered.selection.adopt")}
+            </Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={onBulkIgnore}>
+              {t("discovered.selection.ignore")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onClearSelection} aria-label={t("discovered.selection.clear")}>
+              ✕
+            </Button>
+          </div>
+        </div>
       )}
     </section>
   );

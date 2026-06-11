@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, LogOut } from "lucide-react";
 import { cn } from "@/ui/lib/cn";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody } from "@/ui/base/sheet";
 import type { NavItem } from "./types";
@@ -9,6 +9,12 @@ export interface BottomNavProps {
   moreItems?: NavItem[] | undefined;
   activeId: string;
   onNavigate?: ((id: string) => void) | undefined;
+  /**
+   * Sign-out handler surfaced in the "More" sheet. On mobile the sidebar
+   * (which hosts Log out on desktop) is hidden, so without this the
+   * operator has no way to end the session from a phone (U-03).
+   */
+  onLogout?: (() => void) | undefined;
   className?: string | undefined;
 }
 
@@ -17,15 +23,24 @@ export function BottomNav({
   moreItems,
   activeId,
   onNavigate,
+  onLogout,
   className,
 }: Readonly<BottomNavProps>) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const hasMore = !!moreItems && moreItems.length > 0;
+  const hasMoreItems = !!moreItems && moreItems.length > 0;
+  // The "More" affordance must also appear when the only overflow action
+  // is Log out — otherwise sign-out is unreachable on mobile.
+  const hasMore = hasMoreItems || !!onLogout;
   const moreActive = moreItems?.some((m) => m.id === activeId) ?? false;
 
   const handleNavigate = (id: string) => {
     setMoreOpen(false);
     onNavigate?.(id);
+  };
+
+  const handleLogout = () => {
+    setMoreOpen(false);
+    onLogout?.();
   };
 
   return (
@@ -119,6 +134,26 @@ export function BottomNav({
                     </li>
                   );
                 })}
+                {onLogout && (
+                  <li className={cn(hasMoreItems && "mt-1 pt-1 border-t border-border")}>
+                    <button
+                      type="button"
+                      aria-label="Log out"
+                      onClick={handleLogout}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-3 rounded-xs text-sm",
+                        "transition-all active:scale-[0.99]",
+                        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1",
+                        "text-status-error hover:bg-status-error/10",
+                      )}
+                    >
+                      <span className="text-lg leading-none" aria-hidden="true">
+                        <LogOut size={20} />
+                      </span>
+                      <span>Log out</span>
+                    </button>
+                  </li>
+                )}
               </ul>
             </SheetBody>
           </SheetContent>

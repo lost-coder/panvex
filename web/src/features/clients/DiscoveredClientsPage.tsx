@@ -5,7 +5,7 @@
 //
 // R-Q-08: pulse strip, filter spec, pending/reviewed sections, the
 // column factory, and mobile row all live in `./components/`.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, EmptyState, PageHeader, TableView } from "@/ui";
@@ -48,6 +48,7 @@ export function DiscoveredClientsPage({
   onIgnoreMany,
   onBack,
   onRescan,
+  onSelectionActiveChange,
   busy,
   rescanning,
 }: Readonly<DiscoveredClientsPageProps>) {
@@ -59,6 +60,12 @@ export function DiscoveredClientsPage({
   const [statusFilter, setStatusFilter] = useState("all");
   const [conflictFilter, setConflictFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // U-05: tell the container whether a selection is active so it can
+  // pause/resume the live poll (prevents the list reflowing under a tap).
+  useEffect(() => {
+    onSelectionActiveChange?.(selected.size > 0);
+  }, [selected, onSelectionActiveChange]);
 
   const matches = (g: Readonly<DiscoveredGroup>) => {
     if (search) {

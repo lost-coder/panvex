@@ -133,6 +133,7 @@
     "subtitle": "{{expires}}",
     "actions": {
       "edit": "Edit",
+      "more": "More actions",
       "disable": "Disable",
       "enable": "Enable",
       "redeploy": "Redeploy",
@@ -292,8 +293,9 @@
     "pendingSection_other": "Pending ({{count}})",
     "reviewedSection": "Previously reviewed ({{count}})",
     "selection": {
-      "summary_one": "{{count}} selected · {{records}} records",
-      "summary_other": "{{count}} selected · {{records}} records",
+      "summary_one": "{{count}} client selected",
+      "summary_other": "{{count}} clients selected",
+      "summaryRecords": "across {{records}} deployments",
       "adopt": "Adopt",
       "ignore": "Ignore",
       "clear": "Clear"

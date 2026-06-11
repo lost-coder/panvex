@@ -113,6 +113,7 @@ export function AppShell({
         moreItems={bottomNavMoreItems}
         activeId={activeId}
         onNavigate={onNavigate}
+        onLogout={onLogout}
       />
     </div>
   );

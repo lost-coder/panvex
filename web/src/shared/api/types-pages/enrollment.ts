@@ -100,7 +100,10 @@ export interface EnrollmentWizardProps {
 }
 
 export interface EnrollmentTokenData {
-  value: string;
+  /** Stable, listing-safe handle: doubles as the revoke reference and React key. */
+  handle: string;
+  /** Operator-safe masked token for display (raw value is never returned in listings). */
+  maskedValue: string;
   fleetGroupId: string;
   status: "active" | "consumed" | "expired" | "revoked";
   issuedAtUnix: number;
