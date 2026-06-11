@@ -76,6 +76,7 @@ export function ServerDetailPage({
   server,
   onBack,
   onReload,
+  onRestart,
   onBoostDetail,
   initState,
   lastUpdatedAt,
@@ -402,6 +403,7 @@ export function ServerDetailPage({
               <NodeStateBadge state={server.state} label={tc(nodeStatePresentation(server.state).labelKey)} />
               <ServerActionsDropdown
                 onReload={onReload}
+                onRestart={onRestart}
                 onBoostDetail={onBoostDetail}
                 onRename={onRename ? handleOpenRename : undefined}
                 onChangeFleetGroup={onChangeFleetGroup ? handleOpenChangeFleetGroup : undefined}
@@ -418,6 +420,7 @@ export function ServerDetailPage({
         relativeTime={relativeTime}
         relativeTimeStale={relativeTimeStale}
         onReload={onReload}
+        onRestart={onRestart}
         onBoostDetail={onBoostDetail}
         onRename={onRename ? handleOpenRename : undefined}
         onChangeFleetGroup={onChangeFleetGroup ? handleOpenChangeFleetGroup : undefined}

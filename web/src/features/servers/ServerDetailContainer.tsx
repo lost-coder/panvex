@@ -62,6 +62,7 @@ export function ServerDetailContainer() {
     boostDetailMutation,
     renameMutation,
     updateFleetGroupMutation,
+    restartMutation,
     deregisterMutation,
   } = useServerMutations(serverId ?? "");
   const { fleetGroups } = useFleetGroups();
@@ -126,6 +127,16 @@ export function ServerDetailContainer() {
       lastUpdatedAt={lastUpdatedAt}
       onBack={() => navigate({ to: "/servers" })}
       onBoostDetail={() => boostDetailMutation.mutate()}
+      onRestart={async () => {
+        const ok = await confirm({
+          title: t("detail.actions.restartConfirmTitle"),
+          body: t("detail.actions.restartConfirmBody", { name: server.name }),
+          confirmLabel: t("detail.actions.restart"),
+          variant: "danger",
+        });
+        if (!ok) return;
+        restartMutation.mutate();
+      }}
       agentConnection={agentConnection}
       onAllowReEnrollment={() => allowCertRecoveryMutation.mutate()}
       onRevokeGrant={() => revokeCertRecoveryMutation.mutate()}

@@ -105,12 +105,14 @@ func (s *Server) applyConfigToAgent(ctx context.Context, actorID, agentID string
 		return fmt.Errorf("enqueue config.apply: %w", err)
 	}
 	s.notifyAgentSessions(job.TargetAgentIDs)
-	return s.waitJobTargetTerminal(ctx, job.ID, agentID)
+	return s.waitJobTargetTerminal(ctx, job.ID, agentID, "config.apply")
 }
 
 // waitJobTargetTerminal polls the job until its target for agentID reaches a
-// terminal status or ctx/the deadline fires.
-func (s *Server) waitJobTargetTerminal(ctx context.Context, jobID, agentID string) error {
+// terminal status or ctx/the deadline fires. `action` only labels the error
+// messages so callers (config.apply, runtime.restart) read clearly; on
+// failure the agent's own ResultText is surfaced verbatim.
+func (s *Server) waitJobTargetTerminal(ctx context.Context, jobID, agentID, action string) error {
 	ticker := time.NewTicker(configApplyPollInterval)
 	defer ticker.Stop()
 	deadline := time.NewTimer(configApplyJobTTL + configApplyPollGrace)
@@ -125,9 +127,9 @@ func (s *Server) waitJobTargetTerminal(ctx context.Context, jobID, agentID strin
 				case jobs.TargetStatusSucceeded:
 					return nil
 				case jobs.TargetStatusFailed:
-					return fmt.Errorf("config.apply failed on %s: %s", agentID, tgt.ResultText)
+					return fmt.Errorf("%s failed on %s: %s", action, agentID, tgt.ResultText)
 				case jobs.TargetStatusExpired:
-					return fmt.Errorf("config.apply expired on %s", agentID)
+					return fmt.Errorf("%s expired on %s", action, agentID)
 				}
 			}
 		}
@@ -135,7 +137,7 @@ func (s *Server) waitJobTargetTerminal(ctx context.Context, jobID, agentID strin
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("config.apply timed out on %s", agentID)
+			return fmt.Errorf("%s timed out on %s", action, agentID)
 		case <-ticker.C:
 		}
 	}

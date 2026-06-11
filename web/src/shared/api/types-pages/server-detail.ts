@@ -89,6 +89,8 @@ export interface ServerDetailPageProps {
   };
   onBack?: (() => void) | undefined;
   onReload?: (() => void) | undefined;
+  /** Restart the node's Telemt process (heavier than reload). */
+  onRestart?: (() => void) | undefined;
   onBoostDetail?: (() => void) | undefined;
   agentConnection?: AgentConnectionData | undefined;
   initState?: InitCardProps | undefined;

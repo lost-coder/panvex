@@ -116,6 +116,10 @@
     "actions": {
       "title": "Server actions",
       "reload": "Reload runtime",
+      "restart": "Restart Telemt",
+      "restartDone": "Telemt restart requested",
+      "restartConfirmTitle": "Restart Telemt?",
+      "restartConfirmBody": "This restarts the Telemt process on {{name}} — active connections will drop briefly.",
       "refreshDiagnostics": "Refresh diagnostics",
       "rename": "Rename server",
       "changeFleetGroup": "Change fleet group",

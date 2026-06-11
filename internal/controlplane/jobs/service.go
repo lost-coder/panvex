@@ -30,6 +30,11 @@ type Action string
 const (
 	// ActionRuntimeReload reloads the runtime configuration through Telemt.
 	ActionRuntimeReload Action = "runtime.reload"
+	// ActionRuntimeRestart restarts the local Telemt process on the target
+	// node via the agent's configured restart strategy (e.g. `systemctl
+	// restart`). Heavier than a reload — used to recover a degraded node.
+	// No-ops with a typed failure when the agent has no restart strategy.
+	ActionRuntimeRestart Action = "runtime.restart"
 	// ActionUsersCreate creates a Telemt operator account.
 	ActionUsersCreate Action = "users.create"
 	// ActionClientCreate creates one centrally managed Telemt client on the target node.
@@ -72,6 +77,7 @@ const (
 func IsValidAction(a Action) bool {
 	switch a {
 	case ActionRuntimeReload,
+		ActionRuntimeRestart,
 		ActionUsersCreate,
 		ActionClientCreate,
 		ActionClientUpdate,

@@ -179,7 +179,7 @@ func TestWaitJobTargetTerminalSucceeded(t *testing.T) {
 	if ok := srv.jobs.RecordResult(context.Background(), agentID, job.ID, true, "applied", "", time.Now()); !ok {
 		t.Fatalf("RecordResult(success) returned false")
 	}
-	if err := srv.waitJobTargetTerminal(context.Background(), job.ID, agentID); err != nil {
+	if err := srv.waitJobTargetTerminal(context.Background(), job.ID, agentID, "config.apply"); err != nil {
 		t.Fatalf("waitJobTargetTerminal after success = %v, want nil", err)
 	}
 }
@@ -202,7 +202,7 @@ func TestWaitJobTargetTerminalFailed(t *testing.T) {
 	if ok := srv.jobs.RecordResult(context.Background(), agentID, job.ID, false, "health check failed", "", time.Now()); !ok {
 		t.Fatalf("RecordResult(failure) returned false")
 	}
-	if err := srv.waitJobTargetTerminal(context.Background(), job.ID, agentID); err == nil {
+	if err := srv.waitJobTargetTerminal(context.Background(), job.ID, agentID, "config.apply"); err == nil {
 		t.Fatalf("waitJobTargetTerminal after failure = nil, want error")
 	}
 }
@@ -224,7 +224,7 @@ func TestWaitJobTargetTerminalCtxCancel(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := srv.waitJobTargetTerminal(ctx, job.ID, agentID); err == nil {
+	if err := srv.waitJobTargetTerminal(ctx, job.ID, agentID, "config.apply"); err == nil {
 		t.Fatalf("waitJobTargetTerminal with cancelled ctx = nil, want error")
 	}
 }

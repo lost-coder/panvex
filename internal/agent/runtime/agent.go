@@ -812,6 +812,8 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 	switch job.GetAction() {
 	case "runtime.reload":
 		return a.handleRuntimeReloadJob(ctx, result)
+	case "runtime.restart":
+		return a.handleRuntimeRestartJob(ctx, result)
 	case "telemetry.refresh_diagnostics":
 		a.telemt.InvalidateSlowDataCache()
 		result.Success = true
@@ -843,6 +845,24 @@ func (a *Agent) handleRuntimeReloadJob(ctx context.Context, result *gatewayrpc.J
 	}
 	result.Success = true
 	result.Message = "runtime reloaded"
+	return result
+}
+
+// handleRuntimeRestartJob restarts the local Telemt process via the agent's
+// configured restart strategy. When no strategy is configured the restarter
+// is nil; we report a typed failure so the panel can surface "restart not
+// available on this node" instead of silently succeeding.
+func (a *Agent) handleRuntimeRestartJob(ctx context.Context, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	if a.restarter == nil {
+		result.Message = "restart not available: no restart strategy configured on this agent"
+		return result
+	}
+	if err := a.restarter.Restart(ctx); err != nil {
+		result.Message = fmt.Sprintf("telemt restart failed: %v", err)
+		return result
+	}
+	result.Success = true
+	result.Message = "telemt restarted"
 	return result
 }
 
