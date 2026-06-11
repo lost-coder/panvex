@@ -21,13 +21,13 @@ function SwipeTabViewFallback({ tabs, activeTab, className }: Readonly<SwipeTabV
       <div
         role="tablist"
         aria-label="Loading tabs"
-        className="flex items-center gap-2 border-b border-border px-4"
+        className="flex items-center gap-2 border-b border-border px-4 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {tabs.map((t) => (
           <span
             key={t.id}
             className={cn(
-              "py-2 text-sm",
+              "py-2 text-sm whitespace-nowrap shrink-0",
               t.id === active?.id ? "text-fg" : "text-fg-muted",
             )}
           >
