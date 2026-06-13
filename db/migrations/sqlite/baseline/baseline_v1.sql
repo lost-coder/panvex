@@ -133,7 +133,7 @@ CREATE TABLE clients (
     created_at_unix INTEGER NOT NULL,
     updated_at_unix INTEGER NOT NULL,
     deleted_at_unix INTEGER
-);
+, subscription_token TEXT);
 
 CREATE TABLE consumed_totp (
     user_id TEXT NOT NULL,
@@ -531,6 +531,9 @@ CREATE TABLE webhook_outbox (
     delivered_at    TIMESTAMP
 );
 
+CREATE UNIQUE INDEX clients_subscription_token_key
+    ON clients (subscription_token);
+
 CREATE UNIQUE INDEX fleet_groups_name_unique
     ON fleet_groups (name);
 
@@ -682,4 +685,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (47, 1),
   (48, 1),
   (49, 1),
-  (50, 1);
+  (50, 1),
+  (51, 1);
