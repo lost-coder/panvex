@@ -322,7 +322,10 @@ func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID st
 	}
 	s.logger.Info("adopting discovered client as new managed client", "discovered_id", id, "client_name", record.ClientName, "agent_id", record.AgentID, "traffic_bytes", record.TotalOctets, "active_ips", record.ActiveUniqueIPs, "siblings", len(siblings))
 
-	client, assignments, deployments := s.buildAdoptedClientState(record, siblings, secret, expirationRFC3339, observedAt)
+	client, assignments, deployments, err := s.buildAdoptedClientState(record, siblings, secret, expirationRFC3339, observedAt)
+	if err != nil {
+		return managedClient{}, err
+	}
 
 	if err := s.persistAdoptedClient(ctx, id, client, assignments, deployments, observedAt); err != nil {
 		return managedClient{}, err
@@ -458,7 +461,14 @@ func normalizedAdoptSecret(raw string) (string, error) {
 // record. When siblings is non-empty, every sibling's agent_id is
 // included so the resulting managed client is scoped to every node
 // where Telemt was already running this user.
-func (s *Server) buildAdoptedClientState(record discovered.DiscoveredClient, siblings []discovered.DiscoveredClient, secret string, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment) { // gitleaks:allow — `secret` is a function parameter name, not a value
+func (s *Server) buildAdoptedClientState(record discovered.DiscoveredClient, siblings []discovered.DiscoveredClient, secret string, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) { // gitleaks:allow — `secret` is a function parameter name, not a value
+	// Adopted/imported clients need a public subscription token just like
+	// manually-created ones (see createClient). Without this an imported
+	// client's dashboard subscription link stays empty.
+	token, err := clients.GenerateSubscriptionToken()
+	if err != nil {
+		return managedClient{}, nil, nil, fmt.Errorf("buildAdoptedClientState: generate subscription token: %w", err)
+	}
 	client := managedClient{
 		ID:                s.nextClientID(),
 		Name:              record.ClientName,
@@ -468,6 +478,7 @@ func (s *Server) buildAdoptedClientState(record discovered.DiscoveredClient, sib
 		MaxUniqueIPs:      record.MaxUniqueIPs,
 		DataQuotaBytes:    record.DataQuotaBytes,
 		ExpirationRFC3339: expirationRFC3339,
+		SubscriptionToken: token,
 		CreatedAt:         observedAt,
 		UpdatedAt:         observedAt,
 	}
@@ -502,7 +513,7 @@ func (s *Server) buildAdoptedClientState(record discovered.DiscoveredClient, sib
 		}
 		addAgent(sib.AgentID, sib.ConnectionLinks)
 	}
-	return client, assignments, deployments
+	return client, assignments, deployments, nil
 }
 
 // persistAdoptedClient performs the atomic write of the new managed client,

@@ -748,3 +748,68 @@ func TestRestoreStoredClients_PrefersPersistedUsage(t *testing.T) {
 		t.Fatalf("lastUsageSeq[%q] = %d, want 42 (carried over from persisted row)", agentID, seq)
 	}
 }
+
+// TestAdoptDiscoveredClientGeneratesSubscriptionToken guards the fix for
+// imported (adopted) clients: they must receive a public subscription token
+// just like manually-created ones, otherwise their dashboard /sub link is
+// empty. Before the fix buildAdoptedClientState left SubscriptionToken == "".
+func TestAdoptDiscoveredClientGeneratesSubscriptionToken(t *testing.T) {
+	now := time.Date(2026, time.June, 14, 12, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
+	agentID := "agent-adopt-token-1"
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     "node-A",
+		FleetGroupID: fleetGroupID,
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	discoveredID := "discovered-token-1"
+	if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
+		ID:              discoveredID,
+		AgentID:         agentID,
+		ClientName:      "imported-dave",
+		Secret:          "4444444444444444dddddddddddddddd",
+		Status:          discoveredClientStatusPendingReview,
+		ConnectionLinks: []string{"https://t.me/proxy?server=nl1.example.com&port=443&secret=ee44"},
+		DiscoveredAt:    now,
+		UpdatedAt:       now,
+	}); err != nil {
+		t.Fatalf("PutDiscoveredClient() error = %v", err)
+	}
+
+	client, err := server.adoptDiscoveredClient(ctx, discoveredID, "operator-1", now)
+	if err != nil {
+		t.Fatalf("adoptDiscoveredClient() error = %v", err)
+	}
+	if client.SubscriptionToken == "" {
+		t.Fatal("adopted client has empty SubscriptionToken — imported clients would show no /sub link")
+	}
+
+	// The generated token must resolve back to this exact client.
+	resolved, err := server.clientsSvc.ResolveBySubscriptionToken(ctx, client.SubscriptionToken)
+	if err != nil {
+		t.Fatalf("ResolveBySubscriptionToken() error = %v", err)
+	}
+	if resolved.ID != client.ID {
+		t.Fatalf("resolved client ID = %q, want %q", resolved.ID, client.ID)
+	}
+}
