@@ -68,6 +68,8 @@ export type Client = {
   fleet_group_ids: string[];
   agent_ids: string[];
   deployments: ClientDeployment[];
+  /** "" when no public base URL is configured or no subscription token exists yet. */
+  subscription_url: string;
   created_at_unix: number;
   updated_at_unix: number;
   deleted_at_unix: number;
@@ -214,6 +216,12 @@ export const clientsApi = {
   rotateClientSecret: (clientID: string) =>
     api<Client>(
       `${apiBasePath}/clients/${clientID}/rotate-secret`,
+      { method: "POST" },
+      clientSchema,
+    ),
+  rotateSubscriptionToken: (clientID: string) =>
+    api<Client>(
+      `${apiBasePath}/clients/${clientID}/rotate-subscription`,
       { method: "POST" },
       clientSchema,
     ),

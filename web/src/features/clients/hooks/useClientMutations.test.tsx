@@ -45,6 +45,7 @@ const rawClient: ApiClient = {
   fleet_group_ids: [],
   agent_ids: [],
   deployments: [],
+  subscription_url: "",
   created_at_unix: 0,
   updated_at_unix: 0,
   deleted_at_unix: 0,

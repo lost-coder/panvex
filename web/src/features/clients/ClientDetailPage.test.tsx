@@ -50,6 +50,7 @@ function makeProps(
       uniqueIpsUsed: 0,
       activeTcpConns: 0,
       deployments: [],
+      subscriptionUrl: "",
       ...overrides,
     },
   };
