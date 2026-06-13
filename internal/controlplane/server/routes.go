@@ -163,6 +163,7 @@ func (s *Server) routes() http.Handler {
 					operator.With(sensitive).Put("/clients/{id}", s.handleUpdateClient())
 					operator.With(sensitive).Delete("/clients/{id}", s.handleDeleteClient())
 					operator.With(sensitive).Post("/clients/{id}/rotate-secret", s.handleRotateClientSecret())
+					operator.With(sensitive).Post("/clients/{id}/rotate-subscription", s.handleRotateSubscriptionToken())
 					operator.With(sensitive).Post("/clients/{id}/redeploy", s.handleRedeployClient())
 					operator.With(sensitive).Post("/clients/{id}/reset-quota", s.handleResetClientQuota())
 					operator.With(sensitive).Post("/clients/{id}/reset-quota/{agent_id}", s.handleResetClientQuotaOnAgent())
