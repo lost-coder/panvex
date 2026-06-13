@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
@@ -19,8 +20,16 @@ var subscriptionTemplate = template.Must(
 	template.New("subscription").
 		Funcs(template.FuncMap{
 			// safeURL marks a string as a trusted URL so html/template does not
-			// sanitise non-standard schemes such as tg://.
-			"safeURL": func(s string) template.URL { return template.URL(s) }, //nolint:gosec // controlled subscription links
+			// sanitise non-standard schemes such as tg://. Only explicitly
+			// allowlisted schemes are passed through; anything else (e.g.
+			// javascript:) collapses to "#" so a compromised agent cannot
+			// inject an XSS payload via a connection link.
+			"safeURL": func(s string) template.URL {
+				if strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "tg://") || strings.HasPrefix(s, "http://") {
+					return template.URL(s) //nolint:gosec // scheme allowlisted above
+				}
+				return template.URL("#")
+			},
 		}).
 		Parse(subscriptionTemplateSource),
 )

@@ -108,16 +108,55 @@ func TestHumanBytes(t *testing.T) {
 	}
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
+// TestSubscriptionTemplateRejectsUnsafeScheme asserts that safeURL rejects
+// javascript: (and other non-allowlisted) schemes, rendering href="#", while
+// tg:// is still passed through unchanged.
+func TestSubscriptionTemplateRejectsUnsafeScheme(t *testing.T) {
+	tests := []struct {
+		name     string
+		raw      string
+		wantHref string
+		wantSafe bool
+	}{
+		{
+			name:     "javascript scheme blocked",
+			raw:      "javascript:alert(1)",
+			wantHref: `href="#"`,
+			wantSafe: true,
+		},
+		{
+			name:     "tg scheme preserved",
+			raw:      "tg://proxy?server=de1.example.net&port=443&secret=dd03",
+			wantHref: `href="tg://proxy?`,
+			wantSafe: true,
+		},
 	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			v := subscriptionView{
+				ClientName: "Test",
+				Nodes: []subscriptionNode{{
+					NodeName: "Node 1", Health: "online",
+					Links: []subscription.Link{{Raw: tc.raw, Domain: "example.net", Port: "443", Mode: "Secure"}},
+				}},
+			}
+			var buf bytes.Buffer
+			if err := subscriptionTemplate.Execute(&buf, v); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			out := buf.String()
+			// The href must not carry a javascript: scheme — safeURL must have
+			// collapsed it to "#". Note: the raw value may still appear in a
+			// data-* attribute (HTML-encoded by html/template, not executable),
+			// so we check the href specifically rather than the whole page.
+			if strings.Contains(out, `href="javascript:`) {
+				t.Fatal("javascript: scheme leaked into href — XSS risk")
+			}
+			if !strings.Contains(out, tc.wantHref) {
+				t.Fatalf("expected %q in rendered output; snippet: %q",
+					tc.wantHref,
+					out[max(0, strings.Index(out, "href=")):min(len(out), strings.Index(out, "href=")+120)])
+			}
+		})
 	}
-	return b
 }
