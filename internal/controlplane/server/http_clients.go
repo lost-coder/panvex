@@ -108,9 +108,13 @@ type clientDetailResponse struct {
 	FleetGroupIDs     []string                   `json:"fleet_group_ids"`
 	AgentIDs          []string                   `json:"agent_ids"`
 	Deployments       []clientDeploymentResponse `json:"deployments"`
-	CreatedAt         int64                      `json:"created_at_unix"`
-	UpdatedAt         int64                      `json:"updated_at_unix"`
-	DeletedAt         int64                      `json:"deleted_at_unix"`
+	// SubscriptionURL is the client's public subscription page, "" when the
+	// subscription listener has no public base URL configured or the client has
+	// no token yet (legacy row — operator must rotate to generate one).
+	SubscriptionURL string `json:"subscription_url"`
+	CreatedAt       int64  `json:"created_at_unix"`
+	UpdatedAt       int64  `json:"updated_at_unix"`
+	DeletedAt       int64  `json:"deleted_at_unix"`
 }
 
 func (s *Server) handleClients() http.HandlerFunc {

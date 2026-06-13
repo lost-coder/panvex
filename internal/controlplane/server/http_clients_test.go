@@ -850,3 +850,17 @@ func TestCreateClientGeneratesSubscriptionToken(t *testing.T) {
 		t.Fatal("expected non-empty SubscriptionToken after createClient")
 	}
 }
+
+func TestSubscriptionURLForBuildsAndGuards(t *testing.T) {
+	s := &Server{}
+	if got := s.subscriptionURLFor("tok123"); got != "" {
+		t.Fatalf("no base configured: got %q, want empty", got)
+	}
+	s.SetSubscriptionListener(":8081", "https://sub.example.com/")
+	if got := s.subscriptionURLFor("tok123"); got != "https://sub.example.com/sub/tok123" {
+		t.Fatalf("got %q", got)
+	}
+	if got := s.subscriptionURLFor(""); got != "" {
+		t.Fatalf("empty token: got %q, want empty", got)
+	}
+}
