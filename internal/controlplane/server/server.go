@@ -307,6 +307,13 @@ type Server struct {
 	// /debug/pprof registration is skipped — see http_pprof.go.
 	pprofListenerAddr string
 
+	// subscriptionAddr and subscriptionBaseURL are set when the operator
+	// opts into a dedicated public /sub listener (PANVEX_SUBSCRIPTION_ADDR).
+	// subscriptionBaseURL is the public origin used to build shareable links
+	// in the admin UI — see subscription_listener.go.
+	subscriptionAddr    string
+	subscriptionBaseURL string
+
 	// N-1: detached operator-driven background goroutines (panel
 	// self-update, manual update-check) register themselves with this
 	// WaitGroup so Shutdown can wait for them to finish before exiting

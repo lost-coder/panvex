@@ -154,6 +154,19 @@ func runServe(args []string) error {
 		}()
 	}
 
+	// Public /sub listener: opt-in via PANVEX_SUBSCRIPTION_ADDR.
+	subShutdown, err := startSubscriptionListenerIfConfigured(api)
+	if err != nil {
+		return err
+	}
+	if subShutdown != nil {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = subShutdown(ctx)
+		}()
+	}
+
 	// P3-OBS-01: wrap the chi-rooted handler with otelhttp so every
 	// inbound HTTP request becomes a root span. When tracing is
 	// disabled (no endpoint set) the global no-op TracerProvider makes
@@ -513,6 +526,27 @@ func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error)
 	runtime.PanelAllowedCIDRs = panelCIDRs
 
 	return runtime, nil
+}
+
+// startSubscriptionListenerIfConfigured brings up the public /sub listener
+// when PANVEX_SUBSCRIPTION_ADDR is set. PANVEX_SUBSCRIPTION_BASE_URL
+// optionally sets the public origin for shareable links (Plan 3). A bind
+// error is fatal — the operator opted in expecting the listener to be
+// available; silently skipping would hide the misconfiguration.
+func startSubscriptionListenerIfConfigured(api *server.Server) (func(context.Context) error, error) {
+	if api == nil {
+		return nil, nil
+	}
+	addr := strings.TrimSpace(os.Getenv("PANVEX_SUBSCRIPTION_ADDR"))
+	if addr == "" {
+		return nil, nil
+	}
+	api.SetSubscriptionListener(addr, strings.TrimSpace(os.Getenv("PANVEX_SUBSCRIPTION_BASE_URL")))
+	_, shutdown, err := api.StartSubscriptionListener(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("start subscription listener on %s: %w", addr, err)
+	}
+	return shutdown, nil
 }
 
 // startPprofListenerIfConfigured brings up the S-07 separate pprof listener
