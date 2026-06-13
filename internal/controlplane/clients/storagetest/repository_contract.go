@@ -35,11 +35,12 @@ func runSaveLoadRoundTrip(t *testing.T, repo clients.Repository) {
 	t.Helper()
 	ctx := context.Background()
 	c := clients.Client{
-		ID:        clients.ClientID("c-rt-1"),
-		Name:      "round-trip",
-		Secret:    "opaque-secret",
-		CreatedAt: time.Unix(1700000000, 0).UTC(),
-		UpdatedAt: time.Unix(1700000001, 0).UTC(),
+		ID:                clients.ClientID("c-rt-1"),
+		Name:              "round-trip",
+		Secret:            "opaque-secret",
+		SubscriptionToken: "tok_roundtrip_1",
+		CreatedAt:         time.Unix(1700000000, 0).UTC(),
+		UpdatedAt:         time.Unix(1700000001, 0).UTC(),
 	}
 	if err := repo.Save(ctx, c); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -53,6 +54,28 @@ func runSaveLoadRoundTrip(t *testing.T, repo clients.Repository) {
 	}
 	if got.Secret != c.Secret {
 		t.Fatalf("Secret mismatch: got %q, want %q", got.Secret, c.Secret)
+	}
+	if got.SubscriptionToken != c.SubscriptionToken {
+		t.Fatalf("SubscriptionToken mismatch: got %q, want %q", got.SubscriptionToken, c.SubscriptionToken)
+	}
+
+	// Verify token survives List as well.
+	list, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var found bool
+	for _, cl := range list {
+		if cl.ID == c.ID {
+			found = true
+			if cl.SubscriptionToken != c.SubscriptionToken {
+				t.Fatalf("List SubscriptionToken mismatch: got %q, want %q", cl.SubscriptionToken, c.SubscriptionToken)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("saved client %q not found in List", c.ID)
 	}
 }
 

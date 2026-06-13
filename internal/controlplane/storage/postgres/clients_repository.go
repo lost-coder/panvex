@@ -54,7 +54,7 @@ func (r *clientsRepository) List(ctx context.Context) ([]clients.Client, error) 
 	}
 	out := make([]clients.Client, len(rows))
 	for i, row := range rows {
-		out[i] = rowToClient(row)
+		out[i] = listRowToClient(row)
 	}
 	return out, nil
 }
@@ -213,7 +213,7 @@ func (r *clientsRepository) DeleteUsageByClient(ctx context.Context, id clients.
 // Mapping helpers — dbsqlc row → domain type
 // ---------------------------------------------------------------------------
 
-func rowToClient(row dbsqlc.Client) clients.Client {
+func rowToClient(row dbsqlc.GetClientRow) clients.Client {
 	c := clients.Client{
 		ID:                clients.ClientID(row.ID),
 		Name:              row.Name,
@@ -224,6 +224,29 @@ func rowToClient(row dbsqlc.Client) clients.Client {
 		MaxUniqueIPs:      int(row.MaxUniqueIps),
 		DataQuotaBytes:    row.DataQuotaBytes,
 		ExpirationRFC3339: row.ExpirationRfc3339,
+		SubscriptionToken: row.SubscriptionToken.String, // NULL → ""
+		CreatedAt:         row.CreatedAt.UTC(),
+		UpdatedAt:         row.UpdatedAt.UTC(),
+	}
+	if row.DeletedAt.Valid {
+		t := row.DeletedAt.Time.UTC()
+		c.DeletedAt = &t
+	}
+	return c
+}
+
+func listRowToClient(row dbsqlc.ListClientsRow) clients.Client {
+	c := clients.Client{
+		ID:                clients.ClientID(row.ID),
+		Name:              row.Name,
+		Secret:            row.SecretCiphertext,
+		UserADTag:         row.UserAdTag,
+		Enabled:           row.Enabled,
+		MaxTCPConns:       int(row.MaxTcpConns),
+		MaxUniqueIPs:      int(row.MaxUniqueIps),
+		DataQuotaBytes:    row.DataQuotaBytes,
+		ExpirationRFC3339: row.ExpirationRfc3339,
+		SubscriptionToken: row.SubscriptionToken.String, // NULL → ""
 		CreatedAt:         row.CreatedAt.UTC(),
 		UpdatedAt:         row.UpdatedAt.UTC(),
 	}
@@ -245,6 +268,7 @@ func clientToUpsertParams(c clients.Client) dbsqlc.UpsertClientParams {
 		MaxUniqueIps:      int64(c.MaxUniqueIPs),
 		DataQuotaBytes:    c.DataQuotaBytes,
 		ExpirationRfc3339: c.ExpirationRFC3339,
+		SubscriptionToken: sql.NullString{String: c.SubscriptionToken, Valid: c.SubscriptionToken != ""},
 		CreatedAt:         c.CreatedAt.UTC(),
 		UpdatedAt:         c.UpdatedAt.UTC(),
 	}
