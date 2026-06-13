@@ -143,6 +143,11 @@ func (s *Server) createClient(ctx context.Context, actorID string, input clientM
 		}
 	}
 
+	subscriptionToken, err := clients.GenerateSubscriptionToken()
+	if err != nil {
+		return managedClient{}, nil, nil, fmt.Errorf("generate subscription token: %w", err)
+	}
+
 	expirationRFC3339, err := normalizedExpiration(input.ExpirationRFC3339)
 	if err != nil {
 		return managedClient{}, nil, nil, err
@@ -167,6 +172,7 @@ func (s *Server) createClient(ctx context.Context, actorID string, input clientM
 		MaxUniqueIPs:      input.MaxUniqueIPs,
 		DataQuotaBytes:    input.DataQuotaBytes,
 		ExpirationRFC3339: expirationRFC3339,
+		SubscriptionToken: subscriptionToken,
 		CreatedAt:         observedAt,
 		UpdatedAt:         observedAt,
 	}

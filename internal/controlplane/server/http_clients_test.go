@@ -814,3 +814,39 @@ func seedClientTargetAgent(t *testing.T, store storage.Store, server *Server, gr
 	server.mu.Unlock()
 	return fleetGroupID
 }
+
+func TestCreateClientGeneratesSubscriptionToken(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	groupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
+	})
+
+	created, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+		Name:          "alice",
+		FleetGroupIDs: []string{groupID},
+	}, now)
+	if err != nil {
+		t.Fatalf("createClient: %v", err)
+	}
+	if created.SubscriptionToken == "" {
+		t.Fatal("expected non-empty SubscriptionToken after createClient")
+	}
+}
