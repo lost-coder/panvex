@@ -9,6 +9,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 const seqClientAssignment = "client-assignment"
@@ -364,12 +365,13 @@ func (s *Service) List(ctx context.Context) ([]Client, error) {
 // subscription token via the Repository (DB lookup). Intended for the
 // public /sub/<token> page — the returned Client has Secret set to the
 // stored ciphertext (not plaintext; the page never needs the secret).
-// Returns storage.ErrNotFound (from the repository) for unknown tokens.
-// Returns ErrNotFound for blank tokens or when the service has no repo.
+// Returns storage.ErrNotFound for blank tokens, unknown tokens, or when
+// the service has no repo — callers may use errors.Is(err, storage.ErrNotFound)
+// uniformly.
 // Enabled/expiration gating is left to the caller.
 func (s *Service) ResolveBySubscriptionToken(ctx context.Context, token string) (Client, error) {
 	if token == "" || s.repo == nil {
-		return Client{}, ErrNotFound
+		return Client{}, storage.ErrNotFound
 	}
 	return s.repo.GetBySubscriptionToken(ctx, token)
 }

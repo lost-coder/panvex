@@ -8,6 +8,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // fakeRepo is a minimal in-memory clients.Repository for Service tests.
@@ -42,14 +43,14 @@ func (r *fakeRepo) Get(_ context.Context, id ClientID) (Client, error) {
 
 func (r *fakeRepo) GetBySubscriptionToken(_ context.Context, token string) (Client, error) {
 	if token == "" {
-		return Client{}, errors.New("fakeRepo: GetBySubscriptionToken: blank token")
+		return Client{}, storage.ErrNotFound
 	}
 	for _, c := range r.clientsByID {
 		if c.SubscriptionToken == token {
 			return c, nil
 		}
 	}
-	return Client{}, errors.New("fakeRepo: GetBySubscriptionToken: not found")
+	return Client{}, storage.ErrNotFound
 }
 
 func (r *fakeRepo) List(_ context.Context) ([]Client, error) {
@@ -906,5 +907,27 @@ func TestService_SeedUsageMirror(t *testing.T) {
 	svc.mu.RUnlock()
 	if um2.TrafficUsedBytes != 4096 {
 		t.Fatalf("SeedUsageMirror overwrote existing row: %+v", um2)
+	}
+}
+
+// --- ResolveBySubscriptionToken sentinel tests ---
+
+func TestService_ResolveBySubscriptionToken_BlankToken(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(ServiceConfig{Repo: newFakeRepo()})
+	_, err := svc.ResolveBySubscriptionToken(context.Background(), "")
+	if !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("blank token: err = %v, want storage.ErrNotFound", err)
+	}
+}
+
+func TestService_ResolveBySubscriptionToken_UnknownToken(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(ServiceConfig{Repo: newFakeRepo()})
+	_, err := svc.ResolveBySubscriptionToken(context.Background(), "tok-unknown")
+	if !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("unknown token: err = %v, want storage.ErrNotFound", err)
 	}
 }
