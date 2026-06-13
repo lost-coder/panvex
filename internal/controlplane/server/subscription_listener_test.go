@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"golang.org/x/time/rate"
 )
@@ -54,5 +56,35 @@ func TestIPRateLimiterIndependentBuckets(t *testing.T) {
 	// IP-B's second request is also rate-limited independently.
 	if code := sendReq("203.0.113.2"); code != http.StatusTooManyRequests {
 		t.Fatalf("IP-B second request: got %d, want 429", code)
+	}
+}
+
+// TestSubscriptionBaseURL_LiveSettingOverridesEnv proves that SubscriptionBaseURL()
+// returns the live dashboard setting when set, and falls back to the env-seeded
+// field when the setting is empty.
+func TestSubscriptionBaseURL_LiveSettingOverridesEnv(t *testing.T) {
+	srv := testServerWithSQLite(t, time.Date(2026, 6, 14, 10, 0, 0, 0, time.UTC))
+	ctx := context.Background()
+
+	// Seed the env-seeded field (as startup code would via SetSubscriptionListener).
+	srv.SetSubscriptionListener(":8081", "https://env.example.com")
+	if got := srv.SubscriptionBaseURL(); got != "https://env.example.com" {
+		t.Fatalf("before live setting: SubscriptionBaseURL() = %q, want %q", got, "https://env.example.com")
+	}
+
+	// Write the live setting through the store — this should take precedence.
+	if err := srv.settings.Put(ctx, map[string]string{"subscription.public_base_url": "https://live.example.com/"}, "test"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if got := srv.SubscriptionBaseURL(); got != "https://live.example.com" {
+		t.Fatalf("after live setting: SubscriptionBaseURL() = %q, want %q (trailing slash must be trimmed)", got, "https://live.example.com")
+	}
+
+	// Clear the live setting — should fall back to the env-seeded value.
+	if err := srv.settings.Put(ctx, map[string]string{"subscription.public_base_url": ""}, "test"); err != nil {
+		t.Fatalf("Put (clear): %v", err)
+	}
+	if got := srv.SubscriptionBaseURL(); got != "https://env.example.com" {
+		t.Fatalf("after clearing live setting: SubscriptionBaseURL() = %q, want %q", got, "https://env.example.com")
 	}
 }

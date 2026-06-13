@@ -22,7 +22,16 @@ func (s *Server) SetSubscriptionListener(addr, baseURL string) {
 }
 
 // SubscriptionBaseURL is read by the admin layer (Plan 3) to build the URL.
-func (s *Server) SubscriptionBaseURL() string { return s.subscriptionBaseURL }
+// It prefers the live dashboard setting over the env-seeded field, so the
+// operator can change the public origin without restarting the panel.
+func (s *Server) SubscriptionBaseURL() string {
+	if s.settings != nil {
+		if u := s.settings.SubscriptionPublicBaseURL(); u != "" {
+			return strings.TrimRight(u, "/")
+		}
+	}
+	return s.subscriptionBaseURL
+}
 
 func (s *Server) subscriptionListenerEnabled() bool { return s.subscriptionAddr != "" }
 

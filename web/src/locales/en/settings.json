@@ -133,6 +133,10 @@
     "storage": {
       "title": "Storage",
       "desc": "Batch flush + rollup cadences."
+    },
+    "subscription": {
+      "title": "Subscription",
+      "desc": "Public origin for client subscription links."
     }
   },
   "registryField": {

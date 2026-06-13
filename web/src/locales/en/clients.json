@@ -235,7 +235,7 @@
     "copied": "Copied",
     "rotate": "Rotate token",
     "rotateConfirm": "The old link will stop working. Continue?",
-    "none": "No public subscription domain configured."
+    "none": "No public subscription domain configured. Set it in Settings → Subscription."
   },
   "deployments": {
     "noneYet": "No deployments yet.",

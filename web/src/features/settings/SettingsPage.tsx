@@ -25,7 +25,7 @@ import { AdminBadge, RetentionSection, SystemInfoSection } from "@/features/sett
 import { useUnsavedChangesGuard } from "@/shared/hooks";
 
 // Operational namespaces rendered as schema-driven sections.
-const OPERATIONAL_NAMESPACES = ["http", "agents", "auth", "jobs", "observability", "storage"] as const;
+const OPERATIONAL_NAMESPACES = ["http", "agents", "auth", "jobs", "observability", "storage", "subscription"] as const;
 
 export function SettingsPage({
   panelSettings,
