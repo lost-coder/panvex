@@ -376,6 +376,50 @@ func (s *Service) ResolveBySubscriptionToken(ctx context.Context, token string) 
 	return s.repo.GetBySubscriptionToken(ctx, token)
 }
 
+// BackfillSubscriptionTokens generates and persists a subscription token for
+// every non-deleted client whose SubscriptionToken field is empty. It is
+// idempotent: clients that already have a token are skipped. The count of
+// clients updated is returned.
+//
+// This is called once at startup (from restoreStoredClients, after Restore has
+// populated the in-memory mirror) so that clients created before the
+// subscription-token feature was introduced get tokens automatically — without
+// manual operator intervention.
+//
+// Persistence path: the mirror snapshot from List provides the full Client
+// value (with plaintext Secret, all fields intact). Save re-encrypts the
+// secret and persists the full record, so no other field is clobbered.
+// No UoW transaction is used — each client is saved individually; a partial
+// failure leaves already-tokened clients committed (idempotency on next
+// startup heals the remainder).
+func (s *Service) BackfillSubscriptionTokens(ctx context.Context) (int, error) {
+	if s.repo == nil {
+		return 0, nil
+	}
+
+	all, err := s.List(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("clients.Service.BackfillSubscriptionTokens: list clients: %w", err)
+	}
+
+	updated := 0
+	for _, c := range all {
+		if c.DeletedAt != nil || c.SubscriptionToken != "" {
+			continue
+		}
+		token, err := GenerateSubscriptionToken()
+		if err != nil {
+			return updated, fmt.Errorf("clients.Service.BackfillSubscriptionTokens: generate token for %s: %w", c.ID, err)
+		}
+		c.SubscriptionToken = token
+		if err := s.Save(ctx, c); err != nil {
+			return updated, fmt.Errorf("clients.Service.BackfillSubscriptionTokens: save client %s: %w", c.ID, err)
+		}
+		updated++
+	}
+	return updated, nil
+}
+
 // --- UoW-backed mutation methods ---
 
 // EncryptSecret seals the plaintext secret using the vault's

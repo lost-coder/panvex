@@ -876,6 +876,158 @@ func TestService_DropAgentUsageMirror(t *testing.T) {
 	}
 }
 
+// --- BackfillSubscriptionTokens tests ---
+
+// TestService_BackfillSubscriptionTokens_FillsEmpty verifies that clients
+// without tokens receive unique non-empty tokens and that already-tokened
+// clients and deleted clients are left unchanged.
+func TestService_BackfillSubscriptionTokens_FillsEmpty(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
+	svc := NewService(ServiceConfig{
+		Repo:  repo,
+		UoW:   newFakeUoW(rs),
+		Vault: nil, // nil vault — plaintext secret passthrough
+	})
+
+	now := time.Now().UTC()
+	deleted := now
+	// c-empty-1 and c-empty-2: need tokens.
+	repo.clientsByID["c-empty-1"] = Client{
+		ID:      "c-empty-1",
+		Name:    "needs-token-1",
+		Secret:  "secret1",
+		Enabled: true,
+	}
+	repo.clientsByID["c-empty-2"] = Client{
+		ID:      "c-empty-2",
+		Name:    "needs-token-2",
+		Secret:  "secret2",
+		Enabled: true,
+	}
+	// c-has-token: already has a token — must be skipped.
+	repo.clientsByID["c-has-token"] = Client{
+		ID:                "c-has-token",
+		Name:              "has-token",
+		Secret:            "secret3",
+		SubscriptionToken: "existing-token-abc",
+	}
+	// c-deleted: soft-deleted — must be skipped.
+	repo.clientsByID["c-deleted"] = Client{
+		ID:        "c-deleted",
+		Name:      "deleted",
+		Secret:    "secret4",
+		DeletedAt: &deleted,
+	}
+
+	if err := svc.Restore(context.Background()); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	n, err := svc.BackfillSubscriptionTokens(context.Background())
+	if err != nil {
+		t.Fatalf("BackfillSubscriptionTokens: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("updated count = %d, want 2", n)
+	}
+
+	// Both empty clients must now have non-empty tokens in the repo.
+	c1 := repo.clientsByID["c-empty-1"]
+	c2 := repo.clientsByID["c-empty-2"]
+	if c1.SubscriptionToken == "" {
+		t.Fatal("c-empty-1: token still empty after backfill")
+	}
+	if c2.SubscriptionToken == "" {
+		t.Fatal("c-empty-2: token still empty after backfill")
+	}
+	// Tokens must be distinct.
+	if c1.SubscriptionToken == c2.SubscriptionToken {
+		t.Fatalf("tokens not unique: both = %q", c1.SubscriptionToken)
+	}
+	// The already-tokened client must be unchanged.
+	cHas := repo.clientsByID["c-has-token"]
+	if cHas.SubscriptionToken != "existing-token-abc" {
+		t.Fatalf("c-has-token token changed: got %q, want %q", cHas.SubscriptionToken, "existing-token-abc")
+	}
+	// No-token field clobbering: name and secret must survive.
+	if c1.Name != "needs-token-1" {
+		t.Fatalf("c-empty-1 name clobbered: %q", c1.Name)
+	}
+	if c1.Secret != "secret1" {
+		t.Fatalf("c-empty-1 secret clobbered: %q", c1.Secret)
+	}
+	if c1.Enabled != true {
+		t.Fatal("c-empty-1 enabled clobbered")
+	}
+
+	// Mirror must also reflect the new tokens.
+	mirror := svc.MirrorSnapshot()
+	if mirror.Clients["c-empty-1"].SubscriptionToken == "" {
+		t.Fatal("c-empty-1: mirror token still empty after backfill")
+	}
+}
+
+// TestService_BackfillSubscriptionTokens_Idempotent verifies that a second
+// call updates 0 clients when all clients already have tokens.
+func TestService_BackfillSubscriptionTokens_Idempotent(t *testing.T) {
+	t.Parallel()
+
+	repo := newFakeRepo()
+	rs := &fakeRepoSet{clients: repo, discovered: newFakeDiscoveredRepo()}
+	svc := NewService(ServiceConfig{
+		Repo: repo,
+		UoW:  newFakeUoW(rs),
+	})
+
+	repo.clientsByID["c-a"] = Client{ID: "c-a", Name: "a", Secret: "s"}
+	repo.clientsByID["c-b"] = Client{ID: "c-b", Name: "b", Secret: "s"}
+
+	if err := svc.Restore(context.Background()); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	// First call: fills tokens.
+	n1, err := svc.BackfillSubscriptionTokens(context.Background())
+	if err != nil {
+		t.Fatalf("first BackfillSubscriptionTokens: %v", err)
+	}
+	if n1 != 2 {
+		t.Fatalf("first call updated %d, want 2", n1)
+	}
+
+	// Re-restore to simulate a panel restart loading from DB.
+	if err := svc.Restore(context.Background()); err != nil {
+		t.Fatalf("second Restore: %v", err)
+	}
+
+	// Second call: must update 0.
+	n2, err := svc.BackfillSubscriptionTokens(context.Background())
+	if err != nil {
+		t.Fatalf("second BackfillSubscriptionTokens: %v", err)
+	}
+	if n2 != 0 {
+		t.Fatalf("second call updated %d, want 0 (idempotent)", n2)
+	}
+}
+
+// TestService_BackfillSubscriptionTokens_NoRepo verifies that calling
+// BackfillSubscriptionTokens on a Service with no repo is a no-op.
+func TestService_BackfillSubscriptionTokens_NoRepo(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(ServiceConfig{}) // no repo
+	n, err := svc.BackfillSubscriptionTokens(context.Background())
+	if err != nil {
+		t.Fatalf("expected no error with no repo, got: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 updated with no repo, got: %d", n)
+	}
+}
+
 // TestService_SeedUsageMirror verifies that SeedUsageMirror writes a
 // usage row into the mirror without touching persistence, and only when
 // no row already exists for that (client, agent) pair (matching the

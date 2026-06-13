@@ -39,6 +39,15 @@ func (s *Server) restoreStoredClients() error {
 		return err
 	}
 
+	// Backfill subscription tokens for clients that pre-date the feature.
+	// Non-fatal: a partial failure is logged but does not abort startup — the
+	// panel must still serve, and missing tokens are repaired on next restart.
+	if n, err := s.clientsSvc.BackfillSubscriptionTokens(ctx); err != nil {
+		s.logger.Error("startup: subscription token backfill failed", "error", err, "updated_so_far", n)
+	} else if n > 0 {
+		s.logger.Info("startup: subscription token backfill complete", "clients_updated", n)
+	}
+
 	// Discovered-client seeding: when client_usage has no entry for a
 	// (clientID, agentID) pair, fall back to discovered_clients.total_octets
 	// as the initial traffic counter (mirrors the legacy
