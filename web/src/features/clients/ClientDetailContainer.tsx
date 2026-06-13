@@ -21,7 +21,7 @@ export function ClientDetailContainer() {
   const { t } = useTranslation("clients");
   const { clientId } = useParams({ strict: false });
   const { client, raw, isLoading, error } = useClientDetail(clientId ?? "");
-  const { editMutation, rotateMutation, redeployMutation, deleteMutation } = useClientMutations(clientId ?? "", raw);
+  const { editMutation, rotateMutation, rotateSubscriptionMutation, redeployMutation, deleteMutation } = useClientMutations(clientId ?? "", raw);
   const { ips, totalUnique } = useClientIPHistory(clientId ?? "");
   const navigate = useNavigate();
   const confirm = useConfirm();
@@ -201,6 +201,11 @@ export function ClientDetailContainer() {
       }}
       secretRotating={rotateMutation.isPending}
       secretPendingRedeploy={secretPending}
+      onRotateSubscription={() => {
+        // The SubscriptionLinkCard confirms before invoking this.
+        void rotateSubscriptionMutation.mutate();
+      }}
+      subscriptionRotating={rotateSubscriptionMutation.isPending}
       onRedeploy={async () => {
         await redeployMutation.mutateAsync();
       }}

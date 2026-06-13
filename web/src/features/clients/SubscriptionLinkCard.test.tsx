@@ -42,6 +42,10 @@ describe("SubscriptionLinkCard", () => {
     expect(
       screen.getByText(/No public subscription domain/),
     ).toBeInTheDocument();
+    // Rotating is pointless with no public domain configured — hide the button.
+    expect(
+      screen.queryByRole("button", { name: /Rotate/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("clicking Copy calls navigator.clipboard.writeText with the url", () => {

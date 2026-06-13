@@ -46,14 +46,16 @@ export function SubscriptionLinkCard({
         <span className="text-sm font-semibold text-fg">
           {t("subscription.title")}
         </span>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={rotating}
-          onClick={handleRotate}
-        >
-          {t("subscription.rotate")}
-        </Button>
+        {url ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={rotating}
+            onClick={handleRotate}
+          >
+            {t("subscription.rotate")}
+          </Button>
+        ) : null}
       </div>
       {url ? (
         <div className="flex items-center gap-2 rounded-xs bg-bg border border-divider px-3 py-2 min-w-0">
