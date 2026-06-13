@@ -229,6 +229,14 @@
     "absent": "For security, the current secret isn't shown here. Copy a connection link from the Deployments tab, or rotate to issue a new secret.",
     "pendingRedeploy": "Secret rotated — wait for agents to re-apply before distributing new links."
   },
+  "subscription": {
+    "title": "Subscription link",
+    "copy": "Copy",
+    "copied": "Copied",
+    "rotate": "Rotate token",
+    "rotateConfirm": "The old link will stop working. Continue?",
+    "none": "No public subscription domain configured."
+  },
   "deployments": {
     "noneYet": "No deployments yet.",
     "title": "Deployments & links",

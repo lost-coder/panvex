@@ -15,6 +15,7 @@ import { IPHistoryCard } from "./components/IPHistoryCard";
 import { LimitsCard } from "./components/LimitsCard";
 import { ResetQuotaHistory } from "./components/ResetQuotaHistory";
 import { SecretSection } from "./components/SecretSection";
+import { SubscriptionLinkCard } from "./SubscriptionLinkCard";
 import { deriveClientState } from "./components/ClientsPageCells";
 import { useNowSec } from "@/shared/hooks/useNowSec";
 import {
@@ -53,6 +54,8 @@ export function ClientDetailPage({
   onRotateSecret,
   secretRotating,
   secretPendingRedeploy,
+  onRotateSubscription,
+  subscriptionRotating,
   onRedeploy,
   redeploying,
   onDisable,
@@ -119,6 +122,13 @@ export function ClientDetailPage({
       pendingRedeploy={secretPendingRedeploy}
     />
   );
+  const subscriptionCard = (
+    <SubscriptionLinkCard
+      url={client.subscriptionUrl}
+      rotating={subscriptionRotating ?? false}
+      onRotate={onRotateSubscription ?? (() => {})}
+    />
+  );
   const deployLinks = (
     <DeployLinksCard
       deployments={client.deployments}
@@ -181,6 +191,7 @@ export function ClientDetailPage({
               { id: "limits", label: t("detail.tabs.limits"), content: limitsCard },
               { id: "ips", label: t("detail.tabs.ips"), content: ipHistoryCard },
               { id: "secret", label: t("detail.tabs.secret"), content: secretSection },
+              { id: "subscription", label: t("subscription.title"), content: subscriptionCard },
             ]}
           />
           {resetHistoryCard}
@@ -193,6 +204,7 @@ export function ClientDetailPage({
           {limitsCard}
           {ipHistoryCard}
           {secretSection}
+          {subscriptionCard}
           {resetHistoryCard}
         </div>
       </div>

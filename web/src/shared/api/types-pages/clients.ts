@@ -120,6 +120,8 @@ export interface ClientDetailPageProps {
   onRotateSecret?: (() => void) | undefined;
   secretRotating?: boolean | undefined;
   secretPendingRedeploy?: boolean | undefined;
+  onRotateSubscription?: (() => void) | undefined;
+  subscriptionRotating?: boolean | undefined;
   /** Retry the rollout of the current stored state to every target
    *  agent. Surfaced as a button when at least one deployment is in
    *  the `failed` state. Container wires it to apiClient.redeployClient. */

@@ -42,6 +42,16 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
     },
   });
 
+  const rotateSubscriptionMutation = useMutation({
+    mutationFn: () => apiClient.rotateSubscriptionToken(clientId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: clientsKeys.detail(clientId) });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+    },
+  });
+
   // Re-runs the client.create rollout job. Needed when the initial
   // deployment on one or more agents failed (bad ad tag, unreachable
   // node, etc.) and the operator wants to retry without touching any
@@ -103,5 +113,5 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
     return cancel;
   }
 
-  return { editMutation, rotateMutation, redeployMutation, deleteMutation, scheduleDeleteWithUndo };
+  return { editMutation, rotateMutation, rotateSubscriptionMutation, redeployMutation, deleteMutation, scheduleDeleteWithUndo };
 }
