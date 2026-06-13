@@ -14,7 +14,7 @@ func TestIPRateLimiterBlocksBurst(t *testing.T) {
 	var lastCode int
 	for i := 0; i < 5; i++ {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/sub/x", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/sub/x", nil)
 		req.RemoteAddr = "203.0.113.7:5555"
 		h.ServeHTTP(rec, req)
 		lastCode = rec.Code
@@ -32,7 +32,7 @@ func TestIPRateLimiterIndependentBuckets(t *testing.T) {
 
 	sendReq := func(ip string) int {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/sub/x", nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/sub/x", nil)
 		req.RemoteAddr = ip + ":1234"
 		h.ServeHTTP(rec, req)
 		return rec.Code

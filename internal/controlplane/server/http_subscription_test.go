@@ -18,6 +18,16 @@ import (
 // helpers
 // ---------------------------------------------------------------------------
 
+// ctxGet issues a context-bound GET (satisfies the noctx linter).
+func ctxGet(t *testing.T, url string) (*http.Response, error) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
+}
+
 // seedSubscriptionClient creates a client via createClient (always enabled,
 // no expiry by default) using the fleet-group from newSubscriptionTestServer,
 // then optionally patches it with updateClient to apply the given
@@ -82,7 +92,7 @@ func TestHandleSubscriptionPage_OK(t *testing.T) {
 	ts := mountSubRouter(server)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/sub/" + token)
+	resp, err := ctxGet(t,ts.URL + "/sub/" + token)
 	if err != nil {
 		t.Fatalf("GET /sub/{token}: %v", err)
 	}
@@ -106,7 +116,7 @@ func TestHandleSubscriptionPage_MissingToken(t *testing.T) {
 	ts := mountSubRouter(server)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/sub/tok-missing-xxxxxxxxxxx")
+	resp, err := ctxGet(t,ts.URL + "/sub/tok-missing-xxxxxxxxxxx")
 	if err != nil {
 		t.Fatalf("GET /sub/tok-missing: %v", err)
 	}
@@ -135,7 +145,7 @@ func TestHandleSubscriptionPage_Disabled(t *testing.T) {
 	ts := mountSubRouter(server)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/sub/" + token)
+	resp, err := ctxGet(t,ts.URL + "/sub/" + token)
 	if err != nil {
 		t.Fatalf("GET /sub/{token}: %v", err)
 	}
@@ -162,7 +172,7 @@ func TestHandleSubscriptionPage_Expired(t *testing.T) {
 	ts := mountSubRouter(server)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/sub/" + token)
+	resp, err := ctxGet(t,ts.URL + "/sub/" + token)
 	if err != nil {
 		t.Fatalf("GET /sub/{token}: %v", err)
 	}
@@ -184,7 +194,7 @@ func TestHandleSubscriptionPage_XRobotsTag(t *testing.T) {
 	defer ts.Close()
 
 	// Even a missing-token response must carry X-Robots-Tag.
-	resp, err := http.Get(ts.URL + "/sub/tok-robots-check")
+	resp, err := ctxGet(t,ts.URL + "/sub/tok-robots-check")
 	if err != nil {
 		t.Fatalf("GET /sub/tok-robots-check: %v", err)
 	}
