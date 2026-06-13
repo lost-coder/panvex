@@ -2,10 +2,27 @@ package server
 
 import (
 	"context"
+	_ "embed"
+	"fmt"
+	"html/template"
 	"sort"
+	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/subscription"
+)
+
+//go:embed templates/subscription.html.tmpl
+var subscriptionTemplateSource string
+
+var subscriptionTemplate = template.Must(
+	template.New("subscription").
+		Funcs(template.FuncMap{
+			// safeURL marks a string as a trusted URL so html/template does not
+			// sanitise non-standard schemes such as tg://.
+			"safeURL": func(s string) template.URL { return template.URL(s) }, //nolint:gosec // controlled subscription links
+		}).
+		Parse(subscriptionTemplateSource),
 )
 
 // subscriptionView is the full render model for one client's /sub page.
@@ -104,4 +121,62 @@ func (s *Server) buildSubscriptionView(ctx context.Context, client clients.Clien
 		DataQuotaBytes:    client.DataQuotaBytes,
 		Nodes:             groupDeploymentLinks(linksByAgent, nodeMap),
 	}, nil
+}
+
+// ---------- display helpers (called by subscriptionTemplate) ----------
+
+func (v subscriptionView) HasQuota() bool { return v.DataQuotaBytes > 0 }
+
+func (v subscriptionView) UsedPercent() int {
+	if v.DataQuotaBytes <= 0 {
+		return 0
+	}
+	p := float64(v.TrafficUsedBytes) / float64(v.DataQuotaBytes) * 100
+	if p > 100 {
+		p = 100
+	}
+	return int(p)
+}
+
+func (v subscriptionView) TrafficHuman() string {
+	if v.DataQuotaBytes > 0 {
+		return fmt.Sprintf("%s / %s", humanBytes(v.TrafficUsedBytes), humanBytes(v.DataQuotaBytes))
+	}
+	return fmt.Sprintf("%s · без лимита", humanBytes(v.TrafficUsedBytes))
+}
+
+func (v subscriptionView) ExpirationHuman() string {
+	t, err := time.Parse(time.RFC3339, v.ExpirationRFC3339)
+	if err != nil {
+		return v.ExpirationRFC3339
+	}
+	return t.Format("02.01.2006")
+}
+
+func (n subscriptionNode) HealthLabel() string {
+	switch n.Health {
+	case "online":
+		return "работает"
+	case "degraded":
+		return "возможны сбои"
+	default:
+		return "недоступен"
+	}
+}
+
+// humanBytes formats b as a human-readable byte count with Cyrillic unit
+// suffixes (Б, КБ, МБ, ГБ, ТБ). The unit strings are stored as a []string so
+// that indexing selects a whole suffix rather than a raw UTF-8 byte.
+func humanBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d Б", b)
+	}
+	units := []string{"КБ", "МБ", "ГБ", "ТБ"}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit && exp < len(units)-1; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %s", float64(b)/float64(div), units[exp])
 }
