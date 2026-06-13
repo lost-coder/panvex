@@ -60,6 +60,51 @@ func (q *Queries) GetClient(ctx context.Context, id string) (GetClientRow, error
 	return i, err
 }
 
+const getClientBySubscriptionToken = `-- name: GetClientBySubscriptionToken :one
+SELECT id, name, secret_ciphertext, user_ad_tag, enabled, max_tcp_conns,
+       max_unique_ips, data_quota_bytes, expiration_rfc3339, subscription_token,
+       created_at, updated_at, deleted_at
+FROM clients
+WHERE subscription_token = $1 AND deleted_at IS NULL
+`
+
+type GetClientBySubscriptionTokenRow struct {
+	ID                string
+	Name              string
+	SecretCiphertext  string
+	UserAdTag         string
+	Enabled           bool
+	MaxTcpConns       int64
+	MaxUniqueIps      int64
+	DataQuotaBytes    int64
+	ExpirationRfc3339 string
+	SubscriptionToken sql.NullString
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+}
+
+func (q *Queries) GetClientBySubscriptionToken(ctx context.Context, subscriptionToken sql.NullString) (GetClientBySubscriptionTokenRow, error) {
+	row := q.db.QueryRowContext(ctx, getClientBySubscriptionToken, subscriptionToken)
+	var i GetClientBySubscriptionTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.SecretCiphertext,
+		&i.UserAdTag,
+		&i.Enabled,
+		&i.MaxTcpConns,
+		&i.MaxUniqueIps,
+		&i.DataQuotaBytes,
+		&i.ExpirationRfc3339,
+		&i.SubscriptionToken,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const listClients = `-- name: ListClients :many
 SELECT id, name, secret_ciphertext, user_ad_tag, enabled, max_tcp_conns,
        max_unique_ips, data_quota_bytes, expiration_rfc3339, subscription_token,

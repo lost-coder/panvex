@@ -40,6 +40,18 @@ func (r *fakeRepo) Get(_ context.Context, id ClientID) (Client, error) {
 	return c, nil
 }
 
+func (r *fakeRepo) GetBySubscriptionToken(_ context.Context, token string) (Client, error) {
+	if token == "" {
+		return Client{}, errors.New("fakeRepo: GetBySubscriptionToken: blank token")
+	}
+	for _, c := range r.clientsByID {
+		if c.SubscriptionToken == token {
+			return c, nil
+		}
+	}
+	return Client{}, errors.New("fakeRepo: GetBySubscriptionToken: not found")
+}
+
 func (r *fakeRepo) List(_ context.Context) ([]Client, error) {
 	out := make([]Client, 0, len(r.clientsByID))
 	for _, c := range r.clientsByID {

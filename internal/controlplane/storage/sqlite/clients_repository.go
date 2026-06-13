@@ -65,6 +65,29 @@ func (r *clientsRepository) Get(ctx context.Context, id clients.ClientID) (clien
 	return c, nil
 }
 
+func (r *clientsRepository) GetBySubscriptionToken(ctx context.Context, token string) (clients.Client, error) {
+	if token == "" {
+		return clients.Client{}, storage.ErrNotFound
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT
+			id, name, secret_ciphertext, user_ad_tag, enabled,
+			max_tcp_conns, max_unique_ips, data_quota_bytes,
+			expiration_rfc3339, subscription_token,
+			created_at_unix, updated_at_unix, deleted_at_unix
+		FROM clients
+		WHERE subscription_token = ? AND deleted_at_unix IS NULL
+	`, token)
+	c, err := scanClient(row)
+	if errors.Is(err, storage.ErrNotFound) {
+		return clients.Client{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return clients.Client{}, fmt.Errorf("clientsRepository.GetBySubscriptionToken: %w", err)
+	}
+	return c, nil
+}
+
 func (r *clientsRepository) List(ctx context.Context) ([]clients.Client, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT

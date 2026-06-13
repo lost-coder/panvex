@@ -36,5 +36,12 @@ SET name               = EXCLUDED.name,
     updated_at         = EXCLUDED.updated_at,
     deleted_at         = NULL;
 
+-- name: GetClientBySubscriptionToken :one
+SELECT id, name, secret_ciphertext, user_ad_tag, enabled, max_tcp_conns,
+       max_unique_ips, data_quota_bytes, expiration_rfc3339, subscription_token,
+       created_at, updated_at, deleted_at
+FROM clients
+WHERE subscription_token = $1 AND deleted_at IS NULL;
+
 -- name: SoftDeleteClient :execrows
 UPDATE clients SET deleted_at = $2, updated_at = $2 WHERE id = $1 AND deleted_at IS NULL;

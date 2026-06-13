@@ -360,6 +360,20 @@ func (s *Service) List(ctx context.Context) ([]Client, error) {
 	return out, nil
 }
 
+// ResolveBySubscriptionToken looks up a non-deleted client by its
+// subscription token via the Repository (DB lookup). Intended for the
+// public /sub/<token> page — the returned Client has Secret set to the
+// stored ciphertext (not plaintext; the page never needs the secret).
+// Returns storage.ErrNotFound (from the repository) for unknown tokens.
+// Returns ErrNotFound for blank tokens or when the service has no repo.
+// Enabled/expiration gating is left to the caller.
+func (s *Service) ResolveBySubscriptionToken(ctx context.Context, token string) (Client, error) {
+	if token == "" || s.repo == nil {
+		return Client{}, ErrNotFound
+	}
+	return s.repo.GetBySubscriptionToken(ctx, token)
+}
+
 // --- UoW-backed mutation methods ---
 
 // EncryptSecret seals the plaintext secret using the vault's

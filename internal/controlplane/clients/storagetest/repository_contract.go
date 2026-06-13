@@ -28,6 +28,7 @@ func RunContract(t *testing.T, open OpenRepo) {
 	t.Run("DeleteCascadesAssignments", func(t *testing.T) { runDeleteCascadesAssignments(t, open(t)) })
 	t.Run("GetSoftDeletedReturnsNotFound", func(t *testing.T) { runGetSoftDeletedReturnsNotFound(t, open(t)) })
 	t.Run("UsageBulkRoundtrip", func(t *testing.T) { runUsageBulk(t, open(t)) })
+	t.Run("GetBySubscriptionToken", func(t *testing.T) { runGetBySubscriptionToken(t, open(t)) })
 	// More subtests added as Repository surface grows.
 }
 
@@ -151,6 +152,69 @@ func runGetSoftDeletedReturnsNotFound(t *testing.T, repo clients.Repository) {
 	}
 	if _, err := repo.Get(ctx, id); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("Get after soft-delete error = %v, want storage.ErrNotFound", err)
+	}
+}
+
+// runGetBySubscriptionToken exercises the GetBySubscriptionToken contract:
+// known token → correct client; unknown token → ErrNotFound; blank token →
+// ErrNotFound; soft-deleted client's token → ErrNotFound.
+func runGetBySubscriptionToken(t *testing.T, repo clients.Repository) {
+	t.Helper()
+	ctx := context.Background()
+
+	c := clients.Client{
+		ID:                clients.ClientID("c-sub-1"),
+		Name:              "sub-client",
+		Secret:            "opaque",
+		SubscriptionToken: "tok_abc123_xxxxxxxxxxxxxxxxxxxxxxxxxxx",
+		CreatedAt:         time.Unix(1700000000, 0).UTC(),
+		UpdatedAt:         time.Unix(1700000001, 0).UTC(),
+	}
+	if err := repo.Save(ctx, c); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Known token → correct client.
+	got, err := repo.GetBySubscriptionToken(ctx, c.SubscriptionToken)
+	if err != nil {
+		t.Fatalf("GetBySubscriptionToken(known): %v", err)
+	}
+	if got.ID != c.ID {
+		t.Fatalf("GetBySubscriptionToken: got ID %q, want %q", got.ID, c.ID)
+	}
+	if got.SubscriptionToken != c.SubscriptionToken {
+		t.Fatalf("GetBySubscriptionToken: got token %q, want %q", got.SubscriptionToken, c.SubscriptionToken)
+	}
+
+	// Unknown token → ErrNotFound.
+	_, err = repo.GetBySubscriptionToken(ctx, "tok_does_not_exist_xxxxxxxxxxxxxxxxx")
+	if !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("GetBySubscriptionToken(unknown): err = %v, want storage.ErrNotFound", err)
+	}
+
+	// Blank token → ErrNotFound.
+	_, err = repo.GetBySubscriptionToken(ctx, "")
+	if err == nil {
+		t.Fatal("GetBySubscriptionToken(blank): expected error, got nil")
+	}
+
+	// Soft-deleted client's token → ErrNotFound.
+	c2 := clients.Client{
+		ID:                clients.ClientID("c-sub-deleted"),
+		Name:              "deleted-sub-client",
+		SubscriptionToken: "tok_deleted_xxxxxxxxxxxxxxxxxxxxxxxx",
+		CreatedAt:         time.Unix(1700000000, 0).UTC(),
+		UpdatedAt:         time.Unix(1700000001, 0).UTC(),
+	}
+	if err := repo.Save(ctx, c2); err != nil {
+		t.Fatalf("Save c2: %v", err)
+	}
+	if err := repo.Delete(ctx, c2.ID); err != nil {
+		t.Fatalf("Delete c2: %v", err)
+	}
+	_, err = repo.GetBySubscriptionToken(ctx, c2.SubscriptionToken)
+	if !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("GetBySubscriptionToken(deleted client): err = %v, want storage.ErrNotFound", err)
 	}
 }
 
