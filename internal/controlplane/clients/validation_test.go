@@ -141,6 +141,7 @@ func TestNormalizeExpiration(t *testing.T) {
 }
 
 func TestGenerateSubscriptionTokenIsURLSafeAndUnique(t *testing.T) {
+	t.Parallel()
 	a, err := GenerateSubscriptionToken()
 	if err != nil {
 		t.Fatalf("GenerateSubscriptionToken: %v", err)
