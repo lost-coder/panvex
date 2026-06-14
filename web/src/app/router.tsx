@@ -34,7 +34,11 @@ import { PullToRefresh } from "@/components/PullToRefresh";
 import { ShortcutsOverlay } from "@/components/ShortcutsOverlay";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { WsStatusBanner } from "@/components/WsStatusBanner";
-import { apiClient } from "@/shared/api/api";
+// Import the auth leaf directly, not the aggregated apiClient: apiClient
+// spreads all 12 domain APIs (and their zod schemas), and the router root
+// is in the entry's synchronous graph — pulling the aggregate hoists every
+// domain's schemas into the entry chunk. The shell only needs me()/logout().
+import { authApi } from "@/shared/api/auth";
 import { authKeys } from "@/features/auth/queryKeys";
 import { useFocusMainOnRouteChange, useKeyboardShortcut } from "@/shared/hooks";
 import { resolveConfiguredRootPath, getRouterBasepath } from "@/shared/lib/runtime-path";
@@ -98,7 +102,7 @@ const NAV_SECONDARY_SPEC: NavSpec[] = [
 function ProtectedShell() {
   const { data: me } = useQuery({
     queryKey: authKeys.me(),
-    queryFn: () => apiClient.me(),
+    queryFn: () => authApi.me(),
   });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -156,7 +160,7 @@ function ProtectedShell() {
     });
     if (!ok) return;
     try {
-      await apiClient.logout();
+      await authApi.logout();
     } finally {
       queryClient.clear();
       void navigate({ to: "/login" });
@@ -308,7 +312,7 @@ const shellRoute = createRoute({
   id: "shell",
   component: ProtectedShell,
   // P2-FE-05 / M-P5: route into the QueryClient cache instead of firing a
-  // fresh `apiClient.me()` on every navigation. ensureQueryData reuses the
+  // fresh `authApi.me()` on every navigation. ensureQueryData reuses the
   // same authKeys.me() entry that ProtectedShell/AuthProvider already read,
   // so a navigation inside the 30s staleTime is a cache hit — no extra
   // round trip. A 401 still rejects, and the catch branch redirects to
@@ -317,7 +321,7 @@ const shellRoute = createRoute({
     try {
       await context.queryClient.ensureQueryData({
         queryKey: authKeys.me(),
-        queryFn: () => apiClient.me(),
+        queryFn: () => authApi.me(),
         staleTime: 30_000,
       });
     } catch {
@@ -338,7 +342,7 @@ const loginRoute = createRoute({
     try {
       await context.queryClient.ensureQueryData({
         queryKey: authKeys.me(),
-        queryFn: () => apiClient.me(),
+        queryFn: () => authApi.me(),
         staleTime: 30_000,
       });
       throw redirect({ to: "/" });

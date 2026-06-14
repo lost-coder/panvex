@@ -87,7 +87,14 @@ LABEL org.opencontainers.image.title="panvex-control-plane" \
       org.opencontainers.image.description="Panvex control plane (HTTP + gRPC + embedded UI)." \
       org.opencontainers.image.sbom="/sbom/control-plane.cdx.json"
 
-RUN apk add --no-cache ca-certificates && \
+# `apk upgrade` pulls patched OS packages (openssl/libxml2 et al.) from the
+# alpine repo: the pinned base digest lags behind package fixes, so without
+# this the Trivy HIGH,CRITICAL gate flags fixed-but-not-yet-rebased CVEs
+# (e.g. CVE-2026-45447 openssl, CVE-2026-6732 libxml2). Dependabot bumps the
+# base digest on its own cadence; this keeps the shipped image patched in
+# between.
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates && \
     addgroup -S panvex && adduser -S panvex -G panvex
 
 COPY --from=control-plane-builder /out/panvex-control-plane ./panvex-control-plane
@@ -129,7 +136,11 @@ COPY --from=web-builder /src/cmd/control-plane/.embedded-ui /usr/share/nginx/htm
 # user so the worker can write without an explicit volume mount, and
 # move the pid file out of /var/run/ (which is symlinked to /run/ and
 # is root-owned on alpine).
-RUN sed -i 's|listen 80;|listen 8080;|' /etc/nginx/conf.d/default.conf && \
+# apk upgrade patches OS packages (openssl/libxml2 et al.) the pinned
+# nginx base digest still ships vulnerable — this is the image the Trivy
+# HIGH,CRITICAL gate actually scans (default build target = last stage).
+RUN apk upgrade --no-cache && \
+    sed -i 's|listen 80;|listen 8080;|' /etc/nginx/conf.d/default.conf && \
     sed -i 's|^pid .*|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf && \
     chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /etc/nginx/conf.d && \
     touch /tmp/nginx.pid && chown nginx:nginx /tmp/nginx.pid
