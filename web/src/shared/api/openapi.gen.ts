@@ -394,6 +394,13 @@ export interface components {
              */
             presence_state: string;
             /**
+             * @description True when the agent was switched to outbound transport but the
+             *     panel has not accepted a session from/to it since the switch
+             *     ("switched but never reconnected"). Cleared on the next accepted
+             *     agent stream.
+             */
+            transport_reconnect_pending?: boolean;
+            /**
              * @description Optional snapshot of any active certificate-recovery grant
              *     for the agent. Absent when no grant has been issued.
              */

@@ -33,6 +33,27 @@
     "create": "Создать группу",
     "save": "Сохранить"
   },
+  "toasts": {
+    "created": "Fleet-группа «{{label}}» создана.",
+    "updated": "Fleet-группа обновлена.",
+    "deleted": "Fleet-группа удалена.",
+    "requestFailed": "Не удалось выполнить запрос",
+    "deleteFailed": "Не удалось удалить"
+  },
+  "deleteConfirm": {
+    "title": "Удалить fleet-группу?",
+    "confirm": "Удалить",
+    "emptyBody": "Удалить пустую группу «{{name}}»?",
+    "noTarget": "Нельзя удалить группу: в ней есть агенты/токены, а перенести их некуда — создайте ещё одну группу.",
+    "contains": "Группа «{{name}}» содержит:",
+    "agents_one": "  • {{count}} агент",
+    "agents_few": "  • {{count}} агента",
+    "agents_many": "  • {{count}} агентов",
+    "tokens_one": "  • {{count}} токен",
+    "tokens_few": "  • {{count}} токена",
+    "tokens_many": "  • {{count}} токенов",
+    "moveTo": "Все они будут перенесены в «{{target}}». Продолжить?"
+  },
   "detail": {
     "edit": "Изменить",
     "delete": "Удалить",

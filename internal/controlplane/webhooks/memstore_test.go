@@ -199,6 +199,8 @@ func (s *memStore) ListEndpointMeta(ctx context.Context) ([]Endpoint, error) {
 	return out, nil
 }
 
+func (s *memStore) PruneOutbox(context.Context, time.Time) (int64, error) { return 0, nil }
+
 func (s *memStore) snapshot(id string) (OutboxRow, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

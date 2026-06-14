@@ -14,7 +14,7 @@ import { useSettingsRegistry } from "./registry";
 export function SettingsContainer() {
   const navigate = useNavigate();
   const { swipeNavigation, setSwipeNavigation } = useAppearance();
-  const { settings, isLoading, error, saveAppearance, savePanelSettings } = useSettings(swipeNavigation);
+  const { settings, isLoading, error, refetch, saveAppearance, savePanelSettings } = useSettings(swipeNavigation);
   const { profile } = useProfile();
   const { retention, save: saveRetention } = useRetentionSettings();
   const isAdmin = profile?.role === "admin";
@@ -24,13 +24,13 @@ export function SettingsContainer() {
   if (isLoading || !settings) {
     return (
       <div className="px-4 md:px-8 py-8">
-        <SkeletonRows count={5} label="Загрузка настроек…" />
+        <SkeletonRows count={5} />
       </div>
     );
   }
 
   if (error) {
-    return <ErrorState description={error.message} onRetry={() => globalThis.location.reload()} />;
+    return <ErrorState description={error.message} onRetry={() => void refetch()} />;
   }
 
   return (

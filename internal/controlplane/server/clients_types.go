@@ -5,7 +5,8 @@ import (
 )
 
 // Q5.U-Q-02: the per-record conversion shims that lived here were
-// retired. Call sites use clients.ClientToRecord / FromRecord directly.
+// retired; the clients-package To/FromRecord helpers they delegated to
+// were later removed as dead code (audit 2026-06-09, B7).
 // We keep the friendly aliases below so HTTP-layer code can keep
 // reading "managedClient" / "managedClientAssignment" without a
 // package-prefix tax.

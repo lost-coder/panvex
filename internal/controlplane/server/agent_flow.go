@@ -26,6 +26,10 @@ type agentEnrollmentRequest struct {
 	Token    string
 	NodeName string
 	Version  string
+	// CSRPEM is the PEM-encoded CERTIFICATE REQUEST generated locally by
+	// the agent. A9: the panel signs it; the private key never crosses the
+	// wire. Required for inbound HTTP enrollment.
+	CSRPEM string
 	// AttemptID is the enrollment.Recorder attempt opened by the HTTP
 	// handler before this call. Optional — when empty, enrollAgent skips
 	// timeline emission. Always set in the production HTTP path so the
@@ -103,7 +107,6 @@ func (s *Server) mapAndFailEnrollment(ctx context.Context, attemptID string, err
 type agentEnrollmentResponse struct {
 	AgentID        string
 	CertificatePEM string
-	PrivateKeyPEM  string
 	CAPEM          string
 	ExpiresAt      time.Time
 }
@@ -113,6 +116,8 @@ type instanceSnapshot struct {
 	Name              string
 	Version           string
 	ConfigFingerprint string
+	ManagedConfigHash string
+	ManagedConfigJSON string
 	Connections       int
 	ReadOnly          bool
 }
@@ -159,7 +164,7 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	ctx, span := tracer.Start(ctx, "agents.enroll")
 	defer span.End()
 
-	token, err := s.consumeEnrollmentTokenWithContext(ctx, request.Token, now)
+	token, err := s.peekEnrollmentTokenWithContext(ctx, request.Token, now)
 	if err != nil {
 		span.RecordError(err)
 		return agentEnrollmentResponse{}, err
@@ -170,7 +175,7 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 		attribute.String("panvex.fleet_group_id", token.FleetGroupID),
 	)
 	if s.enrollmentRec != nil && request.AttemptID != "" {
-		s.enrollmentRec.Event(ctx, request.AttemptID, enrollment.StepTokenValidated, enrollment.LevelInfo, "token consumed", map[string]any{
+		s.enrollmentRec.Event(ctx, request.AttemptID, enrollment.StepTokenValidated, enrollment.LevelInfo, "token validated", map[string]any{
 			"fleet_group_id": token.FleetGroupID,
 		})
 	}
@@ -187,12 +192,16 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	agentID := id7.String()
 	span.SetAttributes(attribute.String("panvex.agent_id", agentID))
 
-	// D-1: issue the cert FIRST so a failure here cannot leave a partial
-	// DB row + in-memory entry + consumed token behind. Cert issuance is
-	// in-memory crypto (ECDSA keygen + sign) with no IO, so the realistic
-	// failure modes are RNG / OOM / misconfigured CA — fast-fail before
-	// touching persistence.
-	issued, err := s.authority.issueClientCertificate(agentID, now)
+	// D-1: issue the cert FIRST (outside the enrollment tx) so that a cert
+	// failure never holds an open DB transaction. Cert issuance is pure
+	// in-memory crypto (ECDSA sign) with no IO. The atomicity guarantee —
+	// no consumed token without a matching agent row — is provided by the
+	// Transact block below (C2).
+	//
+	// A9: the agent generated the keypair locally; we sign its CSR. The
+	// agentID is minted server-side a moment ago, so the CSR's CN cannot
+	// match it — requireCNMatch=false and the template CN (agentID) wins.
+	issued, err := s.authority.issueAgentCertificateFromCSR(request.CSRPEM, agentID, agentCertificateLifetime, false, now)
 	if err != nil {
 		span.RecordError(err)
 		return agentEnrollmentResponse{}, &enrollmentError{
@@ -219,17 +228,44 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 		CertSerial:    issued.Serial,
 	}
 
-	if s.store != nil {
-		// Fleet-group existence is resolved/auto-created at token-issue
-		// time (see issueEnrollmentTokenWithContext), so by the time an
-		// agent bootstraps with a consumed token the group row is
-		// guaranteed to exist. If a group was deleted between issue and
-		// bootstrap, the FK on agents.fleet_group_id surfaces the
-		// failure here.
-		if err := s.store.PutAgent(ctx, agentToRecord(agent)); err != nil {
-			return agentEnrollmentResponse{}, err
+	// C2: consume the token, create the agent row, and persist the cert
+	// serial pin in ONE transaction — AFTER cert issuance succeeded.
+	// Ordering constraints:
+	//   - cert issuance stays OUTSIDE the tx (D-1): pure in-memory
+	//     crypto, must not hold a DB transaction open;
+	//   - the token is burned only together with a successful agent row,
+	//     so a PutAgent failure can no longer strand a consumed token;
+	//   - a concurrent enroll with the same token loses the
+	//     ConsumeEnrollmentToken race inside the tx (storage.ErrConflict)
+	//     and rolls back its own agent row.
+	// Fleet-group existence is resolved/auto-created at token-issue time
+	// (see issueEnrollmentTokenWithContext); a group deleted between
+	// issue and bootstrap surfaces via the agents.fleet_group_id FK here.
+	if err := s.store.Transact(ctx, func(tx storage.Store) error {
+		if _, err := tx.ConsumeEnrollmentToken(ctx, request.Token, now.UTC()); err != nil {
+			return err
 		}
+		if err := tx.PutAgent(ctx, agentToRecord(agent)); err != nil {
+			return err
+		}
+		// Q4.U-S-04: PutAgent intentionally does not write cert_serial
+		// (see storage/{sqlite,postgres}/agents.go); the dedicated
+		// update populates the pin column inside the same tx, so the
+		// pin can no longer be silently lost (was best-effort).
+		return tx.UpdateAgentCertSerial(ctx, agentID, issued.Serial)
+	}); err != nil {
+		span.RecordError(err)
+		if errors.Is(err, storage.ErrConflict) {
+			return agentEnrollmentResponse{}, s.resolveConsumeConflict(ctx, request.Token)
+		}
+		if errors.Is(err, storage.ErrNotFound) {
+			return agentEnrollmentResponse{}, security.ErrEnrollmentTokenInvalid
+		}
+		return agentEnrollmentResponse{}, err
 	}
+
+	// Best-effort: persist the SPKI pin outside the tx (fail-closed prereq, A1).
+	s.persistAgentCertPin(ctx, agentID, issued.CertificatePEM)
 
 	// Enrollment writes a fresh agent with no instances yet; ApplySnapshot
 	// with a nil instance set establishes the live-state baseline. No s.mu
@@ -238,17 +274,6 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 
 	if s.batchWriter != nil {
 		s.batchWriter.agents.Enqueue(agentToRecord(agent))
-	}
-	// Q4.U-S-04: persist the freshly-issued cert serial as the
-	// authoritative pin. PutAgent above does not write cert_serial
-	// (see storage/{sqlite,postgres}/agents.go) so the dedicated update
-	// is still required to populate the pin column. Best-effort — a
-	// write failure is logged but does not roll back enrollment, since
-	// the in-memory pin already protects this process lifetime.
-	if s.store != nil {
-		if err := s.store.UpdateAgentCertSerial(ctx, agentID, issued.Serial); err != nil {
-			s.logger.Warn("persist agent cert serial failed", "agent_id", agentID, "error", err)
-		}
 	}
 
 	s.appendAuditWithContext(ctx, agentID, "agents.enrolled", agentID, map[string]any{
@@ -263,7 +288,6 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	return agentEnrollmentResponse{
 		AgentID:        agentID,
 		CertificatePEM: issued.CertificatePEM,
-		PrivateKeyPEM:  issued.PrivateKeyPEM,
 		CAPEM:          issued.CAPEM,
 		ExpiresAt:      issued.ExpiresAt,
 	}, nil

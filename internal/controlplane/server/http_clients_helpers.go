@@ -204,10 +204,21 @@ func (s *Server) buildClientDetailResponse(ctx context.Context, client managedCl
 		CreatedAt:         client.CreatedAt.UTC().Unix(),
 		UpdatedAt:         client.UpdatedAt.UTC().Unix(),
 	}
+	response.SubscriptionURL = s.subscriptionURLFor(client.SubscriptionToken)
 	if client.DeletedAt != nil {
 		response.DeletedAt = client.DeletedAt.UTC().Unix()
 	}
 	return response
+}
+
+// subscriptionURLFor builds the public subscription URL for a token, or ""
+// when no public base URL is configured or the token is empty.
+func (s *Server) subscriptionURLFor(token string) string {
+	base := s.SubscriptionBaseURL()
+	if base == "" || token == "" {
+		return ""
+	}
+	return base + "/sub/" + token
 }
 
 // applyBulkClientEnable runs the enable/disable variant. It loads each

@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 
@@ -32,6 +31,21 @@ func parseChecksumSidecar(b []byte) string {
 	return fields[0]
 }
 
+// Outcome reports what Execute actually did, so the caller (the job
+// handler) can decide whether a process restart must be scheduled.
+type Outcome int
+
+const (
+	// OutcomeNoop: nothing was downloaded or replaced — the agent already
+	// runs the requested version. Also the zero value, so error returns
+	// never read as "updated".
+	OutcomeNoop Outcome = iota
+	// OutcomeUpdated: the binary was downloaded, verified and swapped in
+	// place. The caller MUST schedule a process restart — and must do so
+	// only after the JobResult has been handed off (A3).
+	OutcomeUpdated
+)
+
 // Payload is the JSON payload of an agent.self-update job. The panel sends
 // only the release directory and target version; the agent resolves the
 // per-architecture asset names itself, so the panel can never pick the
@@ -47,20 +61,22 @@ type Payload struct {
 }
 
 // Execute performs the self-update: download, verify checksum (mandatory),
-// extract, replace, restart.
+// extract, replace. Returns OutcomeUpdated when the binary was swapped in
+// place; the caller MUST schedule a process restart after handing off the
+// JobResult (A3 — never restart inside the job handler).
 //
 // currentVersion is the running agent's compiled-in version string
 // (cmd/agent/main.go's AgentVersion ldflag). It is compared to
 // payload.Version so a panel that tries to silently roll an agent
 // back to a vulnerable older release is rejected.
-func Execute(ctx context.Context, payload Payload, currentVersion string, logger *slog.Logger) error {
+func Execute(ctx context.Context, payload Payload, currentVersion string, logger *slog.Logger) (Outcome, error) {
 	return executeWith(ctx, payload, currentVersion, logger, defaultConfig())
 }
 
 // executeWith is the testable form: same logic but the download policy
 // (HTTP client, host allowlist, archive cap) comes from cfg instead of
 // hard-coded production defaults.
-func executeWith(ctx context.Context, payload Payload, currentVersion string, logger *slog.Logger, cfg Config) error {
+func executeWith(ctx context.Context, payload Payload, currentVersion string, logger *slog.Logger, cfg Config) (Outcome, error) {
 	// Downgrade gate (fail-closed). Defeats a hostile panel pinning agents
 	// back to a vulnerable release, so the escape hatches are explicit.
 	if !payload.AllowDowngrade {
@@ -68,17 +84,24 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 		next, nextOK := canonicalSemver(payload.Version)
 		switch {
 		case !currOK:
-			return fmt.Errorf(
+			return OutcomeNoop, fmt.Errorf(
 				"refusing self-update: running version %q is not a parseable semver (set allow_downgrade=true to override; typically only the panel-issued production binary has a real version)",
 				currentVersion,
 			)
 		case !nextOK:
-			return fmt.Errorf(
+			return OutcomeNoop, fmt.Errorf(
 				"refusing self-update: payload version %q is not a parseable semver (set allow_downgrade=true to override)",
 				payload.Version,
 			)
+		case semver.Compare(next, curr) == 0:
+			// A3: already at the target version — converge as a successful
+			// no-op instead of reinstalling and restarting forever.
+			// AllowDowngrade=true skips this branch on purpose: it is the
+			// operator's escape hatch for forced reinstall (binary repair).
+			logger.Info("agent self-update: already at target version", "version", currentVersion)
+			return OutcomeNoop, nil
 		case semver.Compare(next, curr) < 0:
-			return fmt.Errorf(
+			return OutcomeNoop, fmt.Errorf(
 				"refusing downgrade: payload version %q is older than running version %q (set allow_downgrade=true on the job to override)",
 				payload.Version, currentVersion,
 			)
@@ -89,7 +112,7 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 	// it, so it cannot send the wrong-arch binary.
 	base := strings.TrimRight(strings.TrimSpace(payload.ReleaseBaseURL), "/")
 	if base == "" {
-		return fmt.Errorf("no release base URL provided")
+		return OutcomeNoop, fmt.Errorf("no release base URL provided")
 	}
 	archiveName := fmt.Sprintf("panvex-agent-linux-%s.tar.gz", runtime.GOARCH)
 	archiveURL := base + "/" + archiveName
@@ -99,54 +122,47 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 
 	archivePath, err := downloadToTemp(ctx, archiveURL, cfg)
 	if err != nil {
-		return fmt.Errorf("download: %w", err)
+		return OutcomeNoop, fmt.Errorf("download: %w", err)
 	}
 
 	checksumBytes, err := downloadBytes(ctx, checksumURL, defaultMaxChecksum, cfg)
 	if err != nil {
 		_ = os.Remove(archivePath)
-		return fmt.Errorf("download checksum: %w", err)
+		return OutcomeNoop, fmt.Errorf("download checksum: %w", err)
 	}
 	expectedChecksum := parseChecksumSidecar(checksumBytes)
 	if expectedChecksum == "" {
 		_ = os.Remove(archivePath)
-		return fmt.Errorf("verify: checksum sidecar is empty or malformed")
+		return OutcomeNoop, fmt.Errorf("verify: checksum sidecar is empty or malformed")
 	}
 	if err := verifyChecksum(archivePath, expectedChecksum); err != nil {
 		_ = os.Remove(archivePath)
-		return fmt.Errorf("verify: %w", err)
+		return OutcomeNoop, fmt.Errorf("verify: %w", err)
 	}
 
 	binaryPath, err := extractBinaryFromArchive(archivePath)
 	_ = os.Remove(archivePath)
 	if err != nil {
-		return fmt.Errorf("extract: %w", err)
+		return OutcomeNoop, fmt.Errorf("extract: %w", err)
 	}
 
 	currentPath, err := os.Executable()
 	if err != nil {
 		_ = os.Remove(binaryPath)
-		return fmt.Errorf("resolve executable: %w", err)
+		return OutcomeNoop, fmt.Errorf("resolve executable: %w", err)
 	}
 
 	if err := replaceSelf(currentPath, binaryPath); err != nil {
 		_ = os.Remove(binaryPath)
-		return fmt.Errorf("replace: %w", err)
+		return OutcomeNoop, fmt.Errorf("replace: %w", err)
 	}
 
 	// replaceBinary renames tmpPath into place, so no cleanup needed.
-	logger.Info("agent self-update: binary replaced, restarting", "version", payload.Version)
-
-	// Attempt systemd restart. On success systemd tears this process down.
-	// On failure we must exit NON-ZERO so the unit's `Restart=on-failure`
-	// relaunches the already-replaced binary — exit code 0 would not be
-	// restarted (and 78 is RestartPreventExitStatus, so it must not be 78).
-	if err := exec.CommandContext(ctx, "systemctl", "restart", "panvex-agent").Start(); err != nil {
-		logger.Warn("systemctl restart failed, exiting non-zero for on-failure restart", "error", err)
-		os.Exit(1)
-	}
-	os.Exit(0)
-	return nil // unreachable
+	// A3: do NOT restart (and never os.Exit) here — this runs inside the
+	// job handler, before the JobResult is flushed to the panel. The caller
+	// schedules the restart after handing the result off.
+	logger.Info("agent self-update: binary replaced; awaiting scheduled restart", "version", payload.Version)
+	return OutcomeUpdated, nil
 }
 
 // canonicalSemver normalises an operator- or panel-supplied version

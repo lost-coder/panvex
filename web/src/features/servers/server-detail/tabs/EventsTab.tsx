@@ -27,13 +27,13 @@ function EventRow({ event }: Readonly<{ event: ServerEventData }>) {
   return (
     <div className="flex gap-3 items-start py-2 border-b border-divider last:border-b-0">
       <span className={cn("w-[3px] self-stretch rounded-sm shrink-0", rail)} />
-      <span className="text-[11px] font-mono text-fg-muted shrink-0 min-w-[80px] pt-0.5">
+      <span className="text-micro font-mono text-fg-muted shrink-0 min-w-[80px] pt-0.5">
         {formatTime(event.tsEpochSecs)}
       </span>
       <div className="flex flex-col gap-0.5 min-w-0 flex-1">
         <span className="text-xs font-mono text-fg">{event.eventType}</span>
         {event.context && (
-          <span className="text-[11px] font-mono text-fg-muted break-words">{event.context}</span>
+          <span className="text-micro font-mono text-fg-muted break-words">{event.context}</span>
         )}
       </div>
     </div>

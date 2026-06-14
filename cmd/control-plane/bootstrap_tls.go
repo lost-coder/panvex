@@ -75,13 +75,19 @@ var errBootstrapPinMismatch = errors.New("bootstrap: SPKI pin mismatch for agent
 // agentID is captured by closure so the callback can scope the storage
 // lookup. ctx scopes the storage query — if the caller cancels enrollment,
 // the callback's lookup unwinds with ctx.Err().
-func newBootstrapTLSConfig(ctx context.Context, agentID string, pinReader bootstrapPinReader) *tls.Config {
+//
+// The panel presents its CLIENT certificate (chain [leaf, CA]) because the
+// agent's reverse-bootstrap listener requires a client cert chaining to the
+// pinned CA with CN == --panel-cn.
+func newBootstrapTLSConfig(ctx context.Context, agentID string, pinReader bootstrapPinReader, panelClientCert tls.Certificate) *tls.Config {
 	v := &bootstrapPinVerifier{
 		ctx:       ctx,
 		agentID:   agentID,
 		pinReader: pinReader,
 	}
 	return &tls.Config{
+		Certificates: []tls.Certificate{panelClientCert},
+		MinVersion:   tls.VersionTLS13,
 		// Standard x509 chain verification is disabled because the agent
 		// presents a self-signed cert at enrollment; there is no trust
 		// anchor yet. SPKI pinning via VerifyPeerCertificate substitutes,

@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import type { ClientFormData } from "@/shared/api/types-pages/pages";
 import type { Client as ApiClient } from "@/shared/api/api";
 import { apiClient } from "@/shared/api/api";
@@ -15,6 +16,7 @@ import { useToast } from "@/app/providers/ToastProvider";
 export function useClientMutations(clientId: string, rawClient: ApiClient | undefined) {
   const qc = useQueryClient();
   const toast = useToast();
+  const { t } = useTranslation("clients");
 
   const editMutation = useMutation({
     mutationFn: (data: ClientFormData) => {
@@ -32,6 +34,16 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
 
   const rotateMutation = useMutation({
     mutationFn: () => apiClient.rotateClientSecret(clientId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: clientsKeys.detail(clientId) });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+    },
+  });
+
+  const rotateSubscriptionMutation = useMutation({
+    mutationFn: () => apiClient.rotateSubscriptionToken(clientId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: clientsKeys.detail(clientId) });
     },
@@ -87,12 +99,12 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
 
     toast.withAction(
       "info",
-      `Клиент «${displayName}» будет удалён через 7 секунд.`,
+      t("toasts.deleteScheduled", { name: displayName }),
       {
-        label: "Отменить",
+        label: t("toasts.undo"),
         onClick: () => {
           cancel();
-          toast.info("Удаление отменено.");
+          toast.info(t("toasts.deleteCancelled"));
         },
       },
       { duration: 7000 },
@@ -101,5 +113,5 @@ export function useClientMutations(clientId: string, rawClient: ApiClient | unde
     return cancel;
   }
 
-  return { editMutation, rotateMutation, redeployMutation, deleteMutation, scheduleDeleteWithUndo };
+  return { editMutation, rotateMutation, rotateSubscriptionMutation, redeployMutation, deleteMutation, scheduleDeleteWithUndo };
 }

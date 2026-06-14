@@ -35,7 +35,7 @@ func TestListEnrollmentAttemptsReturnsRecent(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/agent/bootstrap",
-		map[string]any{"node_name": "node-list", "version": "0.0.0-test"},
+		map[string]any{"node_name": "node-list", "version": "0.0.0-test", "csr_pem": testCSRPEM(t)},
 		nil,
 		map[string]string{"Authorization": "Bearer " + token.Value},
 	)
@@ -136,7 +136,7 @@ func TestListEnrollmentAttemptsFiltersByMode(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/agent/bootstrap",
-		map[string]any{"node_name": "node-mode", "version": "0.0.0-test"},
+		map[string]any{"node_name": "node-mode", "version": "0.0.0-test", "csr_pem": testCSRPEM(t)},
 		nil,
 		map[string]string{"Authorization": "Bearer " + token.Value},
 	)
@@ -200,7 +200,7 @@ func TestListEnrollmentAttemptsCursorRoundTrip(t *testing.T) {
 			srv,
 			http.MethodPost,
 			"/api/agent/bootstrap",
-			map[string]any{"node_name": fmt.Sprintf("node-cur-%d", i), "version": "0.0.0-test"},
+			map[string]any{"node_name": fmt.Sprintf("node-cur-%d", i), "version": "0.0.0-test", "csr_pem": testCSRPEM(t)},
 			nil,
 			map[string]string{"Authorization": "Bearer " + token.Value},
 		)

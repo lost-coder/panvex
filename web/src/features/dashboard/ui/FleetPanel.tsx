@@ -1,10 +1,13 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Badge,
+  Button,
+  EmptyState,
   MiniChart,
-  StatusDot,
+  NodeStateBadge,
   formatBytes,
+  localizeReason,
+  nodeStatePresentation,
   type DashboardNodeData,
   type DashboardOverviewData,
 } from "@/ui";
@@ -32,7 +35,7 @@ function LoadCell({
   const tone = loadTone(value);
   const hasSeries = Array.isArray(series) && series.length > 1;
   return (
-    <div className="flex items-center gap-1.5 text-[10px] font-mono leading-none">
+    <div className="flex items-center gap-1.5 text-nano font-mono leading-none">
       <span className="w-7 text-fg-muted shrink-0 uppercase tracking-wider">{label}</span>
       {hasSeries && series && <MiniChart data={series} width={56} height={18} color={tone.chart} />}
       <span className={`w-9 text-right tabular-nums shrink-0 ${tone.text}`}>{value}%</span>
@@ -56,41 +59,42 @@ function LoadCell({
 // onClick callback from the parent.
 const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: DashboardNodeData; onClick?: () => void }>) {
   const { t } = useTranslation("dashboard");
-  const isProblem = node.status !== "ok";
-  const badgeVariant = node.status === "error" ? "error" : "warn";
-  const badgeLabel = node.status === "error" ? t("fleet.statusDown") : t("fleet.statusDegraded");
-  // `border-l-2` + `border-l-status-error` / `border-l-transparent` keep
-  // the left-edge tint scoped; the separate `border-b border-divider`
-  // rule on the button below then paints the row divider without being
-  // clobbered by a full-row `border-transparent` shorthand.
-  const rowClasses = isProblem
-    ? "border-l-2 border-l-status-error bg-status-error/5 hover:bg-status-error/10"
-    : "border-l-2 border-l-transparent hover:bg-bg-hover";
+  const { t: tc } = useTranslation("common");
+  const state = node.state;
+  const pres = nodeStatePresentation(state);
+  const reasonText = node.reason ? localizeReason(node.reason, tc) : "";
+  // Row tint by severity: down/offline alarm-red, degraded amber, pending/ok calm.
+  const rowTint =
+    state === "down" || state === "offline"
+      ? "border-l-status-error bg-status-error/8 hover:bg-status-error/12"
+      : state === "degraded"
+        ? "border-l-status-warn bg-status-warn/8 hover:bg-status-warn/12"
+        : "border-l-transparent hover:bg-bg-hover";
   return (
     <button
       type="button"
       onClick={onClick}
-      // `border-divider` is the dedicated list-separator token (~14% on
-      // dark, 18% on light). Strong enough to read as a real divider,
-      // tokenized so both themes hit the same contrast target.
-      className={`w-full flex flex-col gap-2 md:flex-row md:items-center md:gap-4 px-4 py-3 text-left transition-colors border-b border-divider last:border-b-0 min-h-[56px] ${rowClasses}`}
+      className={`w-full flex flex-col gap-2 md:flex-row md:items-center md:gap-4 px-4 py-3.5 text-left transition-colors border-b border-divider last:border-b-0 min-h-[60px] border-l-4 ${rowTint}`}
     >
-      {/* Mobile line 1: StatusDot + name + badge? push conn + traffic to the
-          far right so long names truncate cleanly without pushing numbers
-          off-screen. Desktop collapses this row into a normal flex cell. */}
-      <div className="flex items-center gap-2 min-w-0 md:flex-1">
-        <StatusDot status={node.status} />
-        <span className="text-sm font-mono text-fg font-medium truncate min-w-0 flex-1">
-          {node.name}
-        </span>
-        {isProblem && <Badge variant={badgeVariant}>{badgeLabel}</Badge>}
-        <span className="flex items-baseline gap-1 text-[11px] font-mono tabular-nums shrink-0 md:hidden">
-          <span className="text-fg">{node.connections.toLocaleString()}</span>
-          <span className="text-fg-muted opacity-60">{t("fleet.connections")}</span>
-        </span>
-        <span className="text-[11px] font-mono text-fg-muted tabular-nums shrink-0 md:hidden">
-          {formatBytes(node.trafficBytes)}
-        </span>
+      <div className="flex flex-col gap-1 min-w-0 md:flex-1">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <NodeStateBadge state={state} label={tc(pres.labelKey)} />
+          <span className="text-base font-mono text-fg font-medium truncate min-w-0 flex-1">
+            {node.name}
+          </span>
+          <span className="flex items-baseline gap-1 text-micro font-mono tabular-nums shrink-0 md:hidden">
+            <span className="text-fg">{node.connections.toLocaleString()}</span>
+            <span className="text-fg-muted">{t("fleet.connections")}</span>
+          </span>
+          <span className="text-micro font-mono text-fg-muted tabular-nums shrink-0 md:hidden">
+            {formatBytes(node.trafficBytes)}
+          </span>
+        </div>
+        {reasonText && (
+          <span className="text-xs text-fg-muted leading-snug truncate pl-0.5">
+            {reasonText}
+          </span>
+        )}
       </div>
 
       {/* Mobile line 2: CPU and MEM side-by-side, each gets equal width.
@@ -99,11 +103,11 @@ const FleetRow = memo(function FleetRow({ node, onClick }: Readonly<{ node: Dash
       <div className="flex items-center justify-between md:justify-end gap-4 md:gap-4 pl-4 md:pl-0">
         {/* Desktop-only conn + traffic columns — mobile renders them in
             line 1 next to the name. */}
-        <span className="hidden md:flex items-baseline gap-1 text-[11px] font-mono tabular-nums shrink-0 w-[92px] justify-end">
+        <span className="hidden md:flex items-baseline gap-1 text-micro font-mono tabular-nums shrink-0 w-[92px] justify-end">
           <span className="text-fg">{node.connections.toLocaleString()}</span>
           <span className="text-fg-muted opacity-60">{t("fleet.connections")}</span>
         </span>
-        <span className="hidden md:inline text-[11px] font-mono text-fg-muted tabular-nums shrink-0 w-[64px] text-right">
+        <span className="hidden md:inline text-micro font-mono text-fg-muted tabular-nums shrink-0 w-[64px] text-right">
           {formatBytes(node.trafficBytes)}
         </span>
         <LoadCell label="CPU" value={node.cpuPct} series={node.cpuSeries} />
@@ -117,11 +121,13 @@ function FleetList({
   attention,
   healthy,
   onNodeClick,
+  onAddServer,
   maxHealthy = 12,
 }: Readonly<{
   attention: DashboardNodeData[];
   healthy: DashboardNodeData[];
   onNodeClick?: ((id: string) => void) | undefined;
+  onAddServer?: (() => void) | undefined;
   maxHealthy?: number | undefined;
 }>) {
   const { t } = useTranslation("dashboard");
@@ -130,8 +136,20 @@ function FleetList({
   const totalShown = attention.length + trimmedHealthy.length;
 
   if (totalShown === 0) {
+    // Audit E1: the post-login landing said "no servers" with no way
+    // forward; mirror the Servers-page empty state with the same CTA.
     return (
-      <div className="py-12 text-center text-sm text-fg-muted">{t("fleet.empty")}</div>
+      <EmptyState
+        title={t("fleet.empty")}
+        description={t("fleet.emptyDescription")}
+        action={
+          onAddServer ? (
+            <Button size="sm" onClick={onAddServer}>
+              {t("fleet.addServer")}
+            </Button>
+          ) : undefined
+        }
+      />
     );
   }
 
@@ -139,12 +157,13 @@ function FleetList({
     <div className="flex flex-col">
       {attention.length > 0 && (
         <>
-          <div className="px-4 pt-3 pb-1 flex items-center justify-between border-b border-divider">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-status-error">
+          <div className="px-4 py-2.5 flex items-center gap-2 bg-status-error/8 border-b border-status-error/20">
+            <span aria-hidden="true" className="text-status-error text-sm">⚠</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-status-error">
               {t("fleet.sectionAttention")}
             </span>
-            <span className="text-[10px] font-mono text-fg-muted">
-              {t("fleet.sectionCount", { count: attention.length })}
+            <span className="ml-auto rounded-full bg-status-error px-2 py-0.5 text-micro font-bold text-white tabular-nums">
+              {attention.length}
             </span>
           </div>
           {attention.map((n) => (
@@ -155,7 +174,7 @@ function FleetList({
       {trimmedHealthy.length > 0 && (
         <>
           {attention.length > 0 && (
-            <div className="px-4 pt-3 pb-1 text-[10px] font-mono uppercase tracking-wider text-fg-muted border-b border-divider">
+            <div className="px-4 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-fg-muted border-b border-divider">
               {t("fleet.sectionHealthy")}
             </div>
           )}
@@ -165,7 +184,7 @@ function FleetList({
         </>
       )}
       {hiddenCount > 0 && (
-        <div className="px-3 py-2 text-[11px] font-mono text-fg-muted text-center border-t border-border">
+        <div className="px-3 py-2 text-micro font-mono text-fg-muted text-center border-t border-border">
           {t("fleet.more", { count: hiddenCount })}
         </div>
       )}
@@ -177,7 +196,8 @@ export function FleetPanel({
   data,
   onNodeClick,
   onViewAll,
-}: OverviewPanelProps & { onViewAll?: (() => void) | undefined }) {
+  onAddServer,
+}: OverviewPanelProps & { onViewAll?: (() => void) | undefined; onAddServer?: (() => void) | undefined }) {
   const { t } = useTranslation("dashboard");
   const totalFleet = data.attentionNodes.length + data.healthyNodes.length;
   const issues = data.attentionNodes.length;
@@ -190,7 +210,7 @@ export function FleetPanel({
       <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-divider">
         <div className="flex items-baseline gap-3 min-w-0">
           <h2 className="text-sm font-semibold text-fg">{t("fleet.title")}</h2>
-          <span className="text-[11px] font-mono text-fg-muted truncate">
+          <span className="text-micro font-mono text-fg-muted truncate">
             {t("fleet.summary", { count: totalFleet })}
             {issues > 0 && t("fleet.issues", { count: issues })}
           </span>
@@ -199,7 +219,7 @@ export function FleetPanel({
           <button
             type="button"
             onClick={onViewAll}
-            className="text-[11px] font-mono text-fg-muted hover:text-fg transition-colors shrink-0"
+            className="text-micro font-mono text-fg-muted hover:text-fg transition-colors shrink-0"
           >
             {t("fleet.viewAll")}
           </button>
@@ -209,6 +229,7 @@ export function FleetPanel({
         attention={data.attentionNodes}
         healthy={data.healthyNodes}
         onNodeClick={onNodeClick}
+        onAddServer={onAddServer}
       />
     </section>
   );

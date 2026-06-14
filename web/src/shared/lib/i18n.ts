@@ -79,11 +79,22 @@ function registerResources(
   loadedLanguages.add(lng);
 }
 
+// Keep <html lang> in sync with the active language. Beyond a11y, it
+// lets locale-sensitive rendering (and downstream date/number tooling)
+// reflect the operator's chosen language rather than the browser default
+// (U-06). The attribute is the standards-compliant signal for "what
+// language is this document".
+function syncHtmlLang(lng: string) {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = lng;
+}
+
 export function initI18n(): Promise<typeof i18next> {
   if (initPromise) return initPromise;
   initPromise = (async () => {
     const lng = detectInitialLanguage();
     const resources = await loadLanguage(lng);
+    i18next.on("languageChanged", syncHtmlLang);
     await i18next.use(initReactI18next).init({
       lng,
       fallbackLng: DEFAULT_LANGUAGE,
@@ -98,6 +109,7 @@ export function initI18n(): Promise<typeof i18next> {
       },
       returnNull: false,
     });
+    syncHtmlLang(lng);
     loadedLanguages.add(lng);
     return i18next;
   })();

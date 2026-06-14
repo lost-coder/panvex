@@ -16,6 +16,7 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 )
 
 // errOutboundTLSMissing is returned by connectAndServe when no TLS config has
@@ -45,6 +46,16 @@ type BootstrapStateFunc func(ctx context.Context, agentID string) (string, error
 const (
 	outboundBackoffInitial = 1 * time.Second
 	outboundBackoffMax     = 60 * time.Second
+)
+
+// Symmetric keepalive + message caps for the reverse direction (A1): the
+// inbound path pings every 30s/10s and lifts the 4 MiB gRPC default to
+// 16 MiB; without the same settings here a NAT silently drops idle reverse
+// streams and any >4 MiB snapshot wedges the agent in a reconnect loop.
+const (
+	outboundKeepaliveTime    = 30 * time.Second
+	outboundKeepaliveTimeout = 10 * time.Second
+	outboundMaxMessageSize   = 16 * 1024 * 1024
 )
 
 // outboundSupervisor maintains a single agent's outbound (panel-dials-agent)
@@ -252,6 +263,11 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 	// Clone the TLS config so we can install a per-dial VerifyConnection hook
 	// without mutating the shared base config. (S-02)
 	tlsCfg := s.tlsCfg.Clone()
+	// A1: bind the dial to THIS agent's certificate. Reverse-mode agent
+	// certs carry the fixed DNS SAN AgentServerName(agentID); standard
+	// chain verification then runs against the panel CA pool from the
+	// base config (RootCAs) — no InsecureSkipVerify anywhere on this path.
+	tlsCfg.ServerName = AgentServerName(s.meta.AgentID)
 	if s.pinReader != nil {
 		agentID := s.meta.AgentID
 		pinReader := s.pinReader
@@ -269,13 +285,15 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 			if err != nil && !errors.Is(err, storage.ErrNotFound) {
 				return fmt.Errorf("agenttransport: cert pin lookup (node_id=%s): %w", agentID, err)
 			}
-			if len(pin) == 0 {
-				// No pin stored — agent enrolled before S-02 or pin not yet
-				// captured. Skip verification for this dial.
+			if errors.Is(err, storage.ErrNotFound) || len(pin) == 0 {
+				// Fail-closed (A1): no TOFU on the steady-state dial path.
+				// The bootstrap exchange (EnrollDriver) is the only place
+				// first-contact trust is established, gated by the
+				// operator-issued bootstrap token.
 				if pinObserver != nil {
 					pinObserver("missing")
 				}
-				return nil
+				return fmt.Errorf("%w (node_id=%s)", ErrCertPinMissing, agentID)
 			}
 			var leaf *x509.Certificate
 			if len(state.PeerCertificates) > 0 {
@@ -295,7 +313,17 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 	}
 
 	conn, err := grpc.NewClient(s.meta.DialAddress,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)))
+		grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg)),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                outboundKeepaliveTime,
+			Timeout:             outboundKeepaliveTimeout,
+			PermitWithoutStream: true,
+		}),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(outboundMaxMessageSize),
+			grpc.MaxCallSendMsgSize(outboundMaxMessageSize),
+		),
+	)
 	if err != nil {
 		if s.rec != nil && attemptID != "" {
 			_ = s.rec.Fail(ctx, attemptID, classifyDialError(err), err,

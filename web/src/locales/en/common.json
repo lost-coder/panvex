@@ -1,3 +1,49 @@
 {
-  "empty": "No data"
+  "status": {
+    "ok": "OK",
+    "degraded": "DEGRADED",
+    "down": "DOWN",
+    "offline": "OFFLINE",
+    "pending": "PENDING"
+  },
+  "empty": "No data",
+  "toast": { "close": "Dismiss notification" },
+  "typeToConfirm": { "prompt": "To confirm, type" },
+  "sortBy": "Sort by",
+  "sortNone": "Default order",
+  "sortAscending": "Sort ascending",
+  "sortDescending": "Sort descending",
+  "relative": {
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  },
+  "search": { "placeholder": "Search…" },
+  "errorState": { "title": "Something went wrong", "retry": "Retry" },
+  "reason": {
+    "offline": "Agent offline",
+    "telemtUnreachable": "Telemt API unreachable since",
+    "stale": "Telemetry is stale",
+    "readOnly": "Telemt API is read-only",
+    "admissionClosed": "Admission is closed",
+    "startup": "Starting up",
+    "noDcs": "No reachable DCs",
+    "dcDegraded": "DC coverage degraded",
+    "meDegraded": "ME runtime degraded",
+    "meDown": "ME pool unavailable, traffic stopped",
+    "upstreamFailing": "Upstream DC connection failing",
+    "dcConnDegraded": "Degraded DC connectivity",
+    "noUpstreams": "No upstreams configured",
+    "allUpstreamsDown": "All upstreams down",
+    "someUpstreamsUnhealthy": "Some upstreams unhealthy"
+  },
+  "unsaved": {
+    "title": "Discard unsaved changes?",
+    "body": "You have unsaved changes on this page. If you leave now, they will be lost.",
+    "leave": "Discard and leave",
+    "stay": "Stay"
+  },
+  "copy": { "copy": "Copy", "copied": "Copied" },
+  "bulkBar": { "clear": "Clear selection" }
 }

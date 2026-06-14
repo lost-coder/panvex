@@ -5,7 +5,8 @@ import { TokenList } from "./TokenList";
 import type { EnrollmentTokenData } from "@/shared/api/types-pages/pages";
 
 const activeToken: EnrollmentTokenData = {
-  value: "tok-abcdef1234567890",
+  handle: "abcdef1234567890",
+  maskedValue: "tok-ab…",
   fleetGroupId: "default",
   status: "active",
   issuedAtUnix: 1713168000,
@@ -13,7 +14,8 @@ const activeToken: EnrollmentTokenData = {
 };
 
 const consumedToken: EnrollmentTokenData = {
-  value: "tok-consumed0000000",
+  handle: "consumed00000000",
+  maskedValue: "tok-co…",
   fleetGroupId: "prod",
   status: "consumed",
   issuedAtUnix: 1713168000,
@@ -50,6 +52,6 @@ describe("TokenList", () => {
     const [firstRevoke] = screen.getAllByRole("button", { name: /revoke/i });
     if (!firstRevoke) throw new Error("revoke button missing");
     await user.click(firstRevoke);
-    expect(onRevoke).toHaveBeenCalledWith(activeToken.value);
+    expect(onRevoke).toHaveBeenCalledWith(activeToken.handle);
   });
 });

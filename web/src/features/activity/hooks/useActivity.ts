@@ -163,11 +163,14 @@ export function useActivity() {
     return `Actor and target labels unavailable — lookup failed: ${msg}`;
   })();
 
+  const refetch = () => Promise.all([jobsQuery.refetch(), auditQuery.refetch()]);
+
   return {
     jobs,
     auditEvents,
     isLoading: jobsQuery.isLoading || auditQuery.isLoading,
     error: jobsQuery.error ?? auditQuery.error,
     lookupError,
+    refetch,
   };
 }

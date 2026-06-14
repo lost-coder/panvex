@@ -569,5 +569,15 @@
     "max": "1h",
     "store": "runtime_settings",
     "desc": "Cadence for the timeseries rollup worker."
+  },
+  {
+    "name": "subscription.public_base_url",
+    "class": "operational",
+    "apply": "live",
+    "type": "string",
+    "default": "",
+    "env": "PANVEX_SUBSCRIPTION_BASE_URL",
+    "store": "runtime_settings",
+    "desc": "Public origin of the subscription page (e.g. https://sub.example.com); used to build shareable /sub links in the dashboard. Empty disables the link."
   }
 ]

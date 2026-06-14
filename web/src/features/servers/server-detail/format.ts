@@ -1,3 +1,4 @@
+import { coverageStatus } from "@/ui/lib/status";
 import type {
   ModeKind,
   ServerDcData,
@@ -132,12 +133,6 @@ export function statusSentence(
   return statusSentenceMeBased(status, ctx);
 }
 
-function dcStripStatus(coveragePct: number): DCStripItem["status"] {
-  if (coveragePct < 70) return "error";
-  if (coveragePct < 100) return "warn";
-  return "ok";
-}
-
 /** DCScrollStrip projection from a sorted DC list. */
 export function toDcStripItems(sortedDcs: ServerDcData[]): DCStripItem[] {
   return sortedDcs.map((dc) => ({
@@ -145,7 +140,9 @@ export function toDcStripItems(sortedDcs: ServerDcData[]): DCStripItem[] {
     city: `DC ${dc.dc}`,
     latency: dc.rttMs ?? 0,
     load: dc.load,
-    status: dcStripStatus(dc.coveragePct),
+    // coverageStatus centralizes the < 70 / < 100 coverage thresholds
+    // (also drives coverageColor) — keep DC strip severity in lockstep.
+    status: coverageStatus(dc.coveragePct),
   }));
 }
 

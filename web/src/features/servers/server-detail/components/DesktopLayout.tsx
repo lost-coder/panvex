@@ -74,7 +74,7 @@ export function DesktopLayout({
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <SectionHeader title={t("detail.dataCenters.title")} badge={sortedDcs.length} />
-          <span className="text-[10px] font-mono text-fg-muted">
+          <span className="text-nano font-mono text-fg-muted">
             {t("detail.dataCenters.sortedHint")}
           </span>
         </div>

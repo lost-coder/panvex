@@ -50,6 +50,8 @@ func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) erro
 	// no-op upsert (constraint trigger downgrading to DO NOTHING,
 	// schema drift, etc.) becomes an explicit error instead of a
 	// stale read on the next GetClientByID.
+	subscriptionToken := sql.NullString{String: client.SubscriptionToken, Valid: client.SubscriptionToken != ""}
+
 	var returnedID string
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO clients (
@@ -62,11 +64,12 @@ func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) erro
 			max_unique_ips,
 			data_quota_bytes,
 			expiration_rfc3339,
+			subscription_token,
 			created_at_unix,
 			updated_at_unix,
 			deleted_at_unix
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			secret_ciphertext = excluded.secret_ciphertext,
@@ -76,11 +79,12 @@ func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) erro
 			max_unique_ips = excluded.max_unique_ips,
 			data_quota_bytes = excluded.data_quota_bytes,
 			expiration_rfc3339 = excluded.expiration_rfc3339,
+			subscription_token = excluded.subscription_token,
 			created_at_unix = excluded.created_at_unix,
 			updated_at_unix = excluded.updated_at_unix,
 			deleted_at_unix = excluded.deleted_at_unix
 		RETURNING id
-	`, client.ID, client.Name, client.SecretCiphertext, client.UserADTag, boolToInt(client.Enabled), client.MaxTCPConns, client.MaxUniqueIPs, client.DataQuotaBytes, client.ExpirationRFC3339, toUnix(client.CreatedAt), toUnix(client.UpdatedAt), deletedAt).Scan(&returnedID)
+	`, client.ID, client.Name, client.SecretCiphertext, client.UserADTag, boolToInt(client.Enabled), client.MaxTCPConns, client.MaxUniqueIPs, client.DataQuotaBytes, client.ExpirationRFC3339, subscriptionToken, toUnix(client.CreatedAt), toUnix(client.UpdatedAt), deletedAt).Scan(&returnedID)
 	if err != nil {
 		return err
 	}
@@ -102,6 +106,7 @@ func (s *Store) GetClientByID(ctx context.Context, clientID string) (storage.Cli
 			max_unique_ips,
 			data_quota_bytes,
 			expiration_rfc3339,
+			subscription_token,
 			created_at_unix,
 			updated_at_unix,
 			deleted_at_unix
@@ -124,6 +129,7 @@ func (s *Store) ListClients(ctx context.Context) ([]storage.ClientRecord, error)
 			max_unique_ips,
 			data_quota_bytes,
 			expiration_rfc3339,
+			subscription_token,
 			created_at_unix,
 			updated_at_unix,
 			deleted_at_unix
@@ -152,6 +158,7 @@ func scanClientRow(scanner interface {
 }) (storage.ClientRecord, error) {
 	var client storage.ClientRecord
 	var enabled int
+	var subscriptionToken sql.NullString
 	var createdAt int64
 	var updatedAt int64
 	var deletedAt sql.NullInt64
@@ -165,6 +172,7 @@ func scanClientRow(scanner interface {
 		&client.MaxUniqueIPs,
 		&client.DataQuotaBytes,
 		&client.ExpirationRFC3339,
+		&subscriptionToken,
 		&createdAt,
 		&updatedAt,
 		&deletedAt,
@@ -176,6 +184,7 @@ func scanClientRow(scanner interface {
 	}
 
 	client.Enabled = intToBool(enabled)
+	client.SubscriptionToken = subscriptionToken.String // NULL → ""
 	client.CreatedAt = fromUnix(createdAt)
 	client.UpdatedAt = fromUnix(updatedAt)
 	if deletedAt.Valid {

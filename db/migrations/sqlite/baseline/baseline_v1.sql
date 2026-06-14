@@ -12,6 +12,15 @@ CREATE TABLE "agent_certificate_recovery_grants" (
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
+CREATE TABLE agent_config_targets (
+    scope_type    TEXT NOT NULL,
+    scope_id      TEXT NOT NULL,
+    sections_json TEXT NOT NULL DEFAULT '{}',
+    created_at    TIMESTAMP NOT NULL,
+    updated_at    TIMESTAMP NOT NULL,
+    PRIMARY KEY (scope_type, scope_id)
+);
+
 CREATE TABLE agent_fallback_state (
     agent_id        TEXT PRIMARY KEY,
     entered_at_unix INTEGER NOT NULL,
@@ -24,16 +33,26 @@ CREATE TABLE agent_revocations (
     cert_expires_at_unix  INTEGER NOT NULL
 );
 
-CREATE TABLE agents (
+CREATE TABLE "agents" (
     id TEXT PRIMARY KEY,
     node_name TEXT NOT NULL,
     fleet_group_id TEXT,
     version TEXT NOT NULL DEFAULT '',
     read_only INTEGER NOT NULL DEFAULT 0,
     last_seen_at_unix INTEGER NOT NULL,
-    created_at_unix INTEGER NOT NULL DEFAULT 0, cert_issued_at_unix INTEGER, cert_expires_at_unix INTEGER, cert_serial TEXT NOT NULL DEFAULT '', transport_mode TEXT NOT NULL DEFAULT 'inbound'
-    CHECK (transport_mode IN ('inbound', 'outbound')), dial_address TEXT, bootstrap_state TEXT NOT NULL DEFAULT 'active'
-    CHECK (bootstrap_state IN ('pending', 'active', 'expired', 'revoked')), bootstrap_token_hash BLOB, bootstrap_expires_at INTEGER, cert_spki_sha256 BLOB NOT NULL DEFAULT x'',
+    created_at_unix INTEGER NOT NULL DEFAULT 0,
+    cert_issued_at_unix INTEGER,
+    cert_expires_at_unix INTEGER,
+    cert_serial TEXT NOT NULL DEFAULT '',
+    transport_mode TEXT NOT NULL DEFAULT 'inbound'
+        CHECK (transport_mode IN ('inbound', 'outbound')),
+    dial_address TEXT,
+    bootstrap_state TEXT NOT NULL DEFAULT 'active'
+        CHECK (bootstrap_state IN ('pending', 'active', 'expired', 'revoked')),
+    bootstrap_token_hash BLOB,
+    bootstrap_expires_at INTEGER,
+    cert_spki_sha256 BLOB NOT NULL DEFAULT x''
+        CHECK (length(cert_spki_sha256) IN (0, 32)),
     FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id)
 );
 
@@ -114,7 +133,7 @@ CREATE TABLE clients (
     created_at_unix INTEGER NOT NULL,
     updated_at_unix INTEGER NOT NULL,
     deleted_at_unix INTEGER
-);
+, subscription_token TEXT);
 
 CREATE TABLE consumed_totp (
     user_id TEXT NOT NULL,
@@ -178,7 +197,8 @@ CREATE TABLE "enrollment_tokens" (
     issued_at_unix INTEGER NOT NULL,
     expires_at_unix INTEGER NOT NULL,
     consumed_at_unix INTEGER,
-    revoked_at_unix INTEGER
+    revoked_at_unix INTEGER,
+    FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id) ON DELETE SET NULL
 );
 
 CREATE TABLE fleet_group_integrations (
@@ -259,7 +279,8 @@ CREATE TABLE "panel_settings" (
     scope                 TEXT PRIMARY KEY,
     http_public_url       TEXT NOT NULL DEFAULT '',
     grpc_public_endpoint  TEXT NOT NULL DEFAULT '',
-    password_min_length   INTEGER NOT NULL DEFAULT 10,
+    password_min_length   INTEGER NOT NULL DEFAULT 10
+        CHECK (password_min_length >= 8 AND password_min_length <= 128),
     retention_json        TEXT NOT NULL DEFAULT '',
     geoip_json            TEXT NOT NULL DEFAULT '',
     geoip_state_json      TEXT NOT NULL DEFAULT '',
@@ -510,6 +531,9 @@ CREATE TABLE webhook_outbox (
     delivered_at    TIMESTAMP
 );
 
+CREATE UNIQUE INDEX clients_subscription_token_key
+    ON clients (subscription_token);
+
 CREATE UNIQUE INDEX fleet_groups_name_unique
     ON fleet_groups (name);
 
@@ -659,4 +683,7 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (45, 1),
   (46, 1),
   (47, 1),
-  (48, 1);
+  (48, 1),
+  (49, 1),
+  (50, 1),
+  (51, 1);

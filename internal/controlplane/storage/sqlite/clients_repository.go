@@ -50,7 +50,8 @@ func (r *clientsRepository) Get(ctx context.Context, id clients.ClientID) (clien
 		SELECT
 			id, name, secret_ciphertext, user_ad_tag, enabled,
 			max_tcp_conns, max_unique_ips, data_quota_bytes,
-			expiration_rfc3339, created_at_unix, updated_at_unix, deleted_at_unix
+			expiration_rfc3339, subscription_token,
+			created_at_unix, updated_at_unix, deleted_at_unix
 		FROM clients
 		WHERE id = ? AND deleted_at_unix IS NULL
 	`, string(id))
@@ -64,12 +65,36 @@ func (r *clientsRepository) Get(ctx context.Context, id clients.ClientID) (clien
 	return c, nil
 }
 
+func (r *clientsRepository) GetBySubscriptionToken(ctx context.Context, token string) (clients.Client, error) {
+	if token == "" {
+		return clients.Client{}, storage.ErrNotFound
+	}
+	row := r.db.QueryRowContext(ctx, `
+		SELECT
+			id, name, secret_ciphertext, user_ad_tag, enabled,
+			max_tcp_conns, max_unique_ips, data_quota_bytes,
+			expiration_rfc3339, subscription_token,
+			created_at_unix, updated_at_unix, deleted_at_unix
+		FROM clients
+		WHERE subscription_token = ? AND deleted_at_unix IS NULL
+	`, token)
+	c, err := scanClient(row)
+	if errors.Is(err, storage.ErrNotFound) {
+		return clients.Client{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return clients.Client{}, fmt.Errorf("clientsRepository.GetBySubscriptionToken: %w", err)
+	}
+	return c, nil
+}
+
 func (r *clientsRepository) List(ctx context.Context) ([]clients.Client, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			id, name, secret_ciphertext, user_ad_tag, enabled,
 			max_tcp_conns, max_unique_ips, data_quota_bytes,
-			expiration_rfc3339, created_at_unix, updated_at_unix, deleted_at_unix
+			expiration_rfc3339, subscription_token,
+			created_at_unix, updated_at_unix, deleted_at_unix
 		FROM clients
 		WHERE deleted_at_unix IS NULL
 		ORDER BY created_at_unix, id
@@ -102,15 +127,17 @@ func (r *clientsRepository) Save(ctx context.Context, c clients.Client) error {
 		deletedAt.Valid = true
 		deletedAt.Int64 = toUnix(*c.DeletedAt)
 	}
+	subscriptionToken := sql.NullString{String: c.SubscriptionToken, Valid: c.SubscriptionToken != ""}
 
 	var returnedID string
 	err := r.db.QueryRowContext(ctx, `
 		INSERT INTO clients (
 			id, name, secret_ciphertext, user_ad_tag, enabled,
 			max_tcp_conns, max_unique_ips, data_quota_bytes,
-			expiration_rfc3339, created_at_unix, updated_at_unix, deleted_at_unix
+			expiration_rfc3339, subscription_token,
+			created_at_unix, updated_at_unix, deleted_at_unix
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name               = excluded.name,
 			secret_ciphertext  = excluded.secret_ciphertext,
@@ -120,6 +147,7 @@ func (r *clientsRepository) Save(ctx context.Context, c clients.Client) error {
 			max_unique_ips     = excluded.max_unique_ips,
 			data_quota_bytes   = excluded.data_quota_bytes,
 			expiration_rfc3339 = excluded.expiration_rfc3339,
+			subscription_token = excluded.subscription_token,
 			-- M-3: preserve the original created_at on update to match the
 			-- Postgres UpsertClient contract (which does not touch created_at
 			-- on conflict). SQLite previously overwrote it from the incoming
@@ -132,7 +160,7 @@ func (r *clientsRepository) Save(ctx context.Context, c clients.Client) error {
 		RETURNING id
 	`,
 		string(c.ID), c.Name, c.Secret, c.UserADTag, boolToInt(c.Enabled),
-		c.MaxTCPConns, c.MaxUniqueIPs, c.DataQuotaBytes, c.ExpirationRFC3339,
+		c.MaxTCPConns, c.MaxUniqueIPs, c.DataQuotaBytes, c.ExpirationRFC3339, subscriptionToken,
 		toUnix(c.CreatedAt), toUnix(c.UpdatedAt), deletedAt,
 	).Scan(&returnedID)
 	if err != nil {
@@ -531,17 +559,19 @@ type clientScanner interface {
 
 func scanClient(s clientScanner) (clients.Client, error) {
 	var (
-		c         clients.Client
-		id        string
-		enabled   int
-		createdAt int64
-		updatedAt int64
-		deletedAt sql.NullInt64
+		c                 clients.Client
+		id                string
+		enabled           int
+		subscriptionToken sql.NullString
+		createdAt         int64
+		updatedAt         int64
+		deletedAt         sql.NullInt64
 	)
 	if err := s.Scan(
 		&id, &c.Name, &c.Secret, &c.UserADTag, &enabled,
 		&c.MaxTCPConns, &c.MaxUniqueIPs, &c.DataQuotaBytes,
-		&c.ExpirationRFC3339, &createdAt, &updatedAt, &deletedAt,
+		&c.ExpirationRFC3339, &subscriptionToken,
+		&createdAt, &updatedAt, &deletedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return clients.Client{}, storage.ErrNotFound
@@ -550,6 +580,7 @@ func scanClient(s clientScanner) (clients.Client, error) {
 	}
 	c.ID = clients.ClientID(id)
 	c.Enabled = intToBool(enabled)
+	c.SubscriptionToken = subscriptionToken.String // NULL → ""
 	c.CreatedAt = fromUnix(createdAt)
 	c.UpdatedAt = fromUnix(updatedAt)
 	if deletedAt.Valid {

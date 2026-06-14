@@ -186,3 +186,62 @@ func keys(m map[string][]byte) []string {
 	}
 	return out
 }
+
+// TestRestoreVerifyHappyPath: a backup taken with the same encryption
+// key and schema verifies cleanly against its source DB.
+func TestRestoreVerifyHappyPath(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "panvex.db")
+	store, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	store.Close()
+
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "verify-key-material")
+	out := filepath.Join(t.TempDir(), "panvex.tar.gz")
+	if err := writeSQLiteBackup(context.Background(), dbPath, out); err != nil {
+		t.Fatalf("writeSQLiteBackup: %v", err)
+	}
+
+	if err := runRestore([]string{
+		"-archive", out,
+		"-storage-driver", "sqlite",
+		"-storage-dsn", dbPath,
+	}); err != nil {
+		t.Fatalf("runRestore -archive (verify) error = %v", err)
+	}
+}
+
+// TestRestoreVerifyKeyFingerprintMismatch: verifying with a different
+// PANVEX_ENCRYPTION_KEY must fail with an actionable message.
+func TestRestoreVerifyKeyFingerprintMismatch(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "panvex.db")
+	store, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	store.Close()
+
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "original-key")
+	out := filepath.Join(t.TempDir(), "panvex.tar.gz")
+	if err := writeSQLiteBackup(context.Background(), dbPath, out); err != nil {
+		t.Fatalf("writeSQLiteBackup: %v", err)
+	}
+
+	t.Setenv("PANVEX_ENCRYPTION_KEY", "rotated-key")
+	err = runRestore([]string{"-archive", out})
+	if err == nil {
+		t.Fatal("runRestore expected fingerprint mismatch error, got nil")
+	}
+	if !strings.Contains(err.Error(), "fingerprint") {
+		t.Fatalf("error should mention fingerprint, got: %v", err)
+	}
+}
+
+// TestRestoreVerifyMissingArchive: a bogus path is a clear error.
+func TestRestoreVerifyMissingArchive(t *testing.T) {
+	err := runRestore([]string{"-archive", filepath.Join(t.TempDir(), "nope.tar.gz")})
+	if err == nil {
+		t.Fatal("runRestore expected error for missing archive, got nil")
+	}
+}

@@ -4,13 +4,13 @@
 
 import type { TFunction } from "i18next";
 
-import { MonoValue, StatusDot, type ClientListItem } from "@/ui";
+import { MonoValue, type ClientListItem } from "@/ui";
 
 import {
   ClientExpiryCell,
-  ClientStatusBadge,
+  ClientStateBadge,
   ClientTrafficCell,
-  effectiveClientStatus,
+  deriveClientState,
 } from "./ClientsPageCells";
 
 export interface ClientSelectionConfig {
@@ -61,11 +61,12 @@ export function buildClientColumns(
     {
       key: "client",
       header: t("table.client"),
+      // U-21: the enabled/disabled dot here duplicated the richer
+      // ClientStateBadge in the Status column (which already encodes
+      // disabled among its states). Drop the dot to remove the
+      // two-circles-mean-the-same-thing redundancy.
       render: (c: ClientListItem) => (
-        <div className="flex items-center gap-2 min-w-0">
-          <StatusDot status={c.enabled ? "ok" : "error"} />
-          <span className="font-medium text-fg truncate">{c.name}</span>
-        </div>
+        <span className="font-medium text-fg truncate block min-w-0">{c.name}</span>
       ),
       className: "w-[28%]",
     },
@@ -73,7 +74,7 @@ export function buildClientColumns(
       key: "status",
       header: t("table.status"),
       render: (c: ClientListItem) => (
-        <ClientStatusBadge status={effectiveClientStatus(c, nowSec * 1000)} />
+        <ClientStateBadge state={deriveClientState(c, nowSec * 1000)} />
       ),
       className: "w-[120px]",
     },
@@ -81,7 +82,7 @@ export function buildClientColumns(
       key: "usage",
       header: t("table.usage"),
       render: (c: ClientListItem) => (
-        <div className="flex flex-col font-mono text-[11px]">
+        <div className="flex flex-col font-mono text-micro">
           <span className="text-fg tabular-nums">
             {c.activeTcpConns} {t("table.connsSuffix")}
           </span>
