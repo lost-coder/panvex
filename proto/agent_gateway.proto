@@ -23,7 +23,7 @@ message RenewCertificateRequest {
 
 message RenewCertificateResponse {
   string certificate_pem = 1;
-  reserved 2;            // was private_key_pem — keys are agent-generated now (A9)
+  reserved 2; // was private_key_pem — keys are agent-generated now (A9)
   reserved "private_key_pem";
   string ca_pem = 3;
   int64 expires_at_unix = 4;
