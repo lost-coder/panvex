@@ -16,10 +16,10 @@ export interface TransportBadgeProps {
 // has no separate "success"/"warning"; "critical" and "bad" both map to
 // the error tone.
 const severityClass: Record<Severity, string> = {
-  ok:       "bg-status-ok/15 text-status-ok border-status-ok/30",
-  warn:     "bg-status-warn/15 text-status-warn border-status-warn/30",
-  critical: "bg-status-error/15 text-status-error border-status-error/30",
-  bad:      "bg-status-error/15 text-status-error border-status-error/30",
+  ok:       "bg-status-ok/15 text-status-ok border-status-ok/50",
+  warn:     "bg-status-warn/15 text-status-warn border-status-warn/50",
+  critical: "bg-status-error/15 text-status-error border-status-error/50",
+  bad:      "bg-status-error/15 text-status-error border-status-error/50",
 };
 
 const modeLabel: Record<ModeKind, string> = {

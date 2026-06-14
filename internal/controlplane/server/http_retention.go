@@ -96,5 +96,11 @@ func normalizeRetentionSettings(s RetentionSettings) RetentionSettings {
 	if s.MetricSnapshotSeconds <= 0 {
 		s.MetricSnapshotSeconds = 2592000
 	}
+	if s.WebhookOutboxSeconds <= 0 {
+		s.WebhookOutboxSeconds = 2592000
+	}
+	if s.EnrollmentTokenSeconds <= 0 {
+		s.EnrollmentTokenSeconds = 2592000
+	}
 	return s
 }

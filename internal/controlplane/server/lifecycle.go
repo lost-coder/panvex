@@ -102,7 +102,8 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		uiFiles:  options.UIFiles,
 		jobs:     jobs.NewService(),
 		presence: presence.NewTracker(30*time.Second, 90*time.Second),
-		events:   eventbus.NewHub(),
+		events:        eventbus.NewHub(),
+		agentsUpdated: newAgentsUpdatedCoalescer(),
 		// Runtime Events Phase 3: 500-event ring buffer per agent for
 		// slog records shipped over the Connect bidi-stream. Always
 		// constructed (independent of Store wiring) so the message
@@ -115,6 +116,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
 		grpcConnectRateLimiter:    newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
 		sensitiveRateLimiter:      newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
+		installScriptRateLimiter:  newFixedWindowRateLimiter(httpInstallScriptRateLimitPerWindow, defaultRateLimitWindow),
 		loginLockout:              newAccountLockoutTracker(),
 		totpLockout:               newTOTPLockoutTracker(),
 		ipLockout:                 newIPLockoutTracker(),
@@ -129,6 +131,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		csrfManager:               csrfManager,
 		loginTimingFloor:          resolveLoginTimingFloor(options.LoginTimingFloor),
 		revokedAgentIDs:           make(map[string]struct{}),
+		transportSwitchPendingAt:  map[string]time.Time{},
 		// live (A2/A1): single owner of agent live-state + instances. The
 		// clone funcs deep-copy every reference-type field of Agent/Instance
 		// so reads return isolated copies (see live_clone.go). instanceID /
@@ -142,6 +145,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		detailBoosts:                 make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),
 		fallback:                     agents.NewFallbackTracker(),
+		telemtReach:                  agents.NewReachabilityTracker(),
 		sessions:                     agents.NewSessionManager(),
 		// clientsSvc is constructed with a no-repo mirror here so it is never
 		// nil (HasRepo() gates every persistence path). initStoreBackedSubsystems
@@ -202,7 +206,7 @@ func (s *Server) trySetStartupErr(fn func() error) {
 // short-circuited via trySetStartupErr.
 func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.Vault) {
 	store := options.Store
-	s.jobs = jobs.NewServiceWithStore(store)
+	s.jobs = jobs.NewServiceWithStore(s.serverCtx, store)
 	s.auth = auth.NewServiceWithStore(store)
 	// Wire the injected clock onto the freshly-constructed services BEFORE any
 	// restore runs. RestoreSessions -> restoreConsumedTotp (below, via line
@@ -265,7 +269,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 		}
 		return s.auth.SetSessionLookupKey(key)
 	})
-	s.trySetStartupErr(s.auth.RestoreSessions)
+	s.trySetStartupErr(func() error { return s.auth.RestoreSessions(s.serverCtx) })
 
 	// S7: wire the lockout tracker to the persistent backend and load any
 	// state that survived a restart. We attach the store before the restore
@@ -341,7 +345,6 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 		return nil
 	})
 	s.trySetStartupErr(s.restoreStoredClients)
-	s.trySetStartupErr(s.restoreStoredDiscoveredClients)
 	s.trySetStartupErr(s.restoreStoredPanelSettings)
 	// SetPasswordPolicy is called unconditionally: even if restoreStoredPanelSettings
 	// failed and s.panelSettings is zero-valued, auth.effectivePolicy maps zero to
@@ -515,6 +518,9 @@ func (s *Server) startBackgroundWorkers() {
 	// entirely. Lives on rollupCtx for the same reason as the other
 	// long-lived loops above.
 	s.startEnrollmentCleanupWorker(rollupCtx, enrollmentRetention())
+
+	// D6b: latest-wins coalescer for agents.updated WS events.
+	s.startAgentsUpdatedFlusher(rollupCtx)
 }
 
 // enrollmentRetention resolves the attempt retention window from the
@@ -641,6 +647,12 @@ func New(options Options) (*Server, error) {
 	server.handler = server.routes()
 	server.auth.SetNow(now)
 	server.jobs.SetNow(now)
+	// C3: surface write-behind job persist failures as a Prometheus
+	// counter. Must run after initStoreBackedSubsystems (which replaces
+	// s.jobs) and after newMetricsCollectors.
+	server.jobs.SetMetricsSink(server.obs)
+	// F3: count jobs that enter the failed terminal status.
+	server.jobs.SetJobFailureHook(func() { server.obs.IncJobFailure() })
 
 	// S-06: warn once at startup if the panel binds to a non-loopback
 	// address but no trusted-proxy CIDRs are configured. In that state

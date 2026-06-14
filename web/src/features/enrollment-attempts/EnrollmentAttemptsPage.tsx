@@ -10,7 +10,7 @@ import type {
   EnrollmentMode,
   EnrollmentStatus,
 } from "@/shared/api/types-enrollment";
-import { StatusLabel, type StatusTone } from "@/ui";
+import { StatusLabel, formatDateTime, shortId, type StatusTone } from "@/ui";
 import { EnrollmentTimeline } from "@/features/servers/enrollment/EnrollmentTimeline";
 
 import { EnrollmentAttemptsFilters } from "./EnrollmentAttemptsFilters";
@@ -89,6 +89,23 @@ export function EnrollmentAttemptsPage() {
     enabled: !!expanded,
   });
 
+  // U-10: resolve agent UUIDs to operator-facing node names. Raw UUIDs are
+  // meaningless to a human and ate ~60% of the row width on mobile.
+  const serversQuery = useQuery({
+    queryKey: ["telemetry", "servers", "names"],
+    queryFn: () => apiClient.telemetryServers(),
+    staleTime: 60_000,
+  });
+  const nodeNames = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of serversQuery.data?.servers ?? []) {
+      if (s.agent?.id) m.set(s.agent.id, s.agent.node_name || s.agent.id);
+    }
+    return m;
+  }, [serversQuery.data]);
+  const nodeLabel = (agentId: string | undefined): string =>
+    agentId ? (nodeNames.get(agentId) ?? shortId(agentId)) : "—";
+
   return (
     <div className="flex flex-col gap-4 p-6">
       <header className="flex flex-col gap-1">
@@ -107,51 +124,90 @@ export function EnrollmentAttemptsPage() {
       )}
 
       {items.length > 0 && (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-fg-muted">
-              <th className="py-1 font-normal">{t("table.startedAt")}</th>
-              <th className="py-1 font-normal">{t("table.mode")}</th>
-              <th className="py-1 font-normal">{t("table.agent")}</th>
-              <th className="py-1 font-normal">{t("table.status")}</th>
-              <th className="py-1 font-normal">{t("table.errorCode")}</th>
-              <th className="py-1 font-normal">{t("table.requestId")}</th>
-            </tr>
-          </thead>
-          <tbody>
+        <>
+          {/* Mobile (U-10): one card per attempt. Node name replaces the raw
+              UUID; started-at uses the locale formatter; tap toggles the
+              timeline. Avoids the cramped horizontal-scroll table on phones. */}
+          <div className="md:hidden flex flex-col gap-2">
             {items.map((a) => {
               const isOpen = expanded === a.id;
               return (
-                <Fragment key={a.id}>
-                  <tr
+                <div key={a.id} className="rounded-sm bg-bg-card border border-border overflow-hidden">
+                  <button
+                    type="button"
                     onClick={() => setExpanded(isOpen ? null : a.id)}
-                    className="cursor-pointer border-t border-divider hover:bg-bg-card"
+                    className="w-full text-left px-3 py-2.5 flex flex-col gap-1"
                   >
-                    <td className="py-2 text-fg">
-                      {new Date(a.started_at).toLocaleString()}
-                    </td>
-                    <td className="text-fg-muted">{a.mode}</td>
-                    <td className="text-fg-muted">{a.agent_id ?? "—"}</td>
-                    <td>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-fg truncate">{nodeLabel(a.agent_id)}</span>
                       <StatusLabel tone={statusTone(a.status)} label={a.status} />
-                    </td>
-                    <td className="text-fg-muted">{a.error_code ?? ""}</td>
-                    <td className="font-mono text-xs text-fg-muted">
-                      {a.request_id.slice(0, 8)}
-                    </td>
-                  </tr>
+                    </div>
+                    <div className="flex items-center gap-2 text-micro font-mono text-fg-muted">
+                      <span>{formatDateTime(a.started_at)}</span>
+                      <span>·</span>
+                      <span>{a.mode}</span>
+                      {a.error_code && <span className="text-status-error">· {a.error_code}</span>}
+                    </div>
+                  </button>
                   {isOpen && detail.data && (
-                    <tr>
-                      <td colSpan={6} className="bg-bg-card p-3">
-                        <EnrollmentTimeline detail={detail.data} />
-                      </td>
-                    </tr>
+                    <div className="bg-bg-card-hi p-3 border-t border-divider">
+                      <EnrollmentTimeline detail={detail.data} />
+                    </div>
                   )}
-                </Fragment>
+                </div>
               );
             })}
-          </tbody>
-        </table>
+          </div>
+
+          {/* Desktop table. */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-fg-muted">
+                  <th className="py-1 font-normal whitespace-nowrap">{t("table.startedAt")}</th>
+                  <th className="py-1 font-normal">{t("table.mode")}</th>
+                  <th className="py-1 font-normal">{t("table.agent")}</th>
+                  <th className="py-1 font-normal">{t("table.status")}</th>
+                  <th className="py-1 font-normal">{t("table.errorCode")}</th>
+                  <th className="py-1 font-normal">{t("table.requestId")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((a) => {
+                  const isOpen = expanded === a.id;
+                  return (
+                    <Fragment key={a.id}>
+                      <tr
+                        onClick={() => setExpanded(isOpen ? null : a.id)}
+                        className="cursor-pointer border-t border-divider hover:bg-bg-card"
+                      >
+                        <td className="py-2 text-fg whitespace-nowrap">
+                          {formatDateTime(a.started_at)}
+                        </td>
+                        <td className="text-fg-muted">{a.mode}</td>
+                        <td className="text-fg" title={a.agent_id ?? undefined}>{nodeLabel(a.agent_id)}</td>
+                        <td>
+                          <StatusLabel tone={statusTone(a.status)} label={a.status} />
+                        </td>
+                        <td className="text-fg-muted">{a.error_code ?? ""}</td>
+                        <td className="font-mono text-xs text-fg-muted">
+                          {a.request_id.slice(0, 8)}
+                        </td>
+                      </tr>
+                      {isOpen && detail.data && (
+                        <tr>
+                          <td colSpan={6} className="bg-bg-card p-3">
+                            <EnrollmentTimeline detail={detail.data} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {query.hasNextPage && (

@@ -29,7 +29,7 @@ export function IPTag({ address, className }: Readonly<IPTagProps>) {
       title="Copy to clipboard"
     >
       {address}
-      <span className="text-[9px] opacity-60">{copied ? "✓" : "⎘"}</span>
+      <span className="text-pico opacity-60">{copied ? "✓" : "⎘"}</span>
     </button>
   );
 }

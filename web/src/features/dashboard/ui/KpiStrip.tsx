@@ -1,9 +1,10 @@
 import {
   MiniChart,
+  deltaClass,
+  deltaArrow,
   type DashboardOverviewData,
   type KpiItem,
 } from "@/ui";
-import { deltaClass, deltaArrow } from "../format";
 
 const TONE_VALUE_CLASS: Record<NonNullable<KpiItem["tone"]>, string> = {
   default: "text-fg",
@@ -22,15 +23,27 @@ const SPARKLINE_COLOR_BY_TONE: Record<NonNullable<KpiItem["tone"]>, string> = {
 export function KpiStrip({ kpis }: Readonly<{ kpis: DashboardOverviewData["kpis"] }>) {
   return (
     <>
-      {/* Mobile: compact text — keeps the 4 KPIs in one line of signal */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs font-mono md:hidden">
+      {/* Mobile: 2×2 tiles — large values, legible labels (was a 12px
+          inline string that forced squinting). */}
+      <div className="grid grid-cols-2 gap-2 md:hidden">
         {kpis.map((k) => {
-          const valueClass = k.tone ? TONE_VALUE_CLASS[k.tone] : "text-fg";
+          const tone: NonNullable<KpiItem["tone"]> = k.tone ?? "default";
           return (
-            <span key={k.label} className="text-fg-muted">
-              {k.label.toLowerCase()}{" "}
-              <span className={`font-medium ${valueClass}`}>{k.value}</span>
-            </span>
+            <div
+              key={k.label}
+              className="rounded-sm bg-bg-card border border-border px-3.5 py-3 flex flex-col gap-0.5"
+            >
+              <span className="text-xs uppercase tracking-wider text-fg-muted">{k.label}</span>
+              <span
+                className={`text-2xl font-mono font-bold leading-none tracking-tight ${TONE_VALUE_CLASS[tone]}`}
+              >
+                {k.value}
+              </span>
+              {/* U-15: the sub-line ("all online", "within limits") was
+                  desktop-only — mobile lost the context that explains the
+                  bare number. */}
+              {k.sub && <span className="text-nano font-mono text-fg-muted">{k.sub}</span>}
+            </div>
           );
         })}
       </div>
@@ -45,7 +58,7 @@ export function KpiStrip({ kpis }: Readonly<{ kpis: DashboardOverviewData["kpis"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex flex-col gap-0.5 min-w-0">
-                  <span className="text-[10px] text-fg-muted uppercase tracking-wider">
+                  <span className="text-nano text-fg-muted uppercase tracking-wider">
                     {k.label}
                   </span>
                   <span
@@ -63,7 +76,7 @@ export function KpiStrip({ kpis }: Readonly<{ kpis: DashboardOverviewData["kpis"
                   />
                 )}
               </div>
-              <div className="flex items-center gap-2 text-[10px] font-mono text-fg-muted mt-auto">
+              <div className="flex items-center gap-2 text-nano font-mono text-fg-muted mt-auto">
                 {k.deltaLabel && (
                   <span className={deltaClass(k.deltaDirection)}>
                     {deltaArrow(k.deltaDirection)}{" "}

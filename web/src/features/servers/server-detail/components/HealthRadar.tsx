@@ -97,7 +97,7 @@ function HealthRadarInner({
               fontSize="9"
               fontFamily="JetBrains Mono, monospace"
               fontWeight={700}
-              fill="rgba(11,13,18,0.9)"
+              fill="var(--color-bg-card)"
               style={{ pointerEvents: "none", userSelect: "none" }}
             >
               {d.dc}

@@ -33,32 +33,27 @@ func (s *Server) restoreStoredClients() error {
 	}
 
 	// Delegate all persistence reads to clients.Service.Restore which uses
-	// the domain Repository rather than storage.Store directly.
+	// the domain Repository rather than storage.Store directly. Restore also
+	// seeds the monotonic ID sequence counters internally.
 	if err := s.clientsSvc.Restore(ctx); err != nil {
 		return err
 	}
 
-	// Seed the Service's monotonic ID cursors from the restored records so
-	// NextClientID / NextAssignmentID return values strictly greater than any
-	// persisted ID after a restart.
-	snap := s.clientsSvc.MirrorSnapshot()
-	clientIDs := make([]string, 0, len(snap.Clients))
-	for id := range snap.Clients {
-		clientIDs = append(clientIDs, string(id))
+	// Backfill subscription tokens for clients that pre-date the feature.
+	// Non-fatal: a partial failure is logged but does not abort startup — the
+	// panel must still serve, and missing tokens are repaired on next restart.
+	if n, err := s.clientsSvc.BackfillSubscriptionTokens(ctx); err != nil {
+		s.logger.Error("startup: subscription token backfill failed", "error", err, "updated_so_far", n)
+	} else if n > 0 {
+		s.logger.Info("startup: subscription token backfill complete", "clients_updated", n)
 	}
-	var assignmentIDs []string
-	for _, as := range snap.Assignments {
-		for _, a := range as {
-			assignmentIDs = append(assignmentIDs, string(a.ID))
-		}
-	}
-	s.clientsSvc.RecoverSequencesFromRecords(clientIDs, assignmentIDs, nil)
 
 	// Discovered-client seeding: when client_usage has no entry for a
 	// (clientID, agentID) pair, fall back to discovered_clients.total_octets
 	// as the initial traffic counter (mirrors the legacy
 	// rehydrateClientAssignmentUsage behaviour). Mirror-only, no write-through.
 	if s.discoveredRepo != nil {
+		snap := s.clientsSvc.MirrorSnapshot()
 		s.seedUsageFromDiscovered(ctx, snap)
 	}
 	return nil

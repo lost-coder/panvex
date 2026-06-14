@@ -58,6 +58,13 @@ export function invalidationsForEvent(event: EventEnvelope): EventInvalidation {
   if (event.type.startsWith("clients.")) {
     return { keys: [clientsKeys.all, controlRoomKeys.all] };
   }
+  if (event.type === "runtime.events") {
+    // Runtime log records do not change any query data; the server-detail
+    // page consumes them via its own WebSocket (useAgentRuntimeEvents).
+    // Returning no keys keeps a chatty agent from triggering the broad
+    // fallback sweep on every log batch (D6a).
+    return { keys: [] };
+  }
   return {
     keys: [
       controlRoomKeys.all,
@@ -75,6 +82,7 @@ export function isKnownEventType(type: string): boolean {
     type.startsWith("agents.") ||
     type.startsWith("jobs.") ||
     type === "audit.created" ||
-    type.startsWith("clients.")
+    type.startsWith("clients.") ||
+    type === "runtime.events"
   );
 }

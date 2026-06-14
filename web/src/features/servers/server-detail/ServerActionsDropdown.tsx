@@ -4,6 +4,7 @@ import { MoreVertical } from "lucide-react";
 
 export interface ServerActionsDropdownProps {
   onReload?: (() => void) | undefined;
+  onRestart?: (() => void) | undefined;
   onBoostDetail?: (() => void) | undefined;
   onRename?: (() => void) | undefined;
   onChangeFleetGroup?: (() => void) | undefined;
@@ -12,6 +13,7 @@ export interface ServerActionsDropdownProps {
 
 export function ServerActionsDropdown({
   onReload,
+  onRestart,
   onBoostDetail,
   onRename,
   onChangeFleetGroup,
@@ -58,6 +60,17 @@ export function ServerActionsDropdown({
             >
               {t("detail.actions.reload")}
             </button>
+            {onRestart && (
+              <button
+                onClick={() => {
+                  onRestart();
+                  setOpen(false);
+                }}
+                className="px-3 py-2 text-left text-sm text-status-warn hover:bg-bg-card-hover transition-colors"
+              >
+                {t("detail.actions.restart")}
+              </button>
+            )}
             {onBoostDetail && (
               <button
                 onClick={() => {

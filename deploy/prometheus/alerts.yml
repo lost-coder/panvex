@@ -76,6 +76,26 @@ groups:
             Batch buffer {{ $labels.buffer }} has exceeded 5000 queued rows
             for 10 minutes. DB is likely slow or misconfigured.
 
+  - name: panvex.jobs
+    rules:
+      # Write-behind job persistence failures mean in-memory job state is
+      # ahead of the database: a control-plane restart in this window loses
+      # job/rollout progress. Any sustained occurrence is actionable.
+      - alert: PanvexJobPersistFailures
+        expr: increase(panvex_job_persist_failures_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: control-plane
+        annotations:
+          summary: "Job state is failing to persist"
+          description: |
+            The jobs service has failed to persist job/target updates for
+            5 minutes (panvex_job_persist_failures_total is growing). The
+            in-memory job state is ahead of storage; a restart now would
+            lose rollout progress. Check DB health and control-plane logs
+            for "persist latest job version failed".
+
   - name: panvex.auth
     rules:
       - alert: PanvexLockoutSurge
@@ -105,6 +125,27 @@ groups:
             Connected agent count dropped below 50% of the peak observed
             in the last hour for 5 minutes. Investigate network, DNS, or
             control-plane restart.
+
+      # Complements PanvexAgentFleetCollapse (critical, 50% of the 1h
+      # peak): a 20-49% loss never trips that rule. This one compares to
+      # the 15m peak — drops of >20% within a quarter hour are abnormal
+      # churn worth a look. The >=5 floor keeps single-agent dev fleets
+      # from paging (1 of 4 agents restarting is a 25% "drop").
+      - alert: PanvexFleetDropAbsolute
+        expr: |
+          (panvex_agent_connected < 0.8 * max_over_time(panvex_agent_connected[15m]))
+          and (max_over_time(panvex_agent_connected[15m]) >= 5)
+        for: 10m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Agent fleet shrank by >20% within 15 minutes"
+          description: |
+            Connected agents fell more than 20% below the 15-minute
+            peak and stayed there for 10 minutes. Check recent panel
+            restarts, network paths, and agent logs before this decays
+            into PanvexAgentFleetCollapse.
 
   - name: panvex.updates
     rules:
@@ -211,3 +252,126 @@ groups:
             the last 10 minutes. Recovery keeps the process alive but the
             failed work was abandoned and the underlying invariant is
             broken — find the stack trace in slog and fix the bug.
+
+  - name: panvex.panel
+    rules:
+      # The panel is a single instance (no HA): if its scrape target is
+      # down or the series is gone entirely, every other alert in this
+      # file is blind. This rule assumes the scrape job is named
+      # "panvex" — adjust the job label to match your prometheus.yml.
+      - alert: PanvexPanelDown
+        expr: up{job="panvex"} == 0 or absent(up{job="panvex"})
+        for: 2m
+        labels:
+          severity: critical
+          component: control-plane
+        annotations:
+          summary: "Panvex control-plane is not being scraped"
+          description: |
+            The panel's /metrics target has been down (or absent from
+            Prometheus) for 2 minutes. Agents may still be serving
+            traffic, but the fleet is unobservable and unmanageable.
+
+  - name: panvex.certificates
+    rules:
+      # All three expiry gauges report 0 until first sampled, hence the
+      # `> 0` guards. Timestamps come from the Plan 6 cert-expiry gauges.
+      - alert: PanvexCACertExpiringSoon
+        expr: |
+          panvex_ca_cert_expiry_timestamp_seconds > 0
+          and (panvex_ca_cert_expiry_timestamp_seconds - time()) < 30 * 86400
+        for: 1h
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Panel CA certificate expires in <30 days"
+          description: |
+            The embedded CA expires soon. The panel auto-regenerates an
+            EXPIRED CA at startup, but that invalidates every issued
+            agent certificate at once — plan a controlled rotation
+            before expiry instead.
+
+      - alert: PanvexCACertExpiryCritical
+        expr: |
+          panvex_ca_cert_expiry_timestamp_seconds > 0
+          and (panvex_ca_cert_expiry_timestamp_seconds - time()) < 7 * 86400
+        for: 1h
+        labels:
+          severity: critical
+          component: control-plane
+        annotations:
+          summary: "Panel CA certificate expires in <7 days"
+          description: |
+            Imminent CA expiry. After expiry the panel mints a new CA
+            and the whole fleet must re-enroll. Rotate now.
+
+      - alert: PanvexServerCertExpiringSoon
+        expr: |
+          panvex_server_cert_expiry_timestamp_seconds > 0
+          and (panvex_server_cert_expiry_timestamp_seconds - time()) < 14 * 86400
+        for: 1h
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Panel gRPC server certificate expires in <14 days"
+          description: |
+            The serving cert is minted at startup with a 1y lifetime, so
+            this firing usually means the panel process has been up for
+            ~1 year. A restart re-mints it; schedule one.
+
+      - alert: PanvexAgentCertExpiringSoon
+        expr: |
+          panvex_agent_cert_earliest_expiry_timestamp_seconds > 0
+          and (panvex_agent_cert_earliest_expiry_timestamp_seconds - time()) < 7 * 86400
+        for: 1h
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "An agent certificate expires in <7 days"
+          description: |
+            Agent certs live 30 days and renew automatically over gRPC;
+            the earliest expiry across the fleet is now inside 7 days,
+            which means at least one agent has failed to renew for ~3
+            weeks (offline, or renewal is broken). Identify it via the
+            fleet page (sort by cert expiry) before it falls off the CA.
+
+      # A1 follow-up: the fail-closed outbound dial verifier treats a missing
+      # SPKI pin as a hard reject. If issuance persisted a cert but failed to
+      # write its pin, the affected listen-mode agent becomes unreachable on
+      # the next panel dial until a later renewal succeeds.
+      - alert: PanvexAgentCertPinPersistFailures
+        expr: increase(panvex_agent_cert_pin_persist_failures_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Agent SPKI pin failed to persist after issuance"
+          description: |
+            UpdateAgentCertPin errored while recording a freshly issued
+            agent certificate's pin (panvex_agent_cert_pin_persist_failures_total
+            is growing). The fail-closed reverse dial may reject affected
+            listen-mode agents until their next successful renewal. Check DB
+            health and control-plane logs for "persist agent cert pin failed".
+
+  - name: panvex.jobs.execution
+    rules:
+      # Execution failures (job reached the failed terminal status), as
+      # opposed to persistence failures (PanvexJobPersistFailures).
+      - alert: PanvexJobFailureRateHigh
+        expr: increase(panvex_job_failures_total[15m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: control-plane
+        annotations:
+          summary: "Job failures elevated"
+          description: |
+            More than 5 jobs entered the failed terminal status in the
+            last 15 minutes. Singular failures are routine (an agent
+            going offline mid-job), a burst usually means a broken
+            config push or a wedged agent. Check the jobs page and
+            panvex_job_queue_depth.

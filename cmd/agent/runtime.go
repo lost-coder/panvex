@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -46,6 +48,7 @@ type runtimeFlags struct {
 	telemtMetricsURL      string
 	telemtAuth            string
 	telemtConfigPath      string
+	telemtRestart         string
 	heartbeat             time.Duration
 	runtimePoll           time.Duration
 	runtimeUpload         time.Duration
@@ -56,6 +59,7 @@ type runtimeFlags struct {
 	logLevel              string
 	logFormat             string
 	clientDataConcurrency int
+	transportProbation    time.Duration
 }
 
 // parseRuntimeFlags binds the agent CLI flags and parses the supplied args.
@@ -72,6 +76,8 @@ func parseRuntimeFlags(args []string) (runtimeFlags, error) {
 	flags.StringVar(&cfg.telemtMetricsURL, "telemt-metrics-url", "http://127.0.0.1:9090", "Local Telemt metrics URL")
 	flags.StringVar(&cfg.telemtAuth, "telemt-auth", "", "Local Telemt authorization value")
 	flags.StringVar(&cfg.telemtConfigPath, "telemt-config-path", "", "Path to Telemt config file (optional, auto-detected via API if empty)")
+	flags.StringVar(&cfg.telemtRestart, "telemt-restart", os.Getenv("PANVEX_TELEMT_RESTART"),
+		"How the agent restarts Telemt for restart-required config changes: systemd:<unit> | docker:<container> | command:<argv>")
 	flags.DurationVar(&cfg.heartbeat, "heartbeat-interval", 15*time.Second, "Heartbeat interval")
 	flags.DurationVar(&cfg.runtimePoll, "runtime-poll-interval", 15*time.Second, "How often the agent polls Telemt for runtime data")
 	flags.DurationVar(&cfg.runtimeUpload, "runtime-upload-interval", time.Minute, "How often aggregated runtime snapshots are sent to the control-plane")
@@ -83,6 +89,7 @@ func parseRuntimeFlags(args []string) (runtimeFlags, error) {
 	flags.StringVar(&cfg.logFormat, "log-format", os.Getenv("PANVEX_LOG_FORMAT"),
 		"Log output format (text or json). Env: PANVEX_LOG_FORMAT.")
 	flags.IntVar(&cfg.clientDataConcurrency, "client-data-concurrency", clientDataConcurrencyDefault(), "Max concurrent in-flight ClientDataRequest goroutines (env: PANVEX_AGENT_CLIENT_DATA_CONCURRENCY)")
+	flags.DurationVar(&cfg.transportProbation, "transport-probation", defaultTransportProbation, "How long a transport-mode switch may go without a panel session before the agent reverts to the previous mode (0 = default 10m)")
 	if err := flags.Parse(args); err != nil {
 		return runtimeFlags{}, err
 	}
@@ -171,6 +178,7 @@ func runRuntime(args []string) error {
 		FleetGroupID:     cfg.fleetGroupID,
 		Version:          cfg.version,
 		TelemtConfigPath: cfg.telemtConfigPath,
+		TelemtRestart:    cfg.telemtRestart,
 		// Resume snapshot sequence across restarts so the control-plane can
 		// dedup duplicate deltas. See P2-LOG-06 / L-07.
 		InitialUsageSeq: credentialsState.UsageSeq,
@@ -185,6 +193,17 @@ func runRuntime(args []string) error {
 			current, err := agentstate.Load(statePath)
 			if err != nil {
 				return fmt.Errorf("switch_transport_mode: load state: %w", err)
+			}
+			if current.TransportMode != mode {
+				// A2: snapshot the pre-switch state so the reconnect loop
+				// can roll back if the panel never reaches us in the new mode.
+				current.PrevTransport = &agentstate.TransportSnapshot{
+					Mode:           current.TransportMode,
+					ListenAddr:     current.ListenAddr,
+					GRPCEndpoint:   current.GRPCEndpoint,
+					GRPCServerName: current.GRPCServerName,
+				}
+				current.TransportSwitchedAtUnix = time.Now().Unix()
 			}
 			current.TransportMode = mode
 			current.ListenAddr = listenAddr
@@ -215,6 +234,28 @@ func runRuntime(args []string) error {
 			// after reconnect — out of scope for this fix.
 			time.AfterFunc(50*time.Millisecond, cancel)
 			return nil
+		},
+		ScheduleSelfRestart: func() {
+			// A3: the JobResult must reach the panel BEFORE this process
+			// goes away, otherwise the panel re-dispatches the job to the
+			// restarted agent (whose completedJobs cache is empty) in an
+			// infinite update/restart loop. Delay the restart so the job
+			// worker can flush the result onto the stream — same
+			// flush-window pattern as UpdateTransport above, with a much
+			// larger margin because systemd kills the whole process.
+			time.AfterFunc(selfUpdateRestartDelay, func() {
+				slog.Info("self-update: restarting via systemd")
+				// On success systemd tears this process down. On failure
+				// exit NON-ZERO so the unit's Restart=on-failure relaunches
+				// the already-replaced binary — exit 0 would not be
+				// restarted, and 78 is RestartPreventExitStatus.
+				// Background ctx: this is a fire-and-forget restart from an
+				// AfterFunc with no parent ctx; we never want to cancel it.
+				if err := exec.CommandContext(context.Background(), "systemctl", "restart", "panvex-agent").Start(); err != nil {
+					slog.Error("self-update: systemctl restart failed; exiting non-zero for on-failure restart", "error", err)
+					os.Exit(1)
+				}
+			})
 		},
 	}, telemtClient)
 
@@ -249,7 +290,7 @@ func runRuntime(args []string) error {
 
 	// Supervisor context: cancelled on SIGINT/SIGTERM so the reconnect
 	// backoff sleep, gRPC stream context, and all derived workers exit
-	// promptly instead of waiting out the full ~15-30s backoff window.
+	// promptly instead of waiting out the full ~45s backoff window.
 	supervisorCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -275,6 +316,10 @@ func runRuntime(args []string) error {
 // behaviour.
 func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, tr *transportReloadState, reporter *enrollmentReporter) error {
 	reconnectAttempt := 0
+	// B4: the in-flight tracker outlives individual connections so a job
+	// re-delivered right after a reconnect cannot run concurrently with its
+	// still-draining first execution from the previous connection.
+	jobInflight := newJobInflightTracker()
 	for {
 		// Honour shutdown before we begin another iteration.
 		if err := supervisorCtx.Err(); err != nil {
@@ -302,12 +347,48 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 			tr.mu.Unlock()
 		}
 
-		// In listen mode the agent has no outbound dial route, so the
-		// pre-connection unary RenewCertificate RPC cannot be used. In-stream
-		// renewal (via RenewalRequest/RenewalResponse over the Connect bidi-
-		// stream) handles cert refresh for listen-mode agents. Skip the dial-
-		// only pre-connection renewal when in listen mode; the in-stream path
-		// in runConnectionMainLoop covers that case.
+		// A2: probation expiry check. On revert, refresh the derived dial
+		// target the same way the transport-reload path above does.
+		if maybeRevertTransportSwitch(cfg.stateFile, credentialsState, cfg.transportProbation, time.Now()) {
+			if credentialsState.GRPCEndpoint != "" {
+				cfg.gatewayAddr = credentialsState.GRPCEndpoint
+			}
+			if credentialsState.GRPCServerName != "" {
+				cfg.gatewayServerName = credentialsState.GRPCServerName
+			}
+		}
+
+		// In listen mode the agent has no outbound dial route, so handle two
+		// distinct cert lifecycle windows differently:
+		//   - BEFORE expiry: in-stream renewal (RenewalRequest/RenewalResponse
+		//     over the Connect bidi-stream) closes the window; the dial-mode
+		//     unary pre-connection RenewCertificate RPC is skipped.
+		//   - AFTER expiry: the cert is dead — no mTLS handshake can complete
+		//     (neither the panel's dial-in nor in-stream renewal). Use the HTTP
+		//     recovery flow (recoverListenCredentialsIfExpired) which works over
+		//     plain HTTPS to PanelURL regardless of transport mode.
+		if credentialsState.TransportMode == "listen" {
+			refreshCtx, cancelRefresh := context.WithTimeout(supervisorCtx, certificateRefreshTimeout)
+			recovered, recErr := recoverListenCredentialsIfExpired(refreshCtx, cfg.stateFile, *credentialsState, nil, time.Now())
+			cancelRefresh()
+			if recErr != nil {
+				if supervisorCtx.Err() != nil {
+					return supervisorCtx.Err()
+				}
+				reconnectAttempt++
+				slog.Error("listen mode: certificate recovery failed; will retry",
+					"error", recErr,
+					"hint", "create a recovery grant: POST /api/agents/{id}/certificate-recovery-grants")
+				if waitErr := waitWithCancel(supervisorCtx, reconnectDelay(reconnectAttempt)); waitErr != nil {
+					return waitErr
+				}
+				continue
+			}
+			*credentialsState = recovered
+		}
+
+		// In dial mode: use the pre-connection unary RenewCertificate RPC for
+		// cert refresh. This path is skipped in listen mode (handled above).
 		if credentialsState.TransportMode != "listen" {
 			// Derive the refresh ctx from supervisorCtx so SIGTERM during
 			// the renewal RPC also unblocks promptly.
@@ -339,7 +420,7 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 			*credentialsState = refreshed
 		}
 
-		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr, reporter)
+		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr, reporter, jobInflight, cfg.transportProbation)
 		*credentialsState = afterConn
 		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0
@@ -371,7 +452,7 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 
 // waitWithCancel sleeps for d, returning early with ctx.Err() if the
 // supervisor ctx is cancelled. Replaces bare time.Sleep so a SIGTERM
-// during the reconnect backoff (up to 15s) does not hold up shutdown.
+// during the reconnect backoff (up to 45s) does not hold up shutdown.
 func waitWithCancel(ctx context.Context, d time.Duration) error {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
@@ -383,13 +464,29 @@ func waitWithCancel(ctx context.Context, d time.Duration) error {
 	}
 }
 
+// reconnectBaseDelay / reconnectMaxDelay bound the exponential backoff of the
+// agent's outer reconnect loop. The cap stays well below the panel's 90s
+// offline threshold (presence tracker defaults, lifecycle.go), so even an
+// agent sleeping a full max window keeps its presence within "degraded".
+const (
+	reconnectBaseDelay = time.Second
+	reconnectMaxDelay  = 45 * time.Second
+)
+
+// reconnectDelay returns the backoff for the given attempt with full jitter:
+// the deterministic exponential value is the ceiling and the actual sleep is
+// uniform in [ceiling/2, ceiling]. Mirrors agenttransport/outbound.go's
+// jitter() so both transport directions damp herd reconnects identically.
+// Without jitter a panel restart made the whole fleet retry in lockstep
+// waves (D1). The attempt counter is reset by the caller on any successful
+// connection (runRuntimeReconnectLoop).
 func reconnectDelay(attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1
 	}
-	delay := time.Second << min(attempt-1, 4)
-	if delay > 15*time.Second {
-		return 15 * time.Second
+	delay := reconnectBaseDelay << min(attempt-1, 6)
+	if delay > reconnectMaxDelay {
+		delay = reconnectMaxDelay
 	}
-	return delay
+	return delay/2 + time.Duration(rand.Int64N(int64(delay/2+1)))
 }

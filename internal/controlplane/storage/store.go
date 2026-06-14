@@ -170,6 +170,15 @@ type FleetStore interface {
 	// ListAgents above — deferred from S25 T1 to bound the change footprint.
 	ListInstances(ctx context.Context) ([]InstanceRecord, error)
 	DeleteInstancesByAgent(ctx context.Context, agentID string) error
+	// GetAgentConfigTarget returns the desired config for one scope, or
+	// storage.ErrNotFound when none is set.
+	GetAgentConfigTarget(ctx context.Context, scopeType, scopeID string) (AgentConfigTargetRecord, error)
+	// ListAgentConfigTargets returns all config targets (group + agent scopes).
+	ListAgentConfigTargets(ctx context.Context) ([]AgentConfigTargetRecord, error)
+	// UpsertAgentConfigTarget creates or replaces the config target for a scope.
+	UpsertAgentConfigTarget(ctx context.Context, rec AgentConfigTargetRecord) error
+	// DeleteAgentConfigTarget removes the config target for a scope; returns rows deleted.
+	DeleteAgentConfigTarget(ctx context.Context, scopeType, scopeID string) (int64, error)
 }
 
 // JobStore persists orchestration jobs and per-target result state.
@@ -281,6 +290,11 @@ type EnrollmentStore interface {
 	GetEnrollmentToken(ctx context.Context, value string) (EnrollmentTokenRecord, error)
 	ConsumeEnrollmentToken(ctx context.Context, value string, consumedAt time.Time) (EnrollmentTokenRecord, error)
 	RevokeEnrollmentToken(ctx context.Context, value string, revokedAt time.Time) (EnrollmentTokenRecord, error)
+	// PruneEnrollmentTokens deletes tokens that can never be consumed
+	// again: consumed or revoked before the cutoff, or expired before
+	// the cutoff while never consumed. Live tokens are never touched.
+	// Returns the number of deleted rows (C4).
+	PruneEnrollmentTokens(ctx context.Context, before time.Time) (int64, error)
 }
 
 // AgentCertificateRecoveryGrantStore persists administrator-approved certificate recovery windows.

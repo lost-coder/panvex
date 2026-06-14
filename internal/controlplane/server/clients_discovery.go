@@ -48,7 +48,15 @@ type discoveredClient struct {
 
 // reconcileDiscoveredClients compares client data returned by an agent against
 // the panel's managed clients and creates discovered_client records for unknown users.
-func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string, records []*gatewayrpc.ClientDetailRecord, observedAt time.Time) {
+func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string, records []*gatewayrpc.ClientDetailRecord, telemtUnreachable bool, observedAt time.Time) {
+	if telemtUnreachable {
+		// The agent could not read Telemt's user list. An empty record set
+		// here means "unknown", NOT "zero clients" — do not prune, do not
+		// reconcile. The recovery-edge / periodic refresh will re-request a
+		// real snapshot once Telemt is back.
+		s.logger.Warn("skipping discovery reconcile: agent reported telemt unreachable", "agent_id", agentID)
+		return
+	}
 	if len(records) == 0 {
 		return
 	}
@@ -314,7 +322,10 @@ func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID st
 	}
 	s.logger.Info("adopting discovered client as new managed client", "discovered_id", id, "client_name", record.ClientName, "agent_id", record.AgentID, "traffic_bytes", record.TotalOctets, "active_ips", record.ActiveUniqueIPs, "siblings", len(siblings))
 
-	client, assignments, deployments := s.buildAdoptedClientState(record, siblings, secret, expirationRFC3339, observedAt)
+	client, assignments, deployments, err := s.buildAdoptedClientState(record, siblings, secret, expirationRFC3339, observedAt)
+	if err != nil {
+		return managedClient{}, err
+	}
 
 	if err := s.persistAdoptedClient(ctx, id, client, assignments, deployments, observedAt); err != nil {
 		return managedClient{}, err
@@ -450,7 +461,14 @@ func normalizedAdoptSecret(raw string) (string, error) {
 // record. When siblings is non-empty, every sibling's agent_id is
 // included so the resulting managed client is scoped to every node
 // where Telemt was already running this user.
-func (s *Server) buildAdoptedClientState(record discovered.DiscoveredClient, siblings []discovered.DiscoveredClient, secret string, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment) { // gitleaks:allow — `secret` is a function parameter name, not a value
+func (s *Server) buildAdoptedClientState(record discovered.DiscoveredClient, siblings []discovered.DiscoveredClient, secret string, expirationRFC3339 string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) { // gitleaks:allow — `secret` is a function parameter name, not a value
+	// Adopted/imported clients need a public subscription token just like
+	// manually-created ones (see createClient). Without this an imported
+	// client's dashboard subscription link stays empty.
+	token, err := clients.GenerateSubscriptionToken()
+	if err != nil {
+		return managedClient{}, nil, nil, fmt.Errorf("buildAdoptedClientState: generate subscription token: %w", err)
+	}
 	client := managedClient{
 		ID:                s.nextClientID(),
 		Name:              record.ClientName,
@@ -460,6 +478,7 @@ func (s *Server) buildAdoptedClientState(record discovered.DiscoveredClient, sib
 		MaxUniqueIPs:      record.MaxUniqueIPs,
 		DataQuotaBytes:    record.DataQuotaBytes,
 		ExpirationRFC3339: expirationRFC3339,
+		SubscriptionToken: token,
 		CreatedAt:         observedAt,
 		UpdatedAt:         observedAt,
 	}
@@ -494,7 +513,7 @@ func (s *Server) buildAdoptedClientState(record discovered.DiscoveredClient, sib
 		}
 		addAgent(sib.AgentID, sib.ConnectionLinks)
 	}
-	return client, assignments, deployments
+	return client, assignments, deployments, nil
 }
 
 // persistAdoptedClient performs the atomic write of the new managed client,
@@ -749,26 +768,6 @@ func (s *Server) ignoreDiscoveredClient(ctx context.Context, id, actorID string,
 	}
 
 	s.appendAuditWithContext(ctx, actorID, "clients.discovery_ignored", id, nil)
-	return nil
-}
-
-func (s *Server) restoreStoredDiscoveredClients() error {
-	if s.discoveredRepo == nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(s.serverCtx, 30*time.Second)
-	defer cancel()
-	recs, err := s.discoveredRepo.List(ctx)
-	if err != nil {
-		return err
-	}
-	discoveredIDs := make([]string, 0, len(recs))
-	for _, r := range recs {
-		discoveredIDs = append(discoveredIDs, string(r.ID))
-	}
-	// Seed the clients.Service discovered-seq cursor so the next
-	// NextDiscoveredID returns a value strictly greater than any persisted ID.
-	s.clientsSvc.RecoverSequencesFromRecords(nil, nil, discoveredIDs)
 	return nil
 }
 

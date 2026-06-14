@@ -45,6 +45,7 @@ const rawClient: ApiClient = {
   fleet_group_ids: [],
   agent_ids: [],
   deployments: [],
+  subscription_url: "",
   created_at_unix: 0,
   updated_at_unix: 0,
   deleted_at_unix: 0,
@@ -263,7 +264,7 @@ describe("useClientMutations", () => {
 
       await vi.advanceTimersByTimeAsync(7001);
       expect(apiClient.deleteClient).not.toHaveBeenCalled();
-      expect(toastApi.info).toHaveBeenCalledWith("Удаление отменено.");
+      expect(toastApi.info).toHaveBeenCalledWith("Deletion cancelled.");
     });
   });
 });

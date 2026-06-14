@@ -32,6 +32,25 @@
     "create": "Create group",
     "save": "Save changes"
   },
+  "toasts": {
+    "created": "Fleet group “{{label}}” created.",
+    "updated": "Fleet group updated.",
+    "deleted": "Fleet group deleted.",
+    "requestFailed": "Request failed",
+    "deleteFailed": "Delete failed"
+  },
+  "deleteConfirm": {
+    "title": "Delete fleet group?",
+    "confirm": "Delete",
+    "emptyBody": "Delete empty group “{{name}}”?",
+    "noTarget": "Cannot delete this group: it still has agents/tokens and there is nowhere to move them — create another group first.",
+    "contains": "Group “{{name}}” contains:",
+    "agents_one": "  • {{count}} agent",
+    "agents_other": "  • {{count}} agents",
+    "tokens_one": "  • {{count}} token",
+    "tokens_other": "  • {{count}} tokens",
+    "moveTo": "All of them will be moved to “{{target}}”. Continue?"
+  },
   "detail": {
     "edit": "Edit",
     "delete": "Delete",

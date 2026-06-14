@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -30,11 +31,15 @@ const (
 	// (RFC 5915). Centralised so the cert-issuing helpers all encode
 	// the same header (Sonar S1192).
 	pemTypeECPrivateKey = "EC PRIVATE KEY"
+
+	// PanelClientCN is the protocol-fixed CommonName of the control-plane's
+	// outbound client certificate. Listen-mode agents verify the dialing peer's
+	// leaf CN against this value; it is not operator-configurable.
+	PanelClientCN = "control-plane.panvex.internal"
 )
 
 type issuedCertificate struct {
 	CertificatePEM string
-	PrivateKeyPEM  string
 	CAPEM          string
 	ExpiresAt      time.Time
 	// Serial is the hex-encoded big-endian certificate serial. Used by
@@ -49,6 +54,12 @@ type certificateAuthority struct {
 	privateKey        *ecdsa.PrivateKey
 	caPEM             string
 	serverCertificate tls.Certificate
+	// clientCertificate is the panel's OUTBOUND identity (ClientAuth EKU,
+	// CN=PanelClientCN). Presented when the panel dials listen-mode agents
+	// and during the reverse bootstrap exchange. The chain includes the CA
+	// DER so the agent's bootstrap SPKI-pin verifier finds the pinned cert
+	// in the presented chain.
+	clientCertificate tls.Certificate
 }
 
 func newCertificateAuthority(now time.Time) (*certificateAuthority, error) {
@@ -88,22 +99,9 @@ func newCertificateAuthority(now time.Time) (*certificateAuthority, error) {
 	return buildCertificateAuthority(parsedCertificate, privateKey, encodePEM("CERTIFICATE", der), now)
 }
 
-// ErrLegacyEnc1RequiresKey is returned when the persisted CA private key is
-// stored in the legacy "ENC:v1" format but no encryption passphrase is
-// configured to migrate it. P2-SEC-05: legacy ENC:v1 uses SHA-256 without a
-// salt and must not be silently accepted — the operator must either provide
-// the encryption key so we can re-encrypt as "ENC2:" or remove the stored key
-// to regenerate the CA.
-var ErrLegacyEnc1RequiresKey = errors.New("legacy ENC:v1 key requires --encryption-key-file to migrate")
-
-// storedPEMIsLegacyV1 reports whether the stored value uses the ENC:v1 prefix
-// exactly (not the successor ENC2:).
-func storedPEMIsLegacyV1(stored string) bool {
-	return strings.HasPrefix(stored, encryptedPEMPrefix) && !strings.HasPrefix(stored, encryptedPEMPrefixV2)
-}
-
 // loadOrCreateCertificateAuthority resolves the panel CA: load the persisted
-// record, regenerate if expired, otherwise mint a new one and persist it.
+// record (aborting startup with an actionable error if expired), otherwise
+// mint a new one and persist it.
 //
 // ctx is the boot-time lifecycle context (s.serverCtx) so Close() during a
 // wedged storage call aborts the goroutine instead of leaking it past
@@ -124,17 +122,15 @@ func loadOrCreateCertificateAuthority(ctx context.Context, store storage.Certifi
 }
 
 // loadExistingCertificateAuthority validates and (when needed) migrates
-// a stored CA record. Lifecycle: legacy-ENC:v1 guard, decrypt, parse,
-// expiry check, opportunistic re-encryption.
+// a stored CA record. Lifecycle: decrypt, parse, expiry check, opportunistic
+// re-encryption (plaintext → ENC2:).
 func loadExistingCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, record storage.CertificateAuthorityRecord, now time.Time, encryptionKey string) (*certificateAuthority, error) {
-	// P2-SEC-05: refuse to silently retain a legacy ENC:v1 blob without
-	// an encryption key. The legacy derivation is SHA-256 with no salt,
-	// so keeping it in place forever leaves the CA key weakly protected.
-	// Either the operator supplies --encryption-key-file (and we migrate
-	// in-place to ENC2:) or startup fails so the weakness is surfaced.
-	legacyV1 := storedPEMIsLegacyV1(record.PrivateKeyPEM)
-	if legacyV1 && encryptionKey == "" {
-		return nil, ErrLegacyEnc1RequiresKey
+	// Reject pre-release ENC:v1 blobs loudly regardless of whether an
+	// encryption key is configured — decryptPEM only runs when encryptionKey
+	// is set, so we must guard here to avoid silently treating the blob as
+	// plaintext PEM (which would produce a confusing decode error).
+	if isEncryptedPEM(record.PrivateKeyPEM) && !strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefixV2) {
+		return nil, errors.New("CA private key: legacy ENC:v1 format is no longer supported (pre-release format removed); delete the stored certificate authority record and re-bootstrap, or restore an ENC2: backup")
 	}
 
 	if encryptionKey != "" {
@@ -155,23 +151,26 @@ func loadExistingCertificateAuthority(ctx context.Context, store storage.Certifi
 	}
 
 	if encryptionKey != "" && needsReEncryption(record.PrivateKeyPEM) {
-		if err := reEncryptCertificateAuthority(ctx, store, authority, now, encryptionKey, legacyV1); err != nil {
+		if err := reEncryptCertificateAuthority(ctx, store, authority, now, encryptionKey); err != nil {
 			return nil, err
 		}
 	}
 	return authority, nil
 }
 
-// handleCertificateAuthorityExpiry returns (true, regenerated, err) when
-// the stored CA has expired so the caller short-circuits to a freshly
-// regenerated authority. Otherwise it logs the expiring-soon warning
-// (when remaining <30d) and returns (false, nil, nil).
-func handleCertificateAuthorityExpiry(ctx context.Context, store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string) (bool, *certificateAuthority, error) {
+// handleCertificateAuthorityExpiry returns (true, nil, err) when the stored
+// CA has expired — startup is aborted with an actionable error that names the
+// recovery command. Silent regeneration would invalidate every enrolled agent
+// without warning (audit 2026-06-09, A5). Use `rotate-ca --confirm` instead.
+// Otherwise it logs the expiring-soon warning (when remaining <30d) and
+// returns (false, nil, nil).
+func handleCertificateAuthorityExpiry(_ context.Context, _ storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, _ string) (bool, *certificateAuthority, error) {
 	remaining := authority.certificate.NotAfter.Sub(now)
 	if remaining <= 0 {
-		slog.Warn("control-plane CA certificate expired, regenerating", "expired_ago", (-remaining).String())
-		regen, err := persistNewCertificateAuthority(ctx, store, now, encryptionKey)
-		return true, regen, err
+		return true, nil, fmt.Errorf(
+			"control-plane CA certificate expired %s ago; refusing to start: regenerating would invalidate every enrolled agent. Run `panvex-control-plane rotate-ca --confirm` to mint a new CA (all agents must re-enroll afterwards)",
+			(-remaining).Round(time.Hour),
+		)
 	}
 	if remaining < 30*24*time.Hour {
 		slog.Warn("control-plane CA certificate expiring soon", "remaining", remaining.Round(time.Hour).String())
@@ -179,37 +178,38 @@ func handleCertificateAuthorityExpiry(ctx context.Context, store storage.Certifi
 	return false, nil, nil
 }
 
-// reEncryptCertificateAuthority migrates a plaintext or ENC:v1 stored
-// key to ENC2:. P2-SEC-05: legacy ENC:v1 migration is mandatory — any
-// error is fatal; for plaintext or other cases we log but do not block
-// startup.
-func reEncryptCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string, legacyV1 bool) error {
+// reEncryptCertificateAuthority opportunistically re-encrypts a plaintext CA
+// private key to ENC2: (Argon2id). Errors are non-fatal: they are logged as
+// warnings so startup is not blocked by a transient store failure.
+func reEncryptCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string) error {
 	rec, recErr := authority.record(now, encryptionKey)
 	if recErr != nil {
-		if legacyV1 {
-			return fmt.Errorf("auto-migrate legacy ENC:v1 CA private key: %w", recErr)
-		}
 		slog.Warn("control-plane CA private key re-encryption failed", "error", recErr)
 		return nil
 	}
 	if putErr := store.PutCertificateAuthority(ctx, rec); putErr != nil {
-		if legacyV1 {
-			return fmt.Errorf("auto-migrate legacy ENC:v1 CA private key: %w", putErr)
-		}
 		slog.Warn("control-plane CA private key migration persist failed", "error", putErr)
 		return nil
-	}
-	if legacyV1 {
-		slog.Info("control-plane CA private key migrated from ENC:v1 to ENC2:")
 	}
 	return nil
 }
 
+// RotateCertificateAuthority mints a fresh CA and overwrites the stored
+// record. Used by the `rotate-ca` CLI subcommand — the only safe, operator-
+// acknowledged path for CA replacement. Every enrolled agent must re-enroll
+// after.
+func RotateCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) error {
+	if store == nil {
+		return errors.New("rotate-ca requires a persistent store")
+	}
+	_, err := persistNewCertificateAuthority(ctx, store, now, encryptionKey)
+	return err
+}
+
 // persistNewCertificateAuthority generates a fresh CA and stores it. Used by
-// both the bootstrap path (no record yet) and the regeneration path (existing
-// record expired or unrecoverable) — the body is identical, so there is one
-// implementation. The two call sites read better with the shared name than
-// with two trivial wrappers.
+// the bootstrap path (no record yet) and by RotateCertificateAuthority (the
+// explicit rotate-ca subcommand). Expired CA records are no longer silently
+// regenerated here; see handleCertificateAuthorityExpiry.
 func persistNewCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, now time.Time, encryptionKey string) (*certificateAuthority, error) {
 	authority, err := newCertificateAuthority(now)
 	if err != nil {
@@ -274,11 +274,17 @@ func buildCertificateAuthority(certificate *x509.Certificate, privateKey *ecdsa.
 		return nil, err
 	}
 
+	clientPair, err := issuePanelClientCertificate(certificate, privateKey, now)
+	if err != nil {
+		return nil, err
+	}
+
 	return &certificateAuthority{
 		certificate:       certificate,
 		privateKey:        privateKey,
 		caPEM:             caPEM,
 		serverCertificate: serverPair,
+		clientCertificate: clientPair,
 	}, nil
 }
 
@@ -304,96 +310,118 @@ func (a *certificateAuthority) record(now time.Time, encryptionKey string) (stor
 	}, nil
 }
 
-func (a *certificateAuthority) issueClientCertificate(commonName string, now time.Time) (issuedCertificate, error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return issuedCertificate{}, err
-	}
-
-	serial, err := randomSerial()
-	if err != nil {
-		return issuedCertificate{}, err
-	}
-
-	expiresAt := now.Add(agentCertificateLifetime)
-	certificate := &x509.Certificate{
-		SerialNumber: serial,
-		Subject: pkix.Name{
-			CommonName:   commonName,
-			Organization: []string{"Panvex Agents"},
-		},
-		NotBefore:    now.Add(-time.Minute),
-		NotAfter:     expiresAt,
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-		SubjectKeyId: serial.Bytes(),
-	}
-
-	der, err := x509.CreateCertificate(rand.Reader, certificate, a.certificate, privateKey.Public(), a.privateKey)
-	if err != nil {
-		return issuedCertificate{}, err
-	}
-
-	privateDER, err := x509.MarshalECPrivateKey(privateKey)
-	if err != nil {
-		return issuedCertificate{}, err
-	}
-
-	return issuedCertificate{
-		CertificatePEM: encodePEM("CERTIFICATE", der),
-		PrivateKeyPEM:  encodePEM(pemTypeECPrivateKey, privateDER),
-		CAPEM:          a.caPEM,
-		ExpiresAt:      expiresAt,
-		Serial:         serial.Text(16),
-	}, nil
-}
-
-// SignCSR implements bootstrap.CertificateAuthority. It parses csrPEM,
-// validates that the request's CN matches agentID, signs a new certificate
-// using the panel CA, and returns the issued cert PEM, CA cert PEM, and
-// NotAfter. The issued cert is client-auth only so the agent can present it
-// on the post-enrollment mTLS dial.
-func (a *certificateAuthority) SignCSR(csrPEM, agentID string, validFor time.Duration) (certPEM, caPEM string, expiresAt time.Time, err error) {
+// issueAgentCertificateFromCSR is the single issuance path for agent leaf
+// certificates (A9): the agent generates the keypair, the panel signs the
+// CSR. The certificate is dual-EKU (ClientAuth + ServerAuth) and carries
+// the fixed DNS SAN AgentServerName(agentID) so it can serve the agent's
+// gRPC listener in reverse transport mode and still authenticate as a
+// client in dial mode (A1).
+//
+// requireCNMatch: renewal/recovery paths know the agent's identity from the
+// presented credentials and must bind the CSR CN to it; the initial HTTP
+// enrollment mints the agentID server-side AFTER the request arrives, so it
+// passes false and the template CN (always agentID) wins regardless of the
+// CSR subject.
+func (a *certificateAuthority) issueAgentCertificateFromCSR(csrPEM, agentID string, validFor time.Duration, requireCNMatch bool, now time.Time) (issuedCertificate, error) {
 	csrBlock, _ := pem.Decode([]byte(csrPEM))
 	if csrBlock == nil {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: invalid PEM block for agent %s", agentID)
+		return issuedCertificate{}, fmt.Errorf("sign csr: invalid PEM block for agent %s", agentID)
 	}
 	csr, err := x509.ParseCertificateRequest(csrBlock.Bytes)
 	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: parse: %w", err)
+		return issuedCertificate{}, fmt.Errorf("sign csr: parse: %w", err)
 	}
 	if err := csr.CheckSignature(); err != nil {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: signature check: %w", err)
+		return issuedCertificate{}, fmt.Errorf("sign csr: signature check: %w", err)
 	}
-	if csr.Subject.CommonName != agentID {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: CN mismatch: got %q, want %q", csr.Subject.CommonName, agentID)
+	if requireCNMatch && csr.Subject.CommonName != agentID {
+		return issuedCertificate{}, fmt.Errorf("sign csr: CN mismatch: got %q, want %q", csr.Subject.CommonName, agentID)
 	}
 
 	serial, err := randomSerial()
 	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: serial: %w", err)
+		return issuedCertificate{}, fmt.Errorf("sign csr: serial: %w", err)
 	}
 
-	now := time.Now()
-	expiresAt = now.Add(validFor)
+	expiresAt := now.Add(validFor)
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
 			CommonName:   agentID,
 			Organization: []string{"Panvex Agents"},
 		},
+		DNSNames:     []string{agenttransport.AgentServerName(agentID)},
 		NotBefore:    now.Add(-time.Minute),
 		NotAfter:     expiresAt,
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		SubjectKeyId: serial.Bytes(),
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, a.certificate, csr.PublicKey, a.privateKey)
 	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("sign csr: create: %w", err)
+		return issuedCertificate{}, fmt.Errorf("sign csr: create: %w", err)
 	}
-	return encodePEM("CERTIFICATE", der), a.caPEM, expiresAt, nil
+	return issuedCertificate{
+		CertificatePEM: encodePEM("CERTIFICATE", der),
+		CAPEM:          a.caPEM,
+		ExpiresAt:      expiresAt,
+		Serial:         serial.Text(16),
+	}, nil
+}
+
+// SignCSR implements bootstrap.CertificateAuthority (reverse bootstrap +
+// in-stream renewal). CN must match agentID on these paths.
+func (a *certificateAuthority) SignCSR(csrPEM, agentID string, validFor time.Duration) (certPEM, caPEM string, expiresAt time.Time, err error) {
+	issued, err := a.issueAgentCertificateFromCSR(csrPEM, agentID, validFor, true, time.Now())
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	return issued.CertificatePEM, issued.CAPEM, issued.ExpiresAt, nil
+}
+
+// persistAgentCertPin records the SHA-256 of the issued certificate's
+// SubjectPublicKeyInfo as the agent's SPKI pin. Called on EVERY issuance
+// path (HTTP enrollment, unary renewal, in-stream renewal, recovery) so the
+// outbound dial verifier can treat a missing pin as fail-closed (A1).
+// Best-effort: a failure is logged loudly but does not abort issuance — the
+// in-flight credential exchange must not be lost to a transient pin write
+// error; the next renewal retries.
+func (s *Server) persistAgentCertPin(ctx context.Context, agentID, certPEM string) {
+	if s.store == nil {
+		return
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		s.logger.Warn("persist agent cert pin: issued cert is not PEM", "agent_id", agentID)
+		return
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		s.logger.Warn("persist agent cert pin: parse issued cert failed", "agent_id", agentID, "error", err)
+		return
+	}
+	pin := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+	if err := s.store.UpdateAgentCertPin(ctx, agentID, pin[:]); err != nil {
+		s.obs.ObserveAgentCertPinPersistFailure()
+		s.logger.Warn("persist agent cert pin failed", "agent_id", agentID, "error", err,
+			"alert", "agent_cert_pin_persist_failed")
+	}
+}
+
+// serverCertNotAfter parses the leaf of the panel's gRPC serving
+// certificate and returns its NotAfter. tls.X509KeyPair does not retain
+// Leaf, so this re-parses Certificate[0]; one small parse per metrics
+// poll tick (5s) is negligible. Zero time on any malformed state.
+func (ca *certificateAuthority) serverCertNotAfter() time.Time {
+	if ca == nil || len(ca.serverCertificate.Certificate) == 0 {
+		return time.Time{}
+	}
+	leaf, err := x509.ParseCertificate(ca.serverCertificate.Certificate[0])
+	if err != nil {
+		return time.Time{}
+	}
+	return leaf.NotAfter
 }
 
 func encodePEM(blockType string, bytes []byte) string {
@@ -458,6 +486,54 @@ func issueServerCertificate(caCertificate *x509.Certificate, caKey *ecdsa.Privat
 		[]byte(encodePEM("CERTIFICATE", der)),
 		[]byte(encodePEM(pemTypeECPrivateKey, privateDER)),
 	)
+}
+
+// issuePanelClientCertificate mints the panel's outbound client identity.
+// ClientAuth-only: this keypair must never be usable to impersonate the
+// panel's gRPC SERVER endpoint.
+func issuePanelClientCertificate(caCertificate *x509.Certificate, caKey *ecdsa.PrivateKey, now time.Time) (tls.Certificate, error) {
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	serial, err := randomSerial()
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	template := &x509.Certificate{
+		SerialNumber: serial,
+		Subject: pkix.Name{
+			CommonName:   PanelClientCN,
+			Organization: []string{"Panvex"},
+		},
+		NotBefore:   now.Add(-time.Minute),
+		NotAfter:    now.Add(serverCertificateLifetime),
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, caCertificate, privateKey.Public(), caKey)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{
+		// Leaf first, then the CA: the reverse-bootstrap verifier on the
+		// agent pins the CA's SPKI and needs it present in the chain.
+		Certificate: [][]byte{der, caCertificate.Raw},
+		PrivateKey:  privateKey,
+	}, nil
+}
+
+// outboundTLSConfig is the base config for panel-dials-agent connections:
+// trust = panel CA only, identity = panel client cert. ServerName is set
+// per-dial by the outbound supervisor (AgentServerName(agentID)).
+func (a *certificateAuthority) outboundTLSConfig() *tls.Config {
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM([]byte(a.caPEM))
+	return &tls.Config{
+		Certificates: []tls.Certificate{a.clientCertificate},
+		RootCAs:      pool,
+		MinVersion:   tls.VersionTLS13,
+	}
 }
 
 // caFingerprint returns the lower-hex SHA-256 fingerprint of cert.Raw. Used
