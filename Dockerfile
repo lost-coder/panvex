@@ -10,7 +10,7 @@
 # (or `docker buildx imagetools inspect <image>:<tag>` once docker is
 # new enough on the operator's box).
 
-FROM node:26-alpine@sha256:7c6af15abe4e3de859690e7db171d0d711bf37d27528eddfe625b2fe89e097f8 AS web-builder
+FROM node:26-alpine@sha256:3ad34ca6292aec4a91d8ddeb9229e29d9c2f689efd0dd242860889ac71842eba AS web-builder
 WORKDIR /src/web
 
 # .npmrc carries `legacy-peer-deps=true` — eslint-plugin-jsx-a11y@6.10.2
@@ -25,7 +25,7 @@ COPY web ./
 COPY cmd/control-plane /src/cmd/control-plane
 RUN npm run build:embed
 
-FROM golang:1.26-alpine@sha256:91eda9776261207ea25fd06b5b7fed8d397dd2c0a283e77f2ab6e91bfa71079d AS control-plane-builder
+FROM golang:1.26-alpine@sha256:f23e8b227fb4493eabe03bede4d5a32d04092da71962f1fb79b5f7d1e6c2a17f AS control-plane-builder
 WORKDIR /src
 
 # modernc.org/sqlite is pure-Go, so we build with CGO disabled — drops
@@ -67,7 +67,7 @@ RUN go build -ldflags="-s -w" -trimpath -o /out/panvex-control-plane ./cmd/contr
 #     docker manifest inspect anchore/syft:<tag> \
 #       | jq -r '.manifests[0].digest // .config.digest'
 # and update the tag + @sha256 below together.
-FROM anchore/syft:v1.44.0@sha256:86fde6445b483d902fe011dd9f68c4987dd94e07da1e9edc004e3c2422650de6 AS sbom-builder
+FROM anchore/syft:v1.45.1@sha256:c6d5719f48f5a5986acf2847eb1ed7c53176e712d5721fcd156184cfb262f6eb AS sbom-builder
 COPY --from=control-plane-builder /out/panvex-control-plane /panvex-control-plane
 RUN /syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json && \
     # Defensive assert: a future syft major that changes the -o flag
@@ -87,7 +87,14 @@ LABEL org.opencontainers.image.title="panvex-control-plane" \
       org.opencontainers.image.description="Panvex control plane (HTTP + gRPC + embedded UI)." \
       org.opencontainers.image.sbom="/sbom/control-plane.cdx.json"
 
-RUN apk add --no-cache ca-certificates && \
+# `apk upgrade` pulls patched OS packages (openssl/libxml2 et al.) from the
+# alpine repo: the pinned base digest lags behind package fixes, so without
+# this the Trivy HIGH,CRITICAL gate flags fixed-but-not-yet-rebased CVEs
+# (e.g. CVE-2026-45447 openssl, CVE-2026-6732 libxml2). Dependabot bumps the
+# base digest on its own cadence; this keeps the shipped image patched in
+# between.
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ca-certificates && \
     addgroup -S panvex && adduser -S panvex -G panvex
 
 COPY --from=control-plane-builder /out/panvex-control-plane ./panvex-control-plane
@@ -109,7 +116,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 
 ENTRYPOINT ["./panvex-control-plane"]
 
-FROM nginx:1.31-alpine@sha256:2f07d83bf561b506400dc183b1b2003803e39efbd22451f848adaba14d28c7c7 AS web
+FROM nginx:1.31-alpine@sha256:8b1e78743a03dbb2c95171cc58639fef29abc8816598e27fb910ed2e621e589a AS web
 
 # BP-Medium: switch the nginx stage from the default root-PID-1 entrypoint
 # to running as the built-in unprivileged `nginx` user (UID 101). The
@@ -129,7 +136,11 @@ COPY --from=web-builder /src/cmd/control-plane/.embedded-ui /usr/share/nginx/htm
 # user so the worker can write without an explicit volume mount, and
 # move the pid file out of /var/run/ (which is symlinked to /run/ and
 # is root-owned on alpine).
-RUN sed -i 's|listen 80;|listen 8080;|' /etc/nginx/conf.d/default.conf && \
+# apk upgrade patches OS packages (openssl/libxml2 et al.) the pinned
+# nginx base digest still ships vulnerable — this is the image the Trivy
+# HIGH,CRITICAL gate actually scans (default build target = last stage).
+RUN apk upgrade --no-cache && \
+    sed -i 's|listen 80;|listen 8080;|' /etc/nginx/conf.d/default.conf && \
     sed -i 's|^pid .*|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf && \
     chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /etc/nginx/conf.d && \
     touch /tmp/nginx.pid && chown nginx:nginx /tmp/nginx.pid

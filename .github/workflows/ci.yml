@@ -148,7 +148,7 @@ jobs:
           path: coverage.out
       - name: Upload coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: coverage.out
           flags: backend
@@ -565,7 +565,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Build image (load into local docker)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -682,7 +682,7 @@ jobs:
           # not just the tip — leaks often slip in mid-branch and get
           # "fixed" by a follow-up commit.
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}

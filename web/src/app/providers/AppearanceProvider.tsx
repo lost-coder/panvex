@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import * as React from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 
-import { apiClient } from "@/shared/api/api";
+import { settingsApi } from "@/shared/api/settings";
 import {
   applyAppearanceAttributes,
   clearAppearanceAttributes,
@@ -72,7 +72,7 @@ export function AppearanceProvider(props: Readonly<{ children: ReactNode; userID
   const prefersDark = usePrefersDarkScheme();
   const appearanceQuery = useQuery({
     queryKey: getAppearanceQueryKey(props.userID),
-    queryFn: () => apiClient.appearanceSettings(),
+    queryFn: () => settingsApi.appearanceSettings(),
     retry: false
   });
 

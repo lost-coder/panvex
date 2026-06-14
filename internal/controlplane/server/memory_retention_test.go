@@ -123,8 +123,16 @@ func TestServerServesRecentAuditEventsFromStore(t *testing.T) {
 	}
 
 	// Flush the async batch writer so every event reaches the store, then read
-	// back through the same first-page path /api/audit uses.
-	server.batchWriter.auditEvents.Drain(context.Background())
+	// back through the same first-page path /api/audit uses. A bare
+	// auditEvents.Drain races the background flush loop (batch size 50 keeps it
+	// firing): it persists only its own swapped batch, not an in-flight
+	// background drain, so a read right after can short-count. StopWithTimeout
+	// is the real barrier — it halts the loop, waits for any in-flight drain
+	// (wg.Wait), then does a final synchronous flush. Idempotent, so the
+	// t.Cleanup Close() calling it again is fine.
+	if err := server.batchWriter.StopWithTimeout(context.Background(), 10*time.Second); err != nil {
+		t.Fatalf("batchWriter.StopWithTimeout() error = %v", err)
+	}
 	trail, err := server.auditFirstPage(context.Background())
 	if err != nil {
 		t.Fatalf("auditFirstPage() error = %v", err)
