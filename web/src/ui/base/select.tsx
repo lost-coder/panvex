@@ -13,13 +13,15 @@ export interface SelectProps {
   placeholder?: string | undefined;
   disabled?: boolean | undefined;
   className?: string | undefined;
+  id?: string | undefined;
 }
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ options, value, onChange, placeholder = "Select…", disabled = false, className }, ref) => {
+  ({ options, value, onChange, placeholder = "Select…", disabled = false, className, id }, ref) => {
     return (
       <div className={cn("relative", className)}>
         <select
+          id={id}
           ref={ref}
           value={value ?? ""}
           onChange={(e) => onChange?.(e.target.value)}

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import type { DiscoveredClientItem } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
 import { transformDiscoveredClientList } from "@/shared/api/transforms/discoveredClients";
@@ -28,14 +29,20 @@ import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
  * triggered ad_tag auto-generation on the trailing PUT. Both classes
  * of bug are gone with the bulk path.
  */
-export function useDiscoveredClients() {
+export function useDiscoveredClients(options?: Readonly<{ pausePolling?: boolean }>) {
   const queryClient = useQueryClient();
+  const { t } = useTranslation("clients");
   // Each mutation here is fire-and-forget from the container, so failures
   // need to land in the toast channel or the operator has no signal that
   // the button they clicked actually hit an error.
   const toast = useToast();
 
-  const refetchInterval = useEventAwareInterval(90_000, 30_000);
+  const liveInterval = useEventAwareInterval(90_000, 30_000);
+  // U-05: while the operator has rows selected, freeze the poll. A 15-30s
+  // refetch re-renders and reflows the list under the finger, turning a
+  // tap on "Adopt" into a mis-tap on a neighbouring row. `false` disables
+  // React Query's interval entirely; it resumes once selection clears.
+  const refetchInterval = options?.pausePolling ? false : liveInterval;
 
   const query = useQuery({
     queryKey: clientsKeys.discovered,
@@ -117,6 +124,15 @@ export function useDiscoveredClients() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const rescanMutation = useMutation({
+    mutationFn: () => apiClient.rescanDiscoveredClients(),
+    onSuccess: (res) => {
+      toast.success(t("discovered.rescan.success", { count: res.agents_notified }));
+      void queryClient.invalidateQueries({ queryKey: clientsKeys.discovered });
+    },
+    onError: () => toast.error(t("discovered.rescan.error")),
+  });
+
   // Logical-client counts derived from the dedupe grouping. Consumers
   // (Dashboard banner, Clients list banner, the discovered page itself)
   // should use these instead of `clients.filter(...).length` — the raw
@@ -132,11 +148,14 @@ export function useDiscoveredClients() {
     groupCounts,
     isLoading: query.isLoading,
     error: query.error,
+    refetch: query.refetch,
     adopt: adoptMutation.mutateAsync,
     ignore: ignoreMutation.mutateAsync,
     adoptMany: adoptManyMutation.mutateAsync,
     ignoreMany: ignoreManyMutation.mutateAsync,
+    rescan: () => rescanMutation.mutateAsync(),
     isAdopting: adoptMutation.isPending || adoptManyMutation.isPending,
     isIgnoring: ignoreMutation.isPending || ignoreManyMutation.isPending,
+    isRescanning: rescanMutation.isPending,
   };
 }

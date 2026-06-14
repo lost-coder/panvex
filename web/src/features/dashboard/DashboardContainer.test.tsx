@@ -7,7 +7,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("@/ui", () => ({
-  Spinner: () => <div data-testid="spinner" />,
+  SkeletonRows: () => <div data-testid="skeleton-rows" />,
 }));
 
 vi.mock("@/features/dashboard/DashboardPage", () => ({
@@ -62,7 +62,7 @@ describe("DashboardContainer", () => {
     navigateSpy.mockReset();
   });
 
-  it("renders spinner while loading", () => {
+  it("renders skeleton while loading", () => {
     useDashboardDataMock.mockReturnValue({
       overview: null,
       timeline: null,
@@ -76,7 +76,7 @@ describe("DashboardContainer", () => {
     useUpdatesMock.mockReturnValue({ query: { data: undefined } });
 
     render(<DashboardContainer />);
-    expect(screen.getByTestId("spinner")).toBeInTheDocument();
+    expect(screen.getByTestId("skeleton-rows")).toBeInTheDocument();
   });
 
   it("renders dashboard with enriched update flags", () => {

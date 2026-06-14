@@ -6,8 +6,6 @@ import { z } from "zod";
 import { ErrorBoundary } from "@/ui";
 
 import { AppErrorFallback } from "./providers/AppErrorFallback";
-import { ConfirmProvider } from "./providers/ConfirmProvider";
-import { EventsSynchronizer } from "./providers/EventsSynchronizer";
 import { ToastProvider } from "./providers/ToastProvider";
 import { router } from "./router";
 import { initI18n } from "@/shared/lib/i18n";
@@ -74,18 +72,13 @@ void i18nReady.then(() => {
       <ToastProvider>
         <QueryClientProvider client={queryClient}>
           {/*
-            P2-UX-10: EventsSynchronizer now exposes a WsContext. We wrap
-            the router so containers can call `useWsStatus()` to drive the
-            reconnection banner and update-flash effects.
-            P2-UX-04: ConfirmProvider exposes `useConfirm()` for destructive
-            actions. It mounts inside the WS context so confirm dialogs in
-            banner-adjacent UI still work when the socket is reconnecting.
+            P2-UX-10 / P2-UX-04: EventsSynchronizer (WsContext) and
+            ConfirmProvider now live inside the router root (see
+            router.tsx RootComponent) so the WebSocket can gate on
+            AuthProvider's isAuthenticated. They wrap the route Outlet, so
+            every page still gets `useWsStatus()` and `useConfirm()`.
           */}
-          <EventsSynchronizer>
-            <ConfirmProvider>
-              <RouterProvider router={router} context={{ queryClient }} />
-            </ConfirmProvider>
-          </EventsSynchronizer>
+          <RouterProvider router={router} context={{ queryClient }} />
         </QueryClientProvider>
       </ToastProvider>
       </ErrorBoundary>

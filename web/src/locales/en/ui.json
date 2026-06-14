@@ -10,5 +10,48 @@
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "logout": "Log out"
+  },
+  "bottomNav": {
+    "more": "More",
+    "moreLabel": "More navigation"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "servers": "Servers",
+    "fleetGroups": "Fleet groups",
+    "clients": "Clients",
+    "activity": "Activity",
+    "enrollmentAttempts": "Enrollment attempts",
+    "settings": "Settings",
+    "profile": "Profile"
+  },
+  "wsBanner": {
+    "disconnected": "Live feed disconnected. Data may be stale.",
+    "reconnecting": "Reconnecting to live feed…",
+    "reconnectingAttempt": "Reconnecting to live feed (attempt {{count}})…"
+  },
+  "errorFallback": {
+    "title": "Something went wrong",
+    "body": "The dashboard hit an unexpected error and can't continue. Reload the page to recover. If the problem persists, check the browser console and report the error ID below.",
+    "reload": "Reload"
+  },
+  "logout": {
+    "title": "Log out of Panvex?",
+    "body": "You'll be returned to the sign-in screen.",
+    "confirm": "Log out"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "close": "Close",
+    "goDashboard": "Go to Dashboard",
+    "goServers": "Go to Servers",
+    "goFleetGroups": "Go to Fleet groups",
+    "goClients": "Go to Clients",
+    "goSettings": "Go to Settings",
+    "toggleHelp": "Show this shortcut list",
+    "closeDialog": "Close this dialog",
+    "inputsNote": "Shortcuts do not fire inside input fields. Press Esc to close.",
+    "hint": "Keyboard shortcuts",
+    "hintLabel": "Shortcuts"
   }
 }

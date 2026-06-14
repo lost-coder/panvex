@@ -202,7 +202,7 @@ export function ActivityPage({
             jobs tab to keep the filter row scannable. */}
         {activeTab === "audit" && (
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+            <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
               {t("auditWindow.label")}
             </span>
             <div className="flex gap-1.5">
@@ -216,7 +216,7 @@ export function ActivityPage({
                 </FilterChip>
               ))}
             </div>
-            <span className="ml-auto text-[11px] font-mono text-fg-muted tabular-nums">
+            <span className="ml-auto text-micro font-mono text-fg-muted tabular-nums">
               {t("auditWindow.events", { count: filteredAudit.length })}
             </span>
           </div>

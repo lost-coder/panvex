@@ -1,3 +1,49 @@
 {
-  "empty": "Нет данных"
+  "status": {
+    "ok": "OK",
+    "degraded": "ДЕГРАДАЦИЯ",
+    "down": "НЕ РАБОТАЕТ",
+    "offline": "НЕ НА СВЯЗИ",
+    "pending": "ЗАПУСК"
+  },
+  "empty": "Нет данных",
+  "toast": { "close": "Закрыть уведомление" },
+  "typeToConfirm": { "prompt": "Чтобы подтвердить, введите" },
+  "sortBy": "Сортировка",
+  "sortNone": "По умолчанию",
+  "sortAscending": "По возрастанию",
+  "sortDescending": "По убыванию",
+  "relative": {
+    "justNow": "только что",
+    "minutesAgo": "{{count}} мин назад",
+    "hoursAgo": "{{count}} ч назад",
+    "daysAgo": "{{count}} д назад"
+  },
+  "search": { "placeholder": "Поиск…" },
+  "errorState": { "title": "Что-то пошло не так", "retry": "Повторить" },
+  "reason": {
+    "offline": "Агент не на связи",
+    "telemtUnreachable": "Telemt API недоступен с",
+    "stale": "Телеметрия устарела",
+    "readOnly": "Telemt API только для чтения",
+    "admissionClosed": "Приём подключений закрыт",
+    "startup": "Идёт запуск",
+    "noDcs": "Нет доступных DC",
+    "dcDegraded": "Покрытие DC деградировало",
+    "meDegraded": "ME-рантайм деградировал",
+    "meDown": "ME-пул недоступен, трафик остановлен",
+    "upstreamFailing": "Сбой подключения к upstream DC",
+    "dcConnDegraded": "Деградация связности с DC",
+    "noUpstreams": "Upstream'ы не настроены",
+    "allUpstreamsDown": "Все upstream'ы недоступны",
+    "someUpstreamsUnhealthy": "Часть upstream'ов неисправна"
+  },
+  "unsaved": {
+    "title": "Уйти без сохранения?",
+    "body": "На этой странице есть несохранённые изменения. Если уйти сейчас, они будут потеряны.",
+    "leave": "Уйти без сохранения",
+    "stay": "Остаться"
+  },
+  "copy": { "copy": "Копировать", "copied": "Скопировано" },
+  "bulkBar": { "clear": "Снять выделение" }
 }

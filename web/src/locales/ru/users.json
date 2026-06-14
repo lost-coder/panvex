@@ -13,12 +13,6 @@
     "totp": "2FA",
     "addedRelative": "Добавлен {{when}}"
   },
-  "relative": {
-    "justNow": "только что",
-    "minutesAgo": "{{count}} мин назад",
-    "hoursAgo": "{{count}} ч назад",
-    "daysAgo": "{{count}} д назад"
-  },
   "totp": {
     "enabled": "Включено",
     "disabled": "Выключено"

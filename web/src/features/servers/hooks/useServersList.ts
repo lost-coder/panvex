@@ -29,5 +29,5 @@ export function useServersList() {
     [query.data],
   );
 
-  return { servers, agentVersions, isLoading: query.isLoading, error: query.error };
+  return { servers, agentVersions, isLoading: query.isLoading, error: query.error, refetch: query.refetch };
 }

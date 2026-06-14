@@ -36,6 +36,7 @@ type Client struct {
 	MaxUniqueIPs      int
 	DataQuotaBytes    int64
 	ExpirationRFC3339 string
+	SubscriptionToken string // opaque /sub/<token> handle; "" means not yet generated
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	DeletedAt         *time.Time

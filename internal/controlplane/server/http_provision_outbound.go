@@ -111,29 +111,10 @@ func (s *Server) handleProvisionOutboundAgent() http.HandlerFunc {
 			return
 		}
 
-		var req provisionOutboundAgentRequest
-		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid request body")
+		req, listenBind, ok := s.parseProvisionOutboundRequest(w, r)
+		if !ok {
 			return
 		}
-		req.NodeName = strings.TrimSpace(req.NodeName)
-		req.DialAddress = strings.TrimSpace(req.DialAddress)
-		req.FleetGroupID = strings.TrimSpace(req.FleetGroupID)
-		req.ScriptSource = strings.TrimSpace(req.ScriptSource)
-
-		if !isValidAgentNodeName(req.NodeName) {
-			writeError(w, http.StatusBadRequest, "node_name must be 1-64 chars matching [A-Za-z0-9._-]")
-			return
-		}
-		host, port, splitErr := net.SplitHostPort(req.DialAddress)
-		if splitErr != nil || host == "" || port == "" {
-			writeError(w, http.StatusBadRequest, "dial_address must be host:port")
-			return
-		}
-		// Derive the listen-bind from dial_address port — the agent
-		// must bind locally (":<port>"); the public host is what the
-		// panel dials. Same convention as handleUpdateAgentTransportMode.
-		listenBind := ":" + port
 
 		// ScriptSource default: github. Outbound mode means panel ↔ agent
 		// path is firewalled; defaulting to panel would yield a curl the
@@ -142,27 +123,8 @@ func (s *Server) handleProvisionOutboundAgent() http.HandlerFunc {
 		if scriptSource == "" {
 			scriptSource = "github"
 		}
-		var (
-			scriptURL  string
-			scriptHash string
-		)
-		switch scriptSource {
-		case "panel":
-			// Resolve the panel-served install URL LIVE per request from
-			// http.public_url (Plan 4) so a saved change takes effect
-			// without a restart. scriptHash is the live panel-served body
-			// digest — same security guarantee as the frozen wiring.
-			scriptURL = s.ResolveInstallScriptURL(r)
-			scriptHash = InstallScriptSHA256()
-		case "github":
-			scriptURL = InstallScriptGitHubURL()
-			scriptHash = "" // panel cannot vouch for upstream bytes
-		default:
-			writeError(w, http.StatusBadRequest, "script_source must be 'panel' or 'github'")
-			return
-		}
-		if scriptURL == "" {
-			http.Error(w, "install-script URL not configured for chosen source", http.StatusServiceUnavailable)
+		scriptURL, scriptHash, ok := s.resolveProvisionScript(w, r, scriptSource)
+		if !ok {
 			return
 		}
 
@@ -179,73 +141,15 @@ func (s *Server) handleProvisionOutboundAgent() http.HandlerFunc {
 		}
 		nowT := now().UTC()
 
-		agentID := uuid.NewString()
-
-		// Persist via the storage interface (PutAgent + UpdateAgentTransportMode)
-		// rather than a custom sqlc query: the sqlc-generated SQL targets the
-		// postgres column names (`last_seen_at`, etc.), but the sqlite store
-		// uses parallel column names (`last_seen_at_unix`, INTEGER). The
-		// storage layer hides the difference. LastSeenAt is the "never seen"
-		// sentinel (Unix epoch) — presence views sort the row to the bottom
-		// and the cleanup sweep keys on it.
 		if s.store == nil {
 			http.Error(w, "persistent store required", http.StatusServiceUnavailable)
 			return
 		}
-		if err := s.store.PutAgent(r.Context(), storage.AgentRecord{
-			ID:           agentID,
-			NodeName:     req.NodeName,
-			FleetGroupID: fleetGroupID,
-			LastSeenAt:   time.Unix(0, 0).UTC(),
-		}); err != nil {
-			s.logger.Error("insert outbound agent failed", "error", err, "node_name", req.NodeName)
-			writeError(w, http.StatusInternalServerError, msgStorageError)
-			return
-		}
-		if err := s.store.UpdateAgentTransportMode(r.Context(), agentID, "outbound", req.DialAddress); err != nil {
-			s.logger.Error("set outbound transport mode failed", "error", err, "agent_id", agentID)
-			_ = s.deleteProvisionedOutboundAgent(r.Context(), agentID)
-			writeError(w, http.StatusInternalServerError, msgStorageError)
-			return
-		}
 
-		// Issue a 5-minute bootstrap token + persist its hash. Same
-		// flow as bootstrap.InstallCommandHandler — we re-use IssueToken
-		// directly rather than the handler so we can apply our chosen
-		// script URL when calling BuildInstallCommand below.
-		issued, err := bootstrap.IssueToken(nowT, 5*time.Minute)
-		if err != nil {
-			s.logger.Error("issue bootstrap token failed", "agent_id", agentID, "error", err)
-			// Best-effort cleanup: drop the row so the operator can retry
-			// without colliding on the (eventually-uniqued) node_name.
-			_ = s.deleteProvisionedOutboundAgent(r.Context(), agentID)
-			writeError(w, http.StatusInternalServerError, msgInternalError)
+		agentID, cmd, expiresAtUnix, ok := s.provisionOutboundAgentRow(w, r, deps, req, fleetGroupID, listenBind, scriptURL, scriptHash, nowT)
+		if !ok {
 			return
 		}
-		if err := deps.Queries.SetAgentBootstrapToken(r.Context(), dbsqlc.SetAgentBootstrapTokenParams{
-			ID:                 agentID,
-			BootstrapTokenHash: issued.Hash[:],
-			BootstrapExpiresAt: sql.NullTime{Time: issued.ExpiresAt, Valid: true},
-		}); err != nil {
-			s.logger.Error("persist bootstrap token failed", "agent_id", agentID, "error", err)
-			_ = s.deleteProvisionedOutboundAgent(r.Context(), agentID)
-			writeError(w, http.StatusInternalServerError, msgStorageError)
-			return
-		}
-
-		// Render the curl|sudo-bash one-liner. With a non-empty hash
-		// BuildInstallCommand emits the temp-file + sha256sum form so
-		// the operator's shell verifies the body before sudo bash.
-		cmd := bootstrap.BuildInstallCommand(bootstrap.InstallCommandInput{
-			ScriptURL:  scriptURL,
-			ScriptHash: scriptHash,
-			Token:      issued.Raw,
-			AgentID:    agentID,
-			ListenAddr: listenBind,
-			PanelCAPin: deps.PanelCAPin,
-			PanelCN:    deps.PanelCN,
-			PanelURL:   s.ResolveAgentGRPCEndpoint(r), // live grpc.public_endpoint
-		})
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.provision_outbound", agentID, map[string]any{
 			"node_name":      req.NodeName,
@@ -257,28 +161,165 @@ func (s *Server) handleProvisionOutboundAgent() http.HandlerFunc {
 		writeJSON(w, http.StatusCreated, provisionOutboundAgentResponse{
 			AgentID:       agentID,
 			Command:       cmd,
-			ExpiresAtUnix: issued.ExpiresAt.Unix(),
+			ExpiresAtUnix: expiresAtUnix,
 			ScriptURL:     scriptURL,
 		})
 	}
 }
 
-// deleteProvisionedOutboundAgent removes a partially-provisioned agent
-// row when a follow-on step (token issuance / persistence) fails. Best-
-// effort: an error here only gets logged because the original failure is
-// already the user-facing error. If the row sticks around it will be
-// caught by the sweep that prunes outbound rows with expired bootstrap
-// tokens and no first-connection.
-func (s *Server) deleteProvisionedOutboundAgent(ctx context.Context, agentID string) error {
+// parseProvisionOutboundRequest decodes, trims, and validates the request body.
+// It validates node_name and splits dial_address into (host, port), deriving
+// listenBind = ":"+port. Returns (req, listenBind, ok); writes the 4xx response
+// itself on failure.
+func (s *Server) parseProvisionOutboundRequest(w http.ResponseWriter, r *http.Request) (provisionOutboundAgentRequest, string, bool) {
+	var req provisionOutboundAgentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return req, "", false
+	}
+	req.NodeName = strings.TrimSpace(req.NodeName)
+	req.DialAddress = strings.TrimSpace(req.DialAddress)
+	req.FleetGroupID = strings.TrimSpace(req.FleetGroupID)
+	req.ScriptSource = strings.TrimSpace(req.ScriptSource)
+
+	if !isValidAgentNodeName(req.NodeName) {
+		writeError(w, http.StatusBadRequest, "node_name must be 1-64 chars matching [A-Za-z0-9._-]")
+		return req, "", false
+	}
+	host, port, splitErr := net.SplitHostPort(req.DialAddress)
+	if splitErr != nil || host == "" || port == "" {
+		writeError(w, http.StatusBadRequest, "dial_address must be host:port")
+		return req, "", false
+	}
+	// Derive the listen-bind from dial_address port — the agent
+	// must bind locally (":<port>"); the public host is what the
+	// panel dials. Same convention as handleUpdateAgentTransportMode.
+	listenBind := ":" + port
+	return req, listenBind, true
+}
+
+// resolveProvisionScript translates scriptSource ("panel" or "github") into a
+// (scriptURL, scriptHash) pair. Writes 4xx/503 on failure and returns ok=false.
+func (s *Server) resolveProvisionScript(w http.ResponseWriter, r *http.Request, scriptSource string) (string, string, bool) {
+	var scriptURL, scriptHash string
+	switch scriptSource {
+	case "panel":
+		// Resolve the panel-served install URL LIVE per request from
+		// http.public_url (Plan 4) so a saved change takes effect
+		// without a restart. scriptHash is the live panel-served body
+		// digest — same security guarantee as the frozen wiring.
+		scriptURL = s.ResolveInstallScriptURL(r)
+		scriptHash = InstallScriptSHA256()
+	case "github":
+		scriptURL = InstallScriptGitHubURL()
+		scriptHash = "" // panel cannot vouch for upstream bytes
+	default:
+		writeError(w, http.StatusBadRequest, "script_source must be 'panel' or 'github'")
+		return "", "", false
+	}
+	if scriptURL == "" {
+		http.Error(w, "install-script URL not configured for chosen source", http.StatusServiceUnavailable)
+		return "", "", false
+	}
+	return scriptURL, scriptHash, true
+}
+
+// provisionOutboundAgentRow performs the four DB/crypto steps that create a
+// fully-provisioned outbound agent: PutAgent, UpdateAgentTransportMode,
+// IssueToken + SetAgentBootstrapToken, and BuildInstallCommand. Each failure
+// triggers a best-effort rollback via rollbackProvisionedOutboundAgent and
+// writes the appropriate 5xx response. Returns (agentID, cmd, expiresAtUnix,
+// ok); the bootstrap token stays a local variable and never appears in the
+// signature.
+func (s *Server) provisionOutboundAgentRow(
+	w http.ResponseWriter, r *http.Request,
+	deps *ProvisionOutboundDeps,
+	req provisionOutboundAgentRequest,
+	fleetGroupID, listenBind, scriptURL, scriptHash string,
+	nowT time.Time,
+) (string, string, int64, bool) {
+	agentID := uuid.NewString()
+
+	// Persist via the storage interface (PutAgent + UpdateAgentTransportMode)
+	// rather than a custom sqlc query: the sqlc-generated SQL targets the
+	// postgres column names (`last_seen_at`, etc.), but the sqlite store
+	// uses parallel column names (`last_seen_at_unix`, INTEGER). The
+	// storage layer hides the difference. LastSeenAt is the "never seen"
+	// sentinel (Unix epoch) — presence views sort the row to the bottom
+	// and the cleanup sweep keys on it.
+	if err := s.store.PutAgent(r.Context(), storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     req.NodeName,
+		FleetGroupID: fleetGroupID,
+		LastSeenAt:   time.Unix(0, 0).UTC(),
+	}); err != nil {
+		s.logger.Error("insert outbound agent failed", "error", err, "node_name", req.NodeName)
+		writeError(w, http.StatusInternalServerError, msgStorageError)
+		return "", "", 0, false
+	}
+	if err := s.store.UpdateAgentTransportMode(r.Context(), agentID, "outbound", req.DialAddress); err != nil {
+		s.logger.Error("set outbound transport mode failed", "error", err, "agent_id", agentID)
+		s.rollbackProvisionedOutboundAgent(r.Context(), agentID)
+		writeError(w, http.StatusInternalServerError, msgStorageError)
+		return "", "", 0, false
+	}
+
+	// Issue a 5-minute bootstrap token + persist its hash. Same
+	// flow as bootstrap.InstallCommandHandler — we re-use IssueToken
+	// directly rather than the handler so we can apply our chosen
+	// script URL when calling BuildInstallCommand below.
+	issued, err := bootstrap.IssueToken(nowT, 5*time.Minute)
+	if err != nil {
+		s.logger.Error("issue bootstrap token failed", "agent_id", agentID, "error", err)
+		// Best-effort cleanup: drop the row so the operator can retry
+		// without colliding on the (eventually-uniqued) node_name.
+		s.rollbackProvisionedOutboundAgent(r.Context(), agentID)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+		return "", "", 0, false
+	}
+	if err := deps.Queries.SetAgentBootstrapToken(r.Context(), dbsqlc.SetAgentBootstrapTokenParams{
+		ID:                 agentID,
+		BootstrapTokenHash: issued.Hash[:],
+		BootstrapExpiresAt: sql.NullTime{Time: issued.ExpiresAt, Valid: true},
+	}); err != nil {
+		s.logger.Error("persist bootstrap token failed", "agent_id", agentID, "error", err)
+		s.rollbackProvisionedOutboundAgent(r.Context(), agentID)
+		writeError(w, http.StatusInternalServerError, msgStorageError)
+		return "", "", 0, false
+	}
+
+	// Render the curl|sudo-bash one-liner. With a non-empty hash
+	// BuildInstallCommand emits the temp-file + sha256sum form so
+	// the operator's shell verifies the body before sudo bash.
+	cmd := bootstrap.BuildInstallCommand(bootstrap.InstallCommandInput{
+		ScriptURL:  scriptURL,
+		ScriptHash: scriptHash,
+		Token:      issued.Raw,
+		AgentID:    agentID,
+		ListenAddr: listenBind,
+		PanelCAPin: deps.PanelCAPin,
+		PanelCN:    deps.PanelCN,
+		PanelURL:   s.ResolveAgentGRPCEndpoint(r), // live grpc.public_endpoint
+	})
+
+	return agentID, cmd, issued.ExpiresAt.Unix(), true
+}
+
+// rollbackProvisionedOutboundAgent removes a partially-provisioned agent row
+// when a follow-on step (transport-mode update, token issuance, or token
+// persistence) fails. Best-effort: errors are logged at Error level (not
+// returned) because the original failure is already the user-facing error. If
+// the row sticks around it will be caught by the sweep that prunes outbound
+// rows with expired bootstrap tokens and no first-connection. ErrNotFound is
+// silently skipped (row already absent).
+func (s *Server) rollbackProvisionedOutboundAgent(ctx context.Context, agentID string) {
 	if s.store == nil {
-		return nil
+		return
 	}
 	if err := s.store.DeleteAgent(ctx, agentID); err != nil && !errors.Is(err, storage.ErrNotFound) {
-		s.logger.Warn("rollback provisioned outbound agent failed",
+		s.logger.Error("rollback provisioned outbound agent failed",
 			"agent_id", agentID, "error", err)
-		return err
 	}
-	return nil
 }
 
 // isValidAgentNodeName mirrors the wizard's client-side validator: 1-64
@@ -291,4 +332,3 @@ func isValidAgentNodeName(name string) bool {
 	}
 	return agentNodeNamePattern.MatchString(name)
 }
-

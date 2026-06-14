@@ -42,6 +42,15 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // Domain zod schemas are imported by many lazy route chunks. With
+          // no explicit chunk, Rollup hoists the shared set into the entry
+          // chunk (the common ancestor), which blows the App-entry size-limit
+          // budget — the login/first-paint path ships ~40 schema modules it
+          // never uses. Pin them to one separately-cacheable async chunk so
+          // they leave the entry and load with the routes that need them.
+          if (id.includes("/src/shared/api/schemas/")) {
+            return "app-api-schemas";
+          }
           if (!id.includes("node_modules")) return undefined;
           // Recharts pulls in d3-* — bundle the whole subtree together so
           // it only loads with chart-bearing routes.

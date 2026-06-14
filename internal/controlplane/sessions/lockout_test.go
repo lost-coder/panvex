@@ -59,7 +59,7 @@ func TestLockoutNotLockedInitially(t *testing.T) {
 	tracker := NewLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
-	if tracker.IsLocked("alice", now) {
+	if tracker.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("IsLocked() = true for unknown user, want false")
 	}
 }
@@ -69,10 +69,10 @@ func TestLockoutAfterMaxAttempts(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	for i := 0; i < LockoutMaxAttempts; i++ {
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 
-	if !tracker.IsLocked("alice", now) {
+	if !tracker.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("IsLocked() = false after MaxAttempts failures, want true")
 	}
 }
@@ -82,11 +82,11 @@ func TestLockoutExpiresAfterDuration(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	for i := 0; i < LockoutMaxAttempts; i++ {
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 
 	afterLockout := now.Add(LockoutDuration)
-	if tracker.IsLocked("alice", afterLockout) {
+	if tracker.IsLockedWithContext(context.Background(), "alice", afterLockout) {
 		t.Fatal("IsLocked() = true after lockout duration expired, want false")
 	}
 }
@@ -96,10 +96,10 @@ func TestLockoutNotLockedBelowThreshold(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	for i := 0; i < LockoutMaxAttempts-1; i++ {
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 
-	if tracker.IsLocked("alice", now) {
+	if tracker.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("IsLocked() = true below threshold, want false")
 	}
 }
@@ -150,14 +150,14 @@ func TestLockoutRecordSuccessClearsFailures(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	for i := 0; i < LockoutMaxAttempts-1; i++ {
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 	tracker.RecordSuccess("alice")
 	for i := 0; i < LockoutMaxAttempts-1; i++ {
-		if tracker.IsLocked("alice", now) {
+		if tracker.IsLockedWithContext(context.Background(), "alice", now) {
 			t.Fatalf("IsLocked() after RecordSuccess + %d failures = true, want false", i+1)
 		}
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 }
 
@@ -166,10 +166,10 @@ func TestLockoutIsPerUser(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	for i := 0; i < LockoutMaxAttempts; i++ {
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 
-	if tracker.IsLocked("bob", now) {
+	if tracker.IsLockedWithContext(context.Background(), "bob", now) {
 		t.Fatal("IsLocked(bob) = true, want false — lockout should be per-user")
 	}
 }
@@ -182,7 +182,7 @@ func TestLockoutActiveCount(t *testing.T) {
 		t.Fatalf("ActiveCount() = %d, want 0", got)
 	}
 	for i := 0; i < LockoutMaxAttempts; i++ {
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 	if got := tracker.ActiveCount(now); got != 1 {
 		t.Fatalf("ActiveCount() = %d, want 1", got)
@@ -202,13 +202,13 @@ func TestLockoutCleanupExpiredEntries(t *testing.T) {
 	for i := 0; i < 70; i++ {
 		username := "user" + string(rune('A'+i))
 		for j := 0; j < LockoutMaxAttempts; j++ {
-			tracker.RecordFailure(username, now)
+			tracker.RecordFailureWithContext(context.Background(), username, now)
 		}
 	}
 
 	// Record a new failure well after lockout duration — triggers cleanup.
 	future := now.Add(LockoutDuration + time.Minute)
-	tracker.RecordFailure("trigger-cleanup", future)
+	tracker.RecordFailureWithContext(context.Background(), "trigger-cleanup", future)
 
 	tracker.mu.Lock()
 	count := len(tracker.accounts)
@@ -230,9 +230,9 @@ func TestLockoutPersistsAcrossRestart(t *testing.T) {
 	first := NewLockoutTracker()
 	first.SetStore(store)
 	for i := 0; i < LockoutMaxAttempts; i++ {
-		first.RecordFailure("alice", now.Add(time.Duration(i)*time.Second))
+		first.RecordFailureWithContext(context.Background(), "alice", now.Add(time.Duration(i)*time.Second))
 	}
-	if !first.IsLocked("alice", now.Add(10*time.Second)) {
+	if !first.IsLockedWithContext(context.Background(), "alice", now.Add(10*time.Second)) {
 		t.Fatal("precondition: first tracker should be locked")
 	}
 
@@ -242,7 +242,7 @@ func TestLockoutPersistsAcrossRestart(t *testing.T) {
 	if err := second.Restore(context.Background(), now.Add(10*time.Second)); err != nil {
 		t.Fatalf("Restore() error = %v", err)
 	}
-	if !second.IsLocked("alice", now.Add(10*time.Second)) {
+	if !second.IsLockedWithContext(context.Background(), "alice", now.Add(10*time.Second)) {
 		t.Fatal("second tracker did not inherit lockout after Restore()")
 	}
 }
@@ -255,7 +255,7 @@ func TestLockoutRecordSuccessPurgesStoredRow(t *testing.T) {
 	tracker.SetStore(store)
 	now := time.Date(2026, time.April, 19, 10, 0, 0, 0, time.UTC)
 
-	tracker.RecordFailure("bob", now)
+	tracker.RecordFailureWithContext(context.Background(), "bob", now)
 	if _, ok := store.records["bob"]; !ok {
 		t.Fatal("RecordFailure did not persist")
 	}
@@ -336,7 +336,7 @@ func TestLockoutRestoreSkipsExpiredLockouts(t *testing.T) {
 	if err := tracker.Restore(context.Background(), future); err != nil {
 		t.Fatalf("Restore() error = %v", err)
 	}
-	if tracker.IsLocked("ghost", future) {
+	if tracker.IsLockedWithContext(context.Background(), "ghost", future) {
 		t.Fatal("expired lockout resurrected by Restore")
 	}
 }

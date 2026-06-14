@@ -12,6 +12,8 @@ import {
   clientSchema,
   discoveredClientListSchema,
   resetQuotaResponseSchema,
+  rescanDiscoveredResponseSchema,
+  type RescanDiscoveredResponse,
 } from "./schemas";
 
 export type ClientListItem = {
@@ -66,6 +68,8 @@ export type Client = {
   fleet_group_ids: string[];
   agent_ids: string[];
   deployments: ClientDeployment[];
+  /** "" when no public base URL is configured or no subscription token exists yet. */
+  subscription_url: string;
   created_at_unix: number;
   updated_at_unix: number;
   deleted_at_unix: number;
@@ -215,6 +219,12 @@ export const clientsApi = {
       { method: "POST" },
       clientSchema,
     ),
+  rotateSubscriptionToken: (clientID: string) =>
+    api<Client>(
+      `${apiBasePath}/clients/${clientID}/rotate-subscription`,
+      { method: "POST" },
+      clientSchema,
+    ),
   // Re-runs the client.create rollout for every target agent — used
   // to recover a client whose initial deployment failed on at least
   // one node. Backend reuses the stored client state, so callers do
@@ -264,6 +274,12 @@ export const clientsApi = {
     api<void>(`${apiBasePath}/discovered-clients/${id}/ignore`, {
       method: "POST"
     }),
+  rescanDiscoveredClients: () =>
+    api<RescanDiscoveredResponse>(
+      `${apiBasePath}/discovered-clients/rescan`,
+      { method: "POST" },
+      rescanDiscoveredResponseSchema,
+    ),
   // Single-call bulk variant: replaces the previous N-PUT/N-DELETE
   // fan-out from the dashboard with one authoritative POST. Capped at
   // 500 ids by the server; the UI typically operates on far fewer.

@@ -52,7 +52,7 @@ function Stat({ value, label }: Readonly<{ value: number | string; label: string
   return (
     <div className="flex items-baseline gap-1">
       <span className="text-xs font-mono font-medium text-fg">{value}</span>
-      <span className="text-[10px] text-fg-muted">{label}</span>
+      <span className="text-nano text-fg-muted">{label}</span>
     </div>
   );
 }

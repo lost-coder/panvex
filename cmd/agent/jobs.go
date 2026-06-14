@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"sync"
 	"time"
@@ -39,14 +40,44 @@ func shouldSendRuntimeSnapshotAfterJob(action string, success bool) bool {
 	return action == "telemetry.refresh_diagnostics"
 }
 
-func jobWorkerCountForPipeline(pipeline jobPipeline) int {
-	switch pipeline {
-	case jobPipelineRuntimeReload:
-		return 2
-	case jobPipelineClientMutation:
-		return 1
+// jobWorkerCountForPipeline sets per-lane concurrency. Every lane is
+// single-worker BY DESIGN; the lanes exist for isolation (a slow lane cannot
+// head-of-line-block another), not for intra-lane parallelism:
+//
+//   - runtime_reload: runtime.reload and telemetry.refresh_diagnostics share
+//     this lane on purpose — both hit the same local Telemt admin API, and a
+//     reload racing a diagnostics refresh would let the refresh observe a
+//     half-reloaded config. One worker serialises them. (The previous
+//     unexplained value of 2 reintroduced exactly that race.)
+//   - client_mutation: per-client mutations must apply in delivery order;
+//     two workers would let client.update#2 overtake #1.
+//   - default: config.apply / self-update / transport switches are
+//     heavyweight node-level operations — one at a time is the safe default.
+func jobWorkerCountForPipeline(jobPipeline) int {
+	return 1
+}
+
+// jobExecutionBudget returns the ctx deadline for executing one job.
+// config.apply derives its budget from the payload's health_timeout_s
+// (panel sends 30 by default) so the agent-side deadline always exceeds
+// the apply sequence it has to cover: preflight + PATCH + restart +
+// health polls. Everything else keeps the conservative default.
+func jobExecutionBudget(job *gatewayrpc.JobCommand) time.Duration {
+	switch job.GetAction() {
+	case "config.apply":
+		var p struct {
+			HealthTimeoutS int `json:"health_timeout_s"`
+		}
+		_ = json.Unmarshal([]byte(job.GetPayloadJson()), &p)
+		health := time.Duration(p.HealthTimeoutS) * time.Second
+		if health <= 0 {
+			health = 30 * time.Second
+		}
+		return health + configApplyRestartAllowance + configApplyBudgetMargin
+	case "agent.self-update":
+		return selfUpdateExecutionTimeout
 	default:
-		return 1
+		return jobExecutionTimeout
 	}
 }
 
@@ -140,6 +171,7 @@ func enqueueReceivedJob(
 
 func startJobWorkers(
 	connectionCtx context.Context,
+	streamWG *sync.WaitGroup,
 	agent *runtime.Agent,
 	tracker *jobInflightTracker,
 	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
@@ -148,7 +180,34 @@ func startJobWorkers(
 	for pipeline, queue := range jobQueues {
 		workerCount := jobWorkerCountForPipeline(pipeline)
 		for workerIndex := 0; workerIndex < workerCount; workerIndex++ {
-			go runJobWorker(connectionCtx, agent, tracker, queue, criticalOutbound)
+			streamWG.Add(1)
+			go func(queue <-chan *gatewayrpc.JobCommand) {
+				defer streamWG.Done()
+				runJobWorker(connectionCtx, agent, tracker, queue, criticalOutbound)
+			}(queue)
+		}
+	}
+}
+
+// releaseQueuedJobs drains jobs still sitting in the per-connection queues
+// after the workers exited and releases their in-flight reservations. B4:
+// the tracker outlives the connection, so anything left reserved here
+// would never be executable again after reconnect.
+func releaseQueuedJobs(tracker *jobInflightTracker, jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand) {
+	for _, queue := range jobQueues {
+		drainJobQueue(tracker, queue)
+	}
+}
+
+func drainJobQueue(tracker *jobInflightTracker, queue <-chan *gatewayrpc.JobCommand) {
+	for {
+		select {
+		case job := <-queue:
+			if job != nil {
+				tracker.release(job.GetId())
+			}
+		default:
+			return
 		}
 	}
 }
@@ -172,7 +231,7 @@ func runJobWorker(
 		}
 		jobID := job.GetId()
 
-		jobCtx, cancelJob := context.WithTimeout(connectionCtx, jobExecutionTimeout)
+		jobCtx, cancelJob := context.WithTimeout(connectionCtx, jobExecutionBudget(job))
 		result := agent.HandleJob(jobCtx, job, time.Now())
 		cancelJob()
 		slog.Debug("job completed", "job_id", jobID, "action", job.GetAction(), "success", result.Success)

@@ -177,6 +177,21 @@ func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consum
 	return token, nil
 }
 
+// PruneEnrollmentTokens implements the EnrollmentStore prune contract
+// (C4). See the interface doc for which rows count as dead.
+func (s *Store) PruneEnrollmentTokens(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM enrollment_tokens
+		WHERE (consumed_at_unix IS NOT NULL AND consumed_at_unix < ?)
+		   OR (revoked_at_unix IS NOT NULL AND revoked_at_unix < ?)
+		   OR (expires_at_unix < ? AND consumed_at_unix IS NULL AND revoked_at_unix IS NULL)
+	`, toUnix(before), toUnix(before), toUnix(before))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (s *Store) RevokeEnrollmentToken(ctx context.Context, value string, revokedAt time.Time) (storage.EnrollmentTokenRecord, error) {
 	tx, err := s.beginInternalTx(ctx)
 	if err != nil {

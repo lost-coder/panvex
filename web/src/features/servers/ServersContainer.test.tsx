@@ -94,6 +94,16 @@ vi.mock("@/shared/api/api", () => ({
   },
 }));
 
+vi.mock("@/app/providers/ToastProvider", () => ({
+  useToast: () => ({
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    withAction: vi.fn(),
+    dismiss: vi.fn(),
+  }),
+}));
+
 import { ServersContainer } from "./ServersContainer";
 
 describe("ServersContainer", () => {

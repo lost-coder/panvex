@@ -4,6 +4,7 @@ import { SkeletonRows } from "@/ui";
 import { ProfilePage } from "./ProfilePage";
 import { useProfile } from "./hooks/useProfile";
 import { useSettings } from "@/features/settings/hooks/useSettings";
+import { useAppearance } from "@/app/providers/AppearanceProvider";
 import { useProfileTotp } from "./hooks/useProfileTotp";
 import {
   DEFAULT_LANGUAGE,
@@ -14,7 +15,11 @@ import {
 
 export function ProfileContainer() {
   const { profile, isLoading: profileLoading } = useProfile();
-  const { settings, isLoading: settingsLoading, saveAppearance } = useSettings();
+  // Swipe-nav lives in the AppearanceProvider (localStorage-backed), not the
+  // server appearance row — thread it through useSettings so the Profile
+  // toggle reflects and persists the real value (same wiring as Settings).
+  const { swipeNavigation, setSwipeNavigation } = useAppearance();
+  const { settings, isLoading: settingsLoading, saveAppearance } = useSettings(swipeNavigation);
   const { setupMutation, enableMutation, disableMutation } = useProfileTotp();
   const [totpError, setTotpError] = useState<string | undefined>();
   const { i18n } = useTranslation();
@@ -26,7 +31,7 @@ export function ProfileContainer() {
   if (profileLoading || settingsLoading || !profile || !settings) {
     return (
       <div className="px-4 md:px-8 py-8">
-        <SkeletonRows count={4} label="Загрузка профиля…" />
+        <SkeletonRows count={4} />
       </div>
     );
   }
@@ -40,11 +45,14 @@ export function ProfileContainer() {
         totpEnabled: profile.totp_enabled,
       }}
       appearance={settings.appearanceSettings}
-      onAppearanceChange={(s) => saveAppearance.mutate({
-        theme: s.theme,
-        density: s.density,
-        help_mode: s.helpMode,
-      })}
+      onAppearanceChange={(s) => {
+        setSwipeNavigation(s.swipeNavigation);
+        saveAppearance.mutate({
+          theme: s.theme,
+          density: s.density,
+          help_mode: s.helpMode,
+        });
+      }}
       language={currentLanguage}
       onLanguageChange={(lng) => {
         void setLanguage(lng);

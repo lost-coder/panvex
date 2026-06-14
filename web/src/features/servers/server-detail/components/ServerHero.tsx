@@ -1,10 +1,17 @@
 import { useTranslation } from "react-i18next";
 
-import { StatusBeacon, cn, formatUptime } from "@/ui";
+import { NodeStateBadge, nodeStatePresentation, cn, formatUptime, type PillTone } from "@/ui";
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
 import { ServerActionsDropdown } from "../ServerActionsDropdown";
 import { RelativeTimeBadge } from "./RelativeTimeBadge";
+
+const PULSE_TONE_CLASS: Record<PillTone, string> = {
+  ok: "text-status-ok",
+  warn: "text-status-warn",
+  error: "text-status-error",
+  neutral: "text-fg-muted",
+};
 
 /**
  * Desktop hero band (full-bleed border-y strip with name, status, meta
@@ -17,6 +24,7 @@ export function ServerHero({
   relativeTime,
   relativeTimeStale,
   onReload,
+  onRestart,
   onBoostDetail,
   onRename,
   onChangeFleetGroup,
@@ -27,56 +35,51 @@ export function ServerHero({
   relativeTime: string | null;
   relativeTimeStale: boolean;
   onReload?: (() => void) | undefined;
+  onRestart?: (() => void) | undefined;
   onBoostDetail?: (() => void) | undefined;
   onRename?: (() => void) | undefined;
   onChangeFleetGroup?: (() => void) | undefined;
   onDeregister?: (() => void) | undefined;
 }>) {
   const { t } = useTranslation("servers");
+  const { t: tc } = useTranslation("common");
   const { systemInfo } = server;
+  const pulseColor = PULSE_TONE_CLASS[nodeStatePresentation(server.state).tone];
   return (
     <section className="hidden md:block border-y border-divider">
       <div className="px-4 md:px-8 py-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <StatusBeacon status={server.status} size="sm" />
+        <NodeStateBadge state={server.state} label={tc(nodeStatePresentation(server.state).labelKey)} />
         <h2 className="font-mono text-lg font-semibold text-fg truncate">{server.name}</h2>
         <span className="text-fg-faint">/</span>
-        <span
-          className={cn(
-            "font-mono text-xs uppercase tracking-wider",
-            (() => {
-              if (server.status === "error") return "text-status-error";
-              if (server.status === "warn") return "text-status-warn";
-              return "text-status-ok";
-            })(),
-          )}
-        >
+        <span className={cn("font-mono text-xs uppercase tracking-wider", pulseColor)}>
           {pulseWord}
         </span>
         <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
           {server.ip && (
-            <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
+            <span className="font-mono text-micro text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
               {server.ip}
             </span>
           )}
-          <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
+          <span className="font-mono text-micro text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
             {t("detail.metaVersion", { version: systemInfo.version })}
           </span>
-          <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
+          <span className="font-mono text-micro text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
             {t("detail.metaUp", { value: formatUptime(systemInfo.uptimeSeconds) })}
           </span>
           {systemInfo.configReloadCount > 0 && (
-            <span className="font-mono text-[11px] text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
+            <span className="font-mono text-micro text-fg-muted px-2 py-0.5 rounded-xs border border-divider bg-bg">
               {t("detail.metaReloads", { count: systemInfo.configReloadCount })}
             </span>
           )}
           {server.telemtUnreachable && (
-            <span className="font-mono text-[11px] text-neutral-400 px-2 py-0.5 rounded-xs border border-neutral-500/30 bg-neutral-500/10">
+            <span className="font-mono text-micro text-neutral-400 px-2 py-0.5 rounded-xs border border-neutral-500/30 bg-neutral-500/10">
               {t("detail.modeUnknown")}
             </span>
           )}
           {relativeTime && <RelativeTimeBadge label={relativeTime} stale={relativeTimeStale} />}
           <ServerActionsDropdown
             onReload={onReload}
+            onRestart={onRestart}
             onBoostDetail={onBoostDetail}
             onRename={onRename}
             onChangeFleetGroup={onChangeFleetGroup}

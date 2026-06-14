@@ -404,3 +404,16 @@ func detectDiscoveredClientConflicts(clients []discoveredClient) map[string][]di
 	recordDiscoveredConflicts(byName, "same_name_different_secrets", result)
 	return result
 }
+
+// handleRescanDiscoveredClients asks every currently-connected agent to
+// re-report its full Telemt client list, so operators can force a discovery
+// refresh (e.g. after fixing a Telemt outage on a node) without waiting for the
+// periodic cycle or restarting the agent. Returns 202 with the number of agents
+// nudged; the actual re-discovery happens asynchronously on each agent's stream.
+func (s *Server) handleRescanDiscoveredClients() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		n := s.sessions.RequestRediscoveryAll()
+		s.logger.InfoContext(r.Context(), "operator-triggered client re-discovery", "agents_notified", n)
+		writeJSON(w, http.StatusAccepted, map[string]int{"agents_notified": n})
+	}
+}

@@ -14,7 +14,6 @@
   "error": {
     "title": "Не удалось загрузить флот",
     "fallbackDescription": "Сервис телеметрии недоступен. Повторите попытку, когда панель восстановит связь.",
-    "telemtUnreachable": "Telemt недоступен",
     "modeUnknown": "Режим неизвестен",
     "loadFleet": "Загрузка флота не удалась",
     "bulkActionFailed": "Массовое действие не удалось",
@@ -96,7 +95,11 @@
     "ariaLabel": "Мастер добавления сервера",
     "close": "Закрыть",
     "quickCreateTitle": "Новая группа серверов",
-    "fleetGroupCreated": "Группа «{{label}}» создана."
+    "fleetGroupCreated": "Группа «{{label}}» создана.",
+    "closeConfirmTitle": "Прервать подключение?",
+    "closeConfirmBody": "Прогресс мастера будет потерян. Созданный токен останется действительным до конца TTL — его можно отозвать на странице токенов подключения.",
+    "closeConfirmAction": "Прервать",
+    "closeConfirmCancel": "Продолжить"
   },
   "detail": {
     "breadcrumbServers": "Серверы",
@@ -117,7 +120,11 @@
     "elapsedHourMin": "{{hours}} ч {{minutes}} мин",
     "actions": {
       "title": "Действия с сервером",
-      "reload": "Перезапустить рантайм",
+      "reload": "Перезагрузить рантайм",
+      "restart": "Перезапустить Telemt",
+      "restartDone": "Запрошен перезапуск Telemt",
+      "restartConfirmTitle": "Перезапустить Telemt?",
+      "restartConfirmBody": "Будет перезапущен процесс Telemt на «{{name}}» — активные подключения кратко прервутся.",
       "refreshDiagnostics": "Обновить диагностику",
       "rename": "Переименовать сервер",
       "changeFleetGroup": "Сменить группу",
@@ -257,7 +264,7 @@
     "mePool": {
       "unavailable": "ME-пул недоступен на этом сервере.",
       "coverage": "Покрытие",
-      "coverageCaption": "{{alive}} / {{required}} писателей живы",
+      "coverageCaption": "{{alive}} живо · {{required}} требуется",
       "freshCoverage": "Свежее покрытие",
       "freshCoverageCaption": "{{count}} свежих живых",
       "endpoints": "Эндпоинты",
@@ -296,7 +303,8 @@
         "clients": "Клиенты",
         "idle": "Простой"
       },
-      "writerEmpty": "Под фильтр писатели не подходят"
+      "writerEmpty": "Под фильтр писатели не подходят",
+      "writersUnavailable": "Этот агент не передаёт детализацию по писателям."
     },
     "upstreamsTab": {
       "id": "#",
@@ -390,5 +398,55 @@
     "confirmTitle": "Удалить этот сервер?",
     "confirmBody": "«{{name}}» отключится от панели управления и перестанет получать раскатки. Для повторного подключения потребуется новый токен.",
     "feedbackInitiated": "Обновление запущено"
+  },
+  "bulk": {
+    "queued_one": "Действие поставлено в очередь для {{count}} сервера.",
+    "queued_few": "Действие поставлено в очередь для {{count}} серверов.",
+    "queued_many": "Действие поставлено в очередь для {{count}} серверов.",
+    "viewActivity": "Открыть в Активности"
+  },
+  "config": {
+    "tab": "Конфиг",
+    "section": {
+      "general": "Основное",
+      "censorship": "Цензура",
+      "timeouts": "Таймауты"
+    },
+    "field": {
+      "log_level": "Уровень логов",
+      "update_every": "Интервал обновления ME",
+      "modes": "Режимы",
+      "tls_domain": "SNI-домен",
+      "tls_domains": "Дополнительные SNI-домены",
+      "client_handshake": "Таймаут рукопожатия клиента"
+    },
+    "badge": {
+      "hot": "Мгновенно",
+      "restart": "Рестарт",
+      "hotHint": "Применяется немедленно",
+      "restartHint": "Требует перезапуска Telemt (краткий разрыв соединений)"
+    },
+    "drift": {
+      "in_sync": "Синхронизировано",
+      "drifted": "Рассинхрон",
+      "unknown": "Неизвестно",
+      "fieldsLabel": "Расходящиеся поля"
+    },
+    "save": "Сохранить",
+    "saved": "Конфигурация сохранена",
+    "overrideHint": "Это переопределения для конкретной ноды. Оставьте поле пустым, чтобы наследовать effective-значение, показанное в подсказке.",
+    "unsavedHint": "Сохраните перед применением",
+    "apply": {
+      "button": "Применить к ноде",
+      "buttonGroup": "Применить к группе",
+      "restartWarningTitle": "Требуется перезапуск",
+      "restartWarning": "Некоторые изменения требуют перезапуска Telemt с кратковременным обрывом соединений. Продолжить?",
+      "confirm": "Применить",
+      "cancel": "Отмена",
+      "applied": "Применено к {{count}} ноде(ам)",
+      "failed": "Ошибка на {{agent}}: {{error}}"
+    },
+    "nodesTitle": "Ноды",
+    "noNodes": "В этой группе пока нет нод"
   }
 }

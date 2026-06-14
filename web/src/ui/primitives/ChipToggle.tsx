@@ -24,13 +24,13 @@ export function ChipToggle({ label, sublabel, selected, onClick, className }: Re
       )}
     >
       {selected && (
-        <span className="text-[10px]" aria-hidden="true">
+        <span className="text-nano" aria-hidden="true">
           ✓
         </span>
       )}
       {label}
       {sublabel && (
-        <span className={cn("text-[10px]", selected ? "opacity-70" : "text-fg-muted")}>
+        <span className={cn("text-nano", selected ? "opacity-70" : "text-fg-muted")}>
           {sublabel}
         </span>
       )}

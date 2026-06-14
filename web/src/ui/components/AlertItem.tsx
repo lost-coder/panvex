@@ -35,7 +35,7 @@ export function AlertItem({ severity, message, source, timestamp, className }: R
       <div className="flex items-start gap-2">
         <span
           className={cn(
-            "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono font-semibold uppercase leading-none",
+            "shrink-0 rounded px-1.5 py-0.5 text-nano font-mono font-semibold uppercase leading-none",
             severityBadge[severity],
           )}
         >
@@ -45,7 +45,7 @@ export function AlertItem({ severity, message, source, timestamp, className }: R
       </div>
       {(source || timestamp) && (
         <div className="flex items-center gap-2 mt-1.5 ml-[38px]">
-          {source && <span className="text-[11px] font-mono text-fg-muted">{source}</span>}
+          {source && <span className="text-micro font-mono text-fg-muted">{source}</span>}
           {timestamp && <span className="text-caption/60">{timestamp}</span>}
         </div>
       )}
