@@ -38,7 +38,7 @@ function Tick({ label, value, hint, tone, barPct, delta }: Readonly<PulseTick>) 
   const t = tone ?? "default";
   return (
     <div className="flex flex-col gap-1 min-w-0">
-      <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+      <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
         {label}
       </span>
       <div className="flex items-baseline gap-2 min-w-0">
@@ -53,7 +53,7 @@ function Tick({ label, value, hint, tone, barPct, delta }: Readonly<PulseTick>) 
         {delta && (
           <span
             className={cn(
-              "text-[11px] font-mono tabular-nums",
+              "text-micro font-mono tabular-nums",
               delta.startsWith("-") ? "text-status-error" : "text-status-ok",
             )}
           >
@@ -69,7 +69,7 @@ function Tick({ label, value, hint, tone, barPct, delta }: Readonly<PulseTick>) 
           />
         </div>
       )}
-      {hint && <span className="text-[10px] font-mono text-fg-muted truncate">{hint}</span>}
+      {hint && <span className="text-nano font-mono text-fg-muted truncate">{hint}</span>}
     </div>
   );
 }

@@ -39,20 +39,6 @@ func (s connectionSchedule) config(group pollingGroup) pollingGroupConfig {
 	return s.groups[group]
 }
 
-func newTicker(config pollingGroupConfig) *time.Ticker {
-	if !config.Enabled || config.Interval <= 0 {
-		return nil
-	}
-	return time.NewTicker(config.Interval)
-}
-
-func tickerChan(ticker *time.Ticker) <-chan time.Time {
-	if ticker == nil {
-		return nil
-	}
-	return ticker.C
-}
-
 func timerChan(timer *time.Timer) <-chan time.Time {
 	if timer == nil {
 		return nil

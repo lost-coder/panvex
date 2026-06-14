@@ -87,6 +87,15 @@ func runServe(args []string) error {
 	// first among the defers registered below it.
 	defer shutdownOtel(otelShutdown)
 
+	// A8: refuse insecure storage configurations before the first
+	// connection attempt. ResolveStorage (in parseServeConfig) stays a
+	// pure normalizer; the security gate lives on the serve path only,
+	// so operator CLI subcommands (backup, diagnose, migrate-schema)
+	// can still open loopback dev databases without the prod guards.
+	if err := config.ValidateStorageSecurity(options.Storage); err != nil {
+		return fmt.Errorf("control-plane: storage config rejected: %w", err)
+	}
+
 	store, err := openStore(context.Background(), options.Storage)
 	if err != nil {
 		return err
@@ -145,6 +154,19 @@ func runServe(args []string) error {
 		}()
 	}
 
+	// Public /sub listener: opt-in via PANVEX_SUBSCRIPTION_ADDR.
+	subShutdown, err := startSubscriptionListenerIfConfigured(api)
+	if err != nil {
+		return err
+	}
+	if subShutdown != nil {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = subShutdown(ctx)
+		}()
+	}
+
 	// P3-OBS-01: wrap the chi-rooted handler with otelhttp so every
 	// inbound HTTP request becomes a root span. When tracing is
 	// disabled (no endpoint set) the global no-op TracerProvider makes
@@ -186,17 +208,18 @@ func runServe(args []string) error {
 	// agenttransport.Manager owns outbound supervisors and (in a later task)
 	// the inbound dispatch path. Now wired with real DB queries so outbound
 	// supervisors are restored at startup and the enrollment pre-flight runs.
-	// The outbound TLS config is the panel's server-side mTLS config (agents
-	// must present a cert signed by the panel CA). The CA is available via
-	// api.GRPCTLSConfig() once the server is constructed above.
-	outboundTLS := api.GRPCTLSConfig()
+	// A1: outbound supervisors dial agents as a TLS CLIENT — they need the
+	// panel CA in RootCAs and the panel's CLIENT certificate, not the gRPC
+	// listener's server config (which has ClientCAs and a ServerAuth-only
+	// cert and can never verify an agent's serving cert).
+	outboundTLS := api.OutboundGRPCTLSConfig()
 	manager := agenttransport.NewManager(queries, api.RunAgentSession, outboundTLS, logger)
 	api.SetAgentTransportManager(manager)
 
 	// Шов 1: wire the install-command handler so POST /agents/{id}/install-command
 	// returns a curl | bash one-liner instead of 503. PanelURL is the gRPC
-	// endpoint agents dial. ScriptURL, PanelCAPin, and PanelCN are derived
-	// from the panel's CA certificate (same CA that signs agent certs).
+	// endpoint agents dial. ScriptURL and PanelCAPin are derived from the
+	// panel's CA certificate; PanelCN is the protocol-fixed client cert CN.
 	//
 	// Q-05: ScriptURL is the panel's own /install-agent.sh route — see
 	// internal/controlplane/server/install_script.go. The script is embedded
@@ -217,7 +240,7 @@ func runServe(args []string) error {
 			// rewrites /install-agent.sh therefore cannot escalate.
 			ScriptHash: server.InstallScriptSHA256(),
 			PanelCAPin: api.CAPINHex(),
-			PanelCN:    api.CACN(),
+			PanelCN:    server.PanelClientCN,
 			PanelURLFn: api.ResolveAgentGRPCEndpoint,
 			Now:        time.Now,
 		})
@@ -230,7 +253,7 @@ func runServe(args []string) error {
 		api.SetProvisionOutboundDeps(&server.ProvisionOutboundDeps{
 			Queries:    queries,
 			PanelCAPin: api.CAPINHex(),
-			PanelCN:    api.CACN(),
+			PanelCN:    server.PanelClientCN,
 			Now:        time.Now,
 		})
 	}
@@ -256,7 +279,7 @@ func runServe(args []string) error {
 			// callback can close over agentID and ctx for the storage
 			// pin lookup. store satisfies bootstrapPinReader via its
 			// GetAgentCertPin method.
-			bootstrapTLS := newBootstrapTLSConfig(ctx, agentID, store)
+			bootstrapTLS := newBootstrapTLSConfig(ctx, agentID, store, api.PanelClientCertificate())
 			return enrollDriver.Run(ctx, agentAddr, bootstrapTLS, agentID)
 		}
 		bootstrapStateFn := func(ctx context.Context, agentID string) (string, error) {
@@ -503,6 +526,27 @@ func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error)
 	runtime.PanelAllowedCIDRs = panelCIDRs
 
 	return runtime, nil
+}
+
+// startSubscriptionListenerIfConfigured brings up the public /sub listener
+// when PANVEX_SUBSCRIPTION_ADDR is set. PANVEX_SUBSCRIPTION_BASE_URL
+// optionally sets the public origin for shareable links (Plan 3). A bind
+// error is fatal — the operator opted in expecting the listener to be
+// available; silently skipping would hide the misconfiguration.
+func startSubscriptionListenerIfConfigured(api *server.Server) (func(context.Context) error, error) {
+	if api == nil {
+		return nil, nil
+	}
+	addr := strings.TrimSpace(os.Getenv("PANVEX_SUBSCRIPTION_ADDR"))
+	if addr == "" {
+		return nil, nil
+	}
+	api.SetSubscriptionListener(addr, strings.TrimSpace(os.Getenv("PANVEX_SUBSCRIPTION_BASE_URL")))
+	_, shutdown, err := api.StartSubscriptionListener(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("start subscription listener on %s: %w", addr, err)
+	}
+	return shutdown, nil
 }
 
 // startPprofListenerIfConfigured brings up the S-07 separate pprof listener

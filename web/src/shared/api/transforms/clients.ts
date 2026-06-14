@@ -93,6 +93,7 @@ export function transformClientDetail(
     expirationRfc3339: raw.expiration_rfc3339,
     fleetGroupIds: raw.fleet_group_ids ?? [],
     agentIds: raw.agent_ids ?? [],
+    subscriptionUrl: raw.subscription_url,
     deployments: (raw.deployments ?? []).map((d) => ({
       agentId: d.agent_id,
       desiredOperation: d.desired_operation,

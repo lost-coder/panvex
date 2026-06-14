@@ -42,6 +42,9 @@ go.work.sum
 # Local build artifacts
 .tmp/
 data/
+# Stray top-level node_modules (e.g. a vitest .vite cache written with the
+# repo root as cwd) — never track it. The real install lives in web/.
+/node_modules/
 web/node_modules/
 web/dist/
 web/*.tsbuildinfo

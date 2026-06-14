@@ -160,6 +160,60 @@ func nullTimeFromPtr(t *time.Time) sql.NullTime {
 	return sql.NullTime{Time: t.UTC(), Valid: true}
 }
 
+// dedupAgents returns a new slice containing only the last occurrence of each
+// agent ID, preserving the relative order of those last occurrences.
+// PostgreSQL forbids a single INSERT … ON CONFLICT statement from touching the
+// same conflict-target row twice (SQLSTATE 21000); pre-deduplication ensures
+// the batch handed to Postgres is conflict-key-unique while honouring the
+// last-write-wins contract verified by the SQLite contract tests.
+func dedupAgents(agents []storage.AgentRecord) []storage.AgentRecord {
+	last := make(map[string]int, len(agents))
+	for i, a := range agents {
+		last[a.ID] = i
+	}
+	out := agents[:0:0] // zero-len, zero-cap to avoid aliasing
+	for i, a := range agents {
+		if last[a.ID] == i {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// dedupClientUsage returns a new slice with only the last occurrence of each
+// (client_id, agent_id) pair, preserving order of last-occurrences.
+func dedupClientUsage(records []storage.ClientUsageRecord) []storage.ClientUsageRecord {
+	type key struct{ clientID, agentID string }
+	last := make(map[key]int, len(records))
+	for i, r := range records {
+		last[key{r.ClientID, r.AgentID}] = i
+	}
+	out := records[:0:0]
+	for i, r := range records {
+		if last[key{r.ClientID, r.AgentID}] == i {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// dedupClientIPHistory returns a new slice with only the last occurrence of
+// each (agent_id, client_id, ip_address) triple, preserving order.
+func dedupClientIPHistory(records []storage.ClientIPHistoryRecord) []storage.ClientIPHistoryRecord {
+	type key struct{ agentID, clientID, ipAddress string }
+	last := make(map[key]int, len(records))
+	for i, r := range records {
+		last[key{r.AgentID, r.ClientID, r.IPAddress}] = i
+	}
+	out := records[:0:0]
+	for i, r := range records {
+		if last[key{r.AgentID, r.ClientID, r.IPAddress}] == i {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // agentBulkArgs flattens an AgentRecord into the parameter slice used
 // by PutAgentsBulk. Splitting it out keeps the per-chunk loop body
 // simple.
@@ -178,6 +232,9 @@ func (s *Store) PutAgentsBulk(ctx context.Context, agents []storage.AgentRecord)
 	if len(agents) == 0 {
 		return nil
 	}
+	// Deduplicate by conflict key (id) keeping the last occurrence so that
+	// Postgres does not see the same key twice in one INSERT (SQLSTATE 21000).
+	agents = dedupAgents(agents)
 	const cols = 8
 	return s.execInTx(ctx, func(exec dbExecutor) error {
 		for start := 0; start < len(agents); start += bulkChunkSize {
@@ -390,6 +447,9 @@ func (s *Store) UpsertClientUsageBulk(ctx context.Context, records []storage.Cli
 	if len(records) == 0 {
 		return nil
 	}
+	// Deduplicate by conflict key (client_id, agent_id) before sending to
+	// Postgres; duplicate keys in one INSERT … ON CONFLICT cause SQLSTATE 21000.
+	records = dedupClientUsage(records)
 	const cols = 8
 	return s.execInTx(ctx, func(exec dbExecutor) error {
 		return runBulkChunks(ctx, exec, len(records), cols,
@@ -425,6 +485,9 @@ func (s *Store) UpsertClientIPHistoryBulk(ctx context.Context, records []storage
 	if len(records) == 0 {
 		return nil
 	}
+	// Deduplicate by conflict key (agent_id, client_id, ip_address) to avoid
+	// Postgres SQLSTATE 21000 on repeated conflict targets in one INSERT.
+	records = dedupClientIPHistory(records)
 	const cols = 5
 	return s.execInTx(ctx, func(exec dbExecutor) error {
 		for start := 0; start < len(records); start += bulkChunkSize {

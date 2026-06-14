@@ -65,8 +65,15 @@ function SwipeTabViewInner({
 
   return (
     <div className={cn("flex flex-col overflow-hidden", className)}>
-      {/* Tab bar */}
-      <div className="flex border-b border-border" role="tablist" aria-label="Content tabs">
+      {/* Tab bar — U-13: scroll horizontally instead of squeezing every tab
+          to flex-1 (which wrapped long uppercase labels like
+          "GATES & UPSTREAMS" onto two lines and looked broken with 5 tabs).
+          Tabs size to content and the strip scrolls when they overflow. */}
+      <div
+        className="flex border-b border-border overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        role="tablist"
+        aria-label="Content tabs"
+      >
         {tabs.map((tab, i) => (
           <button
             key={tab.id}
@@ -76,7 +83,7 @@ function SwipeTabViewInner({
             id={`tab-${tab.id}`}
             aria-controls={`tabpanel-${tab.id}`}
             className={cn(
-              "flex-1 px-3 py-2.5 text-xs font-medium tracking-wide uppercase transition-colors",
+              "shrink-0 whitespace-nowrap px-3.5 py-2.5 text-xs font-medium tracking-wide uppercase transition-colors",
               i === activeIndex
                 ? "text-accent border-b-2 border-accent"
                 : "text-fg-muted hover:text-fg",

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { MoreHorizontal, LogOut } from "lucide-react";
 import { cn } from "@/ui/lib/cn";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetBody } from "@/ui/base/sheet";
 import type { NavItem } from "./types";
@@ -9,6 +10,12 @@ export interface BottomNavProps {
   moreItems?: NavItem[] | undefined;
   activeId: string;
   onNavigate?: ((id: string) => void) | undefined;
+  /**
+   * Sign-out handler surfaced in the "More" sheet. On mobile the sidebar
+   * (which hosts Log out on desktop) is hidden, so without this the
+   * operator has no way to end the session from a phone (U-03).
+   */
+  onLogout?: (() => void) | undefined;
   className?: string | undefined;
 }
 
@@ -17,15 +24,25 @@ export function BottomNav({
   moreItems,
   activeId,
   onNavigate,
+  onLogout,
   className,
 }: Readonly<BottomNavProps>) {
+  const { t } = useTranslation("ui");
   const [moreOpen, setMoreOpen] = useState(false);
-  const hasMore = !!moreItems && moreItems.length > 0;
+  const hasMoreItems = !!moreItems && moreItems.length > 0;
+  // The "More" affordance must also appear when the only overflow action
+  // is Log out — otherwise sign-out is unreachable on mobile.
+  const hasMore = hasMoreItems || !!onLogout;
   const moreActive = moreItems?.some((m) => m.id === activeId) ?? false;
 
   const handleNavigate = (id: string) => {
     setMoreOpen(false);
     onNavigate?.(id);
+  };
+
+  const handleLogout = () => {
+    setMoreOpen(false);
+    onLogout?.();
   };
 
   return (
@@ -49,7 +66,7 @@ export function BottomNav({
               aria-current={isActive ? "page" : undefined}
               onClick={() => handleNavigate(item.id)}
               className={cn(
-                "flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px]",
+                "flex-1 flex flex-col items-center justify-center gap-0.5 min-h-12 py-2 text-nano",
                 "transition-all active:scale-[0.97]",
                 "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-4px]",
                 isActive ? "text-accent" : "text-fg-muted active:text-fg",
@@ -65,13 +82,13 @@ export function BottomNav({
         {hasMore && (
           <button
             type="button"
-            aria-label="More navigation"
+            aria-label={t("bottomNav.moreLabel")}
             aria-haspopup="dialog"
             aria-expanded={moreOpen}
             aria-current={moreActive ? "page" : undefined}
             onClick={() => setMoreOpen(true)}
             className={cn(
-              "flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px]",
+              "flex-1 flex flex-col items-center justify-center gap-0.5 min-h-12 py-2 text-nano",
               "transition-all active:scale-[0.97]",
               "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[-4px]",
               moreActive ? "text-accent" : "text-fg-muted active:text-fg",
@@ -80,7 +97,7 @@ export function BottomNav({
             <span className="text-lg leading-none" aria-hidden="true">
               <MoreHorizontal size={20} />
             </span>
-            <span>More</span>
+            <span>{t("bottomNav.more")}</span>
           </button>
         )}
       </nav>
@@ -89,7 +106,7 @@ export function BottomNav({
         <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
           <SheetContent side="bottom" className="md:hidden">
             <SheetHeader>
-              <SheetTitle>More</SheetTitle>
+              <SheetTitle>{t("bottomNav.more")}</SheetTitle>
             </SheetHeader>
             <SheetBody>
               <ul className="flex flex-col gap-0.5">
@@ -119,6 +136,26 @@ export function BottomNav({
                     </li>
                   );
                 })}
+                {onLogout && (
+                  <li className={cn(hasMoreItems && "mt-1 pt-1 border-t border-border")}>
+                    <button
+                      type="button"
+                      aria-label={t("sidebar.logout")}
+                      onClick={handleLogout}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-3 rounded-xs text-sm",
+                        "transition-all active:scale-[0.99]",
+                        "focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1",
+                        "text-status-error hover:bg-status-error/10",
+                      )}
+                    >
+                      <span className="text-lg leading-none" aria-hidden="true">
+                        <LogOut size={20} />
+                      </span>
+                      <span>{t("sidebar.logout")}</span>
+                    </button>
+                  </li>
+                )}
               </ul>
             </SheetBody>
           </SheetContent>

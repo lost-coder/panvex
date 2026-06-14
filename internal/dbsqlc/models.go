@@ -40,6 +40,14 @@ type AgentCertificateRecoveryGrant struct {
 	RevokedAt sql.NullTime
 }
 
+type AgentConfigTarget struct {
+	ScopeType    string
+	ScopeID      string
+	SectionsJson string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 type AgentFallbackState struct {
 	AgentID       string
 	EnteredAtUnix int64
@@ -82,6 +90,7 @@ type Client struct {
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	DeletedAt         sql.NullTime
+	SubscriptionToken sql.NullString
 }
 
 type ClientAssignment struct {

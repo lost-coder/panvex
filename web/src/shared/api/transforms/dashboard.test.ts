@@ -217,6 +217,38 @@ describe("transformDashboardOverview", () => {
     expect(coverageKpi?.tone).toBe("default");
   });
 
+  it("derives state + reason for attention nodes and defaults healthy nodes", () => {
+    const raw = {
+      fleet: { online_agents: 1, total_agents: 2, offline_agents: 1, degraded_agents: 0, live_connections: 0, dc_issue_agents: 0 },
+      attention: [
+        {
+          agent_id: "a1",
+          node_name: "edge-1",
+          fleet_group_id: "g",
+          severity: "bad",
+          reason: "Agent heartbeat is offline",
+          presence_state: "offline",
+          runtime: { telemt_unreachable: false },
+          runtime_freshness: { observed_at_unix: 0 },
+          detail_boost: {},
+        },
+      ],
+      server_cards: [
+        {
+          agent: { id: "a2", node_name: "edge-2", version: "1", runtime: { current_connections: 5, system_load: { cpu_usage_pct: 10, memory_usage_pct: 20 }, dcs: [] } },
+          severity: "ok",
+          reason: "",
+          runtime_freshness: { observed_at_unix: 0 },
+        },
+      ],
+    } as unknown as Parameters<typeof transformDashboardOverview>[0];
+    const out = transformDashboardOverview(raw);
+    expect(out.attentionNodes[0]!.state).toBe("offline");
+    expect(out.attentionNodes[0]!.reason).toBe("Agent heartbeat is offline");
+    expect(out.healthyNodes[0]!.state).toBe("ok");
+    expect(out.healthyNodes[0]!.reason).toBe("");
+  });
+
   it("does not surface healthy stale agents as alerts (severity is still ok)", () => {
     const agent = makeAgent("a-3", "node-stale-2");
     const overview = transformDashboardOverview(

@@ -50,7 +50,7 @@ export function MeterRing({ value, max = 100, label, size = 72, className }: Rea
           <span className="text-sm font-mono font-bold text-fg">{Math.round(pct)}%</span>
         </div>
       </div>
-      {label && <span className="text-[10px] text-fg-muted uppercase tracking-wider">{label}</span>}
+      {label && <span className="text-nano text-fg-muted uppercase tracking-wider">{label}</span>}
     </div>
   );
 }

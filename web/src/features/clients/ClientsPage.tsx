@@ -5,6 +5,7 @@
 // `./components/` so this file stays focused on data orchestration.
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Users } from "lucide-react";
 
 import { DiscoveredClientsBanner } from "@/features/clients/DiscoveredClientsBanner";
 import { ClientsCreateSheet } from "@/features/clients/components/ClientsCreateSheet";
@@ -12,15 +13,17 @@ import {
   buildClientsBulkActions,
   buildClientsStatusFilter,
 } from "@/features/clients/components/ClientsFilters";
-import { effectiveClientStatus } from "@/features/clients/components/ClientsPageCells";
+import { deriveClientState } from "@/features/clients/components/ClientsPageCells";
 import {
   ClientsPagePulse,
   buildClientCounts,
 } from "@/features/clients/components/ClientsPagePulse";
 import { ClientsTableBody } from "@/features/clients/components/ClientsTableBody";
+import { ClientCardView } from "@/features/clients/components/ClientCardView";
 import { buildClientColumns } from "@/features/clients/components/ClientsTableColumns";
 import { useClientSelection } from "@/features/clients/components/useClientSelection";
 import { useNowSec } from "@/shared/hooks/useNowSec";
+import { useTableData } from "@/shared/hooks";
 import {
   BulkActionBar,
   Button,
@@ -67,7 +70,6 @@ export function ClientsPage({
   const { t } = useTranslation("clients");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
   const [createData, setCreateData] = useState<ClientFormData>({ ...emptyFormData });
   const pageSize = 20;
@@ -89,15 +91,15 @@ export function ClientsPage({
       clients.filter((c) => {
         const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase());
         const matchStatus =
-          statusFilter === "all" || effectiveClientStatus(c, nowMs) === statusFilter;
+          statusFilter === "all" || deriveClientState(c, nowMs) === statusFilter;
         return matchSearch && matchStatus;
       }),
     [clients, search, statusFilter, nowMs],
   );
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage = Math.min(currentPage, totalPages);
-  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  // Client-side pagination via the shared adapter — clamps the page when
+  // filters shrink the list (no stranded "page 8 of 3").
+  const { page, setPage, totalPages, totalItems, paginated } = useTableData(filtered, pageSize);
 
   // Selection helpers (scoped to the visible page — no fleet-wide select).
   const pageIds = useMemo(() => paginated.map((c) => c.id), [paginated]);
@@ -134,7 +136,7 @@ export function ClientsPage({
               >
                 {t("page.discovered")}
                 {pendingDiscoveredCount ? (
-                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-bg text-[10px] font-mono">
+                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-bg text-nano font-mono">
                     {pendingDiscoveredCount}
                   </span>
                 ) : null}
@@ -165,7 +167,7 @@ export function ClientsPage({
           // only needs to explain what operators should do next.
           <div className="py-10">
             <EmptyState
-              icon="👥"
+              icon={<Users size={28} aria-hidden="true" />}
               title={t("empty.title")}
               description={t("empty.description")}
             />
@@ -191,7 +193,7 @@ export function ClientsPage({
                 value: search,
                 onChange: (v) => {
                   setSearch(v);
-                  setCurrentPage(1);
+                  setPage(1);
                 },
                 placeholder: t("filters.searchPlaceholder"),
               }}
@@ -200,7 +202,7 @@ export function ClientsPage({
                   value: statusFilter,
                   onChange: (v) => {
                     setStatusFilter(v);
-                    setCurrentPage(1);
+                    setPage(1);
                   },
                   counts: statusCounts,
                   t,
@@ -212,26 +214,55 @@ export function ClientsPage({
                   : undefined
               }
               pagination={{
-                page: safePage,
+                page,
                 totalPages,
-                totalItems: filtered.length,
+                totalItems,
                 pageSize,
-                onChange: setCurrentPage,
+                onChange: setPage,
               }}
             >
-              <ClientsTableBody
-                rows={paginated}
-                columns={columns}
-                selection={{
-                  selected: sel.selected,
-                  onToggle: sel.toggleOne,
-                  onToggleAll: sel.toggleAllOnPage,
-                  allSelected: sel.allSelected,
-                  someSelected: sel.someSelected,
-                }}
-                onClientClick={onClientClick}
-                nowMs={nowMs}
-              />
+              {effectiveMode === "cards" ? (
+                <>
+                  {/* Mobile keeps the compact rows (cards add no value on a
+                      narrow column); desktop renders the responsive grid. */}
+                  <div className="md:hidden">
+                    <ClientsTableBody
+                      rows={paginated}
+                      columns={columns}
+                      selection={{
+                        selected: sel.selected,
+                        onToggle: sel.toggleOne,
+                        onToggleAll: sel.toggleAllOnPage,
+                        allSelected: sel.allSelected,
+                        someSelected: sel.someSelected,
+                      }}
+                      onClientClick={onClientClick}
+                      nowMs={nowMs}
+                    />
+                  </div>
+                  <div className="hidden md:block">
+                    <ClientCardView
+                      clients={paginated}
+                      onClientClick={onClientClick}
+                      nowMs={nowMs}
+                    />
+                  </div>
+                </>
+              ) : (
+                <ClientsTableBody
+                  rows={paginated}
+                  columns={columns}
+                  selection={{
+                    selected: sel.selected,
+                    onToggle: sel.toggleOne,
+                    onToggleAll: sel.toggleAllOnPage,
+                    allSelected: sel.allSelected,
+                    someSelected: sel.someSelected,
+                  }}
+                  onClientClick={onClientClick}
+                  nowMs={nowMs}
+                />
+              )}
             </TableView>
           </>
         )}

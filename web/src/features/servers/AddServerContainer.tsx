@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
+import { useNowSec } from "@/shared/hooks/useNowSec";
 import { EnrollmentWizard } from "@/features/enrollment/EnrollmentWizard";
 import type {
   EnrollmentWizardProps,
@@ -12,6 +14,7 @@ import { FleetGroupFormSheet, type FleetGroupFormData } from "@/features/fleet-g
 import { EnrollmentLiveSection } from "./enrollment/EnrollmentLiveSection";
 import { Sheet, SheetBody, SheetContent } from "@/ui";
 import { useToast } from "@/app/providers/ToastProvider";
+import { useConfirm } from "@/app/providers/ConfirmProvider";
 import { useNavigate } from "@tanstack/react-router";
 import { apiClient } from "@/shared/api/api";
 import type {
@@ -61,6 +64,7 @@ export function AddServerContainer() {
   const { t } = useTranslation("servers");
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
   const { fleetGroups } = useFleetGroups();
   const { createMutation: createFleetGroupMutation } = useFleetGroupMutations();
 
@@ -94,10 +98,10 @@ export function AddServerContainer() {
   // renders the pre-baked command verbatim and step 3 polls the
   // resulting agent_id. Mutually exclusive with tokenData.
   const [outboundData, setOutboundData] = useState<ProvisionOutboundAgentResponse | null>(null);
-  // Captured at token-generation time so the displayed countdown is a
-  // pure function of render. Calling Date.now() during render is flagged
-  // by react-hooks/purity (7.1.x) because the value drifts across renders.
-  const [tokenExpiresInSecs, setTokenExpiresInSecs] = useState(0);
+  // Expiry is stored as the absolute unix deadline; the rendered
+  // "Expires in N min" is derived from useNowSec so it stays live
+  // (30 s tick) instead of freezing at mint time (audit E1).
+  const [tokenExpiresAtUnix, setTokenExpiresAtUnix] = useState<number | null>(null);
 
   const [connectionStatus, setConnectionStatus] = useState<
     EnrollmentWizardProps["connectionStatus"]
@@ -109,6 +113,19 @@ export function AddServerContainer() {
   const [connectedAgent, setConnectedAgent] = useState<
     EnrollmentWizardProps["connectedAgent"] | undefined
   >();
+
+  const nowSec = useNowSec();
+  const tokenExpiresInSecs =
+    tokenExpiresAtUnix === null ? 0 : Math.max(0, tokenExpiresAtUnix - nowSec);
+
+  // Bumping pollEpoch re-arms the step-3 polling effects after they
+  // returned on MAX_CONSECUTIVE_FAILURES — the "Retry" action in
+  // ConnectStep (audit E1: polling silently halted forever).
+  const [pollEpoch, setPollEpoch] = useState(0);
+  const handleRetryPolling = useCallback(() => {
+    setError(undefined);
+    setPollEpoch((e) => e + 1);
+  }, []);
 
   useEffect(() => {
     const first = fleetGroups[0];
@@ -203,9 +220,7 @@ export function AddServerContainer() {
         });
         setOutboundData(result);
         setTokenData(null);
-        setTokenExpiresInSecs(
-          Math.max(0, result.expires_at_unix - Math.floor(Date.now() / 1000)),
-        );
+        setTokenExpiresAtUnix(result.expires_at_unix);
         setStep(2);
         return;
       }
@@ -215,9 +230,7 @@ export function AddServerContainer() {
       });
       setTokenData(result);
       setOutboundData(null);
-      setTokenExpiresInSecs(
-        Math.max(0, result.expires_at_unix - Math.floor(Date.now() / 1000)),
-      );
+      setTokenExpiresAtUnix(result.expires_at_unix);
       setStep(2);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("error.tokenCreateFailed"));
@@ -266,10 +279,23 @@ export function AddServerContainer() {
     }
   }, [mode, outboundData, toast, t]);
 
-  const goBack = useCallback(() => {
+  // Closing mid-flow discards wizard progress and the minted token, so
+  // steps 2/3 are gated behind a confirm (audit E1). Step 1 has nothing
+  // to lose — close immediately.
+  const attemptClose = useCallback(async () => {
+    if (step > 1) {
+      const ok = await confirm({
+        title: t("addServer.closeConfirmTitle"),
+        body: t("addServer.closeConfirmBody"),
+        confirmLabel: t("addServer.closeConfirmAction"),
+        cancelLabel: t("addServer.closeConfirmCancel"),
+        variant: "danger",
+      });
+      if (!ok) return;
+    }
     void cleanupOutbound();
     void navigate({ to: "/servers" });
-  }, [cleanupOutbound, navigate]);
+  }, [step, confirm, cleanupOutbound, navigate, t]);
 
   // Apply the three-stage progression once we've picked an agent to follow.
   // Returns true when all three stages landed (caller should stop polling).
@@ -354,7 +380,7 @@ export function AddServerContainer() {
     return () => {
       cancelled = true;
     };
-  }, [step, mode, tokenValue, nodeName, applyAgentStatus, t]);
+  }, [step, mode, tokenValue, nodeName, applyAgentStatus, t, pollEpoch]);
 
   // Outbound polling: the agent_id is already known (we created it).
   // We just wait for the panel's outbound supervisor to land a session
@@ -404,7 +430,7 @@ export function AddServerContainer() {
     return () => {
       cancelled = true;
     };
-  }, [step, mode, outboundData, applyAgentStatus, t]);
+  }, [step, mode, outboundData, applyAgentStatus, t, pollEpoch]);
 
   const fleetGroupOptions = fleetGroups.map((g) => ({
     id: g.id,
@@ -441,75 +467,86 @@ export function AddServerContainer() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <section
-        aria-label={t("addServer.ariaLabel")}
-        className="relative bg-bg-card rounded-lg border border-border shadow-xl w-full max-w-[480px] max-h-[85vh] overflow-y-auto mx-4 p-6"
+    <>
+      <Sheet
+        open
+        onOpenChange={(open) => {
+          // Radix requests close on Escape/overlay click; with a controlled
+          // `open` we route the request through the step-aware confirm.
+          if (!open) void attemptClose();
+        }}
       >
-        <button
-          type="button"
-          onClick={goBack}
-          className="absolute top-3 right-3 text-fg-muted hover:text-fg text-lg leading-none"
-          aria-label={t("addServer.close")}
-        >
-          ✕
-        </button>
-        <EnrollmentWizard
-          step={step}
-          fleetGroups={fleetGroupOptions}
-          nodeName={nodeName}
-          selectedFleetGroup={selectedFleetGroup}
-          tokenTtl={tokenTtl}
-          onNodeNameChange={setNodeName}
-          onFleetGroupChange={setSelectedFleetGroup}
-          onCreateFleetGroup={() => {
-            setQuickCreateData({ name: "", label: "", description: "" });
-            setQuickCreateError("");
-            setQuickCreateOpen(true);
-          }}
-          onTokenTtlChange={setTokenTtl}
-          onGenerateToken={handleGenerateToken}
-          mode={mode}
-          onModeChange={handleModeChange}
-          dialAddress={dialAddress}
-          onDialAddressChange={setDialAddress}
-          scriptSource={scriptSource}
-          onScriptSourceChange={setScriptSource}
-          installCommand={installCommand}
-          tokenValue={wizardTokenValue}
-          tokenExpiresInSecs={tokenExpiresInSecs}
-          advancedOptions={advancedOptions}
-          onAdvancedOptionsChange={setAdvancedOptions}
-          onInstallConfirm={handleInstallConfirm}
-          onBack={() => setStep(1)}
-          connectionStatus={connectionStatus}
-          connectedAgent={connectedAgent}
-          onViewDetails={() => {
-            if (connectedAgent) {
-              void navigate({
-                to: "/servers/$serverId",
-                params: { serverId: connectedAgent.id },
-              });
-            }
-          }}
-          onCancel={goBack}
-          loading={loading}
-          error={error}
-        />
-        {/*
-          Phase-1 observability: once the bootstrap probe resolves an
-          agent ID, surface the enrollment-attempts timeline so operators
-          can see exactly which step the agent reached (or which one
-          failed). Hidden until the agent is known — the wizard's
-          built-in three-stage status covers the pre-bootstrap window.
-          For outbound we already have the id from provision response,
-          so the timeline lights up immediately.
-        */}
-        <EnrollmentLiveSection
-          agentId={connectedAgent?.id ?? outboundData?.agent_id ?? null}
-        />
-      </section>
+        <SheetContent side="center" title={t("addServer.ariaLabel")}>
+          <div className="relative p-6">
+            <button
+              type="button"
+              onClick={() => void attemptClose()}
+              className="absolute top-3 right-3 p-2 rounded-xs text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors"
+              aria-label={t("addServer.close")}
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
+            <EnrollmentWizard
+              step={step}
+              fleetGroups={fleetGroupOptions}
+              nodeName={nodeName}
+              selectedFleetGroup={selectedFleetGroup}
+              tokenTtl={tokenTtl}
+              onNodeNameChange={setNodeName}
+              onFleetGroupChange={setSelectedFleetGroup}
+              onCreateFleetGroup={() => {
+                setQuickCreateData({ name: "", label: "", description: "" });
+                setQuickCreateError("");
+                setQuickCreateOpen(true);
+              }}
+              onTokenTtlChange={setTokenTtl}
+              onGenerateToken={handleGenerateToken}
+              mode={mode}
+              onModeChange={handleModeChange}
+              dialAddress={dialAddress}
+              onDialAddressChange={setDialAddress}
+              scriptSource={scriptSource}
+              onScriptSourceChange={setScriptSource}
+              installCommand={installCommand}
+              tokenValue={wizardTokenValue}
+              tokenExpiresInSecs={tokenExpiresInSecs}
+              advancedOptions={advancedOptions}
+              onAdvancedOptionsChange={setAdvancedOptions}
+              onInstallConfirm={handleInstallConfirm}
+              onBack={() => setStep(1)}
+              connectionStatus={connectionStatus}
+              connectedAgent={connectedAgent}
+              onViewDetails={() => {
+                if (connectedAgent) {
+                  void navigate({
+                    to: "/servers/$serverId",
+                    params: { serverId: connectedAgent.id },
+                  });
+                }
+              }}
+              onCancel={() => void attemptClose()}
+              onRetryPolling={handleRetryPolling}
+              onViewAttempts={() => void navigate({ to: "/enrollment-attempts" })}
+              loading={loading}
+              error={error}
+            />
+            {/*
+              Phase-1 observability: once the bootstrap probe resolves an
+              agent ID, surface the enrollment-attempts timeline so operators
+              can see exactly which step the agent reached (or which one
+              failed). Hidden until the agent is known — the wizard's
+              built-in three-stage status covers the pre-bootstrap window.
+              For outbound we already have the id from provision response,
+              so the timeline lights up immediately.
+            */}
+            <EnrollmentLiveSection
+              agentId={connectedAgent?.id ?? outboundData?.agent_id ?? null}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
 
+      {/* quick-create sheet stays as a sibling portal */}
       <Sheet
         open={quickCreateOpen}
         onOpenChange={(open) => { if (!open) setQuickCreateOpen(false); }}
@@ -532,6 +569,6 @@ export function AddServerContainer() {
           </SheetBody>
         </SheetContent>
       </Sheet>
-    </div>
+    </>
   );
 }

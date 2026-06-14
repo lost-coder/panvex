@@ -360,11 +360,14 @@ linters:
         path: "cmd/agent/bootstrap_reverse_test.go"
 
       # G404 — math/rand for non-cryptographic backoff jitter.
-      # agenttransport/outbound.go uses math/rand/v2 to add jitter to
-      # reconnect timers — not security-sensitive.
+      # agenttransport/outbound.go and cmd/agent/runtime.go use math/rand/v2
+      # to add full jitter to reconnect timers — not security-sensitive.
       - linters: [gosec]
         text: "G404"
         path: "internal/controlplane/agenttransport/outbound.go"
+      - linters: [gosec]
+        text: "G404"
+        path: "cmd/agent/runtime.go"
 
       # G505 — SHA-1 import. auth/totp.go imports crypto/sha1 because
       # RFC 6238 (TOTP) mandates HMAC-SHA1 for Google Authenticator

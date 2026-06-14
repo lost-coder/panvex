@@ -15,11 +15,16 @@ service AgentGateway {
 
 message RenewCertificateRequest {
   string agent_id = 1;
+  // csr_pem carries a CERTIFICATE REQUEST built by the agent with a freshly
+  // generated keypair; the private key never leaves the agent (A9). CN must
+  // equal agent_id.
+  string csr_pem = 2;
 }
 
 message RenewCertificateResponse {
   string certificate_pem = 1;
-  string private_key_pem = 2;
+  reserved 2;            // was private_key_pem — keys are agent-generated now (A9)
+  reserved "private_key_pem";
   string ca_pem = 3;
   int64 expires_at_unix = 4;
 }
@@ -41,6 +46,14 @@ message InstanceSnapshot {
   string config_fingerprint = 4;
   int32 connections = 5;
   bool read_only = 6;
+  // Canonical SHA-256 of the node's current editable config sections
+  // (general/timeouts/censorship/upstreams/show_link/dc_overrides). Sent every
+  // snapshot as a cheap drift change-detector; empty when local Telemt is too old.
+  string managed_config_hash = 7;
+  // Full editable config sections as canonical JSON, sent ONLY when
+  // managed_config_hash changed since the agent last sent it (delta-gated); empty
+  // otherwise. The control plane caches the last non-empty value per agent.
+  string managed_config_json = 8;
 }
 
 message ClientUsageSnapshot {
@@ -268,6 +281,14 @@ message RuntimeDiagnosticsSnapshot {
   string minimal_all_json = 6;
   string me_pool_json = 7;
   string dcs_json = 8;
+  // content_hash is a SHA-256 over the (state, state_reason, *_json) tuple,
+  // sent on EVERY snapshot. When the tuple is unchanged since the agent's
+  // previous report, the body fields above are omitted (empty) and the panel
+  // must carry forward its stored diagnostics row instead of overwriting it
+  // with blanks (D5). An EMPTY hash keeps the historical overwrite
+  // semantics — that covers pre-gating agents and the deliberate blank
+  // record sent by BuildRuntimeUnreachableSnapshot.
+  string content_hash = 9;
 }
 
 message RuntimeSecurityInventorySnapshot {
@@ -276,6 +297,14 @@ message RuntimeSecurityInventorySnapshot {
   bool enabled = 3;
   int32 entries_total = 4;
   string entries_json = 5;
+  // content_hash is a SHA-256 over the (state, state_reason, *_json) tuple,
+  // sent on EVERY snapshot. When the tuple is unchanged since the agent's
+  // previous report, the body fields above are omitted (empty) and the panel
+  // must carry forward its stored diagnostics row instead of overwriting it
+  // with blanks (D5). An EMPTY hash keeps the historical overwrite
+  // semantics — that covers pre-gating agents and the deliberate blank
+  // record sent by BuildRuntimeUnreachableSnapshot.
+  string content_hash = 6;
 }
 
 message Snapshot {
@@ -340,6 +369,10 @@ message ClientDataRequest {
 message ClientDataResponse {
   string request_id = 1;
   repeated ClientDetailRecord clients = 2;
+  // Set by the agent when it could not read the Telemt user list (Telemt API
+  // unreachable). Lets the panel distinguish a real "zero clients" snapshot
+  // from a failed fetch and skip pruning / mis-reconciling.
+  bool telemt_unreachable = 3;
 }
 
 message ClientDetailRecord {

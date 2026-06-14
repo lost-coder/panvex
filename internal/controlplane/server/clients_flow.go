@@ -143,6 +143,11 @@ func (s *Server) createClient(ctx context.Context, actorID string, input clientM
 		}
 	}
 
+	subscriptionToken, err := clients.GenerateSubscriptionToken()
+	if err != nil {
+		return managedClient{}, nil, nil, fmt.Errorf("generate subscription token: %w", err)
+	}
+
 	expirationRFC3339, err := normalizedExpiration(input.ExpirationRFC3339)
 	if err != nil {
 		return managedClient{}, nil, nil, err
@@ -167,6 +172,7 @@ func (s *Server) createClient(ctx context.Context, actorID string, input clientM
 		MaxUniqueIPs:      input.MaxUniqueIPs,
 		DataQuotaBytes:    input.DataQuotaBytes,
 		ExpirationRFC3339: expirationRFC3339,
+		SubscriptionToken: subscriptionToken,
 		CreatedAt:         observedAt,
 		UpdatedAt:         observedAt,
 	}
@@ -342,6 +348,38 @@ func (s *Server) rotateClientSecret(ctx context.Context, clientID, actorID strin
 		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientRotateSecret, currentClient, "", targetAgentIDs, observedAt); err != nil {
 			return managedClient{}, nil, nil, err
 		}
+	}
+
+	return currentClient, assignments, deployments, nil
+}
+
+// rotateSubscriptionToken assigns a fresh subscription token to the client and
+// persists the change. The old token becomes invalid immediately — any
+// in-flight /sub/<old-token> requests will see ErrNotFound after this returns.
+//
+// Unlike rotateClientSecret no agent job is enqueued: the subscription token
+// is a panel-side handle used only for the /sub page; agents never receive it.
+// Mirrors the same load→mutate→persist shape as rotateClientSecret.
+func (s *Server) rotateSubscriptionToken(ctx context.Context, clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
+	observedAt = observedAt.UTC()
+
+	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
+	if err != nil {
+		return managedClient{}, nil, nil, err
+	}
+	if currentClient.DeletedAt != nil {
+		return managedClient{}, nil, nil, storage.ErrNotFound
+	}
+
+	newToken, err := clients.GenerateSubscriptionToken()
+	if err != nil {
+		return managedClient{}, nil, nil, fmt.Errorf("generate subscription token: %w", err)
+	}
+	currentClient.SubscriptionToken = newToken
+	currentClient.UpdatedAt = observedAt
+
+	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
+		return managedClient{}, nil, nil, err
 	}
 
 	return currentClient, assignments, deployments, nil

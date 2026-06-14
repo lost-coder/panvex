@@ -4,7 +4,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"strings"
@@ -13,7 +12,9 @@ import (
 )
 
 const (
-	// encryptedPEMPrefix is the legacy format using SHA-256 key derivation.
+	// encryptedPEMPrefix is the pre-release ENC:v1 prefix (SHA-256 key
+	// derivation). Retained only to detect and loudly reject pre-release v1
+	// blobs — decryptPEM returns an error for any value with this prefix.
 	encryptedPEMPrefix = "ENC:"
 	// encryptedPEMPrefixV2 uses Argon2id key derivation with a random salt.
 	encryptedPEMPrefixV2 = "ENC2:"
@@ -21,10 +22,7 @@ const (
 	// Q3.U-S-16: lift the Argon2id parameters above OWASP minimum so a
 	// dictionary attack on a leaked CA blob is materially more expensive.
 	// 4 iterations / 96 MiB / 2 threads matches the current OWASP "high-
-	// trust secret" recommendation. decryptPEMv1 still uses the legacy
-	// SHA-256 derivation for ENC: blobs that pre-date this change; the
-	// startup path migrates them to ENC2: as soon as an encryption key
-	// is supplied (see authority.go).
+	// trust secret" recommendation.
 	argon2Time    = 4
 	argon2Memory  = 96 * 1024
 	argon2Threads = 2
@@ -67,9 +65,12 @@ func encryptPEM(plainPEM, passphrase string) (string, error) {
 	return encryptedPEMPrefixV2 + base64.StdEncoding.EncodeToString(blob), nil
 }
 
-// decryptPEM decrypts a value produced by encryptPEM. It supports both the
-// legacy "ENC:" format (SHA-256 derived key) and the current "ENC2:" format
-// (Argon2id derived key) for backward compatibility during migration.
+// decryptPEM decrypts a value produced by encryptPEM. Only the current "ENC2:"
+// format (Argon2id derived key) is supported.
+//
+// Values with the legacy "ENC:" prefix (pre-release SHA-256 format) are
+// rejected with a loud error — callers must delete the stored CA record and
+// re-bootstrap.
 //
 // If an encryption key is configured but the stored value carries neither
 // prefix, an error is returned to prevent silent use of an unprotected key.
@@ -78,7 +79,7 @@ func decryptPEM(stored, passphrase string) (string, error) {
 		return decryptPEMv2(stored, passphrase)
 	}
 	if strings.HasPrefix(stored, encryptedPEMPrefix) {
-		return decryptPEMv1(stored, passphrase)
+		return "", errors.New("CA private key: legacy ENC:v1 format is no longer supported (pre-release format removed); delete the stored certificate authority record and re-bootstrap, or restore an ENC2: backup")
 	}
 
 	// No encryption prefix — the stored value is plaintext.
@@ -125,37 +126,6 @@ func decryptPEMv2(stored, passphrase string) (string, error) {
 	return string(plaintext), nil
 }
 
-// decryptPEMv1 handles the legacy "ENC:" format with SHA-256 key derivation.
-func decryptPEMv1(stored, passphrase string) (string, error) {
-	data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, encryptedPEMPrefix))
-	if err != nil {
-		return "", errors.New("CA private key: invalid base64 encoding")
-	}
-
-	key := deriveKeyV1(passphrase)
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-
-	nonceSize := gcm.NonceSize()
-	if len(data) < nonceSize {
-		return "", errors.New("CA private key: ciphertext too short")
-	}
-
-	plaintext, err := gcm.Open(nil, data[:nonceSize], data[nonceSize:], nil)
-	if err != nil {
-		return "", errors.New("CA private key: decryption failed (wrong encryption key?)")
-	}
-
-	return string(plaintext), nil
-}
-
 // isEncryptedPEM reports whether the stored value carries an encryption prefix.
 func isEncryptedPEM(stored string) bool {
 	return strings.HasPrefix(stored, encryptedPEMPrefix) || strings.HasPrefix(stored, encryptedPEMPrefixV2)
@@ -167,37 +137,9 @@ func needsReEncryption(stored string) bool {
 	return !strings.HasPrefix(stored, encryptedPEMPrefixV2)
 }
 
-// encryptPEMWithKey encrypts a PEM string using the provided raw AES key and
-// prefix. This is used internally for testing legacy format migration.
-func encryptPEMWithKey(plainPEM string, key []byte, prefix string) (string, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "", err
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return "", err
-	}
-
-	ciphertext := gcm.Seal(nonce, nonce, []byte(plainPEM), nil)
-	return prefix + base64.StdEncoding.EncodeToString(ciphertext), nil
-}
-
 // deriveKeyV2 produces a 256-bit AES key from a passphrase using Argon2id with
 // the provided salt. This is the current recommended derivation.
 func deriveKeyV2(passphrase string, salt []byte) []byte {
 	return argon2.IDKey([]byte(passphrase), salt, argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
 }
 
-// deriveKeyV1 produces a 256-bit AES key from a passphrase using SHA-256.
-// Retained only for backward-compatible decryption of legacy "ENC:" values.
-func deriveKeyV1(passphrase string) []byte {
-	h := sha256.Sum256([]byte(passphrase))
-	return h[:]
-}

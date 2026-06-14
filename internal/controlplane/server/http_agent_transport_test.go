@@ -227,6 +227,90 @@ func TestUpdateAgentTransportModeRejectsInvalidMode(t *testing.T) {
 	}
 }
 
+// TestSwitchTransportModeJobCarriesTTLAndPendingFlag verifies the A2
+// "switched but never reconnected" behaviour:
+//  1. PUT outbound enqueues a job with TTL == transportSwitchJobTTL.
+//  2. GET /api/agents shows transport_reconnect_pending=true immediately after.
+//  3. markTransportSwitchResolved clears the flag.
+func TestSwitchTransportModeJobCarriesTTLAndPendingFlag(t *testing.T) {
+	srv, cookies := setupTransportModeServer(t)
+
+	// 1. Issue the outbound transport-mode switch.
+	resp := performJSONRequest(t, srv, http.MethodPut, "/api/agents/agent-tm-1/transport-mode",
+		map[string]string{
+			"transport_mode": "outbound",
+			"dial_address":   "127.0.0.1:9443",
+		}, cookies)
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("PUT /agents/agent-tm-1/transport-mode status = %d, want %d (body=%s)",
+			resp.Code, http.StatusNoContent, resp.Body.String())
+	}
+
+	// 2. Assert the enqueued job carries the correct Action and TTL.
+	listed := srv.jobs.ListRecentWithContext(t.Context(), 50)
+	var found *jobs.Job
+	for i := range listed {
+		if listed[i].Action == jobs.ActionSwitchTransportMode {
+			found = &listed[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("switch_transport_mode job not found after transport mode change")
+	}
+	if found.TTL != transportSwitchJobTTL {
+		t.Fatalf("job TTL = %v, want %v", found.TTL, transportSwitchJobTTL)
+	}
+
+	// 3. GET /api/agents must show transport_reconnect_pending=true.
+	listResp := performJSONRequest(t, srv, http.MethodGet, "/api/agents", nil, cookies)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("GET /api/agents status = %d, want %d", listResp.Code, http.StatusOK)
+	}
+	var agents []Agent
+	if err := json.NewDecoder(listResp.Body).Decode(&agents); err != nil {
+		t.Fatalf("decode agents: %v", err)
+	}
+	var agent *Agent
+	for i := range agents {
+		if agents[i].ID == "agent-tm-1" {
+			agent = &agents[i]
+			break
+		}
+	}
+	if agent == nil {
+		t.Fatal("agent-tm-1 not found in GET /api/agents response")
+	}
+	if !agent.TransportReconnectPending {
+		t.Fatal("expected transport_reconnect_pending=true after outbound switch, got false")
+	}
+
+	// 4. markTransportSwitchResolved clears the flag.
+	srv.markTransportSwitchResolved("agent-tm-1")
+
+	listResp2 := performJSONRequest(t, srv, http.MethodGet, "/api/agents", nil, cookies)
+	if listResp2.Code != http.StatusOK {
+		t.Fatalf("GET /api/agents (2) status = %d, want %d", listResp2.Code, http.StatusOK)
+	}
+	var agents2 []Agent
+	if err := json.NewDecoder(listResp2.Body).Decode(&agents2); err != nil {
+		t.Fatalf("decode agents (2): %v", err)
+	}
+	var agent2 *Agent
+	for i := range agents2 {
+		if agents2[i].ID == "agent-tm-1" {
+			agent2 = &agents2[i]
+			break
+		}
+	}
+	if agent2 == nil {
+		t.Fatal("agent-tm-1 not found in GET /api/agents response (2)")
+	}
+	if agent2.TransportReconnectPending {
+		t.Fatal("expected transport_reconnect_pending=false after markTransportSwitchResolved, got true")
+	}
+}
+
 // TestUpdateAgentTransportModeRequiresAdminRole verifies that an operator
 // (not admin) is denied access.
 func TestUpdateAgentTransportModeRequiresAdminRole(t *testing.T) {

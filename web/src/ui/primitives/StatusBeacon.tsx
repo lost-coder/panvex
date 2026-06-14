@@ -1,4 +1,5 @@
 import { cn } from "@/ui/lib/cn";
+import { statusTextClass } from "@/ui/lib/status";
 import type { Status } from "@/ui/tokens/colors";
 
 export interface StatusBeaconProps {
@@ -15,12 +16,6 @@ const sizeMap = {
   lg: "h-8 w-8",
 } as const;
 
-const colorMap = {
-  ok: "text-status-ok",
-  warn: "text-status-warn",
-  error: "text-status-error",
-} as const;
-
 export function StatusBeacon({
   status,
   size = "md",
@@ -32,7 +27,7 @@ export function StatusBeacon({
       className={cn(
         "inline-block rounded-full shrink-0",
         sizeMap[size],
-        colorMap[status],
+        statusTextClass[status],
         "shadow-[0_0_8px_2px_currentColor]",
         animated && "animate-beacon-glow",
         className,

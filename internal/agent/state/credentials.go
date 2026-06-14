@@ -7,6 +7,17 @@ import (
 	"time"
 )
 
+// TransportSnapshot captures the transport-relevant fields as they were
+// immediately before a switch_transport_mode change, so the agent can roll
+// back if the panel never establishes a session within the probation window
+// (audit A2: one-way trip to a dead listen mode).
+type TransportSnapshot struct {
+	Mode           string `json:"mode"`
+	ListenAddr     string `json:"listen_addr,omitempty"`
+	GRPCEndpoint   string `json:"grpc_endpoint,omitempty"`
+	GRPCServerName string `json:"grpc_server_name,omitempty"`
+}
+
 // Credentials stores the persisted agent identity and mTLS bundle.
 type Credentials struct {
 	AgentID        string    `json:"agent_id"`
@@ -24,6 +35,12 @@ type Credentials struct {
 	// ListenAddr is the agent-side bind address used when TransportMode == "listen".
 	// Ignored in dial mode.
 	ListenAddr string `json:"listen_addr,omitempty"`
+	// PrevTransport + TransportSwitchedAtUnix implement transport-switch
+	// probation (A2). Set by UpdateTransport on a mode change; cleared on
+	// the first established panel session; consumed by
+	// maybeRevertTransportSwitch when the window expires with no session.
+	PrevTransport           *TransportSnapshot `json:"prev_transport,omitempty"`
+	TransportSwitchedAtUnix int64              `json:"transport_switched_at_unix,omitempty"`
 	// UsageSeq is the last client-usage snapshot sequence number emitted by
 	// the agent. Persisted across restarts so the control-plane can dedup
 	// replayed deltas and detect true agent restarts (seq resets to 1).

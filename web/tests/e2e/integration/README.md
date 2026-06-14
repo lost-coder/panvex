@@ -33,15 +33,13 @@ middleware, session store, audit persistence).
 
 ## CI shape
 
-The CI variant wraps the steps above in a docker-compose file —
-`tests/e2e/integration/docker-compose.yml` spins up:
-
-* `control-plane` (amd64 Go binary, SQLite in-memory)
-* `e2e-runner` (node image, runs `npm run test:e2e:integration`)
-
-The compose file is scaffolded but not committed to avoid tying this
-PR to a specific CI runner image. Populate it before enabling the
-`web-e2e-integration` workflow.
+CI runs this suite natively (no docker-compose): the
+`frontend-e2e-integration` job in `.github/workflows/ci.yml` builds the
+control-plane with the embedded UI (`-tags embeddedui`), bootstraps
+`admin/e2e-secret` into a throwaway SQLite DB under `.tmp/e2e/`, starts
+the binary on `:18080`, waits for `/readyz`, and runs
+`npx playwright test -c playwright.integration.config.ts`. Traces and
+the panel log are uploaded as artifacts on failure.
 
 ## Why it's separate from the mock smoke
 

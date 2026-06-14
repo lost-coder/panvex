@@ -24,7 +24,7 @@ type SheetState =
 function AdminBadge() {
   const { t } = useTranslation("settings");
   return (
-    <span className="inline-flex items-center gap-1 rounded-xs border border-accent/20 bg-accent/5 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-accent">
+    <span className="inline-flex items-center gap-1 rounded-xs border border-accent/20 bg-accent/5 px-1.5 py-0.5 text-pico font-mono uppercase tracking-wider text-accent">
       <ShieldCheck className="h-2.5 w-2.5" aria-hidden />
       {t("webhooks.adminBadge")}
     </span>
@@ -61,13 +61,13 @@ function WebhookRow({ endpoint, onEdit, onDelete, t }: Readonly<RowProps>) {
             label={endpoint.enabled ? t("webhooks.row.enabled") : t("webhooks.row.disabled")}
           />
           {endpoint.allow_private && (
-            <span className="inline-flex items-center rounded-xs border border-status-warn/30 bg-status-warn/10 px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-status-warn">
+            <span className="inline-flex items-center rounded-xs border border-status-warn/30 bg-status-warn/10 px-1.5 py-0.5 text-pico font-mono uppercase tracking-wider text-status-warn">
               {t("webhooks.row.allowPrivate")}
             </span>
           )}
         </div>
         <span className="text-xs font-mono text-fg-muted truncate">{endpoint.url}</span>
-        <span className="text-[11px] text-fg-muted truncate">
+        <span className="text-micro text-fg-muted truncate">
           {t("webhooks.row.filterPrefix")}{" "}
           <span className="font-mono">{describeFilter(endpoint.event_filter, t("webhooks.row.allEvents"))}</span>
         </span>

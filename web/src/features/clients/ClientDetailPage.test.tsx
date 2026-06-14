@@ -50,6 +50,7 @@ function makeProps(
       uniqueIpsUsed: 0,
       activeTcpConns: 0,
       deployments: [],
+      subscriptionUrl: "",
       ...overrides,
     },
   };
@@ -124,5 +125,22 @@ describe("ClientDetailPage", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: /redeploy/i })).toBeNull();
+  });
+
+  it("renders a quiet ✓ badge for a healthy active client", () => {
+    renderWithClient(<ClientDetailPage {...makeProps({ enabled: true, expirationRfc3339: "" })} />);
+    // ok-tone StateBadge is a quiet lucide check-icon chip (replaced the
+    // unicode ✓ glyph), not a labelled pill.
+    expect(document.querySelectorAll("svg.lucide-check").length).toBeGreaterThan(0);
+    // No loud problem-pill label should appear for a healthy client.
+    expect(screen.queryByText(/disabled|expired|over quota|deploy failed/i)).toBeNull();
+  });
+
+  it("renders a loud status pill for a problem client", () => {
+    renderWithClient(<ClientDetailPage {...makeProps({ enabled: false })} />);
+    // disabled → neutral StatusPill carrying the translated/keyed label.
+    expect(screen.getAllByText(/disabled/i).length).toBeGreaterThan(0);
+    // The quiet ok-glyph must NOT render for a problem state.
+    expect(screen.queryByText("✓")).toBeNull();
   });
 });

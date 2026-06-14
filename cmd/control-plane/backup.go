@@ -302,25 +302,140 @@ func writeTarFile(tw *tar.Writer, name, srcPath string) error {
 	return nil
 }
 
-// runRestore is intentionally a documentation stub. Auto-restoring a
-// .tar.gz over a populated DB is destructive in the worst possible
-// way — silently overwriting an actively-used dataset — so we surface
-// the manual recipe instead. Operators who want automation can wrap
-// the printed steps in their own playbook.
+// runRestore is a documentation stub extended with optional -archive
+// verify mode (C6). Without -archive it prints the manual recipe; with
+// -archive it reads metadata.json from the archive and cross-checks the
+// encryption-key fingerprint and schema version so operators can confirm
+// safety before carrying out the manual steps.
 func runRestore(args []string) error {
 	flags := flag.NewFlagSet("restore", flag.ContinueOnError)
+	archive := flags.String("archive", "", "Backup archive to VERIFY against the current environment (optional)")
+	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
+	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	flags.Usage = func() {
 		// Best-effort writes to the flag output; failure to print usage
 		// text is not actionable.
-		_, _ = fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane restore\n\n")
-		_, _ = fmt.Fprintf(flags.Output(), "Prints the manual restore steps. We deliberately do NOT auto-restore:\n")
-		_, _ = fmt.Fprintf(flags.Output(), "overwriting a populated DB is the kind of mistake that loses fleets.\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane restore [-archive <path.tar.gz>] [flags]\n\n")
+		_, _ = fmt.Fprintf(flags.Output(), "Without -archive: prints the manual restore steps (we deliberately do\n")
+		_, _ = fmt.Fprintf(flags.Output(), "NOT auto-restore — overwriting a populated DB loses fleets).\n")
+		_, _ = fmt.Fprintf(flags.Output(), "With -archive: verifies the archive's encryption-key fingerprint and\n")
+		_, _ = fmt.Fprintf(flags.Output(), "schema version against the current environment before you restore.\n\n")
+		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	if strings.TrimSpace(*archive) == "" {
+		fmt.Println(restoreHelpText())
+		return nil
+	}
+	return verifyRestoreArchive(context.Background(), *archive, *storageDriver, *storageDSN)
+}
+
+// verifyRestoreArchive implements `restore -archive` (C6). It reads
+// metadata.json from the archive and validates:
+//  1. Encryption-key fingerprint matches the current PANVEX_ENCRYPTION_KEY.
+//  2. If -storage-dsn is provided (SQLite only), the archive schema version
+//     is compatible with the target DB.
+func verifyRestoreArchive(ctx context.Context, archivePath, storageDriver, storageDSN string) error {
+	meta, err := readBackupMetadata(archivePath)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Archive: %s\n  panel_version: %s (%s)\n  storage_driver: %s\n  schema_version: %d\n  created_at: %s\n",
+		archivePath, meta.PanelVersion, meta.PanelCommit, meta.StorageDriver, meta.SchemaVersion, meta.CreatedAt)
+
+	current := encryptionKeyFingerprint()
+	switch {
+	case meta.EncryptionKeyFingerprint == "":
+		fmt.Println("  encryption key: archive was taken WITHOUT PANVEX_ENCRYPTION_KEY — nothing to verify")
+	case current == "":
+		return fmt.Errorf("restore: archive expects encryption-key fingerprint %s but PANVEX_ENCRYPTION_KEY is not set — the restored DB could not decrypt secrets", meta.EncryptionKeyFingerprint)
+	case current != meta.EncryptionKeyFingerprint:
+		return fmt.Errorf("restore: encryption-key fingerprint mismatch: archive %s, current env %s — restoring would leave webhook/integration secrets undecryptable; locate the key the backup was taken with", meta.EncryptionKeyFingerprint, current)
+	default:
+		fmt.Println("  encryption key: fingerprint matches current PANVEX_ENCRYPTION_KEY")
+	}
+
+	if strings.TrimSpace(storageDSN) != "" {
+		storageConfig, err := config.ResolveStorage(storageDriver, storageDSN)
+		if err != nil {
+			return err
+		}
+		if storageConfig.Driver != config.StorageDriverSQLite {
+			return fmt.Errorf("restore: schema verification supports sqlite only (got %q); for postgres compare goose_db_version manually — see deploy/backup.md", storageConfig.Driver)
+		}
+		targetVersion, err := sqliteSchemaVersion(ctx, storageConfig.DSN)
+		if err != nil {
+			return err
+		}
+		switch {
+		case meta.SchemaVersion > targetVersion:
+			fmt.Printf("  schema: archive (v%d) is AHEAD of target (v%d) — run migrate-schema after restoring\n", meta.SchemaVersion, targetVersion)
+		case meta.SchemaVersion < targetVersion:
+			return fmt.Errorf("restore: archive schema v%d is OLDER than the target DB v%d — goose cannot downgrade; restore onto a fresh path and let migrate-schema bring it forward, do not overwrite the newer DB", meta.SchemaVersion, targetVersion)
+		default:
+			fmt.Printf("  schema: version v%d matches target\n", meta.SchemaVersion)
+		}
+	}
+
+	fmt.Println("\nVerification passed. Follow the manual steps to actually restore:")
 	fmt.Println(restoreHelpText())
 	return nil
+}
+
+// readBackupMetadata extracts and parses metadata.json from a backup archive.
+func readBackupMetadata(path string) (backupMetadata, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return backupMetadata{}, fmt.Errorf("restore: open archive: %w", err)
+	}
+	defer f.Close()
+	gzr, err := gzip.NewReader(f)
+	if err != nil {
+		return backupMetadata{}, fmt.Errorf("restore: gzip: %w", err)
+	}
+	defer gzr.Close()
+	tr := tar.NewReader(gzr)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return backupMetadata{}, fmt.Errorf("restore: read archive: %w", err)
+		}
+		if hdr.Name != "metadata.json" {
+			continue
+		}
+		var meta backupMetadata
+		if err := json.NewDecoder(tr).Decode(&meta); err != nil {
+			return backupMetadata{}, fmt.Errorf("restore: parse metadata.json: %w", err)
+		}
+		return meta, nil
+	}
+	return backupMetadata{}, errors.New("restore: archive has no metadata.json — not a panvex backup?")
+}
+
+// sqliteSchemaVersion reads the highest applied goose version from the
+// database at dsn without copying it. 0 means "never migrated".
+func sqliteSchemaVersion(ctx context.Context, dsn string) (int64, error) {
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return 0, fmt.Errorf("restore: open target db: %w", err)
+	}
+	defer db.Close()
+	var version sql.NullInt64
+	if err := db.QueryRowContext(ctx, "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1").Scan(&version); err != nil {
+		if isSQLiteMissingTable(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("restore: read target schema version: %w", err)
+	}
+	if !version.Valid {
+		return 0, nil
+	}
+	return version.Int64, nil
 }
 
 // restoreHelpText is split out so tests can pin the operator-facing

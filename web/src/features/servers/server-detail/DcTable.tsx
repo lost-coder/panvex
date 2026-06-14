@@ -16,7 +16,11 @@ export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
 
   return (
     <div className="rounded-xs border border-border overflow-hidden">
-      <table className="w-full text-sm">
+      {/* overflow-x-auto lets this dense 8-column DC table scroll
+          horizontally on narrow viewports instead of crushing columns;
+          min-width keeps each column readable while scrolling. */}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[44rem] text-sm">
         <thead>
           <tr className="border-b border-border bg-bg-card">
             <th className="w-8 px-2 py-2" />
@@ -154,7 +158,8 @@ export function DcTable({ dcs }: Readonly<{ dcs: ServerDcData[] }>) {
             </>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
     </div>
   );
 }
