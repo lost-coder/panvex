@@ -564,7 +564,13 @@ func TestHTTPUsersTotpResetRequiresAdminAndClearsTarget(t *testing.T) {
 	// A2: /api/audit serves its first page from the store now, and the
 	// totp-reset audit above is written asynchronously via the batch writer.
 	// Drain it so the read-after-write assertion below is deterministic.
-	server.batchWriter.auditEvents.Drain(context.Background())
+	// StopWithTimeout (not a bare Drain) is the real barrier: it stops the
+	// background flush loop and waits for any in-flight drain before the final
+	// synchronous flush, so the read-after-write below can't race a
+	// half-persisted batch. Idempotent with the t.Cleanup Close().
+	if err := server.batchWriter.StopWithTimeout(context.Background(), 10*time.Second); err != nil {
+		t.Fatalf("batchWriter.StopWithTimeout() error = %v", err)
+	}
 
 	auditResponse := performJSONRequest(t, server, http.MethodGet, "/api/audit", nil, adminCookies)
 	if auditResponse.Code != http.StatusOK {
@@ -1596,7 +1602,13 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 
 	// Flush the async audit appends so the store-backed recent-activity read
 	// below sees them deterministically (A2: the in-memory ring was removed).
-	server.batchWriter.auditEvents.Drain(context.Background())
+	// StopWithTimeout (not a bare Drain) is the real barrier: it stops the
+	// background flush loop and waits for any in-flight drain before the final
+	// synchronous flush, so the read-after-write below can't race a
+	// half-persisted batch. Idempotent with the t.Cleanup Close().
+	if err := server.batchWriter.StopWithTimeout(context.Background(), 10*time.Second); err != nil {
+		t.Fatalf("batchWriter.StopWithTimeout() error = %v", err)
+	}
 
 	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
