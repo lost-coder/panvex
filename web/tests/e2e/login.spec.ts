@@ -33,7 +33,9 @@ test.describe("Login flow", () => {
     await expect(page.getByLabel(/username/i)).toBeVisible();
 
     await page.getByLabel(/username/i).fill("operator");
-    await page.getByLabel(/password/i).fill("correcthorse");
+    // Anchored: the show/hide-password toggle's aria-label also contains
+    // "password", so a loose /password/i matches two elements.
+    await page.getByLabel(/^password$/i).fill("correcthorse");
 
     authed = true;
     await page.getByRole("button", { name: /sign in|log in/i }).click();
@@ -50,7 +52,7 @@ test.describe("Login flow", () => {
 
     await page.goto("/login");
     await page.getByLabel(/username/i).fill("operator");
-    await page.getByLabel(/password/i).fill("wrong");
+    await page.getByLabel(/^password$/i).fill("wrong");
     await page.getByRole("button", { name: /sign in|log in/i }).click();
 
     await expect(page.getByText(/invalid|credentials/i)).toBeVisible();

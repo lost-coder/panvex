@@ -2,8 +2,8 @@
 // ClientDetailPage.tsx. The page hands over the deployments array and
 // optional agent label resolver; the card owns the link-strip layout.
 
-import type { ReactNode } from "react";
-import { RotateCcw } from "lucide-react";
+import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
+import { RotateCcw, QrCode, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { ResetOutcome } from "@/features/clients/hooks/useResetQuota";
@@ -12,13 +12,27 @@ import {
   Button,
   CopyButton,
   ProgressBar,
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
   Spinner,
   deployVariant,
   formatAge,
   formatBytes,
+  formatDateTime,
   formatQuota,
   type ClientDeploymentData,
 } from "@/ui";
+
+const LazyQRCode = lazy(() => import("@/ui/compositions/internal/QRCode"));
+
+// navigator.share is mobile-first and absent on most desktop browsers;
+// compute support once so the Share affordance only appears where it works.
+function canShare(): boolean {
+  return typeof navigator !== "undefined" && typeof navigator.share === "function";
+}
 
 interface QuotaCellProps {
   quotaUsedBytes: number;
@@ -99,12 +113,12 @@ function QuotaCell({
     if (quotaUsedBytes <= 0 && !resetControl && !driftBadge) {
       // Visually quieter option: collapse to em-dash when neither
       // quota, used-bytes nor a drift signal have any signal.
-      return <span className="text-[11px] font-mono text-fg-muted">—</span>;
+      return <span className="text-micro font-mono text-fg-muted">—</span>;
     }
     return (
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-mono text-fg-muted">
+          <span className="text-micro font-mono text-fg-muted">
             {quotaUsedBytes > 0
               ? t("detail.quota.usedNoQuota", { used: formatBytes(quotaUsedBytes) })
               : "—"}
@@ -113,7 +127,7 @@ function QuotaCell({
           {driftBadge}
         </div>
         {panelLabel && (
-          <div className="text-[10px] font-mono text-fg-muted">{panelLabel}</div>
+          <div className="text-nano font-mono text-fg-muted">{panelLabel}</div>
         )}
       </div>
     );
@@ -134,15 +148,15 @@ function QuotaCell({
         {resetControl}
         {driftBadge}
       </div>
-      <div className="text-[11px] font-mono text-fg-muted tabular-nums">
+      <div className="text-micro font-mono text-fg-muted tabular-nums">
         {t("detail.quota.usedOfQuota", {
           used: formatBytes(quotaUsedBytes),
           quota: formatQuota(dataQuotaBytes),
         })}
       </div>
-      <div className="text-[10px] font-mono text-fg-muted">{resetLabel}</div>
+      <div className="text-nano font-mono text-fg-muted">{resetLabel}</div>
       {panelLabel && (
-        <div className="text-[10px] font-mono text-fg-muted">{panelLabel}</div>
+        <div className="text-nano font-mono text-fg-muted">{panelLabel}</div>
       )}
     </div>
   );
@@ -179,7 +193,7 @@ function renderResetControl({ t, onReset, state, onDismiss }: ResetControlArgs):
   if (!onReset) return null;
   if (state?.kind === "pending") {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-mono text-fg-muted">
+      <span className="inline-flex items-center gap-1 text-nano font-mono text-fg-muted">
         <Spinner size="sm" />
         {t("detail.quota.resetting")}
       </span>
@@ -210,7 +224,7 @@ function renderResetControl({ t, onReset, state, onDismiss }: ResetControlArgs):
     return t("detail.quota.resetFailed", { error: state.error });
   })();
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-mono text-status-error">
+    <span className="inline-flex items-center gap-1 text-nano font-mono text-status-error">
       {message}
       {onDismiss && (
         <button
@@ -235,6 +249,17 @@ interface LinksStripProps {
 
 function LinksStrip({ links }: Readonly<LinksStripProps>) {
   const { t } = useTranslation("clients");
+  // U-08: full-screen QR for the link the operator tapped. Handing out a
+  // connection link by QR / share sheet is the #1 phone task — copy alone
+  // forces a clipboard round-trip the operator can't complete in person.
+  const [qrLink, setQrLink] = useState<string | null>(null);
+  const shareable = useMemo(() => canShare(), []);
+  const onShare = (link: string) => {
+    void navigator.share({ title: t("deployments.links.shareTitle"), text: link }).catch(() => {
+      // User dismissed the share sheet, or the target rejected it — non-fatal.
+    });
+  };
+
   type LinkGroup = { key: "tls" | "secure" | "classic"; label: string; items: string[] };
   const groups: LinkGroup[] = (
     [
@@ -245,24 +270,70 @@ function LinksStrip({ links }: Readonly<LinksStripProps>) {
   ).filter((g) => g.items.length > 0);
   if (groups.length === 0) {
     return (
-      <div className="mt-2 text-[11px] font-mono text-fg-muted">{t("deployments.links.none")}</div>
+      <div className="mt-2 text-micro font-mono text-fg-muted">{t("deployments.links.none")}</div>
     );
   }
   return (
     <div className="mt-2 flex flex-col gap-1.5">
       {groups.flatMap((g) =>
         g.items.map((item, idx) => (
-          <div key={`${g.key}-${idx}`} className="flex items-center gap-2 min-w-0">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted shrink-0 w-[56px]">
-              {idx === 0 ? g.label : ""}
+          <div key={`${g.key}-${idx}`} className="flex items-center gap-1.5 min-w-0">
+            {/* Label every row (not just the first) so each link in a group
+                is identifiable — U-08 / the review's "indistinguishable
+                links" complaint. */}
+            <span className="text-nano font-mono uppercase tracking-wider text-fg-muted shrink-0 w-[56px]">
+              {g.label}
             </span>
             <span className="font-mono text-xs text-fg truncate min-w-0 flex-1">
               {item}
             </span>
+            <button
+              type="button"
+              onClick={() => setQrLink(item)}
+              aria-label={t("deployments.links.qr")}
+              title={t("deployments.links.qr")}
+              className="shrink-0 p-1.5 rounded-xs text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <QrCode size={15} aria-hidden="true" />
+            </button>
+            {shareable && (
+              <button
+                type="button"
+                onClick={() => onShare(item)}
+                aria-label={t("deployments.links.share")}
+                title={t("deployments.links.share")}
+                className="shrink-0 p-1.5 rounded-xs text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <Share2 size={15} aria-hidden="true" />
+              </button>
+            )}
             <CopyButton text={item} />
           </div>
         )),
       )}
+
+      <Sheet open={qrLink !== null} onOpenChange={(open) => { if (!open) setQrLink(null); }}>
+        <SheetContent side="bottom">
+          <SheetHeader>
+            <SheetTitle>{t("deployments.links.qrTitle")}</SheetTitle>
+          </SheetHeader>
+          <SheetBody>
+            {qrLink && (
+              <div className="flex flex-col items-center gap-4 py-2">
+                <div className="rounded-lg bg-white p-4">
+                  <Suspense fallback={<div className="size-[220px]" />}>
+                    <LazyQRCode value={qrLink} size={220} level="M" />
+                  </Suspense>
+                </div>
+                <div className="flex items-center gap-2 w-full min-w-0">
+                  <span className="font-mono text-xs text-fg-muted truncate min-w-0 flex-1">{qrLink}</span>
+                  <CopyButton text={qrLink} />
+                </div>
+              </div>
+            )}
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -312,7 +383,7 @@ export function DeployLinksCard({
       <header className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-semibold text-fg">{t("deployments.title")}</span>
-          <span className="text-[11px] font-mono text-fg-muted">
+          <span className="text-micro font-mono text-fg-muted">
             {t("deployments.nodeCount", { count: deployments.length })}
           </span>
         </div>
@@ -329,7 +400,7 @@ export function DeployLinksCard({
                   {label ?? d.agentId}
                 </span>
                 {label && (
-                  <span className="font-mono text-[10px] text-fg-muted truncate">
+                  <span className="font-mono text-nano text-fg-muted truncate">
                     {d.agentId.slice(0, 8)}…
                   </span>
                 )}
@@ -337,14 +408,14 @@ export function DeployLinksCard({
                 {d.desiredOperation && d.desiredOperation !== "none" && (
                   <Badge variant="accent">{d.desiredOperation}</Badge>
                 )}
-                <span className="ml-auto text-[11px] font-mono text-fg-muted tabular-nums">
+                <span className="ml-auto text-micro font-mono text-fg-muted tabular-nums">
                   {d.lastAppliedAtUnix > 0
-                    ? new Date(d.lastAppliedAtUnix * 1000).toLocaleString()
+                    ? formatDateTime(d.lastAppliedAtUnix * 1000)
                     : t("deployments.neverApplied")}
                 </span>
               </div>
               {d.lastError && (
-                <div className="mt-1 text-[11px] font-mono text-status-error break-words">
+                <div className="mt-1 text-micro font-mono text-status-error break-words">
                   {d.lastError}
                 </div>
               )}
@@ -357,7 +428,7 @@ export function DeployLinksCard({
                 the values verbatim.
               */}
               <div className="mt-2 flex flex-col gap-1">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+                <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
                   {t("detail.quota.cellHeader")}
                 </span>
                 <QuotaCell

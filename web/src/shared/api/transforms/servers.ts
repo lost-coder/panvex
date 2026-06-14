@@ -1,3 +1,5 @@
+import { deriveNodeState } from "@/ui";
+
 import type {
   AgentConnectionData,
   InitCardProps,
@@ -102,6 +104,13 @@ function summaryToListItem(card: TelemetryServerSummary): ServerListItem {
     id: agent?.id ?? "",
     name: agent?.node_name ?? "",
     status: mapSeverity(card.severity),
+    state: deriveNodeState({
+      severity: card.severity,
+      presenceState: agent?.presence_state ?? "online",
+      telemtUnreachable: runtime?.telemt_unreachable ?? false,
+      reason: card.reason ?? "",
+    }),
+    reason: card.reason ?? "",
     connections: runtime?.current_connections ?? 0,
     // active_users / configured_users come straight from Telemt; the
     // previous fallback (connections × 2) was a placeholder that
@@ -437,6 +446,12 @@ export function transformServerDetail(
     id: agent?.id ?? "",
     name: agent?.node_name ?? "",
     status: resolveAgentSeverity(agent ?? ({} as Agent)),
+    state: deriveNodeState({
+      severity: raw.server?.severity ?? "ok",
+      presenceState: agent?.presence_state ?? "online",
+      telemtUnreachable: runtime?.telemt_unreachable ?? false,
+      reason: raw.server?.reason ?? "",
+    }),
     systemInfo,
     gates,
     dcs,

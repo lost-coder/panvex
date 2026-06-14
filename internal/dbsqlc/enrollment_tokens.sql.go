@@ -92,6 +92,21 @@ func (q *Queries) ListEnrollmentTokens(ctx context.Context) ([]EnrollmentToken, 
 	return items, nil
 }
 
+const pruneEnrollmentTokens = `-- name: PruneEnrollmentTokens :execrows
+DELETE FROM enrollment_tokens
+WHERE (consumed_at IS NOT NULL AND consumed_at < $1)
+   OR (revoked_at IS NOT NULL AND revoked_at < $1)
+   OR (expires_at < $1 AND consumed_at IS NULL AND revoked_at IS NULL)
+`
+
+func (q *Queries) PruneEnrollmentTokens(ctx context.Context, consumedAt sql.NullTime) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneEnrollmentTokens, consumedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const revokeEnrollmentToken = `-- name: RevokeEnrollmentToken :execrows
 UPDATE enrollment_tokens
 SET revoked_at = $1

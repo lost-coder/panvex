@@ -75,8 +75,13 @@ export const resetQuotaResponseSchema = z.object({
   job: jobSchema,
 });
 
+export const rescanDiscoveredResponseSchema = z.object({
+  agents_notified: z.number(),
+});
+
 export type AdoptDiscoveredClientResponseParsed = z.infer<typeof adoptDiscoveredClientResponseSchema>;
 export type BulkAdoptDiscoveredResponseParsed = z.infer<typeof bulkAdoptDiscoveredResponseSchema>;
 export type ClientIPHistoryResponseParsed = z.infer<typeof clientIPHistoryResponseSchema>;
 export type BulkClientResponseParsed = z.infer<typeof bulkClientResponseSchema>;
 export type ResetQuotaResponseParsed = z.infer<typeof resetQuotaResponseSchema>;
+export type RescanDiscoveredResponse = z.infer<typeof rescanDiscoveredResponseSchema>;

@@ -194,9 +194,9 @@ func TestTOTPLockoutIndependentFromPasswordLockout(t *testing.T) {
 	// Trip the password tracker hard. The TOTP tracker must still be
 	// at zero (different counter, different storage).
 	for i := 0; i < LockoutMaxAttempts; i++ {
-		password.RecordFailure("alice", now)
+		password.RecordFailureWithContext(context.Background(), "alice", now)
 	}
-	if !password.IsLocked("alice", now) {
+	if !password.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("precondition: password tracker should be locked")
 	}
 	if totp.IsLocked("alice", now) {
@@ -213,7 +213,7 @@ func TestTOTPLockoutIndependentFromPasswordLockout(t *testing.T) {
 	if !totp2.IsLocked("alice", now) {
 		t.Fatal("precondition: totp tracker should be locked")
 	}
-	if password2.IsLocked("alice", now) {
+	if password2.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("password tracker locked by TOTP failures, want independent counters")
 	}
 }

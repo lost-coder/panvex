@@ -64,28 +64,18 @@ func TestDecryptPEMWrongKey(t *testing.T) {
 	}
 }
 
-func TestDecryptPEMLegacyV1Format(t *testing.T) {
-	original := "-----BEGIN EC PRIVATE KEY-----\nMIGkAgEBBDDfake+key+data+here==\n-----END EC PRIVATE KEY-----\n"
-	passphrase := "legacy-passphrase"
-
-	// Simulate a legacy ENC: value by encrypting with the v1 derivation.
-	key := deriveKeyV1(passphrase)
-	encrypted, err := encryptPEMWithKey(original, key, encryptedPEMPrefix)
-	if err != nil {
-		t.Fatalf("legacy encrypt error = %v", err)
+func TestDecryptPEMRejectsLegacyV1(t *testing.T) {
+	_, err := decryptPEM("ENC:AAAA", "passphrase")
+	if err == nil {
+		t.Fatal("decryptPEM(ENC:v1) error = nil, want loud rejection")
 	}
-
-	if !strings.HasPrefix(encrypted, encryptedPEMPrefix) {
-		t.Fatalf("expected ENC: prefix, got %q", encrypted[:10])
+	if !strings.Contains(err.Error(), "no longer supported") {
+		t.Fatalf("error = %q, want mention of removed ENC:v1 support", err)
 	}
-
-	decrypted, err := decryptPEM(encrypted, passphrase)
-	if err != nil {
-		t.Fatalf("decryptPEM() legacy v1 error = %v", err)
-	}
-
-	if decrypted != original {
-		t.Fatalf("decryptPEM() = %q, want %q", decrypted, original)
+	// Same rejection without a passphrase: the blob must never be
+	// mistaken for plaintext PEM.
+	if _, err := decryptPEM("ENC:AAAA", ""); err == nil {
+		t.Fatal("decryptPEM(ENC:v1, no key) error = nil, want loud rejection")
 	}
 }
 

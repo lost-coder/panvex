@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 
 import { SkeletonRows } from "@/ui";
 import { useToast } from "@/app/providers/ToastProvider";
@@ -20,6 +21,7 @@ const emptyForm: FleetGroupFormData = { name: "", label: "", description: "" };
 export function FleetGroupsContainer() {
   const navigate = useNavigate();
   const toast = useToast();
+  const { t } = useTranslation("fleet-groups");
   const { data: groups, isLoading } = useFleetGroupsList();
   const { createMutation, updateMutation } = useFleetGroupMutations();
 
@@ -55,17 +57,17 @@ export function FleetGroupsContainer() {
           label: formData.label,
           description: formData.description,
         });
-        toast.success(`Fleet group «${created.label}» created.`);
+        toast.success(t("toasts.created", { label: created.label }));
       } else if (sheet.mode === "edit") {
         await updateMutation.mutateAsync({
           id: sheet.id,
           payload: { label: formData.label, description: formData.description },
         });
-        toast.success("Fleet group updated.");
+        toast.success(t("toasts.updated"));
       }
       closeSheet();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Request failed");
+      setFormError(err instanceof Error ? err.message : t("toasts.requestFailed"));
     }
   };
 

@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -70,6 +71,14 @@ type metricsCollectors struct {
 	jobQueueDepth prometheus.Gauge
 	lockoutActive prometheus.Gauge
 
+	// C3: write-behind job persist failures. The jobs service retries on
+	// the next mutation, but a wedged DB used to be slog-only; this
+	// counter backs the PanvexJobPersistFailures alert.
+	jobPersistFailuresTotal prometheus.Counter
+
+	// F3 (audit 2026-06-09): count jobs that enter the failed terminal status.
+	jobFailuresTotal prometheus.Counter
+
 	unsignedUpdateFallbackTotal prometheus.Counter
 
 	// P2-REL-04 / P2-REL-05: per-table row count deleted by the retention
@@ -115,12 +124,26 @@ type metricsCollectors struct {
 	// labelled by result. Bounded enum: ok|mismatch|missing.
 	// Pre-initialised to zero for PromQL alert stability. (S-02)
 	agentCertPinTotal *prometheus.CounterVec
+	// agentCertPinPersistFailuresTotal counts issuance-time failures to
+	// persist an agent's SPKI pin. A growing value means certs were issued
+	// whose pins never reached the store, so the fail-closed outbound dial
+	// verifier may reject those agents until the next successful renewal
+	// (A1 follow-up).
+	agentCertPinPersistFailuresTotal prometheus.Counter
+
+	// F3 (audit 2026-06-09): certificate expiry surfaced as unix
+	// timestamps so PromQL can alert on `x - time() < threshold`.
+	// 0 means "not yet sampled / no data" — alert rules must guard
+	// with `> 0`.
+	caCertExpiryTimestamp            prometheus.Gauge
+	serverCertExpiryTimestamp        prometheus.Gauge
+	agentCertEarliestExpiryTimestamp prometheus.Gauge
 }
 
 // rateLimitScopes enumerates every scope label that can appear on
 // panvex_ratelimit_rejected_total. Pre-initialised to zero at startup
 // (keeps PromQL alerts deterministic).
-var rateLimitScopes = []string{"login", "agent_bootstrap", "sensitive", "grpc_connect"}
+var rateLimitScopes = []string{"login", "agent_bootstrap", "sensitive", "grpc_connect", "install_script"}
 
 // retentionPruneTables enumerates every table whose retention worker feeds
 // panvex_retention_pruned_rows_total. Adding a new retention worker requires
@@ -129,6 +152,10 @@ var rateLimitScopes = []string{"login", "agent_bootstrap", "sensitive", "grpc_co
 var retentionPruneTables = []string{
 	"audit_events",
 	"metric_snapshots",
+	"jobs",
+	"webhook_outbox",
+	"agent_revocations",
+	"enrollment_tokens",
 }
 
 // knownBatchBuffers enumerates every batch buffer tracked by
@@ -210,13 +237,21 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_lockout_active",
 			Help: "Current number of usernames with an active account lockout.",
 		}),
+		jobPersistFailuresTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_job_persist_failures_total",
+			Help: "Total job write-behind persistence failures (PutJob/PutJobTarget). In-memory state stays ahead of storage until the next successful persist; sustained growth means job state is not durable.",
+		}),
+		jobFailuresTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_job_failures_total",
+			Help: "Jobs that entered the failed terminal status (at least one target failed and none can still succeed).",
+		}),
 		unsignedUpdateFallbackTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "panvex_unsigned_update_fallback_total",
 			Help: "Total number of panel-update applications that fell back to an unsigned manifest.",
 		}),
 		retentionPrunedRowsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_retention_pruned_rows_total",
-			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots.",
+			Help: "Total rows deleted by the retention worker, labelled by table. Bounded enum: audit_events, metric_snapshots, jobs, webhook_outbox, agent_revocations, enrollment_tokens.",
 		}, []string{"table"}),
 		panicRecoveredTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_goroutine_panic_recovered_total",
@@ -270,6 +305,22 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_agent_cert_pin_total",
 			Help: "Dial-time SPKI pin verification outcomes per outbound agent TLS handshake. Bounded label enum: ok|mismatch|missing. (S-02)",
 		}, []string{"result"}),
+		agentCertPinPersistFailuresTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_agent_cert_pin_persist_failures_total",
+			Help: "Issuance-time failures to persist an agent SPKI pin (UpdateAgentCertPin errored). A fail-closed outbound dial may reject affected agents until the next successful renewal.",
+		}),
+		caCertExpiryTimestamp: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "panvex_ca_cert_expiry_timestamp_seconds",
+			Help: "Unix timestamp at which the panel's embedded CA certificate expires.",
+		}),
+		serverCertExpiryTimestamp: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "panvex_server_cert_expiry_timestamp_seconds",
+			Help: "Unix timestamp at which the panel's gRPC server certificate expires.",
+		}),
+		agentCertEarliestExpiryTimestamp: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "panvex_agent_cert_earliest_expiry_timestamp_seconds",
+			Help: "Unix timestamp of the earliest cert_expires_at across enrolled agents. 0 when no agents are enrolled or the value has not been sampled yet.",
+		}),
 	}
 
 	reg.MustRegister(
@@ -286,6 +337,8 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.agentInboundDropsTotal,
 		mc.jobQueueDepth,
 		mc.lockoutActive,
+		mc.jobPersistFailuresTotal,
+		mc.jobFailuresTotal,
 		mc.unsignedUpdateFallbackTotal,
 		mc.retentionPrunedRowsTotal,
 		mc.panicRecoveredTotal,
@@ -301,6 +354,10 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.outboundSupervisorsTotal,
 		mc.bootstrapAttemptsTotal,
 		mc.agentCertPinTotal,
+		mc.agentCertPinPersistFailuresTotal,
+		mc.caCertExpiryTimestamp,
+		mc.serverCertExpiryTimestamp,
+		mc.agentCertEarliestExpiryTimestamp,
 	)
 
 	// Pre-initialise the per-buffer series to zero so Prometheus rules that
@@ -380,6 +437,15 @@ func (mc *metricsCollectors) ObserveAgentCertPin(result string) {
 	mc.agentCertPinTotal.WithLabelValues(result).Inc()
 }
 
+// ObserveAgentCertPinPersistFailure records a failure to persist a freshly
+// issued agent's SPKI pin. Safe to call on a nil receiver (metrics disabled).
+func (mc *metricsCollectors) ObserveAgentCertPinPersistFailure() {
+	if mc == nil {
+		return
+	}
+	mc.agentCertPinPersistFailuresTotal.Inc()
+}
+
 // AddOutboundSupervisor increments the outbound supervisor gauge by delta.
 // Use +1 when a supervisor is created, -1 when it is removed.
 // Safe to call on a nil receiver (metrics disabled).
@@ -445,6 +511,23 @@ func (mc *metricsCollectors) ObserveFlushError(buffer, errorType string) {
 	}
 	mc.batchFlushErrorsTotal.WithLabelValues(buffer, errorType).Inc()
 	mc.batchPersistErrorsTotal.WithLabelValues(buffer, errorType).Inc()
+}
+
+// ObserveJobPersistFailure satisfies jobs.MetricsSink (C3).
+func (mc *metricsCollectors) ObserveJobPersistFailure() {
+	if mc == nil {
+		return
+	}
+	mc.jobPersistFailuresTotal.Inc()
+}
+
+// IncJobFailure bumps panvex_job_failures_total. Wired into
+// jobs.Service via SetJobFailureHook; safe on a nil receiver.
+func (mc *metricsCollectors) IncJobFailure() {
+	if mc == nil {
+		return
+	}
+	mc.jobFailuresTotal.Inc()
 }
 
 // SetQueueDepth satisfies batchMetricsSink.
@@ -664,14 +747,14 @@ func (s *Server) startMetricsPoller(ctx context.Context, interval time.Duration)
 		// Refresh once immediately so the first scrape after startup has
 		// non-zero values (otherwise a test that scrapes right after New()
 		// sees only zeros and cannot tell polling is wired).
-		s.refreshPolledMetrics()
+		s.refreshPolledMetrics(ctx)
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.refreshPolledMetrics()
+				s.refreshPolledMetrics(ctx)
 			}
 		}
 	}()
@@ -687,7 +770,7 @@ type poolStatsProvider interface {
 // refreshPolledMetrics samples in-memory state and updates the corresponding
 // Prometheus gauges. Kept intentionally lock-light: reads use the same RLocks
 // as the HTTP handlers.
-func (s *Server) refreshPolledMetrics() {
+func (s *Server) refreshPolledMetrics(ctx context.Context) {
 	if s.obs == nil {
 		return
 	}
@@ -703,7 +786,55 @@ func (s *Server) refreshPolledMetrics() {
 	if s.loginLockout != nil {
 		s.obs.lockoutActive.Set(float64(s.loginLockout.ActiveCount(s.now())))
 	}
+	if s.authority != nil {
+		s.obs.caCertExpiryTimestamp.Set(float64(s.authority.certificate.NotAfter.Unix()))
+		if na := s.authority.serverCertNotAfter(); !na.IsZero() {
+			s.obs.serverCertExpiryTimestamp.Set(float64(na.Unix()))
+		}
+	}
+	s.refreshAgentCertExpiry(ctx)
 	s.refreshPoolMetrics()
+}
+
+// refreshAgentCertExpiry samples the earliest agent certificate expiry.
+// Unlike the rest of refreshPolledMetrics this touches the store, so it
+// is throttled to once per minute (the poller ticks every 5s). Only
+// called from the single poller goroutine — no locking on the
+// timestamp field.
+func (s *Server) refreshAgentCertExpiry(ctx context.Context) {
+	if s.obs == nil || s.store == nil {
+		return
+	}
+	now := s.now()
+	if !s.agentCertExpiryRefreshedAt.IsZero() && now.Sub(s.agentCertExpiryRefreshedAt) < time.Minute {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	agents, err := s.store.ListAgents(ctx)
+	if err != nil {
+		// Don't advance the throttle stamp on a transient store error —
+		// retry on the next poller tick instead of blacking out the gauge
+		// for a full minute.
+		slog.Warn("metrics: list agents for cert expiry failed", "err", err)
+		return
+	}
+	s.agentCertExpiryRefreshedAt = now
+	var earliest time.Time
+	for _, a := range agents {
+		if a.CertExpiresAt == nil {
+			continue
+		}
+		if earliest.IsZero() || a.CertExpiresAt.Before(earliest) {
+			earliest = *a.CertExpiresAt
+		}
+	}
+	if earliest.IsZero() {
+		s.obs.agentCertEarliestExpiryTimestamp.Set(0)
+		return
+	}
+	s.obs.agentCertEarliestExpiryTimestamp.Set(float64(earliest.Unix()))
 }
 
 // refreshPoolMetrics snapshots the storage backend's connection-pool

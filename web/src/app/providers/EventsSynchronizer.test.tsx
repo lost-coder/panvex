@@ -11,6 +11,17 @@ import { render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { eventEnvelopeSchema } from "@/shared/api/schemas/events";
+import { AuthContext } from "@/app/providers/AuthProvider";
+
+// The synchronizer only opens a socket once the session is authenticated.
+// Tests that exercise the message path therefore render under an
+// authenticated AuthContext so a socket exists synchronously on mount.
+const AUTHED = {
+  user: { id: "u1", username: "admin", role: "admin", totp_enabled: false },
+  isLoading: false,
+  isAuthenticated: true,
+} as const;
+const ANON = { user: null, isLoading: false, isAuthenticated: false } as const;
 
 // The synchronizer's `onclose` handler calls apiClient.me() to decide
 // whether to reconnect or dispatch SESSION_EXPIRED_EVENT. We never close
@@ -116,9 +127,11 @@ describe("EventsSynchronizer onmessage decode", () => {
     });
     render(
       <QueryClientProvider client={qc}>
-        <EventsSynchronizer>
-          <span data-testid="child">ok</span>
-        </EventsSynchronizer>
+        <AuthContext.Provider value={AUTHED}>
+          <EventsSynchronizer>
+            <span data-testid="child">ok</span>
+          </EventsSynchronizer>
+        </AuthContext.Provider>
       </QueryClientProvider>,
     );
     return { qc };
@@ -170,5 +183,104 @@ describe("EventsSynchronizer onmessage decode", () => {
     await Promise.resolve();
 
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a broad refetch when a seq gap is detected", async () => {
+    const { qc } = mount();
+    const spy = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
+    const ws = FakeWebSocket.instances.at(-1)!;
+
+    ws.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ type: "audit.created", data: {}, seq: 1 }),
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+    spy.mockClear();
+
+    ws.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ type: "audit.created", data: {}, seq: 4 }),
+    }));
+    await Promise.resolve();
+
+    expect(spy).toHaveBeenCalledWith();
+  });
+
+  it("keeps per-event invalidation on contiguous seq", async () => {
+    const { qc } = mount();
+    const spy = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
+    const ws = FakeWebSocket.instances.at(-1)!;
+
+    ws.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ type: "audit.created", data: {}, seq: 1 }),
+    }));
+    ws.onmessage?.(new MessageEvent("message", {
+      data: JSON.stringify({ type: "audit.created", data: {}, seq: 2 }),
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(spy).toHaveBeenCalled();
+    for (const call of spy.mock.calls) {
+      expect(call.length).toBeGreaterThan(0); // never the broad no-arg form
+    }
+  });
+});
+
+describe("EventsSynchronizer auth gating", () => {
+  let originalWS: typeof globalThis.WebSocket;
+
+  beforeEach(() => {
+    FakeWebSocket.instances = [];
+    originalWS = globalThis.WebSocket;
+    (globalThis as unknown as { WebSocket: typeof FakeWebSocket }).WebSocket = FakeWebSocket;
+  });
+
+  afterEach(() => {
+    (globalThis as unknown as { WebSocket: typeof globalThis.WebSocket }).WebSocket = originalWS;
+    vi.restoreAllMocks();
+  });
+
+  // Reuse a single QueryClient across rerenders so the ONLY changing effect
+  // dependency is auth state — otherwise a fresh QueryClient would itself
+  // retrigger the connect/teardown effect and mask the gating behaviour.
+  function tree(qc: QueryClient, authValue: typeof AUTHED | typeof ANON) {
+    return (
+      <QueryClientProvider client={qc}>
+        <AuthContext.Provider value={authValue}>
+          <EventsSynchronizer>
+            <span data-testid="child">ok</span>
+          </EventsSynchronizer>
+        </AuthContext.Provider>
+      </QueryClientProvider>
+    );
+  }
+
+  it("does NOT open a WebSocket while unauthenticated", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(tree(qc, ANON));
+    expect(FakeWebSocket.instances).toHaveLength(0);
+  });
+
+  it("opens a WebSocket once authentication becomes true", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(tree(qc, ANON));
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    // Simulate the post-login transition: AuthProvider's me() resolves and
+    // isAuthenticated flips to true — the synchronizer must connect without
+    // requiring a full page reload.
+    rerender(tree(qc, AUTHED));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it("closes the socket when authentication is lost", () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(tree(qc, AUTHED));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    const socket = FakeWebSocket.instances.at(-1)!;
+    const closeSpy = vi.spyOn(socket, "close");
+
+    rerender(tree(qc, ANON));
+    expect(closeSpy).toHaveBeenCalled();
   });
 });

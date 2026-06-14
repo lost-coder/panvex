@@ -22,6 +22,13 @@ import (
 type Event struct {
 	Type string `json:"type"`
 	Data any    `json:"data"`
+	// Seq is a hub-global monotonic sequence number assigned by Publish
+	// (NOT per subscriber): events dropped for a slow subscriber still
+	// consume numbers, so a gap in the delivered stream is the consumer's
+	// signal that it missed something and must resync (D6c). The WebSocket
+	// envelope serialises this verbatim; the dashboard reacts to gaps with
+	// a broad query refetch.
+	Seq uint64 `json:"seq"`
 }
 
 // Backend is the pluggable transport seam. The default in-process
@@ -34,6 +41,9 @@ type Event struct {
 // publisher or other consumer. Subscribe returns a receive-only channel and
 // a cancel func the caller must invoke to release resources (typically via
 // defer).
+//
+// Implementations MUST assign Event.Seq from a backend-global monotonic
+// counter before fan-out.
 type Backend interface {
 	Publish(evt Event)
 	Subscribe() (<-chan Event, func())
@@ -118,6 +128,11 @@ type subState struct {
 // completely lock-free, allocation-free hot publish path (P-5).
 type memoryBackend struct {
 	subs atomic.Pointer[[]subscriber] // immutable snapshot, never mutated in place
+
+	// pubSeq is the hub-global publish sequence counter (D6c). Incremented
+	// once per Publish call, before fan-out, so dropped events still consume
+	// numbers and gaps are visible to consumers.
+	pubSeq atomic.Uint64
 
 	// mu serialises Subscribe / cancel / SetDropHook so concurrent
 	// mutations do not race when copying the subscriber slice.
@@ -223,7 +238,12 @@ func (h *memoryBackend) Subscribe() (<-chan Event, func()) {
 //
 // Drop-on-full semantics: if a subscriber's buffered channel is full the
 // event is dropped for that subscriber and the onDrop hook fires.
+//
+// D6c: Seq is assigned here, once, before fan-out. Dropped events still
+// consume a sequence number so gaps in the delivered stream signal the
+// dashboard that a resync is required.
 func (h *memoryBackend) Publish(evt Event) {
+	evt.Seq = h.pubSeq.Add(1)
 	snap := h.subs.Load()
 	if snap == nil {
 		return

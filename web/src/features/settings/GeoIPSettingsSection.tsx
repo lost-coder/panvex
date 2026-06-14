@@ -13,8 +13,9 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Globe } from "lucide-react";
-import { Button, Input, PageSection, SettingsRow } from "@/ui";
+import { Button, Input, PageSection, SettingsRow, formatBytes } from "@/ui";
 import { useGeoIPSettings } from "./hooks/useGeoIPSettings";
+import { useUnsavedChangesGuard } from "@/shared/hooks";
 import type {
   GeoIPResponseParsed,
   GeoIPSettingsParsed,
@@ -37,13 +38,6 @@ const MODE_DEFS: ReadonlyArray<{ value: Mode; key: ModeKey }> = [
 function formatTimestamp(unix: number, neverLabel: string): string {
   if (!unix) return neverLabel;
   return new Date(unix * 1000).toUTCString();
-}
-
-function formatBytes(n: number): string {
-  if (!n) return "—";
-  if (n > 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  if (n > 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${n} B`;
 }
 
 export function GeoIPSettingsSection() {
@@ -109,6 +103,10 @@ function GeoIPForm({
   // Avoid pointless round-trips when the form is unchanged. Stringify is
   // adequate here — the object is shallow and ~6 fields.
   const isDirty = JSON.stringify(draft) !== JSON.stringify(initial.settings);
+
+  // Audit E4: guard in-app navigation while there are unsaved GeoIP changes.
+  useUnsavedChangesGuard(isDirty);
+
   const refreshSupported = draft.mode !== "";
 
   return (
@@ -225,7 +223,8 @@ function StatusRow({ label, s, t }: Readonly<{ label: string; s: SourceState; t:
     <div>
       <span className="text-fg-muted">{label}: </span>
       <span className="text-fg">
-        {formatTimestamp(s.last_updated_at, never)} · {formatBytes(s.size_bytes)}
+        {formatTimestamp(s.last_updated_at, never)} ·{" "}
+        {s.size_bytes ? formatBytes(s.size_bytes) : "—"}
       </span>
       {s.error ? (
         <div className="text-status-error">{t("geoip.errorPrefix")}: {s.error}</div>

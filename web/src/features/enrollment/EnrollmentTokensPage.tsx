@@ -34,6 +34,7 @@ export function EnrollmentTokensPage({
   tokens,
   onCreateToken,
   onRevoke,
+  onViewAttempts,
 }: Readonly<EnrollmentTokensPageProps>) {
   const { t } = useTranslation("enrollment");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
@@ -75,7 +76,8 @@ export function EnrollmentTokensPage({
       if (statusFilter !== "all" && tok.status !== statusFilter) return false;
       if (!q) return true;
       return (
-        tok.value.toLowerCase().includes(q) ||
+        tok.maskedValue.toLowerCase().includes(q) ||
+        tok.handle.toLowerCase().includes(q) ||
         (tok.fleetGroupId ?? "").toLowerCase().includes(q)
       );
     });
@@ -101,9 +103,16 @@ export function EnrollmentTokensPage({
         title={t("tokens.title")}
         subtitle={t("tokens.subtitle", { count: tokens.length })}
         trailing={
-          <Button size="sm" onClick={onCreateToken}>
-            {t("tokens.newToken")}
-          </Button>
+          <div className="flex items-center gap-2">
+            {onViewAttempts && (
+              <Button size="sm" variant="ghost" onClick={onViewAttempts}>
+                {t("tokens.viewAttempts")}
+              </Button>
+            )}
+            <Button size="sm" onClick={onCreateToken}>
+              {t("tokens.newToken")}
+            </Button>
+          </div>
         }
       />
 

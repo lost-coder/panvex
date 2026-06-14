@@ -205,6 +205,33 @@ func TestHubSubscribeCancelRace(t *testing.T) {
 	}
 }
 
+// TestHubAssignsMonotonicSeqAcrossDrops guards D6c: Seq is assigned at
+// PUBLISH time, so events dropped for a slow subscriber still consume
+// sequence numbers and the next delivered event exposes the gap — the
+// dashboard's resync signal.
+func TestHubAssignsMonotonicSeqAcrossDrops(t *testing.T) {
+	hub := NewHub()
+	ch, cancel := hub.Subscribe()
+	defer cancel()
+
+	for i := 0; i < memorySubscriberBuffer+2; i++ {
+		hub.Publish(Event{Type: "t"})
+	}
+	var last uint64
+	for i := 0; i < memorySubscriberBuffer; i++ {
+		evt := <-ch
+		if evt.Seq != uint64(i+1) {
+			t.Fatalf("delivered seq = %d, want %d", evt.Seq, i+1)
+		}
+		last = evt.Seq
+	}
+	hub.Publish(Event{Type: "t"})
+	evt := <-ch
+	if want := last + 3; evt.Seq != want {
+		t.Fatalf("post-drop seq = %d, want %d (gap must be visible)", evt.Seq, want)
+	}
+}
+
 func TestHubSubscriberCountTracksActiveSubscribers(t *testing.T) {
 	hub := NewHub()
 	if got := hub.SubscriberCount(); got != 0 {

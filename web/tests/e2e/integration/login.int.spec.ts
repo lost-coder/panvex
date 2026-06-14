@@ -16,7 +16,9 @@ import { expect, test } from "@playwright/test";
 test("operator logs in and reaches the dashboard", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel(/username/i).fill("admin");
-  await page.getByLabel(/password/i).fill("e2e-secret");
+  // Anchored: the show/hide-password toggle's aria-label also contains
+  // "password", so a loose /password/i matches two elements.
+  await page.getByLabel(/^password$/i).fill("e2e-secret");
   await page.getByRole("button", { name: /sign in|log in/i }).click();
 
   await expect(page).toHaveURL(/\/(dashboard)?$/, { timeout: 15_000 });

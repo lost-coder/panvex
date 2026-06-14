@@ -6,6 +6,7 @@
 // only — the cost is HMR latency on router edits, not production
 // behaviour.
 /* eslint-disable react-refresh/only-export-components */
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { QueryClient} from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,23 +15,30 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  isRedirect,
   lazyRouteComponent,
   redirect,
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers } from "lucide-react";
+import { LayoutDashboard, Server, Users, Settings, Activity, User, Layers, ScrollText, Keyboard } from "lucide-react";
 
-import { AppShell, Spinner, type NavItem } from "@/ui";
+import { AppShell, ErrorBoundary, Spinner, type NavItem } from "@/ui";
 import { AppearanceProvider } from "@/app/providers/AppearanceProvider";
 import { AppErrorFallback } from "@/app/providers/AppErrorFallback";
 import { AuthProvider } from "@/app/providers/AuthProvider";
-import { useConfirm } from "@/app/providers/ConfirmProvider";
+import { ConfirmProvider, useConfirm } from "@/app/providers/ConfirmProvider";
+import { EventsSynchronizer } from "@/app/providers/EventsSynchronizer";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { PullToRefresh } from "@/components/PullToRefresh";
 import { ShortcutsOverlay } from "@/components/ShortcutsOverlay";
 import { ThemeToggleButton } from "@/components/ThemeToggleButton";
 import { WsStatusBanner } from "@/components/WsStatusBanner";
-import { apiClient } from "@/shared/api/api";
+// Import the auth leaf directly, not the aggregated apiClient: apiClient
+// spreads all 12 domain APIs (and their zod schemas), and the router root
+// is in the entry's synchronous graph — pulling the aggregate hoists every
+// domain's schemas into the entry chunk. The shell only needs me()/logout().
+import { authApi } from "@/shared/api/auth";
 import { authKeys } from "@/features/auth/queryKeys";
 import { useFocusMainOnRouteChange, useKeyboardShortcut } from "@/shared/hooks";
 import { resolveConfiguredRootPath, getRouterBasepath } from "@/shared/lib/runtime-path";
@@ -44,10 +52,21 @@ interface RouterContext {
 // (needs useNavigate) and the QueryClientProvider (needs useQueryClient)
 // for every page — login included, so a stale /login tab that receives
 // a 401 still gets its cache cleared.
+//
+// EventsSynchronizer sits INSIDE AuthProvider so it can gate the
+// /api/events WebSocket on isAuthenticated: opening it before login
+// produced a 401, a spurious "disconnected" banner, and a socket that
+// never recovered until a manual reload. ConfirmProvider stays nested
+// under it (was previously co-located in main.tsx) so confirm dialogs in
+// banner-adjacent UI keep working while the socket reconnects.
 function RootComponent() {
   return (
     <AuthProvider>
-      <Outlet />
+      <EventsSynchronizer>
+        <ConfirmProvider>
+          <Outlet />
+        </ConfirmProvider>
+      </EventsSynchronizer>
     </AuthProvider>
   );
 }
@@ -55,32 +74,57 @@ function RootComponent() {
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: RootComponent });
 
 // UX-bottom-nav-limit (Material): the mobile BottomNav must stay ≤5 tabs.
-// Sidebar (desktop) renders the full NAV_ITEMS list; BottomNav renders
-// NAV_PRIMARY plus a "More" button that opens NAV_SECONDARY in a sheet.
-const NAV_PRIMARY: NavItem[] = [
-  { id: "/", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
-  { id: "/servers", label: "Servers", icon: <Server size={20} /> },
-  { id: "/fleet-groups", label: "Fleet groups", icon: <Layers size={20} /> },
-  { id: "/clients", label: "Clients", icon: <Users size={20} /> },
+// Labels are i18n keys (ui namespace) resolved inside ProtectedShell —
+// module scope has no hooks.
+interface NavSpec {
+  id: string;
+  labelKey: string;
+  icon: React.ReactNode;
+}
+
+const NAV_PRIMARY_SPEC: NavSpec[] = [
+  { id: "/", labelKey: "nav.dashboard", icon: <LayoutDashboard size={20} /> },
+  { id: "/servers", labelKey: "nav.servers", icon: <Server size={20} /> },
+  { id: "/fleet-groups", labelKey: "nav.fleetGroups", icon: <Layers size={20} /> },
+  { id: "/clients", labelKey: "nav.clients", icon: <Users size={20} /> },
 ];
 
-const NAV_SECONDARY: NavItem[] = [
-  { id: "/activity", label: "Activity", icon: <Activity size={20} /> },
-  { id: "/settings", label: "Settings", icon: <Settings size={20} /> },
-  { id: "/profile", label: "Profile", icon: <User size={20} /> },
+const NAV_SECONDARY_SPEC: NavSpec[] = [
+  { id: "/activity", labelKey: "nav.activity", icon: <Activity size={20} /> },
+  // Audit E1: /enrollment-attempts existed as an orphan route — operators
+  // debugging a failed enrollment could not reach it. Secondary nav slot
+  // next to Activity (it is an observability log, not a daily tab).
+  { id: "/enrollment-attempts", labelKey: "nav.enrollmentAttempts", icon: <ScrollText size={20} /> },
+  { id: "/settings", labelKey: "nav.settings", icon: <Settings size={20} /> },
+  { id: "/profile", labelKey: "nav.profile", icon: <User size={20} /> },
 ];
-
-const NAV_ITEMS: NavItem[] = [...NAV_PRIMARY, ...NAV_SECONDARY];
 
 function ProtectedShell() {
   const { data: me } = useQuery({
     queryKey: authKeys.me(),
-    queryFn: () => apiClient.me(),
+    queryFn: () => authApi.me(),
   });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { location } = useRouterState();
   const confirm = useConfirm();
+  const { t } = useTranslation("ui");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const navPrimary: NavItem[] = NAV_PRIMARY_SPEC.map((i) => ({ id: i.id, icon: i.icon, label: t(i.labelKey) }));
+  const navSecondary: NavItem[] = NAV_SECONDARY_SPEC.map((i) => ({ id: i.id, icon: i.icon, label: t(i.labelKey) }));
+  const navItems: NavItem[] = [...navPrimary, ...navSecondary];
+
+  // U-17: the mobile bottom-nav slots must reflect daily-use frequency, not
+  // the sidebar's grouping. Clients (the main working surface) and Activity
+  // (the "what just happened?" log) earn the four primary slots; Fleet
+  // groups — a rarely-touched reference list — moves into the More sheet.
+  const BOTTOM_NAV_PRIMARY_IDS = ["/", "/servers", "/clients", "/activity"];
+  const bottomNavPrimary: NavItem[] = BOTTOM_NAV_PRIMARY_IDS
+    .map((id) => navItems.find((n) => n.id === id))
+    .filter((n): n is NavItem => Boolean(n));
+  const bottomNavMore: NavItem[] = navItems.filter(
+    (n) => !BOTTOM_NAV_PRIMARY_IDS.includes(n.id),
+  );
 
   // W6: move focus to the main landmark on every pathname change so
   // screen-reader and keyboard users land inside the new page instead
@@ -90,6 +134,7 @@ function ProtectedShell() {
   // UX-13: vim-style navigation. Leader `g` + route letter jumps to the
   // matching page. Shortcuts are skipped while focus is inside an input,
   // so typing "g" into the search box does not teleport the operator.
+  // Keep in sync with src/app/shortcuts.ts (overlay + test derive from it).
   useKeyboardShortcut("g d", () => navigate({ to: "/" }));
   useKeyboardShortcut("g s", () => navigate({ to: "/servers" }));
   useKeyboardShortcut("g f", () => navigate({ to: "/fleet-groups" }));
@@ -97,7 +142,7 @@ function ProtectedShell() {
   useKeyboardShortcut("g t", () => navigate({ to: "/settings" }));
 
   const activeId =
-    NAV_ITEMS.find(
+    navItems.find(
       (item) => item.id !== "/" && location.pathname.startsWith(item.id),
     )?.id ?? "/";
 
@@ -108,14 +153,14 @@ function ProtectedShell() {
     // behind a confirm dialog (no type-to-confirm; the action is reversible
     // by signing back in).
     const ok = await confirm({
-      title: "Log out of Panvex?",
-      body: "You'll be returned to the sign-in screen.",
-      confirmLabel: "Log out",
+      title: t("logout.title"),
+      body: t("logout.body"),
+      confirmLabel: t("logout.confirm"),
       variant: "danger",
     });
     if (!ok) return;
     try {
-      await apiClient.logout();
+      await authApi.logout();
     } finally {
       queryClient.clear();
       void navigate({ to: "/login" });
@@ -125,12 +170,29 @@ function ProtectedShell() {
   return (
     <AppearanceProvider userID={me?.id ?? ""}>
       <AppShell
-        navItems={NAV_ITEMS}
-        bottomNavItems={NAV_PRIMARY}
-        bottomNavMoreItems={NAV_SECONDARY}
+        navItems={navItems}
+        bottomNavItems={bottomNavPrimary}
+        bottomNavMoreItems={bottomNavMore}
         activeId={activeId}
         brand="Panvex"
-        sidebarFooter={(expanded) => <ThemeToggleButton expanded={expanded} />}
+        sidebarFooter={(expanded) => (
+          <div className="flex flex-col gap-1">
+            <ThemeToggleButton expanded={expanded} />
+            <button
+              type="button"
+              onClick={() => setShortcutsOpen(true)}
+              aria-label={t("shortcuts.hint")}
+              title={t("shortcuts.hint")}
+              className="flex items-center gap-2 w-full rounded-xs px-2 py-2 text-xs text-fg-muted hover:text-fg hover:bg-bg-hover transition-colors"
+            >
+              <Keyboard size={18} className="shrink-0" aria-hidden="true" />
+              {expanded && <span>{t("shortcuts.hintLabel")}</span>}
+              {expanded && (
+                <kbd className="ml-auto rounded border border-border bg-bg px-1.5 font-mono text-nano">?</kbd>
+              )}
+            </button>
+          </div>
+        )}
         onNavigate={(id) => navigate({ to: id })}
         onLogout={handleLogout}
       >
@@ -139,9 +201,18 @@ function ProtectedShell() {
         <OfflineBanner />
         {/* P2-UX-10: surface reconnection state above all page content. */}
         <WsStatusBanner />
-        <Outlet />
+        {/* Stage 5: mobile pull-to-refresh → revalidate every active query.
+            No-ops on desktop (hover-capable) devices. */}
+        <PullToRefresh onRefresh={() => queryClient.invalidateQueries()} />
+        {/* Route-level error boundary: a crash in one page renders an inline
+            fallback while the shell (nav, banners) stays usable, instead of
+            the root boundary blowing the whole app to a full-screen reload.
+            Keyed by activeId so navigating away auto-resets the error. */}
+        <ErrorBoundary key={activeId}>
+          <Outlet />
+        </ErrorBoundary>
         {/* UX-13: keyboard-shortcut help dialog, toggled by `?`. */}
-        <ShortcutsOverlay />
+        <ShortcutsOverlay open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       </AppShell>
     </AppearanceProvider>
   );
@@ -241,7 +312,7 @@ const shellRoute = createRoute({
   id: "shell",
   component: ProtectedShell,
   // P2-FE-05 / M-P5: route into the QueryClient cache instead of firing a
-  // fresh `apiClient.me()` on every navigation. ensureQueryData reuses the
+  // fresh `authApi.me()` on every navigation. ensureQueryData reuses the
   // same authKeys.me() entry that ProtectedShell/AuthProvider already read,
   // so a navigation inside the 30s staleTime is a cache hit — no extra
   // round trip. A 401 still rejects, and the catch branch redirects to
@@ -250,7 +321,7 @@ const shellRoute = createRoute({
     try {
       await context.queryClient.ensureQueryData({
         queryKey: authKeys.me(),
-        queryFn: () => apiClient.me(),
+        queryFn: () => authApi.me(),
         staleTime: 30_000,
       });
     } catch {
@@ -263,6 +334,23 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
   component: LoginContainer,
+  // U-29: an already-authenticated operator hitting /login (bookmark, stale
+  // tab, back button) should land on the dashboard, not stare at a login
+  // form for a session they already hold. A 401 means "not logged in" —
+  // swallow it and render the form as normal.
+  beforeLoad: async ({ context }) => {
+    try {
+      await context.queryClient.ensureQueryData({
+        queryKey: authKeys.me(),
+        queryFn: () => authApi.me(),
+        staleTime: 30_000,
+      });
+      throw redirect({ to: "/" });
+    } catch (err) {
+      if (isRedirect(err)) throw err; // re-throw the redirect to the dashboard
+      // Not authenticated (401) — stay on the login form.
+    }
+  },
 });
 
 const dashboardRoute = createRoute({

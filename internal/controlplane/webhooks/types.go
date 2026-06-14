@@ -98,6 +98,11 @@ type Storage interface {
 	ClaimReady(ctx context.Context, now time.Time, max int) ([]Delivery, error)
 	MarkDelivered(ctx context.Context, id string, deliveredAt time.Time) error
 	MarkFailed(ctx context.Context, id string, attempt int, nextAttempt time.Time, errMsg string, dead bool) error
+	// PruneOutbox deletes terminal outbox rows: delivered rows whose
+	// delivered_at, and dead rows whose created_at, precede the cutoff.
+	// Pending (undelivered, non-dead) rows are never pruned (C4).
+	// Returns the number of deleted rows.
+	PruneOutbox(ctx context.Context, before time.Time) (int64, error)
 
 	// Operator CRUD (does NOT decrypt — secrets stay at-rest).
 	CreateEndpoint(ctx context.Context, in EndpointInput, now time.Time) error

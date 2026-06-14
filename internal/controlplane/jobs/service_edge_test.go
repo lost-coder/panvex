@@ -43,7 +43,7 @@ func TestExpireStaleSealsQueuedJob(t *testing.T) {
 
 	// Pre-TTL: ExpireStale is a no-op.
 	currentNow = start.Add(30 * time.Second)
-	service.ExpireStale()
+	service.ExpireStale(context.Background())
 	depth := service.QueueDepth()
 	if depth != 1 {
 		t.Fatalf("QueueDepth pre-TTL = %d, want 1 (still queued)", depth)
@@ -51,7 +51,7 @@ func TestExpireStaleSealsQueuedJob(t *testing.T) {
 
 	// Post-TTL: ExpireStale flips status to Expired.
 	currentNow = start.Add(2 * time.Minute)
-	service.ExpireStale()
+	service.ExpireStale(context.Background())
 
 	list := service.List()
 	if len(list) != 1 {
@@ -101,7 +101,7 @@ func TestRecordResultIdempotentForSealedTarget(t *testing.T) {
 	// Walk the clock past TTL so ExpireStale flips the target to Expired
 	// (not via RecordResult).
 	currentNow = start.Add(2 * time.Minute)
-	service.ExpireStale()
+	service.ExpireStale(context.Background())
 
 	// Now a late RecordResult arrives — must NOT re-flip the expired
 	// target's status. updateTarget returns true (job exists), but the
@@ -253,7 +253,7 @@ func TestRestoreRebuildsLatestSucceededByClient(t *testing.T) {
 	clientID := "client-restored"
 	payload := `{"client_id":"` + clientID + `","name":"alice"}`
 
-	first := jobs.NewServiceWithStore(store)
+	first := jobs.NewServiceWithStore(context.Background(), store)
 	first.SetNow(func() time.Time { return now })
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionClientCreate,
@@ -273,7 +273,7 @@ func TestRestoreRebuildsLatestSucceededByClient(t *testing.T) {
 	}
 
 	// New service, same store — must re-hydrate the index.
-	restored := jobs.NewServiceWithStore(store)
+	restored := jobs.NewServiceWithStore(context.Background(), store)
 	restored.SetNow(func() time.Time { return now.Add(time.Minute) })
 	if err := restored.StartupError(); err != nil {
 		t.Fatalf("StartupError: %v", err)
@@ -376,7 +376,7 @@ func TestPersistedAcknowledgedTargetsRedispatchedAfterRestart(t *testing.T) {
 	}
 	defer store.Close()
 
-	first := jobs.NewServiceWithStore(store)
+	first := jobs.NewServiceWithStore(context.Background(), store)
 	first.SetNow(func() time.Time { return now })
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
 		Action:         jobs.ActionRuntimeReload,
@@ -401,7 +401,7 @@ func TestPersistedAcknowledgedTargetsRedispatchedAfterRestart(t *testing.T) {
 	}
 
 	// Restart.
-	restored := jobs.NewServiceWithStore(store)
+	restored := jobs.NewServiceWithStore(context.Background(), store)
 	restored.SetNow(func() time.Time { return now.Add(time.Minute) })
 
 	// PendingForAgent must re-include this job because acknowledged

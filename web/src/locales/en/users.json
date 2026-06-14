@@ -12,12 +12,6 @@
     "totp": "2FA",
     "addedRelative": "Added {{when}}"
   },
-  "relative": {
-    "justNow": "just now",
-    "minutesAgo": "{{count}}m ago",
-    "hoursAgo": "{{count}}h ago",
-    "daysAgo": "{{count}}d ago"
-  },
   "totp": {
     "enabled": "Enabled",
     "disabled": "Off"

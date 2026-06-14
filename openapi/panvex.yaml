@@ -547,6 +547,13 @@ components:
           description: |
             Live presence evaluation — `online`, `flapping`, `offline`, etc.
             Computed at request time from session + heartbeat data.
+        transport_reconnect_pending:
+          type: boolean
+          description: |
+            True when the agent was switched to outbound transport but the
+            panel has not accepted a session from/to it since the switch
+            ("switched but never reconnected"). Cleared on the next accepted
+            agent stream.
         certificate_recovery:
           allOf:
             - $ref: '#/components/schemas/AgentCertificateRecoveryGrant'

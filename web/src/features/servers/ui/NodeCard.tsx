@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/ui/lib/cn";
 import type { Status } from "@/ui/tokens/colors";
 import { StatusDot } from "@/ui/primitives/StatusDot";
+import { NodeStateBadge, nodeStatePresentation, type NodeState } from "@/ui";
 import { ArrowUpCircle } from "lucide-react";
 import { TransportBadge } from "@/features/servers/ui/TransportBadge";
 import type { ModeKind, Severity } from "@/shared/api/types-pages/pages";
@@ -19,6 +20,10 @@ export interface NodeCardProps {
   clients: number;
   region: string;
   alert?: boolean;
+  /** Full node state — when set, renders a status pill instead of the dot. */
+  state?: NodeState | undefined;
+  /** Already-localized reason line (shown under the name when set). */
+  reason?: string | undefined;
   /** When true, shows an update-available icon in the top-right corner. */
   updateAvailable?: boolean;
   /**
@@ -42,12 +47,15 @@ export function NodeCard({
   clients,
   region,
   alert,
+  state,
+  reason,
   updateAvailable,
   idle,
   onClick,
   className,
 }: Readonly<NodeCardProps>) {
   const { t } = useTranslation("servers");
+  const { t: tc } = useTranslation("common");
   return (
     <button
       type="button"
@@ -66,10 +74,17 @@ export function NodeCard({
         />
       )}
       <div className="flex items-center gap-2">
-        <StatusDot status={status} size="md" />
+        {state ? (
+          <NodeStateBadge state={state} label={tc(nodeStatePresentation(state).labelKey)} />
+        ) : (
+          <StatusDot status={status} size="md" />
+        )}
         <span className="font-mono font-semibold text-sm text-fg flex-1 truncate">{name}</span>
         <span className="text-caption">{region}</span>
       </div>
+      {reason && (
+        <span className="text-xs text-fg-muted leading-snug truncate">{reason}</span>
+      )}
 
       <div className="flex flex-wrap items-center gap-1.5">
         <TransportBadge
@@ -103,7 +118,7 @@ function Metric({ value, label }: Readonly<{ value: string; label: string }>) {
   return (
     <div className="flex flex-col">
       <span className="text-xs font-mono font-medium text-fg leading-none">{value}</span>
-      <span className="text-[10px] text-fg-muted uppercase tracking-wider mt-0.5">{label}</span>
+      <span className="text-nano text-fg-muted uppercase tracking-wider mt-0.5">{label}</span>
     </div>
   );
 }

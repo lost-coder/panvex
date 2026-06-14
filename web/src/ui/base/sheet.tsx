@@ -8,7 +8,7 @@ const SheetTrigger = DialogPrimitive.Trigger;
 const SheetClose = DialogPrimitive.Close;
 
 interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
-  side?: "left" | "right" | "bottom";
+  side?: "left" | "right" | "bottom" | "center";
   fullScreen?: boolean;
   /**
    * Accessible title announced to screen readers when no visible SheetTitle
@@ -68,6 +68,17 @@ const SheetContent = React.forwardRef<
     // dismiss is gone; dismiss happens via backdrop tap, Cancel
     // button, or Escape key.
     const sideClass = (() => {
+      if (side === "center") {
+        // Centered modal (Add-server wizard). Radix gives focus trap,
+        // Escape and aria-modal for free.
+        return cn(
+          "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2",
+          "w-full max-w-[480px] max-h-[85vh] rounded-lg mx-4 overflow-y-auto",
+          "data-[state=open]:animate-in data-[state=closed]:animate-out",
+          "data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+          "data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+        );
+      }
       if (side === "bottom") {
         return cn(
           "inset-x-0 bottom-0 w-full border-t rounded-t-xl",

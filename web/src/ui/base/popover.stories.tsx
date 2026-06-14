@@ -19,11 +19,11 @@ export const Default: Story = {
         <div className="flex flex-col gap-2">
           <h4 className="text-sm font-medium text-fg">Connection Links</h4>
           <div className="flex flex-col gap-1">
-            <span className="text-[10px] text-fg-muted uppercase">Classic</span>
+            <span className="text-nano text-fg-muted uppercase">Classic</span>
             <IPTag address="tg://proxy?server=185.76.151.1&port=443&secret=ee..." />
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-[10px] text-fg-muted uppercase">Secure</span>
+            <span className="text-nano text-fg-muted uppercase">Secure</span>
             <IPTag address="tg://proxy?server=185.76.151.1&port=443&secret=dd..." />
           </div>
         </div>

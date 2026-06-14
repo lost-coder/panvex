@@ -54,6 +54,12 @@ describe("invalidationsForEvent", () => {
     ]);
     expect(result.telemetry).toBe(true);
   });
+
+  it("returns no invalidations for runtime.events (handled by the per-agent hook)", () => {
+    const result = invalidationsForEvent({ type: "runtime.events", data: { agent_id: "a-1" } });
+    expect(result.keys).toEqual([]);
+    expect(result.telemetry).toBeUndefined();
+  });
 });
 
 describe("isKnownEventType", () => {
@@ -62,6 +68,10 @@ describe("isKnownEventType", () => {
     expect(isKnownEventType("jobs.created")).toBe(true);
     expect(isKnownEventType("audit.created")).toBe(true);
     expect(isKnownEventType("clients.updated")).toBe(true);
+  });
+
+  it("treats runtime.events as a known type (no broad-sweep fallback)", () => {
+    expect(isKnownEventType("runtime.events")).toBe(true);
   });
 
   it("returns false for unknown types", () => {

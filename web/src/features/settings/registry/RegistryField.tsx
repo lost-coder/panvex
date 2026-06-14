@@ -23,6 +23,26 @@ function toStr(v: unknown): string {
   return String(v);
 }
 
+// U-12: config keys like "agents.outbound_backoff_initial" are unreadable
+// as titles. Derive a human heading ("Agents · Outbound backoff initial")
+// and keep the raw key as a secondary mono line for operators who edit
+// config.toml directly.
+function humanizeKey(key: string): string {
+  const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+  const parts = key.split(".");
+  const leaf = cap((parts[parts.length - 1] ?? key).replace(/_/g, " "));
+  return parts.length > 1 ? `${cap(parts[0]!)} · ${leaf}` : leaf;
+}
+
+function RegistryFieldLabel({ name }: Readonly<{ name: string }>) {
+  return (
+    <span className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-sm text-fg">{humanizeKey(name)}</span>
+      <span className="text-nano font-mono text-fg-faint break-all">{name}</span>
+    </span>
+  );
+}
+
 export function RegistryField({ schema, values, onChange, error, hideIndicators }: Readonly<RegistryFieldProps>) {
   const { t } = useTranslation("settings");
   const { name, type, desc, values: enumValues } = schema;
@@ -57,7 +77,7 @@ export function RegistryField({ schema, values, onChange, error, hideIndicators 
   // json type — no editable input; just a note (plus any indicator icon).
   if (type === "json") {
     return (
-      <SettingsRow label={name} description={desc} {...(rowClass ? { className: rowClass } : {})}>
+      <SettingsRow label={<RegistryFieldLabel name={name} />} description={desc} {...(rowClass ? { className: rowClass } : {})}>
         <div className="flex flex-col items-end gap-1">
           {iconEl}
           <span className="text-xs text-fg-muted italic">{t("registryField.jsonNotice")}</span>
@@ -109,7 +129,7 @@ export function RegistryField({ schema, values, onChange, error, hideIndicators 
   }
 
   return (
-    <SettingsRow label={name} description={desc} {...(rowClass ? { className: rowClass } : {})}>
+    <SettingsRow label={<RegistryFieldLabel name={name} />} description={desc} {...(rowClass ? { className: rowClass } : {})}>
       <div className="flex flex-col items-end gap-1">
         <div className="flex items-center gap-2">
           {iconEl}

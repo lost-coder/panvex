@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment/enrollmenttest"
 )
 
 // TestOutboundConnectAndServeRecordsDialFailure exercises the unhappy path of
@@ -26,7 +27,7 @@ import (
 // typical Linux/macOS hosts. A minimal &tls.Config{} is provided so the
 // outbound TLS-missing guard does not short-circuit ahead of the dial.
 func TestOutboundConnectAndServeRecordsDialFailure(t *testing.T) {
-	store := enrollment.NewMemStoreForTest()
+	store := enrollmenttest.NewMemStore()
 	rec := enrollment.NewRecorder(store, time.Now)
 
 	sup := &outboundSupervisor{

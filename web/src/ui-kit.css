@@ -22,17 +22,44 @@
   --panvex-bg-card: #141820;
   --panvex-bg-card-hi: #1a1f2a;
   --panvex-bg-hover: #1e2430;
-  --panvex-fg: #e2e6ed;
-  --panvex-fg-muted: #6e7787;
-  --panvex-fg-faint: #2a3040;
+  --panvex-fg: #f3f5f9;
+  --panvex-fg-muted: #9aa3b2;
+  /* U-16: was #2a3040 — a divider-level tone (~1.34:1) that left counts,
+     timestamps and empty-state glyphs effectively invisible. Lifted to a
+     legible gray (~4.9:1 on the darkest surface) while staying a step
+     below --panvex-fg-muted so the faint/muted hierarchy survives. */
+  --panvex-fg-faint: #79828f;
   --panvex-border: rgba(255, 255, 255, 0.06);
   --panvex-border-hi: rgba(255, 255, 255, 0.1);
   /* Visible row divider for lists/cards. Stronger than --panvex-border-hi
      so a stack of fleet rows or timeline events doesn't blur into one
      slab. Paired with a light-mode value in `.light`. */
-  --panvex-divider: rgba(255, 255, 255, 0.14);
+  --panvex-divider: rgba(255, 255, 255, 0.16);
+
+  /* Status + accent raw values. Themed here (not as static @theme
+     literals) so the light theme can swap them for contrast — they were
+     previously dark-only, washing out on light surfaces. */
+  --panvex-status-ok: #34d399;
+  --panvex-status-warn: #f59e0b;
+  --panvex-status-warn-ink: #1a1306;
+  --panvex-status-error: #ef4444;
+  /* Deepened error fill for the solid StatusPill: white text on #ef4444 is
+     only 3.76:1 (below AA). #c81e1e gives white ≈ 5.0:1 while staying a loud
+     alarm red. Do NOT fold this into --panvex-status-error — dots/borders/text
+     consumers rely on #ef4444. */
+  --panvex-status-error-strong: #c81e1e;
+  --panvex-accent: #60a5fa;
+  --panvex-accent-muted: rgba(96, 165, 250, 0.15);
 }
 
+/* U-01: the runtime sets the theme via the `data-theme` attribute on
+   <html> (shared/lib/appearance.ts), NOT a `.light` class. The legacy
+   styles.css palette already keyed off `[data-theme="light"]`, but this
+   UI-kit token palette only matched `.light`, so the new `--color-*`
+   tokens (bg-bg, bg-card, text-fg…) never swapped — switching to Light
+   produced dark surfaces with light-theme text. Match both selectors so
+   the attribute-driven toggle actually flips the whole token set. */
+:root[data-theme="light"],
 .light {
   color-scheme: light;
   --panvex-bg: #f5f6f8;
@@ -40,11 +67,26 @@
   --panvex-bg-card-hi: #f0f1f4;
   --panvex-bg-hover: #e9eaef;
   --panvex-fg: #1a1d23;
-  --panvex-fg-muted: #6b7280;
-  --panvex-fg-faint: #dfe1e6;
+  --panvex-fg-muted: #5b6470;
+  /* U-16: was #dfe1e6 — near-white, ~1.2:1 on light surfaces. Darkened to
+     a legible gray (~5.3:1 on white) for the same counts/timestamps that
+     were illegible in the dark theme. */
+  --panvex-fg-faint: #5f6773;
   --panvex-border: rgba(0, 0, 0, 0.08);
   --panvex-border-hi: rgba(0, 0, 0, 0.14);
   --panvex-divider: rgba(0, 0, 0, 0.18);
+
+  /* Darker status/accent shades for legible contrast on light surfaces
+     (the dark-theme greens/blues fail WCAG on white). */
+  --panvex-status-ok: #047857;
+  --panvex-status-warn: #b45309;
+  --panvex-status-warn-ink: #ffffff;
+  --panvex-status-error: #c81e1e;
+  /* Solid StatusPill fill; white on #c81e1e ≈ 5.0:1 (clears AA). Deepened
+     from #dc2626 to meet WCAG AA contrast on light surfaces. */
+  --panvex-status-error-strong: #c81e1e;
+  --panvex-accent: #2563eb;
+  --panvex-accent-muted: rgba(37, 99, 235, 0.12);
 }
 
 /* ─── Tailwind theme (replaces tailwind.config.ts in v4) ───────────────────
@@ -67,12 +109,24 @@
 
 /* Static (non-themed) tokens live directly in @theme. */
 @theme {
-  --color-status-ok: #34d399;
-  --color-status-warn: #f59e0b;
-  --color-status-error: #ef4444;
+  /* Reference the themed --panvex-* vars (defined in :root/.light) so these
+     swap with the active theme. Non-inline @theme still emits them to :root,
+     keeping raw var(--color-status-*) consumers (e.g. charts, loadTone)
+     working. */
+  --color-status-ok: var(--panvex-status-ok);
+  --color-status-warn: var(--panvex-status-warn);
+  --color-status-warn-ink: var(--panvex-status-warn-ink);
+  --color-status-error: var(--panvex-status-error);
+  --color-status-error-strong: var(--panvex-status-error-strong);
 
-  --color-accent: #60a5fa;
-  --color-accent-muted: rgba(96, 165, 250, 0.15);
+  --color-accent: var(--panvex-accent);
+  --color-accent-muted: var(--panvex-accent-muted);
+
+  /* Chart palette — series colors for Recharts. Semantic series (ok/warn/
+     error) reuse the status tokens; these two cover the neutral
+     primary/secondary series so charts stop hard-coding hex literals. */
+  --color-chart-1: #3b82f6;
+  --color-chart-2: #8b5cf6;
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
@@ -203,6 +257,18 @@
   font-size: 11px;
   line-height: 1.4;
   color: var(--color-fg-muted);
+}
+/* Pure sub-xs font-size tiers (font-size only, like the old text-[Npx]
+   arbitrary values they replace — color/weight/line-height stay with the
+   surrounding classes). These are the tokenized 9/10/11px scale. */
+@utility text-micro {
+  font-size: 11px;
+}
+@utility text-nano {
+  font-size: 10px;
+}
+@utility text-pico {
+  font-size: 9px;
 }
 @utility text-muted {
   font-size: 0.875rem;

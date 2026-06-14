@@ -47,6 +47,12 @@ encryptionKey:
 
 # Network exposure. The Service is ClusterIP by default; pair with the Ingress
 # block below or your own.
+#
+# NOTE (A7): ClusterIP only serves IN-CLUSTER agents. Agents outside the
+# cluster need an L4 path to the gRPC port: set service.type=LoadBalancer,
+# or expose 8443 via your ingress controller's TCP passthrough, or a
+# NodePort. Never route gRPC through an HTTP(S) Ingress — it terminates
+# TLS and breaks the agents' CA pin. Details: deploy/networking.md.
 service:
   type: ClusterIP
   httpPort: 8080
