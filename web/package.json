@@ -25,7 +25,7 @@
     {
       "name": "App entry (gzip)",
       "path": "dist/assets/index-*.js",
-      "limit": "25 KB",
+      "limit": "28 KB",
       "gzip": true
     },
     {

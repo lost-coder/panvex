@@ -1,7 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-import { apiClient, SESSION_EXPIRED_EVENT } from "@/shared/api/api";
+import { authApi } from "@/shared/api/auth";
+import { SESSION_EXPIRED_EVENT } from "@/shared/api/http";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { eventEnvelopeSchema } from "@/shared/api/schemas/events";
 import { invalidateTelemetryQueries } from "@/shared/events/telemetry-query-invalidation";
@@ -163,7 +164,7 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
         // closing — don't probe the session or schedule a reconnect.
         if (stopped) { return; }
         try {
-          await apiClient.me();
+          await authApi.me();
           scheduleReconnect();
         } catch {
           stopped = true;

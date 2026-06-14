@@ -2,13 +2,16 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+// Import leaves directly, not the aggregated apiClient: AuthProvider is the
+// outermost root provider (wraps the whole route tree), so anything it pulls
+// lands in the entry chunk. apiClient spreads all 12 domains' zod schemas —
+// the shell only needs auth.me() plus the http-layer event constants.
+import { authApi, type MeResponse } from "@/shared/api/auth";
 import {
-  apiClient,
   FORBIDDEN_EVENT,
   SESSION_EXPIRED_EVENT,
   type ForbiddenEventDetail,
-  type MeResponse,
-} from "@/shared/api/api";
+} from "@/shared/api/http";
 import { authKeys } from "@/features/auth/queryKeys";
 import { useToast } from "@/app/providers/ToastProvider";
 
@@ -30,7 +33,7 @@ export const AuthContext = React.createContext<AuthContextValue>({
 export function AuthProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const { data, isLoading } = useQuery({
     queryKey: authKeys.me(),
-    queryFn: () => apiClient.me(),
+    queryFn: () => authApi.me(),
     retry: false,
   });
 
