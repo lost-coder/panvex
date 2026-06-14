@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -113,7 +112,7 @@ func (s *Server) geoipResolvedPath(k geoip.Kind) string {
 		}
 		return p
 	case geoip.ModeLocal:
-		if !fileExists(src.LocalPath) {
+		if !geoipLocalPathValid(src.LocalPath) || !fileExists(src.LocalPath) {
 			return ""
 		}
 		return src.LocalPath
@@ -132,6 +131,16 @@ func fileExists(path string) bool {
 	}
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// geoipLocalPathValid confines an operator-supplied local GeoIP path: clean
+// (no '..'/non-canonical segments), absolute, and pointing at a .mmdb file.
+// Enforced at the settings-write validator AND the os.Stat sinks, because the
+// geoip blob can be smuggled in via /settings/values and reloaded unvalidated
+// on restart — without the sink check an admin could turn the existence/size
+// stat into an arbitrary-file oracle (go/path-injection).
+func geoipLocalPathValid(p string) bool {
+	return p != "" && filepath.IsAbs(p) && filepath.Clean(p) == p && filepath.Ext(p) == ".mmdb"
 }
 
 // validateGeoIPSettings enforces the design's invariants. Called by
@@ -165,8 +174,8 @@ func validateGeoIPSettings(s geoip.Settings) error {
 			if !src.Enabled {
 				continue
 			}
-			if !filepath.IsAbs(src.LocalPath) {
-				return errors.New("local_path must be absolute")
+			if !geoipLocalPathValid(src.LocalPath) {
+				return errors.New("local_path must be a clean absolute path to a .mmdb file")
 			}
 			if !fileExists(src.LocalPath) {
 				return errors.New("local_path does not exist or is not readable")
@@ -243,6 +252,10 @@ func (s *Server) runGeoIPUpdate(ctx context.Context, k geoip.Kind) geoip.SourceS
 		// stat it so the UI has a size to display. A missing file is
 		// recorded as an error so the panel surface flags it.
 		state.Path = src.LocalPath
+		if !geoipLocalPathValid(src.LocalPath) {
+			state.Error = "local_path must be a clean absolute path to a .mmdb file"
+			return state
+		}
 		if info, err := os.Stat(src.LocalPath); err == nil {
 			state.SizeBytes = info.Size()
 			state.LastUpdatedAt = now
@@ -252,7 +265,7 @@ func (s *Server) runGeoIPUpdate(ctx context.Context, k geoip.Kind) geoip.SourceS
 		return state
 
 	case geoip.ModeAuto:
-		fetcher := geoip.NewFetcher(http.DefaultClient, "")
+		fetcher := geoip.NewFetcher(updates.SecureDownloadClient(), "")
 		url, err := fetcher.AssetURL(ctx, k)
 		if err != nil {
 			state.Error = err.Error()
@@ -274,8 +287,22 @@ func (s *Server) runGeoIPUpdate(ctx context.Context, k geoip.Kind) geoip.SourceS
 // for diagnostics.
 func (s *Server) downloadGeoIP(ctx context.Context, k geoip.Kind, url string, prev geoip.SourceState, dir string) geoip.SourceState {
 	now := s.now().Unix()
+	// SSRF guard at the fetch sink, not just the settings-write handler: the
+	// geoip blob can also be persisted via the generic /settings/values path
+	// (validated as JSON shape only) and reloaded unvalidated on restart, so
+	// the host allow-list MUST be enforced here too. Covers URL mode and the
+	// auto-mode resolved GitHub asset URL.
+	if err := updates.CheckDownloadURL(url); err != nil {
+		state := prev
+		state.LastCheckedAt = now
+		state.Error = err.Error()
+		return state
+	}
 	dest := geoip.PathFor(dir, k)
-	d := geoip.NewDownloader(http.DefaultClient)
+	// SecureDownloadClient enforces RestrictedRedirectPolicy — every redirect
+	// hop is re-checked against the allow-list, so an open redirect on an
+	// allowed host cannot steer the fetch to an internal target.
+	d := geoip.NewDownloader(updates.SecureDownloadClient())
 	res, err := d.Fetch(ctx, geoip.FetchRequest{URL: url, Dest: dest, Kind: k, IfNoneMatch: prev.ETag})
 
 	// Always start from prev so we never erase a known-good

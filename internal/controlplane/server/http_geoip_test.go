@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -208,6 +209,54 @@ func TestGeoIPSettingsPutRejectsLocalModeWithRelativePath(t *testing.T) {
 	}, cookies)
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("PUT /api/settings/geoip status = %d, want %d; body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
+// TestGeoIPSettingsPutRejectsLocalModePathOracle covers the path-injection
+// hardening (CodeQL go/path-injection #9/#10): a local_path that is absolute
+// but points at a non-.mmdb file or contains traversal must be rejected, so an
+// admin cannot turn the existence/size stat into an arbitrary-file oracle.
+func TestGeoIPSettingsPutRejectsLocalModePathOracle(t *testing.T) {
+	now := time.Date(2026, time.May, 4, 10, 22, 0, 0, time.UTC)
+	t.Setenv("PANVEX_GEOIP_DIR", t.TempDir())
+	server := testServerWithSQLite(t, now)
+	cookies := loginAs(t, server, now, "admin", "Admin1password", auth.RoleAdmin)
+
+	for _, bad := range []string{"/etc/passwd", "/etc/shadow", "/var/lib/geoip/../../etc/passwd.mmdb"} {
+		resp := performJSONRequest(t, server, http.MethodPut, "/api/settings/geoip", geoip.Settings{
+			Mode: geoip.ModeLocal,
+			City: geoip.Source{Enabled: true, LocalPath: bad},
+		}, cookies)
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("LocalPath %q: status = %d, want %d (path-oracle must be rejected)", bad, resp.Code, http.StatusBadRequest)
+		}
+	}
+}
+
+// TestRunGeoIPUpdateRejectsNonAllowlistedURL covers the SSRF fix (CodeQL
+// go/request-forgery #6). It sets s.geoipSettings directly to a URL-mode
+// config with an internal/non-allow-listed host — simulating the
+// /settings/values + restore smuggle path that bypasses validateGeoIPSettings
+// — then drives the worker's runGeoIPUpdate and asserts the fetch is refused
+// at the sink (CheckDownloadURL), never reaching the network.
+func TestRunGeoIPUpdateRejectsNonAllowlistedURL(t *testing.T) {
+	now := time.Date(2026, time.May, 4, 10, 24, 0, 0, time.UTC)
+	t.Setenv("PANVEX_GEOIP_DIR", t.TempDir())
+	server := testServerWithSQLite(t, now)
+
+	server.settingsMu.Lock()
+	server.geoipSettings = geoip.Settings{
+		Mode: geoip.ModeURL,
+		City: geoip.Source{Enabled: true, URL: "https://169.254.169.254/GeoLite2-City.mmdb"},
+	}
+	server.settingsMu.Unlock()
+
+	state := server.runGeoIPUpdate(t.Context(), geoip.KindCity)
+	if state.Error == "" {
+		t.Fatal("runGeoIPUpdate accepted a non-allow-listed URL; SSRF guard missing")
+	}
+	if !strings.Contains(state.Error, "allow-list") {
+		t.Fatalf("state.Error = %q, want it to mention the host allow-list", state.Error)
 	}
 }
 
