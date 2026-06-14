@@ -13,7 +13,12 @@
 FROM node:26-alpine@sha256:7c6af15abe4e3de859690e7db171d0d711bf37d27528eddfe625b2fe89e097f8 AS web-builder
 WORKDIR /src/web
 
-COPY web/package*.json ./
+# .npmrc carries `legacy-peer-deps=true` — eslint-plugin-jsx-a11y@6.10.2
+# still declares a peer range of eslint up to ^9 while this project
+# tracks eslint@10. Without copying it here, the image build's `npm ci`
+# re-resolves peers strictly and fails with ERESOLVE (the host E2E job
+# works only because it runs inside web/ where .npmrc is present).
+COPY web/package*.json web/.npmrc ./
 RUN npm ci
 
 COPY web ./
