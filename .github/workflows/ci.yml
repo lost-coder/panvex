@@ -148,7 +148,7 @@ jobs:
           path: coverage.out
       - name: Upload coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: coverage.out
           flags: backend
