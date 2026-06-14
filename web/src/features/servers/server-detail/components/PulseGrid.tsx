@@ -3,19 +3,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { memo } from "react";
 
-import { cn } from "@/ui";
-
-function deltaClass(dir: "up" | "down" | "flat" | undefined): string {
-  if (dir === "up") return "text-status-ok";
-  if (dir === "down") return "text-status-error";
-  return "text-fg-muted";
-}
-
-function deltaArrow(dir: "up" | "down" | "flat" | undefined): string {
-  if (dir === "up") return "▲";
-  if (dir === "down") return "▼";
-  return "·";
-}
+import { cn, deltaClass, deltaArrow } from "@/ui";
 
 // ─── Pulse row tick ──────────────────────────────────────────────────
 // "Ticker-style" metric without a card: compact label, large mono value,
@@ -58,7 +46,7 @@ function PulseTick({
         centered && "items-center text-center",
       )}
     >
-      <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted truncate">
+      <span className="text-nano font-mono uppercase tracking-wider text-fg-muted truncate">
         {label}
       </span>
       <div className={cn("flex items-baseline gap-1", toneClass[tone ?? "default"])}>
@@ -70,7 +58,7 @@ function PulseTick({
       {(deltaLabel || hint) && (
         <div
           className={cn(
-            "flex items-center gap-2 text-[10px] font-mono",
+            "flex items-center gap-2 text-nano font-mono",
             centered && "justify-center",
           )}
         >

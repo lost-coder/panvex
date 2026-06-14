@@ -52,6 +52,7 @@ func TestHTTPAgentBootstrapUsesConfiguredGRPCPublicEndpoint(t *testing.T) {
 		map[string]string{
 			"node_name": "node-a",
 			"version":   "1.0.0",
+			"csr_pem":   testCSRPEM(t),
 		},
 		nil,
 		map[string]string{

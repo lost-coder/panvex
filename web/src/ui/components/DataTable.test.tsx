@@ -101,6 +101,86 @@ describe("DataTable a11y (P2-FE-07 / M-F6)", () => {
   });
 });
 
+describe("DataTable sorting (reorders rows)", () => {
+  const sortRows: Row[] = [
+    { id: "1", name: "alpha", count: 10 },
+    { id: "2", name: "beta", count: 5 },
+  ];
+  // Columns expose `sortValue` so the table knows what to compare on —
+  // `render` returns ReactNode and can't be sorted on directly.
+  const sortCols: DataTableColumn<Row>[] = [
+    { key: "name", header: "Name", render: (r) => r.name, sortable: true, sortValue: (r) => r.name },
+    {
+      key: "count",
+      header: "Count",
+      render: (r) => String(r.count),
+      sortable: true,
+      sortValue: (r) => r.count,
+    },
+    { key: "static", header: "Info", render: () => "—" },
+  ];
+
+  // Both desktop and mobile views render the same sorted slice, so the
+  // first "alpha"/"beta" cell in document order reflects the active order.
+  function firstSortedName(): string {
+    const matches = screen.getAllByText(/^(alpha|beta)$/);
+    return matches[0]?.textContent ?? "";
+  }
+
+  it("reorders rows by the active sortable column and direction", async () => {
+    const user = userEvent.setup();
+    render(<DataTable columns={sortCols} data={sortRows} keyExtractor={(r) => r.id} />);
+    // Default: untouched input order — alpha (count 10) first.
+    expect(firstSortedName()).toBe("alpha");
+
+    // Ascending by count -> beta (5) sorts before alpha (10).
+    await user.click(screen.getByRole("button", { name: /count/i }));
+    expect(firstSortedName()).toBe("beta");
+
+    // Second click toggles descending -> alpha (10) before beta (5).
+    await user.click(screen.getByRole("button", { name: /count/i }));
+    expect(firstSortedName()).toBe("alpha");
+  });
+
+  it("sorts strings case-insensitively in ascending order", async () => {
+    const user = userEvent.setup();
+    const mixed: Row[] = [
+      { id: "1", name: "beta", count: 1 },
+      { id: "2", name: "Alpha", count: 2 },
+    ];
+    render(<DataTable columns={sortCols} data={mixed} keyExtractor={(r) => r.id} />);
+    await user.click(screen.getByRole("button", { name: /name/i }));
+    // "Alpha" should sort before "beta" despite the capital letter.
+    const first = screen.getAllByText(/^(Alpha|beta)$/)[0]?.textContent ?? "";
+    expect(first).toBe("Alpha");
+  });
+
+  it("exposes a mobile sort control that reorders the cards", async () => {
+    const user = userEvent.setup();
+    render(<DataTable columns={sortCols} data={sortRows} keyExtractor={(r) => r.id} />);
+    // The mobile card view has no <thead>, so it carries its own sort
+    // <select> covering the sortable columns.
+    const sortSelect = screen.getByRole("combobox", { name: /sort/i });
+    await user.selectOptions(sortSelect, "count");
+    expect(firstSortedName()).toBe("beta");
+  });
+});
+
+describe("DataTable mobile cards (column priority)", () => {
+  it("omits cardHidden columns from the mobile card view", () => {
+    const cols: DataTableColumn<Row>[] = [
+      { key: "name", header: "NameCol", render: (r) => r.name },
+      { key: "secret", header: "SecretCol", render: () => "x", cardHidden: true },
+    ];
+    render(<DataTable columns={cols} data={rows} keyExtractor={(r) => r.id} />);
+    // Desktop <thead> renders "SecretCol" once; the mobile cards (2 rows)
+    // would add two more label occurrences if it weren't hidden.
+    expect(screen.getAllByText("SecretCol")).toHaveLength(1);
+    // A normal column still appears in both desktop header and mobile cards.
+    expect(screen.getAllByText("NameCol").length).toBeGreaterThan(1);
+  });
+});
+
 // P3-PERF-02: DataTable must virtualize the desktop <tbody> so that
 // rendering 5000 agents does not flood the DOM with 5000 <tr> nodes.
 // jsdom reports 0 for clientHeight by default, which would collapse the

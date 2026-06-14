@@ -103,6 +103,12 @@ func DetailBoostState(expiresAt, now time.Time) DetailBoost {
 }
 
 // SeverityAndReason derives one operator-facing severity and primary reason.
+//
+// SYNC: the reason strings returned by SeverityAndReason and its mode
+// helpers (severityME/severityDirect/severityFallback) are mirrored by the
+// web UI's REASON_KEYS map in web/src/ui/lib/reason-text.ts, which localizes
+// them. If you change/add a reason literal here, update that map (unmatched
+// strings fall back to verbatim English in the UI).
 func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string) {
 	switch {
 	case input.PresenceState == presence.StateOffline:
@@ -116,6 +122,9 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 	case !input.AcceptingNewConnections:
 		return "warn", "Admission is closed"
 	case input.StartupStatus != "" && input.StartupStatus != "ready":
+		// SYNC: the web UI maps this exact reason string to the neutral
+		// PENDING pill (web/src/ui/lib/node-status.ts: STARTUP_REASONS).
+		// If you change this literal, update that constant too.
 		return "warn", "Startup is still in progress"
 	}
 	// NOTE: input.Degraded reflects Telemt's /v1/runtime/initialization, which

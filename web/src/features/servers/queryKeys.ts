@@ -49,3 +49,11 @@ export const controlRoomKeys = {
   /** Root prefix — dashboard control-room aggregate. */
   all: ["control-room"] as const,
 };
+
+export const configKeys = {
+  /** Per-agent override/effective/observed config + drift. */
+  agent: (agentId: string) => ["config", "agent", agentId] as const,
+
+  /** Per-fleet-group baseline config + member node statuses. */
+  group: (groupId: string) => ["config", "group", groupId] as const,
+};

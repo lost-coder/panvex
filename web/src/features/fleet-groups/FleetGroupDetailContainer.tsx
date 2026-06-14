@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 
-import { Spinner } from "@/ui";
+import { SkeletonRows } from "@/ui";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
 
@@ -20,6 +21,7 @@ export function FleetGroupDetailContainer() {
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
+  const { t } = useTranslation("fleet-groups");
 
   const { data: group, isLoading } = useFleetGroupDetail(id);
   const { data: allGroups } = useFleetGroupsList();
@@ -57,10 +59,10 @@ export function FleetGroupDetailContainer() {
         id,
         payload: { label: formData.label, description: formData.description },
       });
-      toast.success("Fleet group updated.");
+      toast.success(t("toasts.updated"));
       setEditOpen(false);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Request failed");
+      setFormError(err instanceof Error ? err.message : t("toasts.requestFailed"));
     }
   };
 
@@ -84,9 +86,7 @@ export function FleetGroupDetailContainer() {
     let reassignTo: string | undefined = undefined;
     if (hasMembers) {
       if (candidates.length === 0) {
-        toast.error(
-          "Нельзя удалить группу: в ней есть агенты/токены, а перенести их некуда — создайте ещё одну группу.",
-        );
+        toast.error(t("deleteConfirm.noTarget"));
         return;
       }
       // Pick a sensible default: the "default" slug if it exists,
@@ -97,25 +97,25 @@ export function FleetGroupDetailContainer() {
       reassignTo = fallback?.id;
     }
 
+    const reassignLabel =
+      candidates.find((g) => g.id === reassignTo)?.label ??
+      candidates.find((g) => g.id === reassignTo)?.name ??
+      reassignTo ??
+      "";
     const body = hasMembers
       ? [
-          `Группа «${group.label || group.name}» содержит:`,
-          `  • ${basePreview?.agent_count ?? 0} агентов`,
-          `  • ${basePreview?.enrollment_token_count ?? 0} токенов`,
-          `  • ${basePreview?.client_assignment_count ?? 0} client-assignments`,
-          ``,
-          `Все они будут перенесены в «${
-            candidates.find((g) => g.id === reassignTo)?.label ??
-            candidates.find((g) => g.id === reassignTo)?.name ??
-            reassignTo
-          }». Продолжить?`,
+          t("deleteConfirm.contains", { name: group.label || group.name }),
+          t("deleteConfirm.agents", { count: basePreview?.agent_count ?? 0 }),
+          t("deleteConfirm.tokens", { count: basePreview?.enrollment_token_count ?? 0 }),
+          "",
+          t("deleteConfirm.moveTo", { target: reassignLabel }),
         ].join("\n")
-      : `Удалить пустую группу «${group.label || group.name}»?`;
+      : t("deleteConfirm.emptyBody", { name: group.label || group.name });
 
     const ok = await confirm({
-      title: "Удалить fleet group?",
+      title: t("deleteConfirm.title"),
       body,
-      confirmLabel: "Удалить",
+      confirmLabel: t("deleteConfirm.confirm"),
       variant: "danger",
       requireTypeMatch: group.name,
     });
@@ -126,17 +126,17 @@ export function FleetGroupDetailContainer() {
 
     try {
       await deleteMutation.mutateAsync({ id, reassignTo });
-      toast.success("Fleet group удалена.");
+      toast.success(t("toasts.deleted"));
       void navigate({ to: "/fleet-groups" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Delete failed");
+      toast.error(err instanceof Error ? err.message : t("toasts.deleteFailed"));
     }
   };
 
   if (isLoading || !group) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Spinner />
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={6} />
       </div>
     );
   }

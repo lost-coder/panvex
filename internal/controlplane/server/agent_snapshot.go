@@ -106,12 +106,32 @@ func instancesFromSnapshot(snapshot agentSnapshot) []Instance {
 			Name:              instance.Name,
 			Version:           instance.Version,
 			ConfigFingerprint: instance.ConfigFingerprint,
+			ManagedConfigHash: instance.ManagedConfigHash,
+			ManagedConfigJSON: instance.ManagedConfigJSON,
 			Connections:       instance.Connections,
 			ReadOnly:          instance.ReadOnly,
 			UpdatedAt:         snapshot.ObservedAt.UTC(),
 		})
 	}
 	return instances
+}
+
+// carryForwardObservedConfig keeps the last non-empty ManagedConfigJSON when the
+// agent omitted it (delta-gated: the full JSON is only sent on the snapshot where
+// the observed config changed, empty otherwise). Matches instances by ID. The
+// hash is sent every snapshot, so it is not carried forward.
+func carryForwardObservedConfig(next []Instance, prev []Instance) {
+	byID := make(map[string]Instance, len(prev))
+	for _, p := range prev {
+		byID[p.ID] = p
+	}
+	for i := range next {
+		if next[i].ManagedConfigJSON == "" {
+			if p, ok := byID[next[i].ID]; ok {
+				next[i].ManagedConfigJSON = p.ManagedConfigJSON
+			}
+		}
+	}
 }
 
 // applyFallbackStateTransition classifies the agent's operating mode from
@@ -161,6 +181,25 @@ func (s *Server) applyFallbackStateTransition(agent Agent) {
 				s.batchWriter.EnqueueFallbackDelete(agent.ID)
 			}
 		}
+	}
+}
+
+// applyTelemtReachabilityTransition detects the Telemt unreachable→reachable
+// edge for an agent and asks its live stream session to re-request a full
+// client list. Discovery is otherwise only requested at stream open and on the
+// periodic timer; a Telemt that recovered without a stream reconnect would
+// otherwise leave the panel's discovered-clients view stale for that node until
+// the next periodic refresh. Best-effort: if the agent has no live session
+// (e.g. reverse-mode not yet connected) the request is simply dropped and the
+// periodic refresh covers it.
+//
+// Called OUTSIDE s.mu (the agent value is a committed copy by then) so waking
+// the writer goroutine never happens while the snapshot critical section is
+// held.
+func (s *Server) applyTelemtReachabilityTransition(agent Agent) {
+	if s.telemtReach.Observe(agent.ID, agent.Runtime.TelemtUnreachable) {
+		s.logger.Info("telemt reachable again; requesting client re-discovery", "agent_id", agent.ID)
+		s.sessions.RequestRediscovery(agent.ID)
 	}
 }
 
@@ -243,12 +282,20 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 		instances = s.live.InstancesForAgent(snapshot.AgentID)
 	} else {
 		instances = instancesFromSnapshot(snapshot)
+		// Observed managed config is delta-gated: the agent sends the full JSON
+		// only on the snapshot where it changed (empty otherwise). Carry forward
+		// the last non-empty JSON from the previously stored instances so the
+		// cached observed config persists between changes.
+		carryForwardObservedConfig(instances, s.live.InstancesForAgent(snapshot.AgentID))
 	}
 	s.live.ApplySnapshot(snapshot.AgentID, agent, instances)
 	s.commitClientSnapshotsLocked(ctx, snapshot)
 	metricSnapshot := s.commitMetricSnapshotLocked(snapshot)
 	s.applyFallbackStateTransition(agent)
 	s.mu.Unlock()
+
+	// Outside s.mu: detect Telemt recovery and nudge re-discovery for this agent.
+	s.applyTelemtReachabilityTransition(agent)
 
 	// Enqueue all DB writes asynchronously via the batch writer. No DB I/O
 	// blocks the caller — the background flush goroutine handles persistence.
@@ -267,10 +314,18 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	// degraded/offline (it "sticks" online after a real disconnect).
 	s.presence.Heartbeat(snapshot.AgentID, s.now().UTC())
 
-	s.events.Publish(eventbus.Event{
-		Type: "agents.updated",
-		Data: agent,
-	})
+	// D6b: coalesced — the background flusher publishes the latest value per
+	// agent on a 300ms tick instead of one bus broadcast per inbound
+	// snapshot. The nil-fallback keeps literal-constructed test Servers
+	// (which bypass newServerFromOptions) on the immediate-publish path.
+	if s.agentsUpdated != nil {
+		s.agentsUpdated.Offer(agent)
+	} else {
+		s.events.Publish(eventbus.Event{
+			Type: "agents.updated",
+			Data: agent,
+		})
+	}
 
 	return nil
 }

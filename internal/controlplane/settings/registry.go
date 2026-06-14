@@ -86,4 +86,7 @@ type Operational struct {
 	// storage.* operational tunables
 	StorageBatchFlushInterval string `setting:"name=storage.batch_flush_interval, type=duration, default=500ms, min=100ms, max=5s, apply=restart, store=runtime_settings, desc='Cadence for flushing accumulated audit/agent events to storage.'"`
 	StorageRollupInterval     string `setting:"name=storage.rollup_interval, type=duration, default=5m, min=1m, max=1h, apply=restart, store=runtime_settings, desc='Cadence for the timeseries rollup worker.'"`
+
+	// subscription.* operational tunables
+	SubscriptionPublicBaseURL string `setting:"name=subscription.public_base_url, type=string, default=, env=PANVEX_SUBSCRIPTION_BASE_URL, store=runtime_settings, apply=live, desc='Public origin of the subscription page (e.g. https://sub.example.com); used to build shareable /sub links in the dashboard. Empty disables the link.'"`
 }

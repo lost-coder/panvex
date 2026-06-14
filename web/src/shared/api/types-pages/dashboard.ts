@@ -1,4 +1,5 @@
 import type { Status } from "@/ui/tokens/colors";
+import type { NodeState } from "@/ui";
 import type { AlertData, KpiItem, TimelineEventData, TrendItem } from "./common";
 import type { ClientFormData } from "./client-form";
 
@@ -16,6 +17,10 @@ export interface DashboardNodeData {
   id: string;
   name: string;
   status: Status;
+  /** Full lifecycle state (offline/down/degraded/pending/ok). */
+  state: NodeState;
+  /** Raw backend reason string ("" when healthy); localize at render. */
+  reason: string;
   connections: number;
   trafficBytes: number;
   cpuPct: number;
@@ -44,4 +49,6 @@ export interface DashboardPageProps {
   /** Navigates to the full Servers list — wired to the "View all →" link
    *  in the Fleet card header. Optional so unit tests can skip it. */
   onViewAllServers?: (() => void) | undefined;
+  /** Navigates to the Add Server wizard — wired to the empty-fleet CTA. */
+  onAddServer?: (() => void) | undefined;
 }

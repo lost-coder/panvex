@@ -84,7 +84,7 @@ func runResetUserTotp(args []string) error {
 	// from the store first so the revocation actually reaches the persisted
 	// rows (otherwise the reset would clear TOTP but leave live cookies valid
 	// until the next panel restart rehydrated — and then kept — them).
-	if err := service.RestoreSessions(); err != nil {
+	if err := service.RestoreSessions(context.Background()); err != nil {
 		return fmt.Errorf("restore sessions for revocation: %w", err)
 	}
 

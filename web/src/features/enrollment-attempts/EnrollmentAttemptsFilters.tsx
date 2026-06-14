@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 
+import { Button, Input, Select } from "@/ui";
 import type {
   EnrollmentAttemptsFilter,
   EnrollmentMode,
@@ -43,77 +44,68 @@ const ERROR_CODES = [
 export function EnrollmentAttemptsFilters({ value, onChange, onReset }: Readonly<Props>) {
   const { t } = useTranslation("enrollment-attempts");
 
+  // "all" is the cleared sentinel: ui/base/Select only renders a placeholder
+  // when the value is empty, so a truthy sentinel keeps the "Any …" option
+  // reselectable (mapped back to undefined on change).
   return (
     <div className="flex flex-wrap items-end gap-3">
       <label className="flex flex-col gap-1 text-xs text-fg-muted">
         {t("filters.status")}
-        <select
-          value={value.status ?? ""}
-          onChange={(e) =>
+        <Select
+          value={value.status ?? "all"}
+          onChange={(v) =>
             onChange({
               ...value,
-              status: (e.target.value || undefined) as EnrollmentStatus | undefined,
+              status: v === "all" ? undefined : (v as EnrollmentStatus),
               cursor: undefined,
             })
           }
-          className="rounded-md border border-divider bg-bg-card px-2 py-1 text-sm text-fg"
-        >
-          <option value="">{t("filters.anyStatus")}</option>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "all", label: t("filters.anyStatus") },
+            ...STATUS_OPTIONS.map((s) => ({ value: s, label: s })),
+          ]}
+        />
       </label>
 
       <label className="flex flex-col gap-1 text-xs text-fg-muted">
         {t("filters.mode")}
-        <select
-          value={value.mode ?? ""}
-          onChange={(e) =>
+        <Select
+          value={value.mode ?? "all"}
+          onChange={(v) =>
             onChange({
               ...value,
-              mode: (e.target.value || undefined) as EnrollmentMode | undefined,
+              mode: v === "all" ? undefined : (v as EnrollmentMode),
               cursor: undefined,
             })
           }
-          className="rounded-md border border-divider bg-bg-card px-2 py-1 text-sm text-fg"
-        >
-          <option value="">{t("filters.anyMode")}</option>
-          {MODE_OPTIONS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "all", label: t("filters.anyMode") },
+            ...MODE_OPTIONS.map((m) => ({ value: m, label: m })),
+          ]}
+        />
       </label>
 
       <label className="flex flex-col gap-1 text-xs text-fg-muted">
         {t("filters.errorCode")}
-        <select
-          value={value.error_code ?? ""}
-          onChange={(e) =>
+        <Select
+          value={value.error_code ?? "all"}
+          onChange={(v) =>
             onChange({
               ...value,
-              error_code: e.target.value || undefined,
+              error_code: v === "all" ? undefined : v,
               cursor: undefined,
             })
           }
-          className="rounded-md border border-divider bg-bg-card px-2 py-1 text-sm text-fg"
-        >
-          <option value="">{t("filters.anyErrorCode")}</option>
-          {ERROR_CODES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "all", label: t("filters.anyErrorCode") },
+            ...ERROR_CODES.map((c) => ({ value: c, label: c })),
+          ]}
+        />
       </label>
 
       <label className="flex flex-col gap-1 text-xs text-fg-muted">
         {t("filters.startedAfter")}
-        <input
+        <Input
           type="date"
           value={value.started_after?.slice(0, 10) ?? ""}
           onChange={(e) =>
@@ -125,13 +117,12 @@ export function EnrollmentAttemptsFilters({ value, onChange, onReset }: Readonly
               cursor: undefined,
             })
           }
-          className="rounded-md border border-divider bg-bg-card px-2 py-1 text-sm text-fg"
         />
       </label>
 
       <label className="flex flex-col gap-1 text-xs text-fg-muted">
         {t("filters.startedBefore")}
-        <input
+        <Input
           type="date"
           value={value.started_before?.slice(0, 10) ?? ""}
           onChange={(e) =>
@@ -143,17 +134,12 @@ export function EnrollmentAttemptsFilters({ value, onChange, onReset }: Readonly
               cursor: undefined,
             })
           }
-          className="rounded-md border border-divider bg-bg-card px-2 py-1 text-sm text-fg"
         />
       </label>
 
-      <button
-        type="button"
-        onClick={onReset}
-        className="rounded-md border border-divider px-3 py-1 text-sm text-fg-muted hover:text-fg"
-      >
+      <Button type="button" variant="ghost" size="sm" onClick={onReset}>
         {t("filters.reset")}
-      </button>
+      </Button>
     </div>
   );
 }

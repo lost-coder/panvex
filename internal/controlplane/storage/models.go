@@ -383,6 +383,15 @@ type RetentionSettingsRecord struct {
 	// them via PruneTerminalJobs (Q2.U-P-02). Zero disables job
 	// pruning so existing dev fixtures keep their full history.
 	JobsSeconds int `json:"jobs_seconds"`
+	// WebhookOutboxSeconds bounds how long terminal webhook_outbox rows
+	// (delivered or dead) are kept for operator audit before the rollup
+	// loop prunes them via webhooks.Storage.PruneOutbox (C4).
+	WebhookOutboxSeconds int `json:"webhook_outbox_seconds"`
+	// EnrollmentTokenSeconds bounds how long dead enrollment tokens
+	// (consumed, revoked, or expired-unconsumed) are kept for operator
+	// forensics before the rollup loop prunes them via
+	// PruneEnrollmentTokens (C4).
+	EnrollmentTokenSeconds int `json:"enrollment_token_seconds"`
 }
 
 // CertificateAuthorityRecord stores the persisted control-plane root CA material.
@@ -403,6 +412,7 @@ type ClientRecord struct {
 	MaxUniqueIPs      int
 	DataQuotaBytes    int64
 	ExpirationRFC3339 string
+	SubscriptionToken string // opaque /sub/<token> handle; "" means not yet generated
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	DeletedAt         *time.Time
@@ -561,3 +571,21 @@ type ServerLoadHourlyRecord struct {
 	DCCoverageAvg  float64
 	SampleCount    int
 }
+
+// AgentConfigTargetRecord is the operator's desired Telemt config for one scope.
+// ScopeType is ConfigScopeGroup (ScopeID = fleet group id) or ConfigScopeAgent
+// (ScopeID = agent id). SectionsJSON is a sparse JSON object of editable config
+// sections (general/timeouts/censorship/upstreams/show_link/dc_overrides).
+type AgentConfigTargetRecord struct {
+	ScopeType    string
+	ScopeID      string
+	SectionsJSON string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// Config target scope kinds.
+const (
+	ConfigScopeGroup = "group"
+	ConfigScopeAgent = "agent"
+)

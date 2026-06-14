@@ -17,8 +17,12 @@
 #
 # TLS for the agent gRPC channel:
 #   The control-plane mints its own server certificate at startup from
-#   the embedded CA. Operators are responsible for distributing the CA
-#   bundle to agents (out of scope here — see deploy/install.sh).
+#   the embedded CA; agents authenticate with client certificates and
+#   pin the CA SPKI. The channel is self-secured, so :8443 is published
+#   directly (no reverse proxy in front). Operators are responsible for
+#   distributing the CA bundle to agents (see deploy/install.sh) and for
+#   firewalling 8443 to agent networks. Alternative single-IP topology:
+#   deploy/networking.md.
 #
 # First-time bootstrap:
 #   POSTGRES_PASSWORD=... PANVEX_ENCRYPTION_KEY=... \
@@ -106,7 +110,21 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8443:8443"
+      # Agent gRPC. Published on ALL interfaces intentionally: unlike the
+      # HTTP panel (:8080, plain HTTP behind a TLS-terminating reverse
+      # proxy), the gRPC channel is mTLS end-to-end — the control-plane
+      # mints its server certificate from the embedded CA, agents present
+      # client certificates issued at enrollment, and both sides pin SPKI
+      # hashes. Publishing :8443 directly therefore does NOT expose an
+      # unencrypted or unauthenticated surface.
+      #
+      # Expected firewall posture: allow inbound 8443/tcp from agent
+      # networks (or 0.0.0.0/0 if agents roam); everything else stays
+      # closed. If you prefer a single public IP on the reverse proxy,
+      # use the nginx L4 stream passthrough documented in
+      # deploy/networking.md and revert this mapping to
+      # "127.0.0.1:8443:8443".
+      - "8443:8443"
     volumes:
       - panvex_geoip:/var/lib/panvex/geoip
     deploy:

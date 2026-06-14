@@ -121,6 +121,7 @@ const rawClient: ApiClient = {
       updated_at_unix: 1_700_000_100,
     },
   ],
+  subscription_url: "",
   created_at_unix: 1_700_000_000,
   updated_at_unix: 1_700_000_100,
   deleted_at_unix: 0,

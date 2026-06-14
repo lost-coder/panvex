@@ -155,7 +155,7 @@ export function UpstreamsTab({ server }: Readonly<{ server: ServerDetailPageProp
                   <span className="text-base font-mono font-semibold text-fg leading-none">
                     {value.toLocaleString()}
                   </span>
-                  <span className="text-[10px] text-fg-muted uppercase tracking-wider leading-none">
+                  <span className="text-nano text-fg-muted uppercase tracking-wider leading-none">
                     {label}
                   </span>
                 </div>

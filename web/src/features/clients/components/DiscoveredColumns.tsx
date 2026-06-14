@@ -121,14 +121,14 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
             row.discoveredOn.map((n) => (
               <span
                 key={n}
-                className="font-mono text-[10px] text-fg-muted px-1.5 py-0.5 rounded-xs border border-divider bg-bg"
+                className="font-mono text-nano text-fg-muted px-1.5 py-0.5 rounded-xs border border-divider bg-bg"
               >
                 {n}
               </span>
             ))
           )}
           {row.ids.length > 1 && (
-            <span className="text-[10px] font-mono text-fg-muted px-1">×{row.ids.length}</span>
+            <span className="text-nano font-mono text-fg-muted px-1">×{row.ids.length}</span>
           )}
         </div>
       ),
@@ -138,7 +138,7 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
       key: "usage",
       header: t("discovered.table.usage"),
       render: (row) => (
-        <div className="flex flex-col font-mono text-[11px]">
+        <div className="flex flex-col font-mono text-micro">
           <span className="text-fg tabular-nums">
             {row.currentConnections} {t("table.connsSuffix")} · {row.activeUniqueIps}{" "}
             {t("table.ipsSuffix")}
@@ -155,7 +155,7 @@ export function buildDiscoveredColumns(opts: Readonly<DiscoveredColumnsOptions>)
       key: "discovered",
       header: t("discovered.table.discoveredAt"),
       render: (row) => (
-        <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+        <span className="text-micro font-mono text-fg-muted tabular-nums">
           {Number.isFinite(row.discoveredAtUnix) && row.discoveredAtUnix > 0
             ? new Date(row.discoveredAtUnix * 1000).toLocaleString()
             : "—"}

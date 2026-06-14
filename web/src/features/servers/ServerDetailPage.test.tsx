@@ -17,6 +17,7 @@ function makeProps(): ServerDetailPageProps {
       id: "n-1",
       name: "node-a",
       status: "ok",
+      state: "ok",
       systemInfo: {
         version: "1.2.3",
         targetArch: "x86_64",

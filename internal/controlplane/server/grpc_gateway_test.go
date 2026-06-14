@@ -55,6 +55,10 @@ func TestServerPendingJobsForAgentSkipsRecentlySentTarget(t *testing.T) {
 
 	job := enqueueJobForAgent(t, server, "agent-1", "sent-recent", currentTime)
 	deliveredAt := currentTime.Add(2 * time.Second)
+	// D3: target.UpdatedAt is stamped with the panel clock, so advance the
+	// clock to the delivery moment before marking delivered — the
+	// agent-reported observedAt no longer drives redelivery gating.
+	currentTime = deliveredAt
 	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, deliveredAt)
 
 	currentTime = deliveredAt.Add(jobDispatchRetryAfter - time.Second)
@@ -891,6 +895,18 @@ type fakeRuntimeReloadClient struct {
 
 func (c *fakeRuntimeReloadClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
 	return telemt.RuntimeState{}, nil
+}
+
+func (c *fakeRuntimeReloadClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+
+func (c *fakeRuntimeReloadClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return nil, "", nil
+}
+
+func (c *fakeRuntimeReloadClient) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
 }
 
 func (c *fakeRuntimeReloadClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {

@@ -52,6 +52,9 @@ var migratedTables = map[string]string{
 	"webhook_endpoints": "raw row-copy: ciphertext column copied verbatim, no encrypt/decrypt",
 	"webhook_outbox":    "raw row-copy: payload copied verbatim",
 	"runtime_settings":  "raw row-copy: settings registry kv table copied verbatim",
+
+	// --- Telemt config targets (operator-desired config per scope) ---
+	"agent_config_targets": "typed: ListAgentConfigTargets → UpsertAgentConfigTarget",
 }
 
 // skippedTables: tables intentionally NOT copied, each with its reason.
