@@ -148,6 +148,7 @@ func enrollTelemetryAgent(t *testing.T, server *Server, fleetGroupID, nodeName s
 		Token:    token.Value,
 		NodeName: nodeName,
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent(%s) error = %v", nodeName, err)

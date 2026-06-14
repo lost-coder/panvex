@@ -78,7 +78,7 @@ func TestCascadeDeleteClientRemovesDeployments(t *testing.T) {
 
 	ctx := context.Background()
 	group := storage.FleetGroupRecord{
-		ID:        "group-cascade",
+		ID:        "00000000-0000-4000-8000-000000000010",
 		Name:      "Cascade",
 		CreatedAt: time.Date(2026, time.April, 18, 11, 0, 0, 0, time.UTC),
 	}

@@ -7,8 +7,6 @@ export { PageSection, type PageSectionProps, type PageSectionTone } from "./Page
 export { HeroStrip, type HeroStripProps, type HeroMetaPill } from "./HeroStrip";
 export { AlertStrip, type AlertStripProps } from "./AlertStrip";
 export { Timeline, type TimelineProps } from "./Timeline";
-export { ActionList, type ActionListProps } from "./ActionList";
-export { StatusHero, type StatusHeroProps } from "./StatusHero";
 export { Breadcrumbs, type BreadcrumbsProps, type BreadcrumbItem } from "./Breadcrumbs";
 export { SearchFilter, type SearchFilterProps } from "./SearchFilter";
 export { Pagination, type PaginationProps } from "./Pagination";

@@ -74,7 +74,7 @@ func TestRestoreConsumedTotpRebuildsFromPersistentStore(t *testing.T) {
 
 	svc := NewService()
 	svc.SetConsumedTotpStore(store)
-	svc.restoreConsumedTotp()
+	svc.restoreConsumedTotp(context.Background())
 
 	svc.mu.Lock()
 	_, ok := svc.consumedTotp[key]
@@ -101,7 +101,7 @@ func TestRestoreConsumedTotpDropsExpiredCodes(t *testing.T) {
 
 	svc := NewService()
 	svc.SetConsumedTotpStore(store)
-	svc.restoreConsumedTotp()
+	svc.restoreConsumedTotp(context.Background())
 
 	svc.mu.Lock()
 	_, ok := svc.consumedTotp[expired]

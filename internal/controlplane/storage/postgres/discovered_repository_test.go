@@ -18,7 +18,7 @@ func seedAgentsForDiscoveredContract(ctx context.Context, t *testing.T, store *S
 	agentIDs := []string{"a-1", "a-byname", "a-list", "a-other", "a-upd", "a-bulk", "a-del"}
 	for _, id := range agentIDs {
 		if _, err := store.sqlDB.ExecContext(ctx,
-			`INSERT INTO agents (id, node_name, last_seen_at_unix) VALUES ($1, $2, 0)
+			`INSERT INTO agents (id, node_name, last_seen_at) VALUES ($1, $2, NOW())
 			 ON CONFLICT (id) DO NOTHING`,
 			id, id,
 		); err != nil {

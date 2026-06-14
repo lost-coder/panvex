@@ -341,34 +341,60 @@ func telemetryWriteUnitForRuntime(agent Agent, snapshot agentSnapshot) telemetry
 		upstreams: runtimeUpstreamRecordsFromAgent(agent),
 		events:    runtimeEventRecordsFromAgent(agent),
 	}
-	if snapshot.RuntimeDiagnostics != nil {
+	if d := snapshot.RuntimeDiagnostics; d != nil && !diagnosticsCarriedForward(d) {
 		diag := storage.TelemetryDiagnosticsCurrentRecord{
 			AgentID:             agent.ID,
 			ObservedAt:          snapshot.ObservedAt.UTC(),
-			State:               snapshot.RuntimeDiagnostics.State,
-			StateReason:         snapshot.RuntimeDiagnostics.StateReason,
-			SystemInfoJSON:      snapshot.RuntimeDiagnostics.SystemInfoJson,
-			EffectiveLimitsJSON: snapshot.RuntimeDiagnostics.EffectiveLimitsJson,
-			SecurityPostureJSON: snapshot.RuntimeDiagnostics.SecurityPostureJson,
-			MinimalAllJSON:      snapshot.RuntimeDiagnostics.MinimalAllJson,
-			MEPoolJSON:          snapshot.RuntimeDiagnostics.MePoolJson,
-			DcsJSON:             snapshot.RuntimeDiagnostics.DcsJson,
+			State:               d.State,
+			StateReason:         d.StateReason,
+			SystemInfoJSON:      d.SystemInfoJson,
+			EffectiveLimitsJSON: d.EffectiveLimitsJson,
+			SecurityPostureJSON: d.SecurityPostureJson,
+			MinimalAllJSON:      d.MinimalAllJson,
+			MEPoolJSON:          d.MePoolJson,
+			DcsJSON:             d.DcsJson,
 		}
 		unit.diagnostics = &diag
 	}
-	if snapshot.RuntimeSecurityInventory != nil {
-		sec := storage.TelemetrySecurityInventoryCurrentRecord{
+	if sec := snapshot.RuntimeSecurityInventory; sec != nil && !securityInventoryCarriedForward(sec) {
+		s := storage.TelemetrySecurityInventoryCurrentRecord{
 			AgentID:      agent.ID,
 			ObservedAt:   snapshot.ObservedAt.UTC(),
-			State:        snapshot.RuntimeSecurityInventory.State,
-			StateReason:  snapshot.RuntimeSecurityInventory.StateReason,
-			Enabled:      snapshot.RuntimeSecurityInventory.Enabled,
-			EntriesTotal: int(snapshot.RuntimeSecurityInventory.EntriesTotal),
-			EntriesJSON:  snapshot.RuntimeSecurityInventory.EntriesJson,
+			State:        sec.State,
+			StateReason:  sec.StateReason,
+			Enabled:      sec.Enabled,
+			EntriesTotal: int(sec.EntriesTotal),
+			EntriesJSON:  sec.EntriesJson,
 		}
-		unit.security = &sec
+		unit.security = &s
 	}
 	return unit
+}
+
+// diagnosticsCarriedForward reports whether the agent delta-gated this
+// snapshot's diagnostics: a non-empty content hash with an all-empty body
+// means "unchanged since the version you already stored" — skip the write so
+// the stored row carries forward (D5). An empty hash (pre-gating agent, or
+// the deliberately blank BuildRuntimeUnreachableSnapshot record) keeps the
+// historical overwrite semantics.
+func diagnosticsCarriedForward(d *gatewayrpc.RuntimeDiagnosticsSnapshot) bool {
+	if d.ContentHash == "" {
+		return false
+	}
+	return d.State == "" && d.StateReason == "" &&
+		d.SystemInfoJson == "" && d.EffectiveLimitsJson == "" &&
+		d.SecurityPostureJson == "" && d.MinimalAllJson == "" &&
+		d.MePoolJson == "" && d.DcsJson == ""
+}
+
+// securityInventoryCarriedForward mirrors diagnosticsCarriedForward for the
+// security-inventory record.
+func securityInventoryCarriedForward(sec *gatewayrpc.RuntimeSecurityInventorySnapshot) bool {
+	if sec.ContentHash == "" {
+		return false
+	}
+	return sec.State == "" && sec.StateReason == "" &&
+		!sec.Enabled && sec.EntriesTotal == 0 && sec.EntriesJson == ""
 }
 
 // enqueueRuntimeBatchWrites pushes runtime telemetry, server-load and DC

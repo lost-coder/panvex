@@ -18,19 +18,22 @@
     "issues_other": " · {{count}} issues",
     "viewAll": "View all →",
     "empty": "No servers registered yet.",
+    "emptyDescription": "Add the first Telemt node — it will appear here as soon as the agent connects.",
+    "addServer": "Add server",
     "sectionAttention": "Needs attention",
     "sectionHealthy": "Healthy",
-    "sectionCount_one": "{{count}} server",
-    "sectionCount_other": "{{count}} servers",
     "more_one": "+ {{count}} more — open the Servers page to see the full fleet",
     "more_other": "+ {{count}} more — open the Servers page to see the full fleet",
-    "connections": "conn",
-    "statusDown": "DOWN",
-    "statusDegraded": "DEGRADED"
+    "connections": "conn"
   },
   "timeline": {
     "title": "Recent Events",
-    "live": "live"
+    "live": "live",
+    "filterLabel": "Event filter",
+    "filterAlerts": "Alerts",
+    "filterAll": "All",
+    "allQuiet": "No alerts — all quiet.",
+    "empty": "No events recorded yet."
   },
   "metrics": {
     "noData": "No data available for this time range",

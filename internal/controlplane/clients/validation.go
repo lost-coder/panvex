@@ -2,6 +2,7 @@ package clients
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"regexp"
@@ -35,6 +36,17 @@ func RandomHexString(size int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buffer), nil
+}
+
+// GenerateSubscriptionToken returns a 32-byte cryptographically-random,
+// URL-safe (base64url, no padding) token for a client's public /sub/<token>
+// subscription URL.
+func GenerateSubscriptionToken() (string, error) {
+	buffer := make([]byte, 32)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buffer), nil
 }
 
 // ResolveUserADTag validates and normalizes a user_ad_tag value. Empty

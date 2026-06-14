@@ -73,6 +73,9 @@ export const clientSchema = z.object({
   fleet_group_ids: z.array(z.string()),
   agent_ids: z.array(z.string()),
   deployments: z.array(clientDeploymentSchema),
+  // "" when no public base URL is configured or no subscription token
+  // exists yet; the UI renders an appropriate placeholder for this case.
+  subscription_url: z.string().default(""),
   created_at_unix: z.number(),
   updated_at_unix: z.number(),
   deleted_at_unix: z.number(),

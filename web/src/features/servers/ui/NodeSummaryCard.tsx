@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { NodeStateBadge, nodeStatePresentation, type NodeState } from "@/ui";
 import { cn } from "@/ui/lib/cn";
 import type { Status } from "@/ui/tokens/colors";
 
@@ -19,6 +20,10 @@ export interface NodeSummaryCardProps {
   cpuPct: number;
   memPct?: number;
   dcs: NodeDcInfo[];
+  /** Full node state — when set, renders a status badge instead of the beacon dot. */
+  state?: NodeState | undefined;
+  /** Already-localized reason line (shown under the name when set). */
+  reason?: string | undefined;
   defaultExpanded?: boolean;
   autoExpandOnIssue?: boolean;
   onClick?: () => void;
@@ -70,12 +75,15 @@ export function NodeSummaryCard({
   cpuPct,
   memPct,
   dcs,
+  state,
+  reason,
   defaultExpanded,
   autoExpandOnIssue = true,
   onClick,
   className,
 }: Readonly<NodeSummaryCardProps>) {
   const { t } = useTranslation("servers");
+  const { t: tc } = useTranslation("common");
   const shouldAutoExpand = autoExpandOnIssue && hasIssues(dcs);
   const [expanded, setExpanded] = useState(defaultExpanded ?? shouldAutoExpand);
   const issue = dcSummaryCounts(dcs);
@@ -108,11 +116,15 @@ export function NodeSummaryCard({
       >
         {/* Row 1: name + status + issue badge + expand toggle */}
         <div className="flex items-center gap-3 w-full">
-          <span className={cn("h-2.5 w-2.5 rounded-full shrink-0", beaconColor[status])} />
+          {state ? (
+            <NodeStateBadge state={state} label={tc(nodeStatePresentation(state).labelKey)} />
+          ) : (
+            <span className={cn("h-2.5 w-2.5 rounded-full shrink-0", beaconColor[status])} />
+          )}
           <span className="text-sm font-mono font-medium text-fg truncate">{name}</span>
 
           {issue && (
-            <span className={cn("text-[10px] font-mono shrink-0 ml-auto", issue.cls)}>
+            <span className={cn("text-nano font-mono shrink-0 ml-auto", issue.cls)}>
               {issueText}
             </span>
           )}
@@ -148,6 +160,10 @@ export function NodeSummaryCard({
             </button>
           )}
         </div>
+
+        {reason && (
+          <span className="text-xs text-fg-muted leading-snug truncate pl-[22px]">{reason}</span>
+        )}
 
         {/* Row 2: inline metrics — hidden on mobile, visible on md+ */}
         <div className="hidden md:flex items-center gap-4 pl-[22px] text-xs font-mono">
@@ -198,10 +214,10 @@ export function NodeSummaryCard({
                   className="flex items-center gap-1.5 rounded-[6px] px-2 py-[5px] bg-bg/60"
                 >
                   <span className={cn("h-[7px] w-[7px] rounded-full shrink-0", dcLed[dc.status])} />
-                  <span className="text-[11px] font-mono font-medium text-fg leading-none">
+                  <span className="text-micro font-mono font-medium text-fg leading-none">
                     {dc.dc}
                   </span>
-                  <span className="text-[10px] font-mono text-fg-muted ml-auto leading-none">
+                  <span className="text-nano font-mono text-fg-muted ml-auto leading-none">
                     {dc.rttMs === null ? "—" : `${dc.rttMs}`}
                   </span>
                 </div>

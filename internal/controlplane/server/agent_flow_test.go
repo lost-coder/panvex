@@ -33,6 +33,7 @@ func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -44,6 +45,91 @@ func TestServerEnrollAgentConsumesTokenAndIssuesIdentity(t *testing.T) {
 
 	if response.CertificatePEM == "" {
 		t.Fatal("response.CertificatePEM = empty, want issued certificate")
+	}
+}
+
+// TestServerEnrollAgentRejectsAlreadyConsumedToken (C2): once a token is
+// consumed by a successful enrollment, a second enrollment with the same
+// token value must fail via the ConsumeEnrollmentToken conflict path and
+// must NOT reset or re-burn the already-consumed token. This guards the
+// idempotency half of the atomic consume; the rollback half (consume
+// rolls back together with a failed PutAgent inside the Transact) is
+// covered by the storagetest contract "consume token inside transact
+// rolls back with the tx".
+func TestServerEnrollAgentRejectsAlreadyConsumedToken(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	// First enrollment must succeed.
+	if _, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-a",
+		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
+	}, now.Add(10*time.Second)); err != nil {
+		t.Fatalf("first enrollAgent() error = %v", err)
+	}
+
+	// Second enrollment with the same (now-consumed) token must fail.
+	if _, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{
+		Token:    token.Value,
+		NodeName: "node-b",
+		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
+	}, now.Add(20*time.Second)); err == nil {
+		t.Fatal("second enrollAgent() error = nil, want token-already-consumed error")
+	}
+
+	// The token must remain consumed — not double-burned or reset.
+	rec, err := server.store.GetEnrollmentToken(context.Background(), token.Value)
+	if err != nil {
+		t.Fatalf("GetEnrollmentToken() error = %v", err)
+	}
+	if rec.ConsumedAt == nil {
+		t.Fatal("token ConsumedAt = nil after successful first enrollment, want non-nil")
+	}
+}
+
+// TestServerEnrollTokenScopeNulledWhenFleetGroupDeleted (C1): verifies the
+// ON DELETE SET NULL behaviour introduced in migration 0050.  When the
+// fleet group that was baked into a token's scope is deleted, the token's
+// fleet_group_id becomes NULL rather than blocking the delete or cascading
+// to destroy the token, leaving the operator free to re-scope or revoke it.
+func TestServerEnrollTokenScopeNulledWhenFleetGroupDeleted(t *testing.T) {
+	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
+	server := testServerWithSQLite(t, now)
+	fleetGroupID := seedTestFleetGroup(t, server.store, "ams-1", now)
+	token, err := server.issueEnrollmentToken(security.EnrollmentScope{
+		FleetGroupID: fleetGroupID,
+		TTL:          time.Minute,
+	}, now)
+	if err != nil {
+		t.Fatalf("issueEnrollmentToken() error = %v", err)
+	}
+
+	// Delete the fleet group — must succeed (SET NULL, not RESTRICT).
+	if err := server.store.DeleteFleetGroup(context.Background(), fleetGroupID); err != nil {
+		t.Fatalf("DeleteFleetGroup() error = %v, want nil (SET NULL should allow delete)", err)
+	}
+
+	// Token must survive with fleet_group_id = "" (null).
+	rec, err := server.store.GetEnrollmentToken(context.Background(), token.Value)
+	if err != nil {
+		t.Fatalf("GetEnrollmentToken() error = %v", err)
+	}
+	if rec.FleetGroupID != "" {
+		t.Fatalf("token FleetGroupID = %q after group delete, want empty (SET NULL)", rec.FleetGroupID)
+	}
+	if rec.ConsumedAt != nil {
+		t.Fatalf("token burned by group delete: ConsumedAt = %v, want nil", rec.ConsumedAt)
 	}
 }
 
@@ -63,6 +149,7 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -170,6 +257,7 @@ func TestApplyAgentSnapshotIgnoresRevokedAgent(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -226,6 +314,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -322,6 +411,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -362,7 +452,7 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0"}, now.Add(10*time.Second))
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0", CSRPEM: testCSRPEM(t)}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
@@ -401,7 +491,7 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 	if err != nil {
 		t.Fatalf("issueEnrollmentToken() error = %v", err)
 	}
-	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0"}, now.Add(10*time.Second))
+	identity, err := server.enrollAgent(context.Background(), agentEnrollmentRequest{Token: token.Value, NodeName: "node-a", Version: "1.0.0", CSRPEM: testCSRPEM(t)}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
@@ -541,6 +631,7 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -589,6 +680,7 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -667,6 +759,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 		Token:    tokenA.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if err != nil {
 		t.Fatalf("enrollAgent(A) error = %v", err)
@@ -683,6 +776,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 		Token:    tokenB.Value,
 		NodeName: "node-b",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now)
 	if err != nil {
 		t.Fatalf("enrollAgent(B) error = %v", err)
@@ -771,6 +865,7 @@ func TestServerEnrollmentTokenPersistsAcrossRestart(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -828,6 +923,7 @@ func TestServerEnrollmentIssuesOperationalCertificateLifetime(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, issuedAt)
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -889,6 +985,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second)); err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
@@ -903,6 +1000,7 @@ func TestServerConsumedEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) 
 		Token:    token.Value,
 		NodeName: "node-b",
 		Version:  "1.0.1",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(20*time.Second)); !errors.Is(err, security.ErrEnrollmentTokenConsumed) {
 		t.Fatalf("enrollAgent() error = %v, want %v", err, security.ErrEnrollmentTokenConsumed)
 	}
@@ -937,6 +1035,7 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, enrolledAt)
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -966,14 +1065,14 @@ func TestEnrollmentSetsCertificateDates(t *testing.T) {
 }
 
 // TestEnrollAgentCertIssuanceFailureLeavesNoPartialState pins D-1: when
-// issueClientCertificate fails, enrollAgent must not leave the agent
-// persisted in the DB or in the in-memory mirror. Pre-D-1 ordering wrote
-// PutAgent first and only then issued the cert, so a cert-issuance error
-// left a partial row + memory entry that required manual cleanup.
+// cert issuance fails, enrollAgent must not leave the agent persisted in
+// the DB or in the in-memory mirror. Pre-D-1 ordering wrote PutAgent first
+// and only then issued the cert, so a cert-issuance error left a partial
+// row + memory entry that required manual cleanup.
 //
-// We inject the failure by zeroing the authority's signing private key
-// after construction. x509.CreateCertificate then fails inside
-// issueClientCertificate before any cert bytes are produced.
+// We inject the failure by swapping the CA signing key for one on a
+// different curve so x509.CreateCertificate fails inside
+// issueAgentCertificateFromCSR before any cert bytes are produced.
 func TestEnrollAgentCertIssuanceFailureLeavesNoPartialState(t *testing.T) {
 	now := time.Date(2026, time.May, 12, 10, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
@@ -1000,6 +1099,7 @@ func TestEnrollAgentCertIssuanceFailureLeavesNoPartialState(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-fail",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err == nil {
 		t.Fatal("enrollAgent() error = nil, want cert issuance failure")
@@ -1206,6 +1306,7 @@ func TestServerExpiredEnrollmentTokenRemainsRejectedAfterRestart(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-b",
 		Version:  "1.0.1",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(2*time.Second)); !errors.Is(err, security.ErrEnrollmentTokenExpired) {
 		t.Fatalf("enrollAgent() error = %v, want %v", err, security.ErrEnrollmentTokenExpired)
 	}

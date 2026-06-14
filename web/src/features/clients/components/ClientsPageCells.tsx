@@ -3,7 +3,7 @@
 // helper is pure: it accepts the snapshot inputs from props and returns
 // the cell markup, no hooks.
 //
-// R-Q-24: helpers (effectiveClientStatus, isClientExpired) ship next to
+// R-Q-24: helpers (isClientExpired, deriveClientState) ship next to
 // the cell components by design — splitting them into a dedicated file
 // would force ClientsPage to learn two import paths for the same domain.
 /* eslint-disable react-refresh/only-export-components */
@@ -12,16 +12,14 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
 import {
-  Badge,
   MonoValue,
+  StateBadge,
   cn,
   formatBytes,
   formatExpiry,
   formatQuota,
-  type ClientListItem,
+  type PillTone,
 } from "@/ui";
-
-export type EffectiveClientStatus = "active" | "disabled" | "expired";
 
 export function isClientExpired(expirationRfc3339: string, nowMs: number): boolean {
   if (!expirationRfc3339) return false;
@@ -29,23 +27,62 @@ export function isClientExpired(expirationRfc3339: string, nowMs: number): boole
   return Number.isFinite(t) && t < nowMs;
 }
 
-export function effectiveClientStatus(
-  c: ClientListItem,
-  nowMs: number,
-): EffectiveClientStatus {
-  if (isClientExpired(c.expirationRfc3339, nowMs)) return "expired";
-  return c.enabled ? "active" : "disabled";
+export type ClientState =
+  | "active" | "expiring" | "expired" | "over_quota" | "disabled" | "not_deployed" | "deploy_failed";
+
+const CLIENT_EXPIRING_DAYS = 7;
+
+/**
+ * Structural input for `deriveClientState`. `ClientListItem` satisfies it,
+ * so the clients-list call sites keep working; the client **detail** page
+ * supplies a synthetic object assembled from its `deployments[]` (Plan 2h).
+ */
+export interface ClientStateInput {
+  enabled: boolean;
+  expirationRfc3339: string;
+  trafficUsedBytes: number;
+  dataQuotaBytes: number;
+  assignedNodesCount: number;
+  lastDeployStatus: string;
 }
 
-export function ClientStatusBadge({ status }: Readonly<{ status: EffectiveClientStatus }>) {
+/**
+ * 7-state client taxonomy backing both the unified status badge and the
+ * status FILTER + counts on ClientsPage (Plan 2g unified these onto a single
+ * derivation; the old coarse 3-state helper was removed).
+ */
+export function deriveClientState(c: ClientStateInput, nowMs: number): ClientState {
+  if (isClientExpired(c.expirationRfc3339, nowMs)) return "expired";
+  if (!c.enabled) return "disabled";
+  if (c.lastDeployStatus === "failed") return "deploy_failed";
+  const denom = c.dataQuotaBytes > 0 ? c.dataQuotaBytes * Math.max(1, c.assignedNodesCount) : 0;
+  if (denom > 0 && c.trafficUsedBytes >= denom) return "over_quota";
+  if (c.assignedNodesCount > 0 && c.lastDeployStatus !== "succeeded") return "not_deployed";
+  if (c.expirationRfc3339) {
+    const t = Date.parse(c.expirationRfc3339);
+    if (Number.isFinite(t) && (t - nowMs) / 86_400_000 < CLIENT_EXPIRING_DAYS) return "expiring";
+  }
+  return "active";
+}
+
+const CLIENT_PRESENTATION: Record<ClientState, { tone: PillTone; glyph: string; labelKey: string }> = {
+  active:        { tone: "ok",      glyph: "✓", labelKey: "statusBadge.active" },
+  expiring:      { tone: "warn",    glyph: "▲", labelKey: "statusBadge.expiring" },
+  expired:       { tone: "error",   glyph: "⛔", labelKey: "statusBadge.expired" },
+  over_quota:    { tone: "error",   glyph: "⛔", labelKey: "statusBadge.overQuota" },
+  disabled:      { tone: "neutral", glyph: "●", labelKey: "statusBadge.disabled" },
+  not_deployed:  { tone: "neutral", glyph: "●", labelKey: "statusBadge.notDeployed" },
+  deploy_failed: { tone: "error",   glyph: "⛔", labelKey: "statusBadge.deployFailed" },
+};
+
+export function clientStatePresentation(state: ClientState) {
+  return CLIENT_PRESENTATION[state];
+}
+
+export function ClientStateBadge({ state }: Readonly<{ state: ClientState }>) {
   const { t } = useTranslation("clients");
-  const map = {
-    active: { label: t("statusBadge.active"), variant: "ok" as const },
-    disabled: { label: t("statusBadge.disabled"), variant: "default" as const },
-    expired: { label: t("statusBadge.expired"), variant: "error" as const },
-  };
-  const { label, variant } = map[status];
-  return <Badge variant={variant}>{label}</Badge>;
+  const p = clientStatePresentation(state);
+  return <StateBadge tone={p.tone} glyph={p.glyph} label={t(p.labelKey)} />;
 }
 
 // `quota` is the per-Telemt-node value the operator entered. Each
@@ -66,7 +103,7 @@ export function ClientTrafficCell({ used, quota, nodes }: Readonly<{ used: numbe
   })();
   return (
     <div className="flex flex-col gap-1 min-w-[120px]">
-      <span className="text-[11px] font-mono text-fg tabular-nums">
+      <span className="text-micro font-mono text-fg tabular-nums">
         {formatBytes(used)}
         <span className="text-fg-muted"> / {formatQuota(denom)}</span>
       </span>
@@ -82,10 +119,10 @@ export function ClientExpiryCell({
   nowSec,
   t,
 }: Readonly<{ rfc: string; nowSec: number; t: TFunction<"clients"> }>) {
-  if (!rfc) return <span className="text-[11px] font-mono text-fg-muted">{t("expiry.never")}</span>;
+  if (!rfc) return <span className="text-micro font-mono text-fg-muted">{t("expiry.never")}</span>;
   const parsed = Date.parse(rfc);
   if (!Number.isFinite(parsed))
-    return <span className="text-[11px] font-mono text-fg-muted">{t("expiry.unknown")}</span>;
+    return <span className="text-micro font-mono text-fg-muted">{t("expiry.unknown")}</span>;
   const days = Math.floor((parsed / 1000 - nowSec) / 86_400);
   const tone = (() => {
     if (days < 0) return "text-status-error";
@@ -99,8 +136,8 @@ export function ClientExpiryCell({
   })();
   return (
     <div className="flex flex-col">
-      <span className="text-[11px] font-mono text-fg tabular-nums">{formatExpiry(rfc)}</span>
-      <span className={cn("text-[10px] font-mono", tone)}>{subtitle}</span>
+      <span className="text-micro font-mono text-fg tabular-nums">{formatExpiry(rfc)}</span>
+      <span className={cn("text-nano font-mono", tone)}>{subtitle}</span>
     </div>
   );
 }

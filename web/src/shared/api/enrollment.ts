@@ -37,7 +37,13 @@ export type EnrollmentTokenResponse = {
 };
 
 export type EnrollmentTokenListItem = {
-  value: string;
+  // The listing endpoint masks the raw token (Q4.U-S-06): `value` is
+  // omitted and the operator-safe `masked_value` + stable `handle` are
+  // returned instead. `value` is therefore optional here — it is present
+  // only on the creation response, never in listings.
+  value?: string | undefined;
+  masked_value?: string | undefined;
+  handle?: string | undefined;
   panel_url: string;
   fleet_group_id: string;
   status: "active" | "expired" | "consumed" | "revoked";

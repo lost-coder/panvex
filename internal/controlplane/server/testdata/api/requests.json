@@ -111,7 +111,8 @@
       "certificate_pem": "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----",
       "proof_timestamp_unix": 1712000000,
       "proof_nonce": "nonce-xyz",
-      "proof_signature": "base64signature=="
+      "proof_signature": "base64signature==",
+      "csr_pem": "-----BEGIN CERTIFICATE REQUEST-----\nMIIB...\n-----END CERTIFICATE REQUEST-----"
     }
   },
   "agentCertificateRecoveryGrantRequest": {

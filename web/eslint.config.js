@@ -155,6 +155,17 @@ export default tseslint.config(
           selector: "JSXText[value=/[A-Za-zА-Яа-я]{2,}/]",
           message: "Hard-coded JSX text — wrap in t('...') from react-i18next so it can be localised.",
         },
+        // Design-token discipline: no arbitrary Tailwind `text-[…]` escapes in
+        // feature className strings — use the tokenized scale (text-pico/nano/
+        // micro for sub-xs, or text-xs/sm/…) instead of one-off px/hex values.
+        {
+          selector: "Literal[value=/text-\\[/]",
+          message: "Arbitrary text-[…] utility — use the tokenized type scale (text-pico/nano/micro or text-xs+) instead of px/hex escapes.",
+        },
+        {
+          selector: "TemplateElement[value.raw=/text-\\[/]",
+          message: "Arbitrary text-[…] utility — use the tokenized type scale (text-pico/nano/micro or text-xs+) instead of px/hex escapes.",
+        },
       ],
     },
   },

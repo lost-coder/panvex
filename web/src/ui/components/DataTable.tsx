@@ -1,14 +1,50 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "@/ui/lib/cn";
+import { Select } from "@/ui/base/select";
 
 export interface DataTableColumn<T> {
   key: string;
   header: string;
   render: (row: Readonly<T>) => React.ReactNode;
+  /**
+   * Marks the header as sortable (renders a clickable, keyboard-operable
+   * affordance + aria-sort). To actually reorder rows you must also supply
+   * `sortValue` — `render` returns ReactNode and can't be compared on.
+   */
   sortable?: boolean;
+  /**
+   * Comparable value the table sorts on when this column is active. Numbers
+   * compare numerically; everything else compares as a locale-aware,
+   * case-insensitive string. null/undefined always sort last regardless of
+   * direction. Omit on a `sortable` column only if the parent sorts the
+   * `data` prop itself (controlled sorting).
+   */
+  sortValue?: (row: Readonly<T>) => string | number | null | undefined;
+  /**
+   * Hide this column from the mobile card view. Use for low-signal or
+   * redundant columns so phone cards stay compact instead of stacking every
+   * column as a label/value row. Has no effect on the desktop table.
+   */
+  cardHidden?: boolean;
   className?: string;
+}
+
+/**
+ * Comparator for two column sort values. Numbers compare numerically; mixed
+ * or string values fall back to a numeric-aware, case-insensitive locale
+ * compare so "item2" < "item10" and "Alpha" sorts next to "alpha".
+ */
+function compareSortValues(
+  a: string | number | null | undefined,
+  b: string | number | null | undefined,
+): number {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a).localeCompare(String(b), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
 }
 
 export interface DataTableProps<T> {
@@ -68,6 +104,42 @@ export function DataTable<T>({
     }
   };
 
+  // Apply the active sort. A column is only sortable-with-effect when it
+  // provides `sortValue`; otherwise (no active column, or controlled
+  // sorting upstream) we render `data` untouched. The decorate-sort-
+  // undecorate keeps the sort stable so equal keys preserve input order.
+  const sortedData = useMemo(() => {
+    if (!sortKey) return data;
+    const activeCol = columns.find((c) => c.key === sortKey);
+    const accessor = activeCol?.sortValue;
+    if (!accessor) return data;
+    const dir = sortDir === "asc" ? 1 : -1;
+    return data
+      .map((row, index) => ({ row, index }))
+      .sort((a, b) => {
+        const av = accessor(a.row);
+        const bv = accessor(b.row);
+        const aNil = av === null || av === undefined;
+        const bNil = bv === null || bv === undefined;
+        // null/undefined always sink to the bottom, independent of dir.
+        if (aNil || bNil) {
+          if (aNil && bNil) return a.index - b.index;
+          return aNil ? 1 : -1;
+        }
+        const cmp = compareSortValues(av, bv);
+        return cmp !== 0 ? cmp * dir : a.index - b.index;
+      })
+      .map((d) => d.row);
+  }, [data, columns, sortKey, sortDir]);
+
+  // Columns the user can sort on (need both the flag and an accessor). The
+  // desktop header drives sort via per-column buttons; the mobile card view
+  // has no header, so it gets a dedicated sort control built from this list.
+  const sortableColumns = useMemo(
+    () => columns.filter((c) => c.sortable && c.sortValue),
+    [columns],
+  );
+
   // U3: rows that navigate must be keyboard-operable. A <tr> can't be a
   // <button>/<a> child of <tbody>, so we expose the button role +
   // Enter/Space activation directly on the row, mirroring NodeSummaryCard.
@@ -87,7 +159,7 @@ export function DataTable<T>({
   // suppress the warning so it does not drown legitimate signals.
   // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
-    count: data.length,
+    count: sortedData.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => rowHeight,
     overscan: 6,
@@ -157,7 +229,7 @@ export function DataTable<T>({
             </tr>
           </thead>
           <tbody>
-            {data.length === 0 ? (
+            {sortedData.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="text-center text-fg-muted py-8">
                   {resolvedEmpty}
@@ -171,7 +243,7 @@ export function DataTable<T>({
                   </tr>
                 )}
                 {virtualItems.map((virtualRow) => {
-                  const row = data[virtualRow.index];
+                  const row = sortedData[virtualRow.index];
                   // The virtualizer is driven by `count: data.length`, so
                   // every rendered virtual index maps to a real row. The
                   // guard satisfies noUncheckedIndexedAccess without
@@ -216,15 +288,56 @@ export function DataTable<T>({
           column (e.g. a Revoke button) would create invalid nested-button
           DOM and swallow click events meant for the inner control. */}
       <div className={cn("flex flex-col gap-2 md:hidden", className)}>
-        {data.length === 0 ? (
+        {/* Mobile sort control. The desktop sort lives in the table header,
+            which is hidden on mobile — so the card view carries its own
+            column picker + direction toggle wired to the same sort state. */}
+        {sortableColumns.length > 0 && sortedData.length > 0 && (
+          <label className="flex items-center gap-2">
+            <span className="text-nano text-fg-muted uppercase tracking-wider shrink-0">
+              {t("sortBy")}
+            </span>
+            <Select
+              className="flex-1"
+              value={sortKey ?? ""}
+              onChange={(key) => {
+                if (!key) setSortKey(null);
+                else {
+                  setSortKey(key);
+                  setSortDir("asc");
+                }
+              }}
+              options={[
+                { value: "", label: t("sortNone") },
+                ...sortableColumns.map((c) => ({ value: c.key, label: c.header })),
+              ]}
+            />
+            <button
+              type="button"
+              disabled={!sortKey}
+              onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              aria-label={sortDir === "asc" ? t("sortAscending") : t("sortDescending")}
+              className={cn(
+                "flex items-center justify-center h-10 w-10 rounded-xs border border-border-hi shrink-0",
+                "bg-bg-card text-fg-muted hover:text-fg transition-colors",
+                "disabled:opacity-40 disabled:cursor-not-allowed",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
+              )}
+            >
+              <span aria-hidden="true">{sortDir === "asc" ? "↑" : "↓"}</span>
+            </button>
+          </label>
+        )}
+        {sortedData.length === 0 ? (
           <p className="text-center text-fg-muted py-8 text-sm">{resolvedEmpty}</p>
         ) : (
-          data.map((row) => {
+          sortedData.map((row) => {
             const content = (
               <div className="flex flex-col gap-1.5">
-                {columns.map((col) => (
+                {columns
+                  .filter((col) => !col.cardHidden)
+                  .map((col) => (
                   <div key={col.key} className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] text-fg-muted uppercase tracking-wider shrink-0">
+                    <span className="text-nano text-fg-muted uppercase tracking-wider shrink-0">
                       {col.header}
                     </span>
                     <span className="text-sm text-fg text-right truncate">{col.render(row)}</span>

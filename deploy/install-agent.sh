@@ -306,12 +306,14 @@ install_agent() {
   if [[ "$is_upgrade" = true ]] && [[ -f "$env_file" ]]; then
     info "Keeping existing config: $env_file"
   else
+    local telemt_restart="${PANVEX_TELEMT_RESTART:-}"
     cat >"$env_file" <<EOF
 PANVEX_STATE_FILE=${state_file}
 PANVEX_NODE_NAME=${node_name}
 PANVEX_TELEMT_URL=${telemt_url}
 PANVEX_TELEMT_METRICS_URL=${telemt_metrics_url}
 PANVEX_TELEMT_AUTH=${telemt_auth}
+PANVEX_TELEMT_RESTART=${telemt_restart}
 EOF
     chmod 0640 "$env_file"
     chown panvex-agent:panvex-agent "$env_file"
@@ -328,6 +330,7 @@ exec "${bin_dir}/${APP_NAME}" \\
   -telemt-url "\${PANVEX_TELEMT_URL:-http://127.0.0.1:9091}" \\
   -telemt-metrics-url "\${PANVEX_TELEMT_METRICS_URL:-http://127.0.0.1:9090}" \\
   -telemt-auth "\${PANVEX_TELEMT_AUTH:-}" \\
+  -telemt-restart "\${PANVEX_TELEMT_RESTART:-}" \\
   -version "${installed_ver}"
 EOF
   chmod 0755 "$start_script"

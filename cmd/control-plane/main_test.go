@@ -146,6 +146,7 @@ func TestResolvePanelRuntimeUsesConfigManagedValuesWhenConfigFileIsPresent(t *te
 	if err := store.PutPanelSettings(context.Background(), storage.PanelSettingsRecord{
 		HTTPPublicURL:      "https://panel.example.com",
 		GRPCPublicEndpoint: "grpc.panel.example.com:443",
+		PasswordMinLength:  10,
 		UpdatedAt:          now,
 	}); err != nil {
 		t.Fatalf("PutPanelSettings() error = %v", err)
@@ -190,6 +191,7 @@ func TestResolvePanelRuntimeIgnoresStoredSharedSettingsWhenUsingLegacyStartup(t 
 	if err := store.PutPanelSettings(context.Background(), storage.PanelSettingsRecord{
 		HTTPPublicURL:      "https://panel.example.com",
 		GRPCPublicEndpoint: "grpc.panel.example.com:443",
+		PasswordMinLength:  10,
 		UpdatedAt:          now,
 	}); err != nil {
 		t.Fatalf("PutPanelSettings() error = %v", err)
@@ -403,7 +405,7 @@ func TestRunResetUserTotpRejectsMissingUser(t *testing.T) {
 
 func TestResolveEmbeddedUIFilesReturnsUIWhenIndexExists(t *testing.T) {
 	uiFiles := resolveEmbeddedUIFiles(fstest.MapFS{
-		"index.html": &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
+		"index.html":    &fstest.MapFile{Data: []byte("<html><body>panvex</body></html>")},
 		"assets/app.js": &fstest.MapFile{Data: []byte("console.log('panvex')")},
 	})
 	if uiFiles == nil {
