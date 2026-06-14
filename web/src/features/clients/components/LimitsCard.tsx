@@ -28,7 +28,7 @@ export function LimitsCard({ client }: Readonly<{ client: ClientDetailPageProps[
     return (
       <span className="flex items-baseline gap-1.5 flex-wrap">
         <MonoValue>{perNode * nodes}</MonoValue>
-        <span className="text-[11px] font-mono text-fg-muted">
+        <span className="text-micro font-mono text-fg-muted">
           {t("limits.perNodeSuffix", { per: perNode, count: nodes })}
         </span>
       </span>
@@ -45,7 +45,7 @@ export function LimitsCard({ client }: Readonly<{ client: ClientDetailPageProps[
     return (
       <span className="flex items-baseline gap-1.5 flex-wrap">
         <MonoValue>{formatQuota(client.dataQuotaBytes * nodes)}</MonoValue>
-        <span className="text-[11px] font-mono text-fg-muted">
+        <span className="text-micro font-mono text-fg-muted">
           {t("limits.perNodeSuffix", { per: formatQuota(client.dataQuotaBytes), count: nodes })}
         </span>
       </span>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
+import { Server } from "lucide-react";
 import { type BulkServerAction, type ViewMode, Button, EmptyState } from "@/ui";
 import { ServersPage } from "@/features/servers/ServersPage";
 import { SkeletonRows } from "@/ui";
@@ -13,6 +14,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { useUrlSearchState } from "@/shared/hooks/useUrlSearchState";
 import { useWsUpdateFlash } from "@/shared/hooks/useWsUpdateFlash";
 import { apiClient } from "@/shared/api/api";
+import { useToast } from "@/app/providers/ToastProvider";
 
 const BULK_ACTION_MAP: Record<BulkServerAction, string> = {
   reload: "runtime.reload",
@@ -21,13 +23,14 @@ const BULK_ACTION_MAP: Record<BulkServerAction, string> = {
 
 export function ServersContainer() {
   const { t } = useTranslation("servers");
-  const { servers, agentVersions, isLoading, error } = useServersList();
+  const { servers, agentVersions, isLoading, error, refetch } = useServersList();
   const { fleetGroups } = useFleetGroups();
   const { resolveMode, setMode } = useViewMode("servers");
   const { query: updatesQuery } = useUpdates();
   const latestAgentVersion = updatesQuery.data?.state.latest_agent_version;
   const navigate = useNavigate();
   const flashing = useWsUpdateFlash();
+  const toast = useToast();
 
   const [bulkError, setBulkError] = useState<string | undefined>();
   const bulkMutation = useMutation({
@@ -47,7 +50,19 @@ export function ServersContainer() {
     },
     onError: (err: unknown) =>
       setBulkError(err instanceof Error ? err.message : t("error.bulkActionFailed")),
-    onSuccess: () => setBulkError(undefined),
+    onSuccess: (_data, vars) => {
+      setBulkError(undefined);
+      // Audit E5: bulk actions were fire-and-forget — confirm the enqueue
+      // and hand the operator a one-tap path to watch the rollout.
+      toast.withAction(
+        "success",
+        t("bulk.queued", { count: vars.agentIds.length }),
+        {
+          label: t("bulk.viewActivity"),
+          onClick: () => void navigate({ to: "/activity" }),
+        },
+      );
+    },
   });
 
   // P2-UX-05: persist viewMode in the URL so a shared link lands in the
@@ -68,7 +83,7 @@ export function ServersContainer() {
       <ErrorState
         title={t("error.loadFleet")}
         description={error.message || t("error.fallbackDescription")}
-        onRetry={() => globalThis.location.reload()}
+        onRetry={() => void refetch()}
       />
     );
   }
@@ -80,7 +95,7 @@ export function ServersContainer() {
     return (
       <div className="p-6">
         <EmptyState
-          icon="🖥️"
+          icon={<Server size={28} aria-hidden="true" />}
           title={t("empty.title")}
           description={t("empty.description")}
           action={

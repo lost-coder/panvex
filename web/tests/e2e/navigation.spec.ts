@@ -43,7 +43,10 @@ test.describe("Keyboard navigation", () => {
     await loadDashboard(page);
 
     await page.keyboard.press("?");
-    const dialog = page.getByRole("dialog", { name: /сочетания клавиш/i });
+    // English default locale: the overlay title is "Keyboard shortcuts"
+    // (a stale Russian assertion here is the same locale drift the offline
+    // smoke test had — see 73d8b6dc).
+    const dialog = page.getByRole("dialog", { name: /keyboard shortcuts/i });
     await expect(dialog).toBeVisible();
 
     await page.keyboard.press("Escape");

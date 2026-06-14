@@ -106,6 +106,8 @@ export interface ClientDetailPageProps {
     fleetGroupIds: string[];
     agentIds: string[];
     deployments: ClientDeploymentData[];
+    /** "" when no public base URL is configured or no subscription token exists yet. */
+    subscriptionUrl: string;
   };
   onBack?: (() => void) | undefined;
   onEdit?: ((data: ClientFormData) => void | Promise<void>) | undefined;
@@ -118,6 +120,8 @@ export interface ClientDetailPageProps {
   onRotateSecret?: (() => void) | undefined;
   secretRotating?: boolean | undefined;
   secretPendingRedeploy?: boolean | undefined;
+  onRotateSubscription?: (() => void) | undefined;
+  subscriptionRotating?: boolean | undefined;
   /** Retry the rollout of the current stored state to every target
    *  agent. Surfaced as a button when at least one deployment is in
    *  the `failed` state. Container wires it to apiClient.redeployClient. */

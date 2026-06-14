@@ -45,13 +45,14 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 		if !s.checkAndConsumeRecoveryGrant(w, r, request.AgentID, now) {
 			return
 		}
-		issued, err := s.authority.issueClientCertificate(request.AgentID, now)
+		issued, err := s.authority.issueAgentCertificateFromCSR(request.CSRPEM, request.AgentID, agentCertificateLifetime, true, now)
 		if err != nil {
-			s.logger.Error("agent certificate recovery cert issue failed after grant consume", "agent_id", request.AgentID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error; please recreate recovery grant")
+			s.logger.Warn("agent certificate recovery: sign CSR failed", "agent_id", request.AgentID, "error", err)
+			writeError(w, http.StatusBadRequest, "invalid recovery csr")
 			return
 		}
 
+		s.persistAgentCertPin(r.Context(), request.AgentID, issued.CertificatePEM)
 		s.appendAuditWithContext(r.Context(), request.AgentID, "agents.certificate.recovered", request.AgentID, map[string]any{
 			"node_name": agent.NodeName,
 		})
@@ -59,7 +60,6 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 		writeJSON(w, http.StatusOK, agentBootstrapResponse{
 			AgentID:        request.AgentID,
 			CertificatePEM: issued.CertificatePEM,
-			PrivateKeyPEM:  issued.PrivateKeyPEM,
 			CAPEM:          issued.CAPEM,
 			GRPCEndpoint:   grpcEndpoint,
 			GRPCServerName: grpcServerName,
@@ -76,6 +76,7 @@ func validateRecoveryRequestFields(w http.ResponseWriter, request agentCertifica
 		strings.TrimSpace(request.CertificatePEM) == "" ||
 		strings.TrimSpace(request.ProofNonce) == "" ||
 		strings.TrimSpace(request.ProofSignature) == "" ||
+		strings.TrimSpace(request.CSRPEM) == "" ||
 		request.ProofTimestampUnix == 0 {
 		writeError(w, http.StatusBadRequest, "recovery payload is incomplete")
 		return false

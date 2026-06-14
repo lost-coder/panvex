@@ -17,13 +17,13 @@ function _RelativeTimeBadge({ label, stale }: { label: string; stale: boolean })
   return (
     <span
       className={cn(
-        "text-[10px] font-mono tabular-nums inline-flex items-center gap-1 rounded-full px-2 py-0.5 border transition-colors duration-500",
+        "text-nano font-mono tabular-nums inline-flex items-center gap-1 rounded-full px-2 py-0.5 border transition-colors duration-500",
         stale
           ? "bg-status-warn/10 border-status-warn/15 text-status-warn"
           : "bg-status-ok/10 border-status-ok/15 text-fg-muted",
       )}
     >
-      <span className="text-[11px] animate-spin" style={{ animationDuration: "3s" }}>
+      <span className="text-micro animate-spin" style={{ animationDuration: "3s" }}>
         ↻
       </span>
       {label}

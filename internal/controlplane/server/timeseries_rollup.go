@@ -22,6 +22,15 @@ type RetentionSettings struct {
 	// expired) live in the jobs table before the rollup loop deletes
 	// them via PruneTerminalJobs (Q2.U-P-02).
 	JobsSeconds int `json:"jobs_seconds"`
+	// WebhookOutboxSeconds bounds how long terminal webhook_outbox rows
+	// (delivered or dead) are kept for operator audit before the rollup
+	// loop prunes them via webhooks.Storage.PruneOutbox (C4).
+	WebhookOutboxSeconds int `json:"webhook_outbox_seconds"`
+	// EnrollmentTokenSeconds bounds how long dead enrollment tokens
+	// (consumed, revoked, or expired-unconsumed) are kept for operator
+	// forensics before the rollup loop prunes them via
+	// PruneEnrollmentTokens (C4).
+	EnrollmentTokenSeconds int `json:"enrollment_token_seconds"`
 }
 
 func defaultRetentionSettings() RetentionSettings {
@@ -34,6 +43,8 @@ func defaultRetentionSettings() RetentionSettings {
 		AuditEventSeconds:     7776000, // 90d (P2-REL-04 / finding M-R2)
 		MetricSnapshotSeconds: 2592000, // 30d (P2-REL-05)
 		JobsSeconds:           2592000, // 30d (Q2.U-P-02)
+		WebhookOutboxSeconds:   2592000, // 30d
+		EnrollmentTokenSeconds: 2592000, // 30d
 	}
 }
 
@@ -42,28 +53,32 @@ func defaultRetentionSettings() RetentionSettings {
 // the helper exists so callers do not depend on the alias in storage/store.go.
 func retentionSettingsToRecord(settings RetentionSettings) storage.RetentionSettings {
 	return storage.RetentionSettings{
-		TSRawSeconds:          settings.TSRawSeconds,
-		TSHourlySeconds:       settings.TSHourlySeconds,
-		TSDCSeconds:           settings.TSDCSeconds,
-		IPHistorySeconds:      settings.IPHistorySeconds,
-		EventSeconds:          settings.EventSeconds,
-		AuditEventSeconds:     settings.AuditEventSeconds,
-		MetricSnapshotSeconds: settings.MetricSnapshotSeconds,
-		JobsSeconds:           settings.JobsSeconds,
+		TSRawSeconds:           settings.TSRawSeconds,
+		TSHourlySeconds:        settings.TSHourlySeconds,
+		TSDCSeconds:            settings.TSDCSeconds,
+		IPHistorySeconds:       settings.IPHistorySeconds,
+		EventSeconds:           settings.EventSeconds,
+		AuditEventSeconds:      settings.AuditEventSeconds,
+		MetricSnapshotSeconds:  settings.MetricSnapshotSeconds,
+		JobsSeconds:            settings.JobsSeconds,
+		WebhookOutboxSeconds:   settings.WebhookOutboxSeconds,
+		EnrollmentTokenSeconds: settings.EnrollmentTokenSeconds,
 	}
 }
 
 // retentionSettingsFromRecord is the inverse of retentionSettingsToRecord.
 func retentionSettingsFromRecord(record storage.RetentionSettings) RetentionSettings {
 	return RetentionSettings{
-		TSRawSeconds:          record.TSRawSeconds,
-		TSHourlySeconds:       record.TSHourlySeconds,
-		TSDCSeconds:           record.TSDCSeconds,
-		IPHistorySeconds:      record.IPHistorySeconds,
-		EventSeconds:          record.EventSeconds,
-		AuditEventSeconds:     record.AuditEventSeconds,
-		MetricSnapshotSeconds: record.MetricSnapshotSeconds,
-		JobsSeconds:           record.JobsSeconds,
+		TSRawSeconds:           record.TSRawSeconds,
+		TSHourlySeconds:        record.TSHourlySeconds,
+		TSDCSeconds:            record.TSDCSeconds,
+		IPHistorySeconds:       record.IPHistorySeconds,
+		EventSeconds:           record.EventSeconds,
+		AuditEventSeconds:      record.AuditEventSeconds,
+		MetricSnapshotSeconds:  record.MetricSnapshotSeconds,
+		JobsSeconds:            record.JobsSeconds,
+		WebhookOutboxSeconds:   record.WebhookOutboxSeconds,
+		EnrollmentTokenSeconds: record.EnrollmentTokenSeconds,
 	}
 }
 
@@ -148,6 +163,32 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	// targets are preserved so an in-flight rollout cannot be deleted
 	// mid-flight.
 	s.runRetentionPrune(ctx, "jobs", now, retention.JobsSeconds, s.store.PruneTerminalJobs)
+
+	// 10. Prune terminal webhook outbox rows (C4). The webhook outbox is
+	// a separate storage subsystem (webhooks.Storage), wired only when
+	// the serve path supplies a WebhookStorageFactory — hence the guard.
+	if s.webhookStorage != nil {
+		s.runRetentionPrune(ctx, "webhook_outbox", now, retention.WebhookOutboxSeconds, s.webhookStorage.PruneOutbox)
+	}
+
+	// 11. Drop revocation rows whose certificate already expired (C4):
+	// the mTLS window they guard is closed, the row is pure dead weight.
+	// Cutoff is `now` by definition — no retention knob needed. The
+	// in-memory revokedAgentIDs set keeps its entries until restart,
+	// which is safe (it only over-rejects, never under-rejects).
+	if pruned, err := s.store.DeleteExpiredAgentRevocations(ctx, now); err != nil {
+		s.logger.Error("retention prune failed", "table", "agent_revocations", "error", err)
+	} else if pruned > 0 {
+		s.logger.Info("pruned rows by retention", "table", "agent_revocations", "count", pruned)
+		if s.obs != nil {
+			s.obs.retentionPrunedRowsTotal.WithLabelValues("agent_revocations").Add(float64(pruned))
+		}
+	}
+
+	// 12. Prune dead enrollment tokens (C4): consumed/revoked/expired
+	// rows are kept EnrollmentTokenSeconds for operator forensics, then
+	// dropped.
+	s.runRetentionPrune(ctx, "enrollment_tokens", now, retention.EnrollmentTokenSeconds, s.store.PruneEnrollmentTokens)
 }
 
 // rollupRecentHours rebuilds hourly aggregates for the previous 2 hours so

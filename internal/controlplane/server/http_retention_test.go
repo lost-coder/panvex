@@ -68,15 +68,18 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 	// AuditEventSeconds and MetricSnapshotSeconds; supply explicit non-zero
 	// values here so the server's normalizeRetentionSettings() does not swap
 	// them for their defaults (zero = "use default") and cause a spurious
-	// mismatch on the response compare below.
+	// mismatch on the response compare below. C4 added WebhookOutboxSeconds
+	// and EnrollmentTokenSeconds with the same normalize-on-zero behaviour.
 	desired := RetentionSettings{
-		TSRawSeconds:          3600,
-		TSHourlySeconds:       7200,
-		TSDCSeconds:           1800,
-		IPHistorySeconds:      604800,
-		EventSeconds:          900,
-		AuditEventSeconds:     86400,
-		MetricSnapshotSeconds: 43200,
+		TSRawSeconds:           3600,
+		TSHourlySeconds:        7200,
+		TSDCSeconds:            1800,
+		IPHistorySeconds:       604800,
+		EventSeconds:           900,
+		AuditEventSeconds:      86400,
+		MetricSnapshotSeconds:  43200,
+		WebhookOutboxSeconds:   2592000,
+		EnrollmentTokenSeconds: 2592000,
 	}
 	putResp := performJSONRequest(t, server, http.MethodPut, "/api/settings/retention", desired, cookies)
 	if putResp.Code != http.StatusOK {

@@ -814,3 +814,53 @@ func seedClientTargetAgent(t *testing.T, store storage.Store, server *Server, gr
 	server.mu.Unlock()
 	return fleetGroupID
 }
+
+func TestCreateClientGeneratesSubscriptionToken(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.June, 13, 12, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	groupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
+	})
+
+	created, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+		Name:          "alice",
+		FleetGroupIDs: []string{groupID},
+	}, now)
+	if err != nil {
+		t.Fatalf("createClient: %v", err)
+	}
+	if created.SubscriptionToken == "" {
+		t.Fatal("expected non-empty SubscriptionToken after createClient")
+	}
+}
+
+func TestSubscriptionURLForBuildsAndGuards(t *testing.T) {
+	s := &Server{}
+	if got := s.subscriptionURLFor("tok123"); got != "" {
+		t.Fatalf("no base configured: got %q, want empty", got)
+	}
+	s.SetSubscriptionListener(":8081", "https://sub.example.com/")
+	if got := s.subscriptionURLFor("tok123"); got != "https://sub.example.com/sub/tok123" {
+		t.Fatalf("got %q", got)
+	}
+	if got := s.subscriptionURLFor(""); got != "" {
+		t.Fatalf("empty token: got %q, want empty", got)
+	}
+}

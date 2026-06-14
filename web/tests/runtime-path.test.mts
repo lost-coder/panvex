@@ -6,7 +6,7 @@ import {
   getRouterBasepath,
   normalizeRootPath,
   resolveAPIBasePath
-} from "../src/lib/runtime-path.ts";
+} from "../src/shared/lib/runtime-path.ts";
 
 test("normalizeRootPath trims and normalizes prefixes", () => {
   assert.equal(normalizeRootPath(""), "");

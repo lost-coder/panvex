@@ -83,10 +83,10 @@ function ClassBreakdownColumn({
   return (
     <div className="flex flex-col gap-2 min-w-0">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+        <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
           {heading}
         </span>
-        <span className="text-[10px] font-mono text-fg-muted">
+        <span className="text-nano font-mono text-fg-muted">
           {t("detail.badConnections.totalLabel")}: {total.toLocaleString()}
         </span>
       </div>
@@ -142,7 +142,7 @@ function ClassRow({
         </span>
       </div>
       <div className="flex items-center gap-3 shrink-0">
-        <span className="text-[10px] font-mono text-fg-muted tabular-nums">
+        <span className="text-nano font-mono text-fg-muted tabular-nums">
           {t("detail.badConnections.ratioLabel", { pct })}
         </span>
         <span className="text-xs font-mono font-semibold text-fg tabular-nums">

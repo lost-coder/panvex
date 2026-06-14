@@ -121,6 +121,15 @@ func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.E
 	return token, nil
 }
 
+// PruneEnrollmentTokens implements the EnrollmentStore prune contract
+// (C4). R-Q-03: routed through dbsqlc.PruneEnrollmentTokens.
+func (s *Store) PruneEnrollmentTokens(ctx context.Context, before time.Time) (int64, error) {
+	if s.sqlDB == nil {
+		return 0, errTxBoundStore
+	}
+	return dbsqlc.New(s.sqlDB).PruneEnrollmentTokens(ctx, sql.NullTime{Time: before.UTC(), Valid: true})
+}
+
 func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consumedAt time.Time) (storage.EnrollmentTokenRecord, error) {
 	tx, err := s.beginInternalTx(ctx)
 	if err != nil {
