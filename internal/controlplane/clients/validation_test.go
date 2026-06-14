@@ -140,6 +140,30 @@ func TestNormalizeExpiration(t *testing.T) {
 	})
 }
 
+func TestGenerateSubscriptionTokenIsURLSafeAndUnique(t *testing.T) {
+	t.Parallel()
+	a, err := GenerateSubscriptionToken()
+	if err != nil {
+		t.Fatalf("GenerateSubscriptionToken: %v", err)
+	}
+	b, err := GenerateSubscriptionToken()
+	if err != nil {
+		t.Fatalf("GenerateSubscriptionToken: %v", err)
+	}
+	if a == b {
+		t.Fatal("two tokens collided")
+	}
+	if len(a) < 40 {
+		t.Fatalf("token too short: %d", len(a))
+	}
+	for _, r := range a {
+		ok := (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_'
+		if !ok {
+			t.Fatalf("token has non-url-safe rune %q", r)
+		}
+	}
+}
+
 func TestNormalizedIDs(t *testing.T) {
 	t.Parallel()
 

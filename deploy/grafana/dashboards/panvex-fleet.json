@@ -146,6 +146,23 @@
       ],
       "title": "Reverse-mode transport (supervisors / bootstrap / cert-pin)",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 10, "gradientMode": "none", "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": false, "stacking": { "group": "A", "mode": "none" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] }, "unit": "d" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "id": 9,
+      "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(panvex_ca_cert_expiry_timestamp_seconds - time()) / 86400", "legendFormat": "CA", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(panvex_server_cert_expiry_timestamp_seconds - time()) / 86400", "legendFormat": "panel server cert", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "(panvex_agent_cert_earliest_expiry_timestamp_seconds > 0) and ((panvex_agent_cert_earliest_expiry_timestamp_seconds - time()) / 86400)", "legendFormat": "earliest agent cert", "refId": "C" }
+      ],
+      "title": "Certificate expiry (days remaining)",
+      "type": "timeseries"
     }
   ],
   "refresh": "30s",

@@ -20,21 +20,23 @@
     "issues_many": " · {{count}} проблем",
     "viewAll": "Все серверы →",
     "empty": "Серверы пока не зарегистрированы.",
+    "emptyDescription": "Добавьте первую ноду Telemt — она появится здесь, как только агент подключится.",
+    "addServer": "Добавить сервер",
     "sectionAttention": "Требуют внимания",
     "sectionHealthy": "В норме",
-    "sectionCount_one": "{{count}} сервер",
-    "sectionCount_few": "{{count}} сервера",
-    "sectionCount_many": "{{count}} серверов",
     "more_one": "+ ещё {{count}} — откройте страницу «Серверы», чтобы увидеть весь флот",
     "more_few": "+ ещё {{count}} — откройте страницу «Серверы», чтобы увидеть весь флот",
     "more_many": "+ ещё {{count}} — откройте страницу «Серверы», чтобы увидеть весь флот",
-    "connections": "соед.",
-    "statusDown": "НЕДОСТУПЕН",
-    "statusDegraded": "ДЕГРАДАЦИЯ"
+    "connections": "соед."
   },
   "timeline": {
     "title": "Последние события",
-    "live": "live"
+    "live": "live",
+    "filterLabel": "Фильтр событий",
+    "filterAlerts": "Важные",
+    "filterAll": "Все",
+    "allQuiet": "Тревог нет — всё спокойно.",
+    "empty": "Событий пока нет."
   },
   "metrics": {
     "noData": "Нет данных за выбранный период",

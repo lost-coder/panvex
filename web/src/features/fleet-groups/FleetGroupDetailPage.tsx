@@ -13,6 +13,7 @@ import {
 import type { FleetGroupEntry } from "@/shared/api/api";
 
 import { FleetGroupFormSheet, type FleetGroupFormData } from "./FleetGroupFormSheet";
+import { GroupConfigSection } from "./GroupConfigSection";
 
 interface FleetGroupDetailPageProps {
   group: FleetGroupEntry;
@@ -113,7 +114,7 @@ export function FleetGroupDetailPage({
                 >
                   <div className="flex flex-col">
                     <span className="text-sm text-fg font-mono">{i.kind}</span>
-                    <span className="text-[11px] text-fg-muted">
+                    <span className="text-micro text-fg-muted">
                       {i.enabled ? t("detail.enabled") : t("detail.disabled")}
                       {i.provider_id ? t("detail.providerSuffix", { id: i.provider_id.slice(0, 8) }) : ""}
                     </span>
@@ -125,6 +126,8 @@ export function FleetGroupDetailPage({
             <p className="text-xs text-fg-muted">{t("detail.noIntegrations")}</p>
           )}
         </section>
+
+        <GroupConfigSection groupId={group.id} />
       </div>
 
       <Sheet open={editOpen} onOpenChange={(open) => { if (!open) onCancelEdit(); }}>

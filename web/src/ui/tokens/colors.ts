@@ -12,11 +12,14 @@ export const bgColors = {
 } as const;
 
 export const fgColors = {
-  DEFAULT: "#e2e6ed",
-  muted: "#6e7787",
+  DEFAULT: "#f3f5f9",
+  muted: "#9aa3b2",
   faint: "#2a3040",
 } as const;
 
 export const accentColor = "#60a5fa";
 
 export type Status = "ok" | "warn" | "error";
+
+/** Pill tones: the three severities plus a calm neutral (PENDING/DISABLED). */
+export type PillTone = Status | "neutral";

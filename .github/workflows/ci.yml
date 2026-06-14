@@ -69,6 +69,23 @@ jobs:
       - name: Loadtest correctness assertions
         run: go test -count=1 ./internal/loadtest/...
 
+  # Agent binaries ship for arm64 (RPi / ARM VPS fleets); until now no
+  # test ever executed on that architecture. Smoke-run the agent
+  # packages natively on GitHub's arm64 runners (audit F4).
+  go-test-arm64:
+    name: Go Tests (agent, arm64)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+      - name: Mirror install-agent.sh for //go:embed
+        run: go generate ./internal/controlplane/server/...
+      - name: Agent test suite (native arm64)
+        run: go test -count=1 ./internal/agent/... ./cmd/agent/...
+
   # Slow gate: race detector + coverage. Runs on:
   #   - PRs that touch Go files / go.mod / go.sum (real merge gate
   #     under branch protection — required check evaluates here)
@@ -113,12 +130,16 @@ jobs:
       # The threshold is intentionally below the current measured
       # number so a small regression flags rather than every PR — bump
       # in lockstep with new test waves.
-      - name: Enforce coverage floor (>=45%)
+      # Raised 45 -> 48 (audit F4). Measured total at the time was ~50.7%
+      # (the audit's "~61%" estimate was stale); 48 leaves ~2.7pp headroom
+      # for fluctuation while catching real regressions. Bump toward 55 as
+      # coverage grows with new test waves.
+      - name: Enforce coverage floor (>=48%)
         run: |
           set -eu
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
           echo "total coverage: ${total}%"
-          awk -v t="$total" 'BEGIN { if (t+0 < 45.0) exit 1 }'
+          awk -v t="$total" 'BEGIN { if (t+0 < 48.0) exit 1 }'
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -160,13 +181,14 @@ jobs:
       - run: go test -count=1 ./...
 
   schema-sync:
-    # C9: verify the PostgreSQL and SQLite migration bundles produce
-    # the same set of tables and columns. The test is a no-op locally
-    # without PANVEX_POSTGRES_TEST_DSN; this job pipes it in so PRs
-    # that silently drift the two schemas fail here instead of in
-    # production (where 0011_column_drift.sql had to patch things up).
+    # C9 + A6: verify the PostgreSQL and SQLite migration bundles stay in
+    # sync AND run the full storage tree (contract suites, EXPLAIN plan
+    # gates, prune tests) against a live Postgres. Without the DSN the
+    # postgres-bound tests skip silently — this job is the only place
+    # the postgres backend is actually executed.
     name: Schema Sync (PG vs SQLite)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16-alpine
@@ -189,15 +211,12 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
-      - name: Run schema-sync tests
-        run: go test -count=1 -run TestSchemaSync ./internal/controlplane/storage/migrate/...
-      # Plan-shape regression gate: piggybacks on this job's Postgres
-      # service so we don't spin up a second container. Locks in the
-      # query plan for the hottest read queries — a future migration
-      # that drops an index or rewrites a query into a Seq Scan fails
-      # here. Same skip-without-DSN convention as schema-sync above.
-      - name: Run EXPLAIN ANALYZE plan-shape tests
-        run: go test -count=1 -run TestExplainAnalyze ./internal/controlplane/storage/postgres/...
+      - name: Run storage tree against Postgres (contract + schema-sync + EXPLAIN)
+        # -p 1: the migrate schema-sync test DROPs/recreates the public
+        # schema while the postgres contract tests TRUNCATE the same
+        # database — package-level parallelism would race on the shared
+        # DSN. Expected duration ~3-5 min.
+        run: go test -p 1 -count=1 ./internal/controlplane/storage/...
 
   panel-build:
     name: Build Binaries
@@ -307,6 +326,9 @@ jobs:
       - name: Run coverage with thresholds
         working-directory: web
         run: npm run test:coverage
+      - name: Run node:test state suites
+        working-directory: web
+        run: npm run test:state
 
   frontend-lint:
     name: Frontend Lint
@@ -321,6 +343,9 @@ jobs:
       - name: Lint frontend
         working-directory: web
         run: npm ci && npm run lint
+      - name: i18n parity + hardcoded-Cyrillic guard
+        working-directory: web
+        run: npm run check:i18n
 
   frontend-e2e:
     name: Frontend E2E (Playwright)
@@ -351,6 +376,82 @@ jobs:
         with:
           name: playwright-report
           path: web/playwright-report/
+          retention-days: 7
+
+  frontend-e2e-integration:
+    name: Frontend E2E (integration, real backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Unlike frontend-e2e (hermetic, page.route() stubs), this job runs
+    # the suite in web/tests/e2e/integration/ against a REAL
+    # control-plane binary with the embedded UI and a SQLite store —
+    # the auth middleware, session store, and embedded-asset serving
+    # are exercised end-to-end (audit F2).
+    env:
+      PANVEX_ENCRYPTION_KEY: ci-e2e-integration-throwaway-key
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Mirror install-agent.sh for //go:embed
+        run: go generate ./internal/controlplane/server/...
+      - name: Install npm deps
+        working-directory: web
+        run: npm ci
+      - name: Build embedded UI bundle
+        working-directory: web
+        run: npm run build:embed
+      - name: Build control-plane (embedded UI)
+        run: |
+          mkdir -p .tmp/e2e
+          go build -tags embeddedui -o .tmp/e2e/panvex-control-plane ./cmd/control-plane
+      - name: Bootstrap admin account (admin/e2e-secret per login.int.spec.ts)
+        run: |
+          PANVEX_BOOTSTRAP_ALLOW_INSECURE_FLAG=1 ./.tmp/e2e/panvex-control-plane bootstrap-admin \
+            -username admin \
+            -password e2e-secret \
+            -storage-driver sqlite \
+            -storage-dsn .tmp/e2e/panvex.db
+      - name: Start control-plane on :18080
+        run: |
+          PANVEX_HTTP_ADDR=:18080 \
+          PANVEX_GRPC_ADDR=:18443 \
+          PANVEX_STORAGE_DRIVER=sqlite \
+          PANVEX_STORAGE_DSN=.tmp/e2e/panvex.db \
+          ./.tmp/e2e/panvex-control-plane > .tmp/e2e/panel.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:18080/readyz >/dev/null 2>&1; then
+              echo "control-plane ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::control-plane never became ready on :18080"
+          cat .tmp/e2e/panel.log
+          exit 1
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run integration suite
+        working-directory: web
+        run: npx playwright test -c playwright.integration.config.ts
+      - name: Show panel log on failure
+        if: failure()
+        run: tail -n 200 .tmp/e2e/panel.log
+      - name: Upload traces and report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-integration-report
+          path: |
+            web/playwright-report/
+            web/test-results/
           retention-days: 7
 
   frontend-audit:

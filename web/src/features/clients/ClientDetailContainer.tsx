@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Spinner, formatBytes } from "@/ui";
+import { SkeletonRows, formatBytes } from "@/ui";
 import { ClientDetailPage } from "@/features/clients/ClientDetailPage";
 import { useClientDetail } from "./hooks/useClientDetail";
 import { useClientMutations } from "./hooks/useClientMutations";
@@ -21,7 +21,7 @@ export function ClientDetailContainer() {
   const { t } = useTranslation("clients");
   const { clientId } = useParams({ strict: false });
   const { client, raw, isLoading, error } = useClientDetail(clientId ?? "");
-  const { editMutation, rotateMutation, redeployMutation, deleteMutation } = useClientMutations(clientId ?? "", raw);
+  const { editMutation, rotateMutation, rotateSubscriptionMutation, redeployMutation, deleteMutation } = useClientMutations(clientId ?? "", raw);
   const { ips, totalUnique } = useClientIPHistory(clientId ?? "");
   const navigate = useNavigate();
   const confirm = useConfirm();
@@ -168,7 +168,11 @@ export function ClientDetailContainer() {
   }
 
   if (isLoading || !client) {
-    return <div className="flex items-center justify-center h-64"><Spinner /></div>;
+    return (
+      <div className="px-4 md:px-8 py-8">
+        <SkeletonRows count={6} />
+      </div>
+    );
   }
 
   return (
@@ -197,6 +201,11 @@ export function ClientDetailContainer() {
       }}
       secretRotating={rotateMutation.isPending}
       secretPendingRedeploy={secretPending}
+      onRotateSubscription={() => {
+        // The SubscriptionLinkCard confirms before invoking this.
+        void rotateSubscriptionMutation.mutate();
+      }}
+      subscriptionRotating={rotateSubscriptionMutation.isPending}
       onRedeploy={async () => {
         await redeployMutation.mutateAsync();
       }}

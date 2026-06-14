@@ -7,9 +7,13 @@ import {
   telemetryKeys,
 } from "@/features/servers/queryKeys";
 import { notifyMutationError } from "@/shared/api/http";
+import { useToast } from "@/app/providers/ToastProvider";
+import { useTranslation } from "react-i18next";
 
 export function useServerMutations(serverId: string) {
   const qc = useQueryClient();
+  const toast = useToast();
+  const { t } = useTranslation("servers");
 
   const invalidateServer = () => {
     void qc.invalidateQueries({ queryKey: telemetryKeys.server(serverId) });
@@ -50,6 +54,15 @@ export function useServerMutations(serverId: string) {
     onError: (err) => notifyMutationError("servers", "agent.update-fleet-group", err),
   });
 
+  const restartMutation = useMutation({
+    mutationFn: () => apiClient.restartAgent(serverId),
+    onSuccess: () => {
+      invalidateServer();
+      toast.success(t("detail.actions.restartDone"));
+    },
+    onError: (err) => notifyMutationError("servers", "agent.restart", err),
+  });
+
   const deregisterMutation = useMutation({
     mutationFn: () => apiClient.deregisterAgent(serverId),
     onSuccess: () => {
@@ -66,6 +79,7 @@ export function useServerMutations(serverId: string) {
     boostDetailMutation,
     renameMutation,
     updateFleetGroupMutation,
+    restartMutation,
     deregisterMutation,
   };
 }

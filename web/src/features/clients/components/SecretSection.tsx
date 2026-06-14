@@ -35,7 +35,7 @@ export function SecretSection({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-semibold text-fg">{t("secret.title")}</span>
-          <span className="text-[11px] font-mono text-fg-muted">
+          <span className="text-micro font-mono text-fg-muted">
             {t("secret.rotateHint")}
           </span>
         </div>
@@ -61,12 +61,12 @@ export function SecretSection({
           <CopyButton text={secret} />
         </div>
       ) : (
-        <div className="rounded-xs bg-bg border border-dashed border-divider px-3 py-2 text-[11px] font-mono text-fg-muted">
+        <div className="rounded-xs bg-bg border border-dashed border-divider px-3 py-2 text-micro font-mono text-fg-muted">
           {t("secret.absent")}
         </div>
       )}
       {pendingRedeploy && (
-        <div className="text-[11px] font-mono text-status-warn">
+        <div className="text-micro font-mono text-status-warn">
           {t("secret.pendingRedeploy")}
         </div>
       )}

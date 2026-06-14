@@ -22,7 +22,8 @@ import (
 // the persistent store and prunes anything past the verifier
 // acceptance window so an attacker cannot resurrect old codes via
 // restart (Q2.U-S-17). A nil store is a documented no-op.
-func (s *Service) restoreConsumedTotp() {
+// ctx is the lifecycle context of the caller (serverCtx / Background in tests).
+func (s *Service) restoreConsumedTotp(ctx context.Context) {
 	if s.consumedTotpStore == nil {
 		return
 	}
@@ -32,10 +33,10 @@ func (s *Service) restoreConsumedTotp() {
 	// clock is injected (tests, replays) and would drop just-consumed records
 	// as "expired", reopening the replay window the persist was meant to close.
 	totpCutoff := s.now().UTC().Add(-90 * time.Second)
-	if err := s.consumedTotpStore.DeleteExpiredConsumedTotp(context.Background(), totpCutoff); err != nil {
+	if err := s.consumedTotpStore.DeleteExpiredConsumedTotp(ctx, totpCutoff); err != nil {
 		slog.Warn("auth: prune expired consumed TOTP failed", "error", err)
 	}
-	records, err := s.consumedTotpStore.ListConsumedTotp(context.Background())
+	records, err := s.consumedTotpStore.ListConsumedTotp(ctx)
 	if err != nil {
 		slog.Warn("auth: list consumed TOTP failed", "error", err)
 		return
@@ -148,12 +149,14 @@ func (s *Service) SetSessionStore(sessionStore SessionStore) {
 
 // RestoreSessions loads persisted sessions into the in-memory map, discarding
 // any that have exceeded the session TTL. This should be called during startup.
-func (s *Service) RestoreSessions() error {
+// ctx is the lifecycle context of the caller (serverCtx / Background in tests);
+// a cancelled ctx aborts the restore so a Close() during boot does not hang.
+func (s *Service) RestoreSessions(ctx context.Context) error {
 	if s.sessionStore == nil {
 		return nil
 	}
 
-	records, err := s.sessionStore.ListSessions(context.Background())
+	records, err := s.sessionStore.ListSessions(ctx)
 	if err != nil {
 		return err
 	}
@@ -163,11 +166,11 @@ func (s *Service) RestoreSessions() error {
 
 	s.installRestoredSessions(records, cutoff)
 
-	if err := s.sessionStore.DeleteExpiredSessions(context.Background(), cutoff); err != nil {
+	if err := s.sessionStore.DeleteExpiredSessions(ctx, cutoff); err != nil {
 		return err
 	}
 
-	s.restoreConsumedTotp()
+	s.restoreConsumedTotp(ctx)
 	return nil
 }
 

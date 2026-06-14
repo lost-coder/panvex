@@ -60,7 +60,7 @@ export function AgeCell({
   const epoch = toUnix({ unixSec, rfc3339 });
   if (epoch === undefined) {
     return (
-      <span className={cn("text-[11px] font-mono text-fg-muted", className)}>—</span>
+      <span className={cn("text-micro font-mono text-fg-muted", className)}>—</span>
     );
   }
 
@@ -81,11 +81,11 @@ export function AgeCell({
           className,
         )}
       >
-        <span className="text-[11px] font-mono text-fg tabular-nums">
+        <span className="text-micro font-mono text-fg tabular-nums">
           {formatTime(epoch)}
         </span>
         {remaining !== undefined && (
-          <span className={cn("text-[10px] font-mono tabular-nums", toneClass)}>
+          <span className={cn("text-nano font-mono tabular-nums", toneClass)}>
             {countdown(remaining)}
           </span>
         )}
@@ -102,10 +102,10 @@ export function AgeCell({
         className,
       )}
     >
-      <span className="text-[11px] font-mono text-fg tabular-nums">
+      <span className="text-micro font-mono text-fg tabular-nums">
         {formatAge(epoch)}
       </span>
-      <span className="text-[10px] font-mono text-fg-muted">{formatTime(epoch)}</span>
+      <span className="text-nano font-mono text-fg-muted">{formatTime(epoch)}</span>
     </div>
   );
 }

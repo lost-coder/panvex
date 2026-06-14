@@ -1,9 +1,12 @@
-package enrollment
+package enrollment_test
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
+	"github.com/lost-coder/panvex/internal/controlplane/enrollment/enrollmenttest"
 )
 
 // TestRecorderDeleteOlderThanRemovesAttempts seeds one back-dated
@@ -15,22 +18,22 @@ import (
 // have to migrate a fresh SQLite file and the simpler in-memory path
 // pins the recorder semantics on its own.
 func TestRecorderDeleteOlderThanRemovesAttempts(t *testing.T) {
-	store := NewMemStoreForTest()
-	rec := NewRecorder(store, time.Now)
+	store := enrollmenttest.NewMemStore()
+	rec := enrollment.NewRecorder(store, time.Now)
 	ctx := context.Background()
 
 	// Old attempt: seed directly so we can back-date StartedAt past
 	// the cutoff. Going through Recorder.Begin would stamp "now".
-	store.InsertAttemptForTest(Attempt{
+	store.InsertAttemptForTest(enrollment.Attempt{
 		ID:        "old-id-1",
-		Mode:      ModeInbound,
-		Status:    StatusSuccess,
+		Mode:      enrollment.ModeInbound,
+		Status:    enrollment.StatusSuccess,
 		RequestID: "req-old",
 		StartedAt: time.Now().Add(-31 * 24 * time.Hour),
 	})
 
 	// Fresh attempt via the normal Begin path so it lands at "now".
-	fresh, err := rec.Begin(ctx, ModeInbound, "", "1.2.3.4")
+	fresh, err := rec.Begin(ctx, enrollment.ModeInbound, "", "1.2.3.4")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}

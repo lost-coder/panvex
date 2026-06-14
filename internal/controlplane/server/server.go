@@ -57,6 +57,11 @@ const (
 	httpLoginRateLimitPerWindow          = 30
 	httpAgentBootstrapRateLimitPerWindow = 30
 	grpcConnectRateLimitPerWindow        = 30
+	// httpInstallScriptRateLimitPerWindow caps unauthenticated fetches of
+	// /install-agent.sh per source IP. The route is intentionally public
+	// (curl|bash one-liner) but without a limit it is a cheap amplification
+	// vector; 60/min is generous for legitimate use and tight against scanners.
+	httpInstallScriptRateLimitPerWindow = 60
 	// httpSensitiveRateLimitPerWindow caps how often a single authenticated
 	// user (or client IP if no session) may hit privileged write endpoints
 	// (TOTP enable/disable/setup, user CRUD, enrollment-token create, client
@@ -74,8 +79,9 @@ type Server struct {
 	uiFiles   fs.FS
 	jobs      *jobs.Service
 	presence  *presence.Tracker
-	events    *eventbus.Hub
-	authority *certificateAuthority
+	events        *eventbus.Hub
+	agentsUpdated *agentsUpdatedCoalescer
+	authority     *certificateAuthority
 	// enrollmentRec records per-attempt timeline events for inbound and
 	// outbound enrollment (Task 13 of the enrollment-logging Phase 1 plan).
 	// Nil when no persistent store with a *sql.DB handle is wired — handlers
@@ -95,6 +101,7 @@ type Server struct {
 	agentBootstrapRateLimiter *fixedWindowRateLimiter
 	grpcConnectRateLimiter    *fixedWindowRateLimiter
 	sensitiveRateLimiter      *fixedWindowRateLimiter
+	installScriptRateLimiter  *fixedWindowRateLimiter
 	loginLockout              *accountLockoutTracker
 	totpLockout               *totpLockoutTracker
 	// ipLockout counts failed login attempts per source IP over a 15-minute
@@ -208,6 +215,13 @@ type Server struct {
 	// empty, which is acceptable because the CA will not have issued new
 	// certificates for deleted agents and existing ones expire within 30 days.
 	revokedAgentIDs map[string]struct{}
+	// transportSwitchPendingAt tracks agents that were switched to outbound
+	// transport but have not yet accepted a new agent stream (A2 "switched
+	// but never reconnected"). The value is the time of the switch; it is
+	// cleared by markTransportSwitchResolved on the next accepted stream.
+	// In-memory only: the panel is single-instance and the agent-side
+	// probation window is the durable safety net.
+	transportSwitchPendingAt map[string]time.Time
 	// live is the single owner of agent live-state (full Agent value:
 	// identity + runtime telemetry) and per-agent Telemt instances, with
 	// replace/prune semantics and deep-copy isolation (A2/A1). It replaces
@@ -227,6 +241,7 @@ type Server struct {
 	// asynchronously via the batch writer. The tracker owns its own lock and
 	// never reaches into s.mu. Crash-window caveat: see spec.
 	fallback       *agents.FallbackTracker
+	telemtReach    *agents.ReachabilityTracker
 	panelSettings  PanelSettings
 	updateSettings UpdateSettings
 	updateState    UpdateState
@@ -282,11 +297,22 @@ type Server struct {
 	metricsScrapeToken  string
 	metricsPollerCancel context.CancelFunc
 	metricsPollerWG     sync.WaitGroup
+	// agentCertExpiryRefreshedAt is the last time refreshAgentCertExpiry
+	// ran a store query. Throttles the store hit to once per minute.
+	// Only written from the single poller goroutine — no locking needed.
+	agentCertExpiryRefreshedAt time.Time
 
 	// pprofListenerAddr is non-empty when the operator has opted into the
 	// separate-listener pprof mode (S-07). When set, the admin-router
 	// /debug/pprof registration is skipped — see http_pprof.go.
 	pprofListenerAddr string
+
+	// subscriptionAddr and subscriptionBaseURL are set when the operator
+	// opts into a dedicated public /sub listener (PANVEX_SUBSCRIPTION_ADDR).
+	// subscriptionBaseURL is the public origin used to build shareable links
+	// in the admin UI — see subscription_listener.go.
+	subscriptionAddr    string
+	subscriptionBaseURL string
 
 	// N-1: detached operator-driven background goroutines (panel
 	// self-update, manual update-check) register themselves with this
@@ -412,6 +438,20 @@ func (s *Server) GRPCTLSConfig() *tls.Config {
 	return s.authority.serverTLSConfig()
 }
 
+// OutboundGRPCTLSConfig returns the TLS configuration the panel uses when
+// DIALING listen-mode agents (A1). Distinct from GRPCTLSConfig (the
+// listener-side server config): RootCAs instead of ClientCAs, panel CLIENT
+// certificate instead of the server certificate.
+func (s *Server) OutboundGRPCTLSConfig() *tls.Config {
+	return s.authority.outboundTLSConfig()
+}
+
+// PanelClientCertificate returns the panel's outbound client identity for
+// the bootstrap (EnrollOutbound) dial path.
+func (s *Server) PanelClientCertificate() tls.Certificate {
+	return s.authority.clientCertificate
+}
+
 // SetInstallCommandHandler wires the bootstrap install-command handler. Safe
 // to call concurrently with HTTP requests. Nil h is accepted — the route
 // returns 503 until a non-nil handler is provided.
@@ -503,15 +543,6 @@ func (s *Server) handleAgentInstallCommand() http.HandlerFunc {
 // EnrollDriver for outbound-supervisor bootstrap exchanges.
 func (s *Server) CertificateAuthority() bootstrap.CertificateAuthority {
 	return s.authority
-}
-
-// CACN returns the panel CA's Common Name. Agents verify the panel's TLS
-// certificate against this name during enrollment.
-func (s *Server) CACN() string {
-	if s.authority == nil {
-		return ""
-	}
-	return s.authority.certificate.Subject.CommonName
 }
 
 // CAPINHex returns the lower-hex SHA-256 fingerprint of the panel's CA DER

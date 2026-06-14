@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { PageSection, SettingsRow, Button, Input } from "@/ui";
 import { Download, RefreshCw } from "lucide-react";
 import { useUpdates } from "@/shared/hooks/useUpdates";
+import { useUnsavedChangesGuard } from "@/shared/hooks";
 import type { UpdateSettings } from "@/shared/api/api";
 
 export function UpdatesSettingsSection() {
@@ -11,6 +12,10 @@ export function UpdatesSettingsSection() {
   const data = query.data;
 
   const [draft, setDraft] = useState<Partial<UpdateSettings>>({});
+
+  // Audit E4: guard in-app navigation while there are unsaved updates changes.
+  // Must be called before any early return (hooks rules).
+  useUnsavedChangesGuard(Object.keys(draft).length > 0);
 
   if (!data) return null;
 

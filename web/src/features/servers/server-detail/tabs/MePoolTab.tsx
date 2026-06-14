@@ -188,7 +188,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
             <Kv
               k={t("detail.mePool.draining")}
               v={
-                <span className="font-mono text-[11px] text-fg-muted">
+                <span className="font-mono text-micro text-fg-muted">
                   [{generations.drainingGenerations.join(", ")}]
                 </span>
               }
@@ -197,7 +197,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
           <Kv
             k={t("detail.mePool.contour")}
             v={
-              <span className="font-mono text-[11px] text-fg-muted">
+              <span className="font-mono text-micro text-fg-muted">
                 A{contour.active} · W{contour.warm} · D{contour.draining}
               </span>
             }
@@ -276,7 +276,7 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
               {refill.byDc.map((e) => (
                 <span
                   key={`${e.dc}-${e.family}`}
-                  className="font-mono text-[10px] px-1.5 py-0.5 rounded-xs bg-bg border border-divider text-fg-muted"
+                  className="font-mono text-nano px-1.5 py-0.5 rounded-xs bg-bg border border-divider text-fg-muted"
                 >
                   {`DC${e.dc}`}
                   <span className="opacity-60">·{e.family}</span>{" "}
@@ -288,50 +288,62 @@ export function MePoolTab({ server }: Readonly<{ server: ServerDetailPageProps["
         </MiniCard>
       </div>
 
-      {/* Writers list with filter chips. */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-fg">{t("detail.mePool.writers")}</span>
-            <span className="text-[11px] font-mono text-fg-muted">
-              {filteredWriters.length}/{writersList.length}
-            </span>
+      {/* Writers list with filter chips. U-18: the agent's telemetry only
+          carries the aggregate me_writers_summary, not a per-writer array,
+          so writersList is always empty. Rather than render a filterable
+          table that is permanently "0/0 · No writers match" (reads as broken),
+          show the per-writer section only when data actually arrives, and a
+          one-line note otherwise. */}
+      {writersList.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-fg">{t("detail.mePool.writers")}</span>
+              <span className="text-micro font-mono text-fg-muted">
+                {filteredWriters.length}/{writersList.length}
+              </span>
+            </div>
+            <div className="inline-flex items-center gap-0.5 p-0.5 rounded-xs border border-border-hi bg-bg">
+              {(["all", "active", "warmup", "draining", "degraded"] as const).map((key) => {
+                const active = stateFilter === key;
+                const labelKey = (() => {
+                  if (key === "all") return "detail.mePool.filterAll";
+                  if (key === "active") return "detail.mePool.filterActive";
+                  if (key === "warmup") return "detail.mePool.filterWarmup";
+                  if (key === "draining") return "detail.mePool.filterDraining";
+                  return "detail.mePool.filterDegraded";
+                })();
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setStateFilter(key)}
+                    className={cn(
+                      "h-6 px-2 rounded-xs text-nano font-mono transition-colors",
+                      active
+                        ? "bg-bg-card-hi text-fg"
+                        : "text-fg-muted hover:text-fg hover:bg-bg-hover",
+                    )}
+                  >
+                    {t(labelKey)}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="inline-flex items-center gap-0.5 p-0.5 rounded-xs border border-border-hi bg-bg">
-            {(["all", "active", "warmup", "draining", "degraded"] as const).map((key) => {
-              const active = stateFilter === key;
-              const labelKey = (() => {
-                if (key === "all") return "detail.mePool.filterAll";
-                if (key === "active") return "detail.mePool.filterActive";
-                if (key === "warmup") return "detail.mePool.filterWarmup";
-                if (key === "draining") return "detail.mePool.filterDraining";
-                return "detail.mePool.filterDegraded";
-              })();
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setStateFilter(key)}
-                  className={cn(
-                    "h-6 px-2 rounded-xs text-[10px] font-mono transition-colors",
-                    active
-                      ? "bg-bg-card-hi text-fg"
-                      : "text-fg-muted hover:text-fg hover:bg-bg-hover",
-                  )}
-                >
-                  {t(labelKey)}
-                </button>
-              );
-            })}
-          </div>
+          <DataTable
+            columns={writerColumns}
+            data={filteredWriters}
+            keyExtractor={(row) => String(row.writerId)}
+            emptyMessage={t("detail.mePool.writerEmpty")}
+          />
         </div>
-        <DataTable
-          columns={writerColumns}
-          data={filteredWriters}
-          keyExtractor={(row) => String(row.writerId)}
-          emptyMessage={t("detail.mePool.writerEmpty")}
-        />
-      </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-fg">{t("detail.mePool.writers")}</span>
+          <span className="text-micro text-fg-muted">{t("detail.mePool.writersUnavailable")}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -358,7 +370,7 @@ function HealthHeroMetric({
   })();
   return (
     <div className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-2">
-      <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+      <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
         {label}
       </span>
       <div className="flex items-baseline gap-1">
@@ -373,7 +385,7 @@ function HealthHeroMetric({
           style={{ width: `${Math.max(0, Math.min(100, barPct))}%` }}
         />
       </div>
-      <span className="text-[11px] font-mono text-fg-muted">{caption}</span>
+      <span className="text-micro font-mono text-fg-muted">{caption}</span>
     </div>
   );
 }
@@ -391,7 +403,7 @@ function MiniCard({
     <div className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-2">
       <div className="flex items-baseline justify-between">
         <span className="text-sm font-semibold text-fg">{title}</span>
-        {hint && <span className="text-[10px] font-mono text-fg-muted">{hint}</span>}
+        {hint && <span className="text-nano font-mono text-fg-muted">{hint}</span>}
       </div>
       <div className="flex flex-col gap-1.5">{children}</div>
     </div>

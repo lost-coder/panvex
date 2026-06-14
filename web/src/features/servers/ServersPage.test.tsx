@@ -11,6 +11,8 @@ function mockServer(overrides: Partial<ServerListItem> = {}): ServerListItem {
     id: "n-1",
     name: "node-a",
     status: "ok",
+    state: "ok",
+    reason: "",
     connections: 10,
     trafficBytes: 0,
     cpuPct: 1,

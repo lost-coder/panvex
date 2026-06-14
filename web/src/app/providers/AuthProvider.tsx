@@ -1,13 +1,17 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
+// Import leaves directly, not the aggregated apiClient: AuthProvider is the
+// outermost root provider (wraps the whole route tree), so anything it pulls
+// lands in the entry chunk. apiClient spreads all 12 domains' zod schemas —
+// the shell only needs auth.me() plus the http-layer event constants.
+import { authApi, type MeResponse } from "@/shared/api/auth";
 import {
-  apiClient,
   FORBIDDEN_EVENT,
   SESSION_EXPIRED_EVENT,
   type ForbiddenEventDetail,
-  type MeResponse,
-} from "@/shared/api/api";
+} from "@/shared/api/http";
 import { authKeys } from "@/features/auth/queryKeys";
 import { useToast } from "@/app/providers/ToastProvider";
 
@@ -17,7 +21,10 @@ interface AuthContextValue {
   isAuthenticated: boolean;
 }
 
-const AuthContext = React.createContext<AuthContextValue>({
+// Exported so the WebSocket synchronizer (and tests) can gate behaviour on
+// auth state without pulling in AuthProvider's router/toast dependencies.
+// eslint-disable-next-line react-refresh/only-export-components
+export const AuthContext = React.createContext<AuthContextValue>({
   user: null,
   isLoading: true,
   isAuthenticated: false,
@@ -26,13 +33,14 @@ const AuthContext = React.createContext<AuthContextValue>({
 export function AuthProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const { data, isLoading } = useQuery({
     queryKey: authKeys.me(),
-    queryFn: () => apiClient.me(),
+    queryFn: () => authApi.me(),
     retry: false,
   });
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
+  const { t } = useTranslation("auth");
 
   // Global 401 listener (P2-FE-02 / M-C12 / DF-12): api.ts dispatches
   // SESSION_EXPIRED_EVENT when any authenticated request returns 401.
@@ -52,14 +60,14 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
           globalThis.location.pathname.endsWith("/login")) {
         return;
       }
-      toast.info("Сессия истекла, переход на /login…");
+      toast.info(t("session.expiredRedirect"));
       void navigate({ to: "/login" });
     };
     globalThis.addEventListener(SESSION_EXPIRED_EVENT, handler);
     return () => {
       globalThis.removeEventListener(SESSION_EXPIRED_EVENT, handler);
     };
-  }, [queryClient, navigate, toast]);
+  }, [queryClient, navigate, toast, t]);
 
   // Global 403 listener (W13): api.ts dispatches FORBIDDEN_EVENT whenever
   // an authenticated request returns 403 outside the auth bootstrap. The
@@ -83,13 +91,13 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
       }
       lastKey = key;
       lastAt = now;
-      toast.error("Недостаточно прав для этой операции. Обратитесь к администратору.");
+      toast.error(t("session.forbidden"));
     };
     globalThis.addEventListener(FORBIDDEN_EVENT, handler);
     return () => {
       globalThis.removeEventListener(FORBIDDEN_EVENT, handler);
     };
-  }, [toast]);
+  }, [toast, t]);
 
   // Q3.U-Q-21: memoise the context value so consumers don't re-render on
   // every parent render — the previous code rebuilt the object literal

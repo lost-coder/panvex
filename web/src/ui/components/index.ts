@@ -1,7 +1,6 @@
 export { ErrorBoundary, type ErrorBoundaryProps } from "./ErrorBoundary";
 export { AlertItem, type AlertItemProps, type AlertSeverity } from "./AlertItem";
 export { TimelineEvent, type TimelineEventProps } from "./TimelineEvent";
-export { ActionItem, type ActionItemProps } from "./ActionItem";
 export { SLABanner, type SLABannerProps } from "./SLABanner";
 export { DataTable, type DataTableProps, type DataTableColumn } from "./DataTable";
 export { EmptyState, type EmptyStateProps } from "./EmptyState";

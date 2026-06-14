@@ -9,6 +9,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 const seqClientAssignment = "client-assignment"
@@ -197,15 +198,9 @@ func (s *Service) NextDiscoveredID() string {
 	return newSequenceID("discovered", s.discoveredSeq)
 }
 
-// RecoverSequencesFromRecords seeds the Service's monotonic counters
-// from persisted record IDs so the next NextClientID / NextAssignmentID /
-// NextDiscoveredID call returns a value strictly greater than any
-// previously-issued ID. Safe to call multiple times.
-func (s *Service) RecoverSequencesFromRecords(
-	clientIDs, assignmentIDs, discoveredIDs []string,
-) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// recoverSequencesLocked seeds the monotonic counters from persisted
+// record IDs. Must be called with s.mu held for writing.
+func (s *Service) recoverSequencesLocked(clientIDs, assignmentIDs, discoveredIDs []string) {
 	for _, id := range clientIDs {
 		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", id)
 	}
@@ -217,15 +212,42 @@ func (s *Service) RecoverSequencesFromRecords(
 	}
 }
 
+// recoverSequencesFromRecords seeds the Service's monotonic counters
+// from persisted record IDs so the next NextClientID / NextAssignmentID /
+// NextDiscoveredID call returns a value strictly greater than any
+// previously-issued ID. Safe to call multiple times.
+func (s *Service) recoverSequencesFromRecords(
+	clientIDs, assignmentIDs, discoveredIDs []string,
+) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recoverSequencesLocked(clientIDs, assignmentIDs, discoveredIDs)
+}
+
 // --- Repository-backed mirror methods ---
 
 // Restore loads all clients (and their assignments, deployments, usage)
-// from the Repository into the in-memory mirror. Idempotent: subsequent
+// from the Repository into the in-memory mirror, and seeds the monotonic
+// ID sequence counters from the persisted records. Idempotent: subsequent
 // calls overwrite the mirror with the latest snapshot.
 func (s *Service) Restore(ctx context.Context) error {
 	list, err := s.repo.List(ctx)
 	if err != nil {
 		return fmt.Errorf("clients.Service.Restore: list clients: %w", err)
+	}
+
+	// Fetch discovered IDs before taking the lock (consistent with the
+	// repo.List call above — keeps lock-hold time free of I/O).
+	var discoveredIDs []string
+	if s.discoveredRepo != nil {
+		recs, err := s.discoveredRepo.List(ctx)
+		if err != nil {
+			return fmt.Errorf("clients.Service.Restore: list discovered: %w", err)
+		}
+		discoveredIDs = make([]string, 0, len(recs))
+		for _, r := range recs {
+			discoveredIDs = append(discoveredIDs, string(r.ID))
+		}
 	}
 
 	s.mu.Lock()
@@ -296,6 +318,21 @@ func (s *Service) Restore(ctx context.Context) error {
 		}
 	}
 
+	// Seed the monotonic ID counters from the just-restored records so the
+	// next Next*ID call returns a value strictly greater than any persisted
+	// ID. recoverSequencesLocked is called here because s.mu is already held.
+	clientIDs := make([]string, 0, len(s.mirrorClients))
+	for id := range s.mirrorClients {
+		clientIDs = append(clientIDs, string(id))
+	}
+	var assignmentIDs []string
+	for _, as := range s.mirrorAssignments {
+		for _, a := range as {
+			assignmentIDs = append(assignmentIDs, string(a.ID))
+		}
+	}
+	s.recoverSequencesLocked(clientIDs, assignmentIDs, discoveredIDs)
+
 	return nil
 }
 
@@ -322,6 +359,65 @@ func (s *Service) List(ctx context.Context) ([]Client, error) {
 		out = append(out, c)
 	}
 	return out, nil
+}
+
+// ResolveBySubscriptionToken looks up a non-deleted client by its
+// subscription token via the Repository (DB lookup). Intended for the
+// public /sub/<token> page — the returned Client has Secret set to the
+// stored ciphertext (not plaintext; the page never needs the secret).
+// Returns storage.ErrNotFound for blank tokens, unknown tokens, or when
+// the service has no repo — callers may use errors.Is(err, storage.ErrNotFound)
+// uniformly.
+// Enabled/expiration gating is left to the caller.
+func (s *Service) ResolveBySubscriptionToken(ctx context.Context, token string) (Client, error) {
+	if token == "" || s.repo == nil {
+		return Client{}, storage.ErrNotFound
+	}
+	return s.repo.GetBySubscriptionToken(ctx, token)
+}
+
+// BackfillSubscriptionTokens generates and persists a subscription token for
+// every non-deleted client whose SubscriptionToken field is empty. It is
+// idempotent: clients that already have a token are skipped. The count of
+// clients updated is returned.
+//
+// This is called once at startup (from restoreStoredClients, after Restore has
+// populated the in-memory mirror) so that clients created before the
+// subscription-token feature was introduced get tokens automatically — without
+// manual operator intervention.
+//
+// Persistence path: the mirror snapshot from List provides the full Client
+// value (with plaintext Secret, all fields intact). Save re-encrypts the
+// secret and persists the full record, so no other field is clobbered.
+// No UoW transaction is used — each client is saved individually; a partial
+// failure leaves already-tokened clients committed (idempotency on next
+// startup heals the remainder).
+func (s *Service) BackfillSubscriptionTokens(ctx context.Context) (int, error) {
+	if s.repo == nil {
+		return 0, nil
+	}
+
+	all, err := s.List(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("clients.Service.BackfillSubscriptionTokens: list clients: %w", err)
+	}
+
+	updated := 0
+	for _, c := range all {
+		if c.DeletedAt != nil || c.SubscriptionToken != "" {
+			continue
+		}
+		token, err := GenerateSubscriptionToken()
+		if err != nil {
+			return updated, fmt.Errorf("clients.Service.BackfillSubscriptionTokens: generate token for %s: %w", c.ID, err)
+		}
+		c.SubscriptionToken = token
+		if err := s.Save(ctx, c); err != nil {
+			return updated, fmt.Errorf("clients.Service.BackfillSubscriptionTokens: save client %s: %w", c.ID, err)
+		}
+		updated++
+	}
+	return updated, nil
 }
 
 // --- UoW-backed mutation methods ---

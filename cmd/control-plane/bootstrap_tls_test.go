@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
@@ -71,7 +72,7 @@ func TestBootstrapVerifier_FirstContact(t *testing.T) {
 	der, _ := newSelfSignedRawDER(t)
 	reader := &fakePinReader{pins: map[string][]byte{}}
 
-	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", reader)
+	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", reader, tls.Certificate{})
 	if cfg.VerifyPeerCertificate == nil {
 		t.Fatalf("VerifyPeerCertificate not installed")
 	}
@@ -89,7 +90,7 @@ func TestBootstrapVerifier_MatchingPin(t *testing.T) {
 	der, pin := newSelfSignedRawDER(t)
 	reader := &fakePinReader{pins: map[string][]byte{"agent-1": pin}}
 
-	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", reader)
+	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", reader, tls.Certificate{})
 	if err := cfg.VerifyPeerCertificate([][]byte{der}, nil); err != nil {
 		t.Fatalf("matching pin must succeed; got: %v", err)
 	}
@@ -105,7 +106,7 @@ func TestBootstrapVerifier_MismatchedPin(t *testing.T) {
 	_, otherPin := newSelfSignedRawDER(t)    // unrelated pin already stored
 	reader := &fakePinReader{pins: map[string][]byte{"agent-1": otherPin}}
 
-	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", reader)
+	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", reader, tls.Certificate{})
 	err := cfg.VerifyPeerCertificate([][]byte{der}, nil)
 	if err == nil {
 		t.Fatalf("mismatched pin must reject the handshake")
@@ -119,7 +120,7 @@ func TestBootstrapVerifier_MismatchedPin(t *testing.T) {
 // peer presents zero certificates (should not happen in practice but the
 // callback must not deference an empty slice).
 func TestBootstrapVerifier_NoPeerCert(t *testing.T) {
-	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", &fakePinReader{})
+	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", &fakePinReader{}, tls.Certificate{})
 	err := cfg.VerifyPeerCertificate(nil, nil)
 	if !errors.Is(err, errBootstrapNoPeerCert) {
 		t.Fatalf("expected errBootstrapNoPeerCert, got: %v", err)
@@ -133,7 +134,7 @@ func TestBootstrapVerifier_LookupError(t *testing.T) {
 	bad := errors.New("synthetic storage unavailable")
 	reader := &fakePinReader{getErr: bad}
 
-	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", reader)
+	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", reader, tls.Certificate{})
 	err := cfg.VerifyPeerCertificate([][]byte{der}, nil)
 	if err == nil {
 		t.Fatalf("storage lookup error must propagate, not silently TOFU")
@@ -148,8 +149,22 @@ func TestBootstrapVerifier_LookupError(t *testing.T) {
 // than panicking on a nil interface.
 func TestBootstrapVerifier_NilReader(t *testing.T) {
 	der, _ := newSelfSignedRawDER(t)
-	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", nil)
+	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", nil, tls.Certificate{})
 	if err := cfg.VerifyPeerCertificate([][]byte{der}, nil); err != nil {
 		t.Fatalf("nil reader must default to TOFU; got: %v", err)
+	}
+}
+
+// TestBootstrapTLSConfigPresentsPanelClientCert asserts that the bootstrap
+// dial config includes the panel's client certificate (chain [leaf, CA]) so
+// the agent's reverse-bootstrap listener can authenticate the caller.
+func TestBootstrapTLSConfigPresentsPanelClientCert(t *testing.T) {
+	cert := tls.Certificate{Certificate: [][]byte{{0x01}, {0x02}}}
+	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", nil, cert)
+	if len(cfg.Certificates) != 1 || len(cfg.Certificates[0].Certificate) != 2 {
+		t.Fatal("bootstrap dial config must present the panel client cert chain (leaf + CA)")
+	}
+	if !cfg.InsecureSkipVerify || cfg.VerifyPeerCertificate == nil {
+		t.Fatal("SPKI-pin verification contract must stay intact")
 	}
 }

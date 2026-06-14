@@ -74,6 +74,7 @@ export function TableView({
   className,
 }: Readonly<TableViewProps>) {
   const { t } = useTranslation("pagination");
+  const { t: tc } = useTranslation("common");
   const hasFilters = filters && filters.length > 0;
   const hasViewMode = viewMode !== undefined;
   const hasColumnPicker = columns !== undefined && columns.available.length > 0;
@@ -102,7 +103,7 @@ export function TableView({
             type="search"
             value={search?.value ?? ""}
             onChange={(e) => search?.onChange(e.target.value)}
-            placeholder={search?.placeholder ?? "Search…"}
+            placeholder={search?.placeholder ?? tc("search.placeholder")}
             className="pl-9"
           />
         </div>
@@ -118,7 +119,7 @@ export function TableView({
                     key={f.key}
                     role="tablist"
                     aria-label={f.placeholder ?? "Filter"}
-                    className="inline-flex items-center gap-0.5 p-0.5 rounded-xs border border-border-hi bg-bg overflow-x-auto"
+                    className="inline-flex items-center gap-0.5 p-0.5 rounded-xs border border-border-hi bg-bg overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   >
                     {f.options.map((o) => {
                       const active = o.value === f.value;
@@ -136,7 +137,7 @@ export function TableView({
                           aria-selected={active}
                           onClick={() => f.onChange(o.value)}
                           className={cn(
-                            "flex items-center gap-1.5 h-8 px-3 rounded-xs text-[11px] font-mono whitespace-nowrap transition-colors",
+                            "flex items-center gap-1.5 h-8 px-3 rounded-xs text-micro font-mono whitespace-nowrap transition-colors",
                             active
                               ? "bg-bg-card-hi text-fg"
                               : "text-fg-muted hover:text-fg hover:bg-bg-hover",

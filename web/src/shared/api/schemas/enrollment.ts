@@ -35,7 +35,13 @@ export const enrollmentTokenResponseSchema = z.object({
 });
 
 export const enrollmentTokenListItemSchema = z.object({
-  value: z.string(),
+  // Listings mask the raw token: the backend emits `masked_value` +
+  // `handle` (omitempty) and omits `value` entirely (http_enrollment.go).
+  // All three are optional so the same schema parses both the masked
+  // listing rows and any future raw-value row.
+  value: z.string().optional(),
+  masked_value: z.string().optional(),
+  handle: z.string().optional(),
   panel_url: z.string(),
   fleet_group_id: z.string(),
   status: z.enum(["active", "expired", "consumed", "revoked"]),

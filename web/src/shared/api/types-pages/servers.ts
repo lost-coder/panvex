@@ -1,3 +1,4 @@
+import type { NodeState } from "@/ui";
 import type { Status } from "@/ui/tokens/colors";
 import type { FleetGroupOption, Severity, ViewMode } from "./common";
 
@@ -7,6 +8,10 @@ export interface ServerListItem {
   id: string;
   name: string;
   status: Status;
+  /** Full lifecycle state (offline/down/degraded/pending/ok). */
+  state: NodeState;
+  /** Raw backend reason string ("" when healthy); localize at render. */
+  reason: string;
   ip?: string | undefined;
   connections: number;
   usersOnline?: number | undefined;

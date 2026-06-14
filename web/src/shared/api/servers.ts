@@ -203,6 +203,16 @@ export const serversApi = {
       method: "DELETE"
     }),
 
+  // Restart the node's Telemt process via the agent's configured restart
+  // strategy. The panel blocks on the job's terminal state, so this resolves
+  // only once the agent has actually restarted (or rejects with the agent's
+  // failure reason, e.g. "restart not available").
+  restartAgent: (agentID: string) =>
+    api<{ agent_id: string; status: string }>(
+      `${apiBasePath}/agents/${agentID}/restart`,
+      { method: "POST" },
+    ),
+
   // PR-2c: provision an outbound (reverse-mode) agent and receive the
   // pre-baked curl|sudo-bash one-liner in a single round-trip. The
   // backend creates the agent row, mints a 5-minute bootstrap token,

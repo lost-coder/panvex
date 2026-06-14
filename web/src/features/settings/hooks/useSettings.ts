@@ -49,11 +49,13 @@ export function useSettings(swipeNavigation: boolean = false) {
 
   const isLoading = panelQuery.isLoading || appearanceQuery.isLoading;
   const error = panelQuery.error ?? appearanceQuery.error;
+  const refetch = () => Promise.all([panelQuery.refetch(), appearanceQuery.refetch()]);
 
   return {
     settings,
     isLoading,
     error,
+    refetch,
     saveAppearance,
     savePanelSettings,
   };

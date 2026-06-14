@@ -211,16 +211,23 @@ func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.Cancel
 		defer s.recoverAgentStreamGoroutine(agentID, "job-dispatch", cancel)
 		retryTicker := time.NewTicker(jobDispatchRetryInterval)
 		defer retryTicker.Stop()
+		discoveryTicker := time.NewTicker(discoveryRefreshInterval)
+		defer discoveryTicker.Stop()
+
+		sendDiscovery := func(reason string) {
+			reqID := fmt.Sprintf("discovery-%s-%s-%d", reason, agentID, s.now().UnixNano())
+			if err := sendClientDataRequest(sess, reqID); err != nil {
+				s.logger.Error("client discovery request failed", "agent_id", agentID, "reason", reason, "error", err)
+			}
+		}
 
 		if err := s.dispatchPendingJobs(ctx, sess, agentID); err != nil {
 			nonBlockingSend(ch.dispatchErrors, err)
 			return
 		}
 
-		// Request a full client list from the agent for user discovery.
-		if err := sendClientDataRequest(sess, fmt.Sprintf("discovery-%s-%d", agentID, s.now().Unix())); err != nil {
-			s.logger.Error("client discovery request failed", "agent_id", agentID, "error", err)
-		}
+		// Initial full client list for user discovery at stream open.
+		sendDiscovery("initial")
 
 		for {
 			select {
@@ -228,8 +235,14 @@ func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.Cancel
 				return
 			case <-agentSess.Done:
 				return
+			case <-discoveryTicker.C:
+				sendDiscovery("periodic")
+				continue
 			case <-agentSess.Wake:
 			case <-retryTicker.C:
+			}
+			if agentSess.TakeRediscovery() {
+				sendDiscovery("on-demand")
 			}
 			if err := s.dispatchPendingJobs(ctx, sess, agentID); err != nil {
 				nonBlockingSend(ch.dispatchErrors, err)

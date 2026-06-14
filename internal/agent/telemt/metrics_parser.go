@@ -195,7 +195,3 @@ func applyUserMetric(m *UserMetrics, metricName, valuePart string) {
 	}
 }
 
-// ParseUserMetrics parses a Prometheus text-format payload and returns per-user metrics only.
-func ParseUserMetrics(text string) map[string]*UserMetrics {
-	return ParseMetricsSnapshot(text).Users
-}

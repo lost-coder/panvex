@@ -105,6 +105,60 @@ func runEnrollmentContract(t *testing.T, open OpenStore) {
 	})
 
 
+	t.Run("prune enrollment tokens removes only dead rows", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
+			ID:        testFleetGroupID,
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.June, 1, 8, 0, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf(errPutFleetGroupLong, err)
+		}
+
+		now := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
+		cutoff := now.Add(-24 * time.Hour)
+		old := now.Add(-48 * time.Hour)
+		oldConsumed := old.Add(time.Minute)
+		oldRevoked := old.Add(time.Minute)
+
+		put := func(rec storage.EnrollmentTokenRecord) {
+			t.Helper()
+			if err := store.PutEnrollmentToken(ctx, rec); err != nil {
+				t.Fatalf("PutEnrollmentToken(%s) error = %v", rec.Value, err)
+			}
+		}
+		// consumed long ago — pruned
+		put(storage.EnrollmentTokenRecord{Value: "tok-consumed-old", FleetGroupID: testFleetGroupID,
+			IssuedAt: old, ExpiresAt: old.Add(time.Hour), ConsumedAt: &oldConsumed})
+		// revoked long ago — pruned
+		put(storage.EnrollmentTokenRecord{Value: "tok-revoked-old", FleetGroupID: testFleetGroupID,
+			IssuedAt: old, ExpiresAt: old.Add(time.Hour), RevokedAt: &oldRevoked})
+		// expired unconsumed long ago — pruned
+		put(storage.EnrollmentTokenRecord{Value: "tok-expired-old", FleetGroupID: testFleetGroupID,
+			IssuedAt: old, ExpiresAt: old.Add(time.Hour)})
+		// live token — kept
+		put(storage.EnrollmentTokenRecord{Value: "tok-live", FleetGroupID: testFleetGroupID,
+			IssuedAt: now, ExpiresAt: now.Add(time.Hour)})
+
+		pruned, err := store.PruneEnrollmentTokens(ctx, cutoff)
+		if err != nil {
+			t.Fatalf("PruneEnrollmentTokens() error = %v", err)
+		}
+		if pruned != 3 {
+			t.Fatalf("PruneEnrollmentTokens() = %d, want 3", pruned)
+		}
+		remaining, err := store.ListEnrollmentTokens(ctx)
+		if err != nil {
+			t.Fatalf("ListEnrollmentTokens() error = %v", err)
+		}
+		if len(remaining) != 1 || remaining[0].Value != "tok-live" {
+			t.Fatalf("remaining tokens = %+v, want only tok-live", remaining)
+		}
+	})
+
 	t.Run("agent certificate recovery grant round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()

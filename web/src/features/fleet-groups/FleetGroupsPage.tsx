@@ -54,7 +54,7 @@ export function FleetGroupsPage({
       render: (g: Readonly<FleetGroupEntry>) => (
         <div className="flex flex-col min-w-0">
           <span className="font-medium text-fg truncate">{g.label || g.name}</span>
-          <span className="text-[11px] font-mono text-fg-muted truncate">{g.name}</span>
+          <span className="text-micro font-mono text-fg-muted truncate">{g.name}</span>
         </div>
       ),
       className: "w-[40%]",
@@ -75,7 +75,7 @@ export function FleetGroupsPage({
         return count > 0 ? (
           <Badge variant="default">{count}</Badge>
         ) : (
-          <span className="text-[11px] font-mono text-fg-muted">—</span>
+          <span className="text-micro font-mono text-fg-muted">—</span>
         );
       },
       className: "hidden md:table-cell w-[120px]",
@@ -112,15 +112,26 @@ export function FleetGroupsPage({
             description={t("empty.description")}
           />
         ) : (
-          <div className="bg-bg-card border border-border rounded-xl shadow-sm overflow-hidden">
-            <DataTable
-              columns={[
-                ...columns,
-                {
-                  key: "actions",
-                  header: "",
-                  render: (g: Readonly<FleetGroupEntry>) => (
-                    <div className="flex gap-1 justify-end">
+          <>
+            {/* Mobile (U-14): one card per group — name as the heading,
+                metrics on their own line right under it, tap opens detail,
+                Edit is a real button. The DataTable's auto label-value
+                collapse pushed values 200px from their labels on 390px. */}
+            <div className="md:hidden flex flex-col gap-3">
+              {groups.map((g) => {
+                const integrations = g.integrations?.length ?? 0;
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => onOpenDetail(g.id)}
+                    className="text-left rounded-xl bg-bg-card border border-border p-4 shadow-sm transition-colors hover:bg-bg-hover hover:border-border-hi focus-visible:outline-2 focus-visible:outline-accent"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-medium text-fg truncate">{g.label || g.name}</span>
+                        <span className="text-micro font-mono text-fg-muted truncate">{g.name}</span>
+                      </div>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -132,15 +143,51 @@ export function FleetGroupsPage({
                         {t("table.edit")}
                       </Button>
                     </div>
-                  ),
-                  className: "w-[110px] text-right",
-                },
-              ]}
-              data={groups}
-              keyExtractor={(g) => g.id}
-              onRowClick={(g) => onOpenDetail(g.id)}
-            />
-          </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-micro font-mono text-fg-muted">
+                      <span>{t("table.agents")}: <span className="text-fg">{g.agent_count}</span></span>
+                      {integrations > 0 && (
+                        <span>{t("table.integrations")}: <span className="text-fg">{integrations}</span></span>
+                      )}
+                    </div>
+                    {g.description && (
+                      <p className="mt-2 text-sm text-fg-muted line-clamp-2">{g.description}</p>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Desktop: the existing dense table. */}
+            <div className="hidden md:block bg-bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+              <DataTable
+                columns={[
+                  ...columns,
+                  {
+                    key: "actions",
+                    header: "",
+                    render: (g: Readonly<FleetGroupEntry>) => (
+                      <div className="flex gap-1 justify-end">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit(g.id);
+                          }}
+                        >
+                          {t("table.edit")}
+                        </Button>
+                      </div>
+                    ),
+                    className: "w-[110px] text-right",
+                  },
+                ]}
+                data={groups}
+                keyExtractor={(g) => g.id}
+                onRowClick={(g) => onOpenDetail(g.id)}
+              />
+            </div>
+          </>
         )}
       </div>
 
