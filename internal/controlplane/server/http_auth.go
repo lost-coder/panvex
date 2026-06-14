@@ -567,6 +567,17 @@ func (s *Server) sessionCookieSecure(r *http.Request) bool {
 		return true
 	}
 
+	// Secure-by-default in production. The shipped reverse-proxy topology
+	// terminates TLS upstream, so the panel sees plain HTTP on the internal
+	// hop (r.TLS==nil, X-Forwarded-Proto: http) and HTTPPublicURL defaults to
+	// empty — which would otherwise issue the session cookie WITHOUT Secure.
+	// PANVEX_ENV=production forces the flag so a prod deploy is safe even when
+	// the operator forgets PANVEX_FORCE_SECURE_COOKIE. Mirrors the PANVEX_ENV
+	// gate in http_events.go.
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("PANVEX_ENV")), "production") {
+		return true
+	}
+
 	if r.TLS != nil {
 		return true
 	}

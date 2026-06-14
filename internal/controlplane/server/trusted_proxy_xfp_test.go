@@ -34,7 +34,7 @@ func TestRemoteAddrIsTrustedProxy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 			r.RemoteAddr = tt.remoteAddr
 			if got := remoteAddrIsTrustedProxy(r, cidrs); got != tt.want {
 				t.Fatalf("remoteAddrIsTrustedProxy(%q) = %v, want %v", tt.remoteAddr, got, tt.want)
@@ -80,7 +80,7 @@ func TestSessionCookieSecureTLSAndTrustMatrix(t *testing.T) {
 	s := newServerForCookieTest(t, trusted, "proxy", "")
 
 	newReq := func(remoteAddr string, xfp string, withTLS bool) *http.Request {
-		r := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/api/auth/login", strings.NewReader("{}"))
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/auth/login", strings.NewReader("{}"))
 		r.RemoteAddr = remoteAddr
 		if xfp != "" {
 			r.Header.Set("X-Forwarded-Proto", xfp)
@@ -154,7 +154,7 @@ func TestSessionCookieSecureFallsBackToPanelTLSModeAndPublicURL(t *testing.T) {
 
 	t.Run("tls_mode_direct_is_secure_even_without_xfp", func(t *testing.T) {
 		s := newServerForCookieTest(t, []*net.IPNet{lanCIDR}, panelTLSModeDirect, "")
-		r := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/", nil)
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", nil)
 		r.RemoteAddr = "203.0.113.7:55555"
 		if !s.sessionCookieSecure(r) {
 			t.Fatal("TLSMode=direct must yield Secure=true")
@@ -163,7 +163,7 @@ func TestSessionCookieSecureFallsBackToPanelTLSModeAndPublicURL(t *testing.T) {
 
 	t.Run("https_public_url_is_secure", func(t *testing.T) {
 		s := newServerForCookieTest(t, []*net.IPNet{lanCIDR}, "proxy", "https://panel.example.com")
-		r := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/", nil)
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", nil)
 		r.RemoteAddr = "203.0.113.7:55555"
 		if !s.sessionCookieSecure(r) {
 			t.Fatal("HTTPPublicURL=https:// must yield Secure=true")
@@ -172,12 +172,31 @@ func TestSessionCookieSecureFallsBackToPanelTLSModeAndPublicURL(t *testing.T) {
 
 	t.Run("http_public_url_is_not_secure", func(t *testing.T) {
 		s := newServerForCookieTest(t, []*net.IPNet{lanCIDR}, "proxy", "http://panel.example.com")
-		r := httptest.NewRequestWithContext(t.Context(),http.MethodPost, "/", nil)
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/", nil)
 		r.RemoteAddr = "203.0.113.7:55555"
 		if s.sessionCookieSecure(r) {
 			t.Fatal("HTTPPublicURL=http:// must yield Secure=false")
 		}
 	})
+}
+
+// TestSessionCookieSecureProductionForces covers the CodeQL cookie-secure fix
+// (#5/#2): PANVEX_ENV=production must force Secure even on the shipped default
+// reverse-proxy topology (plain HTTP on the internal hop, no XFP, empty
+// HTTPPublicURL) where the cookie would otherwise be issued without Secure.
+func TestSessionCookieSecureProductionForces(t *testing.T) {
+	s := newServerForCookieTest(t, nil, "proxy", "")
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/auth/login", strings.NewReader("{}"))
+	r.RemoteAddr = "10.1.2.3:55555"
+
+	// Baseline: without the production env this topology yields Secure=false.
+	if s.sessionCookieSecure(r) {
+		t.Fatal("precondition: default proxy topology should be Secure=false without PANVEX_ENV=production")
+	}
+	t.Setenv("PANVEX_ENV", "production")
+	if !s.sessionCookieSecure(r) {
+		t.Fatal("PANVEX_ENV=production must force Secure=true regardless of proxy scheme")
+	}
 }
 
 // TestTrustedForwardedProtoGating validates the s.trustedForwardedProto
@@ -199,7 +218,7 @@ func TestTrustedForwardedProtoGating(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 			r.RemoteAddr = tt.remoteAddr
 			if tt.xfp != "" {
 				r.Header.Set("X-Forwarded-Proto", tt.xfp)
