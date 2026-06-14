@@ -678,6 +678,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -886,6 +887,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 		Token:    tokenOne.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(5*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent(agent-1) error = %v", err)
@@ -902,6 +904,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 		Token:    tokenTwo.Value,
 		NodeName: "node-b",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(6*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent(agent-2) error = %v", err)
@@ -1041,6 +1044,7 @@ func TestHTTPAgentBootstrapConsumesTokenAndReturnsIdentityBundle(t *testing.T) {
 		map[string]string{
 			"node_name": "node-a",
 			"version":   "1.0.0",
+			"csr_pem":   testCSRPEM(t),
 		},
 		nil,
 		map[string]string{
@@ -1054,7 +1058,6 @@ func TestHTTPAgentBootstrapConsumesTokenAndReturnsIdentityBundle(t *testing.T) {
 	var payload struct {
 		AgentID        string `json:"agent_id"`
 		CertificatePEM string `json:"certificate_pem"`
-		PrivateKeyPEM  string `json:"private_key_pem"`
 		CAPEM          string `json:"ca_pem"`
 		GRPCEndpoint   string `json:"grpc_endpoint"`
 		GRPCServerName string `json:"grpc_server_name"`
@@ -1067,9 +1070,6 @@ func TestHTTPAgentBootstrapConsumesTokenAndReturnsIdentityBundle(t *testing.T) {
 	}
 	if payload.CertificatePEM == "" {
 		t.Fatal("bootstrap.certificate_pem = empty, want issued certificate")
-	}
-	if payload.PrivateKeyPEM == "" {
-		t.Fatal("bootstrap.private_key_pem = empty, want issued private key")
 	}
 	if payload.CAPEM == "" {
 		t.Fatal("bootstrap.ca_pem = empty, want issued CA")
@@ -1131,6 +1131,7 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 		map[string]string{
 			"node_name": "node-a",
 			"version":   "1.0.0",
+			"csr_pem":   testCSRPEM(t),
 		},
 		nil,
 		map[string]string{
@@ -1149,6 +1150,7 @@ func TestHTTPAgentBootstrapRejectsConsumedToken(t *testing.T) {
 		map[string]string{
 			"node_name": "node-b",
 			"version":   "1.0.1",
+			"csr_pem":   testCSRPEM(t),
 		},
 		nil,
 		map[string]string{
@@ -1191,6 +1193,7 @@ func TestHTTPAgentBootstrapRateLimitRejectsBurstFromSameClient(t *testing.T) {
 			map[string]string{
 				"node_name": "node-a",
 				"version":   "1.0.0",
+				"csr_pem":   testCSRPEM(t),
 			},
 			nil,
 			map[string]string{
@@ -1210,6 +1213,7 @@ func TestHTTPAgentBootstrapRateLimitRejectsBurstFromSameClient(t *testing.T) {
 		map[string]string{
 			"node_name": "node-a",
 			"version":   "1.0.0",
+			"csr_pem":   testCSRPEM(t),
 		},
 		nil,
 		map[string]string{
@@ -1342,6 +1346,7 @@ func TestHTTPEnrollmentTokenListAndRevoke(t *testing.T) {
 		map[string]string{
 			"node_name": "node-a",
 			"version":   "1.0.0",
+			"csr_pem":   testCSRPEM(t),
 		},
 		nil,
 		map[string]string{
@@ -1870,6 +1875,7 @@ func TestRenameAgentReturnsErrorWhenStorageFails(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
@@ -1940,6 +1946,7 @@ func TestDeregisterAgentReturnsErrorWhenStorageFails(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-a",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, now.Add(10*time.Second))
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)

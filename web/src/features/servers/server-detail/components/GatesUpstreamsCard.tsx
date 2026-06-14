@@ -33,7 +33,7 @@ export function GatesUpstreamsCard({
       <div className="flex flex-col gap-3 border-l border-divider pl-6">
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-fg">{t("detail.upstreams.title")}</span>
-          <span className="text-[10px] font-mono text-fg-muted">
+          <span className="text-nano font-mono text-fg-muted">
             {t("detail.upstreams.peers", { count: upstreams.length })}
           </span>
         </div>

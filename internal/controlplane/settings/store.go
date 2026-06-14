@@ -222,8 +222,9 @@ func (s *OperationalStore) PanelSettingsUpdatedAt(ctx context.Context) int64 {
 	return n
 }
 
-func (s *OperationalStore) HTTPPublicURL() string      { return s.rawByName("http.public_url") }
-func (s *OperationalStore) GRPCPublicEndpoint() string { return s.rawByName("grpc.public_endpoint") }
+func (s *OperationalStore) HTTPPublicURL() string             { return s.rawByName("http.public_url") }
+func (s *OperationalStore) GRPCPublicEndpoint() string        { return s.rawByName("grpc.public_endpoint") }
+func (s *OperationalStore) SubscriptionPublicBaseURL() string { return s.rawByName("subscription.public_base_url") }
 
 func (s *OperationalStore) PasswordMinLength() int {
 	n, _ := strconv.Atoi(s.rawByName("auth.password_min_length"))

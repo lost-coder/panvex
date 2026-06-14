@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Panvex">
+  <!-- Full-bleed background so the icon stays correct under maskable cropping
+       (the OS rounds/squircles the corners). The "P" sits inside the ~80%
+       safe zone. Colours match the panel's dark surface + accent. -->
+  <rect width="512" height="512" fill="#0b0d12"/>
+  <text x="256" y="256" text-anchor="middle" dominant-baseline="central"
+        font-family="system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+        font-size="300" font-weight="700" fill="#60a5fa">P</text>
+</svg>

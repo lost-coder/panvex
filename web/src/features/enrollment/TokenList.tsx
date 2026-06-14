@@ -35,7 +35,7 @@ export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>
     {
       key: "value",
       header: t("tokens.table.token"),
-      render: (tok: Readonly<EnrollmentTokenData>) => <TokenCell value={tok.value} />,
+      render: (tok: Readonly<EnrollmentTokenData>) => <TokenCell value={tok.maskedValue} />,
       className: "min-w-[200px]",
     },
     {
@@ -65,7 +65,7 @@ export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>
       key: "issued",
       header: t("tokens.table.issued"),
       render: (tok: Readonly<EnrollmentTokenData>) => (
-        <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+        <span className="text-micro font-mono text-fg-muted tabular-nums">
           {formatTime(tok.issuedAtUnix)}
         </span>
       ),
@@ -80,7 +80,7 @@ export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>
         tok.status === "active" ? (
           <AgeCell unixSec={tok.expiresAtUnix} mode="expires" nowSec={nowSec} />
         ) : (
-          <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+          <span className="text-micro font-mono text-fg-muted tabular-nums">
             {formatTime(tok.expiresAtUnix)}
           </span>
         ),
@@ -94,7 +94,7 @@ export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onRevoke(tok.value)}
+            onClick={() => onRevoke(tok.handle)}
             className="text-status-error hover:text-status-error"
           >
             {t("tokens.table.revoke")}
@@ -113,5 +113,5 @@ export function TokenList({ tokens, onRevoke, nowSec }: Readonly<TokenListProps>
     );
   }
 
-  return <DataTable data={tokens} columns={columns} keyExtractor={(tok) => tok.value} />;
+  return <DataTable data={tokens} columns={columns} keyExtractor={(tok) => tok.handle} />;
 }

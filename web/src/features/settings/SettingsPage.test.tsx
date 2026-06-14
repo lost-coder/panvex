@@ -1,5 +1,12 @@
 import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// useUnsavedChangesGuard (audit E4) calls useBlocker + useConfirm.
+// Mock both so the page renders without a Router or ConfirmProvider.
+vi.mock("@tanstack/react-router", () => ({ useBlocker: vi.fn() }));
+vi.mock("@/app/providers/ConfirmProvider", () => ({
+  useConfirm: () => vi.fn().mockResolvedValue(true),
+}));
 
 import type { SettingsPageProps } from "@/shared/api/types-pages/settings";
 import { SettingsPage } from "./SettingsPage";

@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -769,6 +770,9 @@ type fakeTelemtClient struct {
 	resetQuotaCalls         int
 	resetQuotaResult        telemt.ResetUserQuotaResult
 	resetQuotaErr           error
+	discoverErr             error
+	managedConfig           map[string]any
+	managedRevision         string
 }
 
 func (c *fakeTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
@@ -824,11 +828,26 @@ func (c *fakeTelemtClient) InvalidateSlowDataCache() {
 	c.invalidateSlowDataCalls++
 }
 
+func (c *fakeTelemtClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+
+func (c *fakeTelemtClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return c.managedConfig, c.managedRevision, nil
+}
+
+func (c *fakeTelemtClient) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
+}
+
 func (c *fakeTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) {
 	return telemt.SystemInfo{}, nil
 }
 
 func (c *fakeTelemtClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
+	if c.discoverErr != nil {
+		return nil, c.discoverErr
+	}
 	return nil, nil
 }
 
@@ -1075,5 +1094,96 @@ func TestBuildRuntimeSnapshotHealthyTelemtUnreachableFalse(t *testing.T) {
 	if roundtrip.TelemtUnreachableSinceUnix != 0 {
 		t.Fatalf("roundtrip Runtime.TelemtUnreachableSinceUnix = %d, want 0",
 			roundtrip.TelemtUnreachableSinceUnix)
+	}
+}
+
+func TestHandleClientDataRequestFlagsTelemtUnreachable(t *testing.T) {
+	client := &fakeTelemtClient{discoverErr: errors.New("connection refused")}
+	agent := New(Config{
+		AgentID:      "agent-1",
+		NodeName:     "node-a",
+		FleetGroupID: "ams-1",
+		Version:      "1.0.0",
+	}, client)
+
+	resp := agent.HandleClientDataRequest(context.Background(), "req-1")
+
+	if resp == nil {
+		t.Fatal("response must not be nil")
+	}
+	if !resp.GetTelemtUnreachable() {
+		t.Fatal("telemt_unreachable should be true when FetchDiscoveredUsers fails")
+	}
+	if len(resp.GetClients()) != 0 {
+		t.Fatalf("expected no clients on failure, got %d", len(resp.GetClients()))
+	}
+	if resp.GetRequestId() != "req-1" {
+		t.Fatalf("request id = %q, want %q", resp.GetRequestId(), "req-1")
+	}
+}
+
+// TestBuildRuntimeSnapshotHashGatesDiagnostics guards D5: the bulky
+// diagnostics / security-inventory JSON bodies are sent only when their
+// content hash changes; every snapshot still carries the hash; an
+// unreachable snapshot resets the gates.
+func TestBuildRuntimeSnapshotHashGatesDiagnostics(t *testing.T) {
+	client := &fakeTelemtClient{
+		state: telemt.RuntimeState{
+			Diagnostics: telemt.RuntimeDiagnostics{
+				State:          "ok",
+				SystemInfoJSON: `{"cpu":4}`,
+				MEPoolJSON:     `{"pool":1}`,
+			},
+			SecurityInventory: telemt.RuntimeSecurityInventory{
+				State:       "ok",
+				Enabled:     true,
+				EntriesJSON: `[{"rule":1}]`,
+			},
+		},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node"}, client)
+	now := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
+
+	first, err := agent.BuildRuntimeSnapshot(context.Background(), now)
+	if err != nil {
+		t.Fatalf("first snapshot: %v", err)
+	}
+	if first.RuntimeDiagnostics.ContentHash == "" || first.RuntimeDiagnostics.SystemInfoJson == "" {
+		t.Fatalf("first snapshot must carry hash AND body, got %+v", first.RuntimeDiagnostics)
+	}
+	if first.RuntimeSecurityInventory.ContentHash == "" || first.RuntimeSecurityInventory.EntriesJson == "" {
+		t.Fatalf("first snapshot must carry security hash AND body, got %+v", first.RuntimeSecurityInventory)
+	}
+
+	second, err := agent.BuildRuntimeSnapshot(context.Background(), now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("second snapshot: %v", err)
+	}
+	if second.RuntimeDiagnostics.ContentHash != first.RuntimeDiagnostics.ContentHash {
+		t.Fatal("hash must be stable for unchanged diagnostics")
+	}
+	if second.RuntimeDiagnostics.SystemInfoJson != "" || second.RuntimeDiagnostics.MePoolJson != "" || second.RuntimeDiagnostics.State != "" {
+		t.Fatalf("unchanged diagnostics must omit the body, got %+v", second.RuntimeDiagnostics)
+	}
+	if second.RuntimeSecurityInventory.EntriesJson != "" {
+		t.Fatalf("unchanged security inventory must omit the body, got %+v", second.RuntimeSecurityInventory)
+	}
+
+	client.state.Diagnostics.SystemInfoJSON = `{"cpu":8}`
+	third, err := agent.BuildRuntimeSnapshot(context.Background(), now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("third snapshot: %v", err)
+	}
+	if third.RuntimeDiagnostics.SystemInfoJson != `{"cpu":8}` {
+		t.Fatalf("changed diagnostics must re-send the body, got %+v", third.RuntimeDiagnostics)
+	}
+
+	_ = agent.BuildRuntimeUnreachableSnapshot(now.Add(3*time.Minute), now.Add(2*time.Minute))
+	fourth, err := agent.BuildRuntimeSnapshot(context.Background(), now.Add(4*time.Minute))
+	if err != nil {
+		t.Fatalf("fourth snapshot: %v", err)
+	}
+	if fourth.RuntimeDiagnostics.SystemInfoJson == "" || fourth.RuntimeSecurityInventory.EntriesJson == "" {
+		t.Fatal("post-unreachable snapshot must re-send full bodies")
 	}
 }

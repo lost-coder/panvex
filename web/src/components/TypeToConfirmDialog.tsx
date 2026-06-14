@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "@/ui/base/button";
 import { Input } from "@/ui/base/input";
@@ -39,6 +40,7 @@ export function TypeToConfirmDialog({
   const titleId = useId();
   const descId = useId();
   const inputId = useId();
+  const { t } = useTranslation("common");
   const [typed, setTyped] = useState("");
 
   useEffect(() => {
@@ -89,7 +91,7 @@ export function TypeToConfirmDialog({
           </p>
         </div>
         <label htmlFor={inputId} className="text-xs text-fg-muted flex flex-col gap-1.5">
-          Чтобы подтвердить, введите <span className="font-mono text-fg">{requireTypeMatch}</span>
+          {t("typeToConfirm.prompt")} <span className="font-mono text-fg">{requireTypeMatch}</span>
           <Input
             ref={inputRef}
             id={inputId}

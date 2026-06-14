@@ -1,4 +1,9 @@
 {
+  "toasts": {
+    "deleteScheduled": "Client “{{name}}” will be deleted in 7 seconds.",
+    "undo": "Undo",
+    "deleteCancelled": "Deletion cancelled."
+  },
   "page": {
     "title": "Clients",
     "count_one": "{{count}} client",
@@ -9,7 +14,7 @@
   },
   "empty": {
     "title": "No clients yet",
-    "description": "Create your first client to start assigning it to Telemt nodes."
+    "description": "Create your first client to start assigning it to your servers."
   },
   "row": {
     "totalClients": "Total clients",
@@ -22,8 +27,12 @@
       "placeholder": "Status",
       "all": "All · {{count}}",
       "active": "Active · {{count}}",
+      "expiring": "Expiring · {{count}}",
       "disabled": "Disabled · {{count}}",
-      "expired": "Expired · {{count}}"
+      "expired": "Expired · {{count}}",
+      "overQuota": "Over quota · {{count}}",
+      "notDeployed": "Not deployed · {{count}}",
+      "deployFailed": "Deploy failed · {{count}}"
     },
     "bulk": {
       "enable": "Enable",
@@ -44,9 +53,13 @@
     "quotaExhaustedHintNone": "all within limits"
   },
   "statusBadge": {
-    "active": "Active",
-    "disabled": "Disabled",
-    "expired": "Expired"
+    "active": "ACTIVE",
+    "disabled": "DISABLED",
+    "expired": "EXPIRED",
+    "expiring": "EXPIRING",
+    "overQuota": "OVER QUOTA",
+    "notDeployed": "NOT DEPLOYED",
+    "deployFailed": "DEPLOY FAILED"
   },
   "table": {
     "client": "Client",
@@ -88,12 +101,15 @@
     "fleetGroupsLabel": "Fleet groups",
     "pinnedAgentsLabel": "Pinned agents",
     "pinnedAgentsDescription": "Override for nodes outside the selected groups",
+    "defaultGroup": "Default",
     "agentOffline": "offline",
     "limitsToggleCollapsed": "▸ Limits (optional)",
     "limitsToggleExpanded": "▾ Limits (optional)",
     "maxTcpConnsLabel": "Max TCP Conns",
     "maxUniqueIpsLabel": "Max Unique IPs",
-    "dataQuotaLabel": "Data Quota (bytes)",
+    "dataQuotaLabel": "Data Quota",
+    "quotaUnitLabel": "Unit",
+    "quotaUnits": { "MB": "MB", "GB": "GB", "TB": "TB" },
     "unlimitedPlaceholder": "0 = unlimited",
     "cancel": "Cancel",
     "saving": "Saving...",
@@ -115,12 +131,16 @@
   },
   "detail": {
     "breadcrumb": "Clients",
-    "subtitle": "{{status}} · {{expires}}",
-    "statusActive": "ACTIVE",
-    "statusDisabled": "DISABLED",
-    "statusExpired": "EXPIRED",
+    "subtitle": "{{expires}}",
+    "expiresRelative": {
+      "never": "never",
+      "today": "today",
+      "inDays": "in {{days}}d",
+      "daysAgo": "{{days}}d ago"
+    },
     "actions": {
       "edit": "Edit",
+      "more": "More actions",
       "disable": "Disable",
       "enable": "Enable",
       "redeploy": "Redeploy",
@@ -206,8 +226,16 @@
     "rotating": "Rotating…",
     "reveal": "Reveal",
     "hide": "Hide",
-    "absent": "Current secret isn't returned by the detail API — extract it from a fresh connection link below, or rotate to get a new one.",
+    "absent": "For security, the current secret isn't shown here. Copy a connection link from the Deployments tab, or rotate to issue a new secret.",
     "pendingRedeploy": "Secret rotated — wait for agents to re-apply before distributing new links."
+  },
+  "subscription": {
+    "title": "Subscription link",
+    "copy": "Copy",
+    "copied": "Copied",
+    "rotate": "Rotate token",
+    "rotateConfirm": "The old link will stop working. Continue?",
+    "none": "No public subscription domain configured. Set it in Settings → Subscription."
   },
   "deployments": {
     "noneYet": "No deployments yet.",
@@ -220,13 +248,17 @@
       "tls": "TLS",
       "secure": "Secure",
       "classic": "Classic",
-      "none": "No links generated yet."
+      "none": "No links generated yet.",
+      "qr": "Show QR code",
+      "share": "Share link",
+      "shareTitle": "Panvex connection link",
+      "qrTitle": "Scan to connect"
     }
   },
   "ipHistory": {
     "title": "IP history",
     "uniqueCount": "{{count}} unique",
-    "geoipNote": "GeoIP enrichment pending — see backend-followup #3",
+    "geoipNote": "GeoIP enrichment isn't available yet.",
     "empty": "No IP activity recorded.",
     "emptyShort": "No IPs",
     "ip": "IP",
@@ -279,9 +311,11 @@
     "pendingSection_one": "Pending ({{count}})",
     "pendingSection_other": "Pending ({{count}})",
     "reviewedSection": "Previously reviewed ({{count}})",
+    "loadMore": "Show more ({{count}} remaining)",
     "selection": {
-      "summary_one": "{{count}} selected · {{records}} records",
-      "summary_other": "{{count}} selected · {{records}} records",
+      "summary_one": "{{count}} client selected",
+      "summary_other": "{{count}} clients selected",
+      "summaryRecords": "across {{records}} deployments",
       "adopt": "Adopt",
       "ignore": "Ignore",
       "clear": "Clear"
@@ -319,6 +353,11 @@
       "adoptOneBody": "The client will be registered as managed on every node where it was discovered.",
       "adoptManyBody": "Each of the {{count}} clients will be registered as managed on every node where it was discovered.",
       "adoptConfirm": "Adopt"
+    },
+    "rescan": {
+      "button": "Rescan servers",
+      "success": "Re-discovery requested on {{count}} server(s)",
+      "error": "Failed to request re-discovery"
     }
   }
 }

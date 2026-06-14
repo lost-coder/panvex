@@ -23,7 +23,7 @@ export interface MockDirectAgentOverrides {
 
 /**
  * mockTelemtUnreachableAgent returns the same shape as mockDirectAgent but
- * with telemt_reachable=false so e2e specs can exercise the
+ * with telemt_unreachable=true so e2e specs can exercise the
  * banner-and-hidden-mode rendering path.
  */
 export function mockTelemtUnreachableAgent(
@@ -36,7 +36,11 @@ export function mockTelemtUnreachableAgent(
   const offsetSec = overrides.sinceUnixOffsetSec ?? 90;
   // Clone deeply so we don't mutate the shared base object on subsequent calls.
   const out = structuredClone(base);
-  out.server.agent.runtime.telemt_reachable = false;
+  // The schema field is `telemt_unreachable` (boolean) — the inverse of the
+  // old `telemt_reachable` name that was used here before the schema was
+  // aligned. Setting the wrong field left it undefined (falsy) and the
+  // banner never rendered.
+  out.server.agent.runtime.telemt_unreachable = true;
   out.server.agent.runtime.telemt_unreachable_since_unix =
     Math.floor(Date.now() / 1000) - offsetSec;
   // Zero the runtime metrics — they should not appear in the UI.

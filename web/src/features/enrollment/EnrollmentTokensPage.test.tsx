@@ -25,7 +25,8 @@ describe("EnrollmentTokensPage", () => {
     const props = makeProps({
       tokens: [
         {
-          value: "tok-XXXX",
+          handle: "abcd1234abcd1234",
+          maskedValue: "tok-XX…",
           fleetGroupId: "fg-1",
           status: "active",
           issuedAtUnix: now,

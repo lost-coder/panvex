@@ -163,6 +163,20 @@ func (s *WebhookStore) MarkFailed(ctx context.Context, id string, attempt int, n
 	return checkWebhookAffected(res)
 }
 
+// PruneOutbox deletes terminal rows per the webhooks.Storage contract
+// (see the sqlite twin for the retention semantics).
+func (s *WebhookStore) PruneOutbox(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM webhook_outbox
+		WHERE (delivered_at IS NOT NULL AND delivered_at < $1)
+		   OR (dead = TRUE AND created_at < $1)
+	`, before.UTC())
+	if err != nil {
+		return 0, fmt.Errorf("webhooks: prune outbox: %w", err)
+	}
+	return res.RowsAffected()
+}
+
 func scanWebhookEndpoint(s *sql.Rows, decrypt webhooks.SecretDecrypter) (webhooks.Endpoint, error) {
 	var (
 		ep           webhooks.Endpoint

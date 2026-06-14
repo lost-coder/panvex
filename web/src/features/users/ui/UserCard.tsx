@@ -46,7 +46,7 @@ export function UserCard({
           <TrafficCell bytes={trafficDown} label="↓" />
           <TrafficCell bytes={trafficUp} label="↑" />
           {ips !== undefined && (
-            <span className="text-[11px] font-mono text-fg-muted">
+            <span className="text-micro font-mono text-fg-muted">
               {t("card.ips", { count: ips })}
             </span>
           )}

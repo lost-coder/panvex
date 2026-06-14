@@ -200,6 +200,49 @@ describe("transformServerDetail", () => {
     const result = transformServerDetail(makeDetailResponse(runtime));
     expect(result.fallbackEnteredAtUnix).toBeNull();
   });
+
+  it("derives state onto the detail server", () => {
+    const resp = {
+      server: {
+        agent: {
+          id: "a-1",
+          node_name: "node-1",
+          fleet_group_id: "fg-1",
+          version: "1.0.0",
+          read_only: false,
+          presence_state: "offline",
+          runtime: makeRuntime({}),
+          last_seen_at: "2024-01-01T00:00:00Z",
+        },
+        severity: "bad",
+        reason: "Agent heartbeat is offline",
+        runtime_freshness: { state: "fresh", observed_at_unix: 0 },
+        detail_boost: { active: false, expires_at_unix: 0, remaining_seconds: 0 },
+        traffic_bytes: 0,
+      },
+      initialization_watch: {
+        visible: false,
+        mode: "hidden",
+        remaining_seconds: 0,
+        completed_at_unix: 0,
+        startup_status: "",
+        startup_stage: "",
+        startup_progress_pct: 0,
+        initialization_status: "",
+        initialization_stage: "",
+        initialization_progress_pct: 0,
+      },
+      diagnostics: {
+        state: "",
+        state_reason: "",
+        system_info: {},
+        effective_limits: {},
+        security_posture: {},
+        minimal_all: {},
+      },
+    } as unknown as Parameters<typeof transformServerDetail>[0];
+    expect(transformServerDetail(resp).state).toBe("offline");
+  });
 });
 
 describe("transformServerList", () => {
@@ -260,5 +303,38 @@ describe("transformServerList", () => {
     const runtime = makeRuntime();
     const [item] = transformServerList(listResponse(runtime, 1_500_000_000));
     expect(item!.trafficBytes).toBe(1_500_000_000);
+  });
+
+  it("derives state + reason onto each server", () => {
+    const resp = {
+      servers: [
+        {
+          agent: {
+            id: "a-1",
+            node_name: "node-1",
+            fleet_group_id: "fg-1",
+            version: "1.0.0",
+            read_only: false,
+            presence_state: "offline",
+            runtime: makeRuntime({}),
+            last_seen_at: "2024-01-01T00:00:00Z",
+          },
+          severity: "bad",
+          reason: "Agent heartbeat is offline",
+          runtime_freshness: { state: "fresh", observed_at_unix: 0 },
+          detail_boost: { active: false, expires_at_unix: 0, remaining_seconds: 0 },
+          traffic_bytes: 0,
+        },
+      ],
+    } as unknown as Parameters<typeof transformServerList>[0];
+    const [item] = transformServerList(resp);
+    expect(item!.state).toBe("offline");
+    expect(item!.reason).toBe("Agent heartbeat is offline");
+  });
+
+  it("derives state 'ok' and empty reason for a healthy server", () => {
+    const [item] = transformServerList(listResponse(makeRuntime({}), 0));
+    expect(item!.state).toBe("ok");
+    expect(item!.reason).toBe("");
   });
 });
