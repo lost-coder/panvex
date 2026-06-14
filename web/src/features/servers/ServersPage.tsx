@@ -13,6 +13,7 @@ import {
   type ServersPageProps,
   type ViewMode,
 } from "@/ui";
+import { useTableData } from "@/shared/hooks";
 import { ServerCardView } from "./ui/ServerCardView";
 import { ServerListView } from "./ui/ServerListView";
 
@@ -33,7 +34,6 @@ export function ServersPage({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({
     transport: true,
     users: true,
@@ -66,8 +66,10 @@ export function ServersPage({
     error: servers.filter((s) => s.status === "error").length,
   };
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  // Client-side pagination via the shared adapter — clamps the page when
+  // filters shrink the fleet (previously this page used currentPage
+  // unclamped and could strand the operator on an empty page).
+  const { page, setPage, totalPages, totalItems, paginated } = useTableData(filtered, pageSize);
 
   // Select-all toggles just the currently visible page — a fleet-wide
   // select-all would be dangerous for bulk destructive actions.
@@ -151,7 +153,7 @@ export function ServersPage({
             value: search,
             onChange: (v) => {
               setSearch(v);
-              setCurrentPage(1);
+              setPage(1);
             },
             placeholder: t("list.filter.searchPlaceholder"),
           }}
@@ -161,7 +163,7 @@ export function ServersPage({
               value: statusFilter,
               onChange: (v) => {
                 setStatusFilter(v);
-                setCurrentPage(1);
+                setPage(1);
               },
               variant: "chips" as const,
               options: [
@@ -177,7 +179,7 @@ export function ServersPage({
               value: groupFilter,
               onChange: (v) => {
                 setGroupFilter(v);
-                setCurrentPage(1);
+                setPage(1);
               },
               options: [
                 { value: "all", label: t("list.filter.allGroups") },
@@ -205,11 +207,11 @@ export function ServersPage({
               setColumnVisibility((prev) => ({ ...prev, [key]: visible })),
           }}
           pagination={{
-            page: currentPage,
+            page,
             totalPages,
-            totalItems: filtered.length,
+            totalItems,
             pageSize,
-            onChange: setCurrentPage,
+            onChange: setPage,
           }}
         >
           {/* Mobile: always list */}

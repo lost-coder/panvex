@@ -44,7 +44,7 @@ function GateRow({
         <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", dot)} />
         <span className="text-xs text-fg truncate">{label}</span>
       </div>
-      <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-fg-muted">
+      <span className="text-nano font-mono font-semibold uppercase tracking-wider text-fg-muted">
         {on ? "on" : "off"}
       </span>
     </div>

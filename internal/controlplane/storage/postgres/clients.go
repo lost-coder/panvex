@@ -49,6 +49,8 @@ func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) erro
 	// triggering DO NOTHING somewhere upstream of this code) would
 	// silently leave the row stale; the explicit Scan + ID check
 	// turns that into a loud error instead.
+	subscriptionToken := sql.NullString{String: client.SubscriptionToken, Valid: client.SubscriptionToken != ""}
+
 	var returnedID string
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO clients (
@@ -61,25 +63,27 @@ func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) erro
 			max_unique_ips,
 			data_quota_bytes,
 			expiration_rfc3339,
+			subscription_token,
 			created_at,
 			updated_at,
 			deleted_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (id) DO UPDATE
-		SET name = EXCLUDED.name,
-		    secret_ciphertext = EXCLUDED.secret_ciphertext,
-		    user_ad_tag = EXCLUDED.user_ad_tag,
-		    enabled = EXCLUDED.enabled,
-		    max_tcp_conns = EXCLUDED.max_tcp_conns,
-		    max_unique_ips = EXCLUDED.max_unique_ips,
-		    data_quota_bytes = EXCLUDED.data_quota_bytes,
+		SET name               = EXCLUDED.name,
+		    secret_ciphertext  = EXCLUDED.secret_ciphertext,
+		    user_ad_tag        = EXCLUDED.user_ad_tag,
+		    enabled            = EXCLUDED.enabled,
+		    max_tcp_conns      = EXCLUDED.max_tcp_conns,
+		    max_unique_ips     = EXCLUDED.max_unique_ips,
+		    data_quota_bytes   = EXCLUDED.data_quota_bytes,
 		    expiration_rfc3339 = EXCLUDED.expiration_rfc3339,
-		    created_at = EXCLUDED.created_at,
-		    updated_at = EXCLUDED.updated_at,
-		    deleted_at = EXCLUDED.deleted_at
+		    subscription_token = EXCLUDED.subscription_token,
+		    created_at         = EXCLUDED.created_at,
+		    updated_at         = EXCLUDED.updated_at,
+		    deleted_at         = EXCLUDED.deleted_at
 		RETURNING id
-	`, client.ID, client.Name, client.SecretCiphertext, client.UserADTag, client.Enabled, client.MaxTCPConns, client.MaxUniqueIPs, client.DataQuotaBytes, client.ExpirationRFC3339, client.CreatedAt.UTC(), client.UpdatedAt.UTC(), deletedAt).Scan(&returnedID)
+	`, client.ID, client.Name, client.SecretCiphertext, client.UserADTag, client.Enabled, client.MaxTCPConns, client.MaxUniqueIPs, client.DataQuotaBytes, client.ExpirationRFC3339, subscriptionToken, client.CreatedAt.UTC(), client.UpdatedAt.UTC(), deletedAt).Scan(&returnedID)
 	if err != nil {
 		return err
 	}
@@ -101,6 +105,7 @@ func (s *Store) GetClientByID(ctx context.Context, clientID string) (storage.Cli
 			max_unique_ips,
 			data_quota_bytes,
 			expiration_rfc3339,
+			subscription_token,
 			created_at,
 			updated_at,
 			deleted_at
@@ -123,6 +128,7 @@ func (s *Store) ListClients(ctx context.Context) ([]storage.ClientRecord, error)
 			max_unique_ips,
 			data_quota_bytes,
 			expiration_rfc3339,
+			subscription_token,
 			created_at,
 			updated_at,
 			deleted_at
@@ -150,6 +156,7 @@ func scanClientRow(scanner interface {
 	Scan(dest ...any) error
 }) (storage.ClientRecord, error) {
 	var client storage.ClientRecord
+	var subscriptionToken sql.NullString
 	var deletedAt sql.NullTime
 	if err := scanner.Scan(
 		&client.ID,
@@ -161,6 +168,7 @@ func scanClientRow(scanner interface {
 		&client.MaxUniqueIPs,
 		&client.DataQuotaBytes,
 		&client.ExpirationRFC3339,
+		&subscriptionToken,
 		&client.CreatedAt,
 		&client.UpdatedAt,
 		&deletedAt,
@@ -171,6 +179,7 @@ func scanClientRow(scanner interface {
 		return storage.ClientRecord{}, err
 	}
 
+	client.SubscriptionToken = subscriptionToken.String // NULL → ""
 	client.CreatedAt = client.CreatedAt.UTC()
 	client.UpdatedAt = client.UpdatedAt.UTC()
 	if deletedAt.Valid {

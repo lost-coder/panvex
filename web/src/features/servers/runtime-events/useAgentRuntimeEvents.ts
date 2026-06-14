@@ -21,14 +21,18 @@ const MAX_EVENTS = 500;
 const LIVE_DECAY_MS = 2_000;
 const LIVE_DECAY_TICK_MS = 500;
 
+interface BusRuntimeEventRecord {
+  ts?: string;
+  level?: string;
+  message?: string;
+  fields?: Record<string, string>;
+}
+
 interface BusMessage {
   type: string;
   data?: {
     agent_id?: string;
-    ts?: string;
-    level?: string;
-    message?: string;
-    fields?: Record<string, string>;
+    events?: BusRuntimeEventRecord[];
   };
 }
 
@@ -46,7 +50,7 @@ function normaliseLevel(level: string | undefined): RuntimeEvent["level"] {
 
 /**
  * useAgentRuntimeEvents merges the HTTP backlog from
- * /api/agents/{id}/runtime-events with the live `runtime.event`
+ * /api/agents/{id}/runtime-events with the live `runtime.events` batch
  * frames published on the /events WebSocket, returning a single
  * newest-first list capped at MAX_EVENTS. The hook intentionally
  * owns its own WebSocket rather than piggybacking on the panel-wide
@@ -103,17 +107,19 @@ export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsRes
       } catch {
         return;
       }
-      if (parsed.type !== "runtime.event") return;
+      if (parsed.type !== "runtime.events") return;
       const data = parsed.data;
-      if (!data || data.agent_id !== agentId) return;
-      const ev: RuntimeEvent = {
-        ts: data.ts ?? new Date().toISOString(),
-        level: normaliseLevel(data.level),
-        message: data.message ?? "",
-        fields: data.fields,
-      };
+      if (!data || data.agent_id !== agentId || !Array.isArray(data.events)) return;
+      const incoming: RuntimeEvent[] = data.events.map((record) => ({
+        ts: record.ts ?? new Date().toISOString(),
+        level: normaliseLevel(record.level),
+        message: record.message ?? "",
+        fields: record.fields,
+      }));
+      if (incoming.length === 0) return;
       setEvents((prev) => {
-        const next = [ev, ...prev];
+        // Server batches are oldest-first; the list is newest-first.
+        const next = [...incoming].reverse().concat(prev);
         if (next.length > MAX_EVENTS) next.length = MAX_EVENTS;
         return next;
       });

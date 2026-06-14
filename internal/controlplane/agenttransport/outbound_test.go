@@ -23,7 +23,7 @@ import (
 )
 
 func TestOutboundSupervisorReconnectsAfterDisconnect(t *testing.T) {
-	stub := newAgentStubServer(t)
+	stub := newAgentStubServer(t, "agent-1")
 	defer stub.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -60,7 +60,7 @@ func TestOutboundSupervisorReconnectsAfterDisconnect(t *testing.T) {
 // mTLS dial, and that after enrollment succeeds (bootstrapStateFn switches to
 // "active") subsequent iterations skip the enrollment step.
 func TestOutboundSupervisorEnrollsWhenPending(t *testing.T) {
-	stub := newAgentStubServer(t)
+	stub := newAgentStubServer(t, "agent-1")
 	defer stub.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -120,7 +120,7 @@ func TestOutboundSupervisorEnrollsWhenPending(t *testing.T) {
 // enrollFn eventually succeeds the normal mTLS dial is reached. This guards
 // the failure-then-recover path that the happy-path test does not exercise.
 func TestOutboundSupervisorRetriesAfterEnrollFailure(t *testing.T) {
-	stub := newAgentStubServer(t)
+	stub := newAgentStubServer(t, "agent-1")
 	defer stub.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -180,7 +180,7 @@ func TestOutboundSupervisorRetriesAfterEnrollFailure(t *testing.T) {
 // TestOutboundSupervisorSkipsEnrollWhenActive verifies that enrollFn is never
 // called when bootstrapStateFn consistently returns "active".
 func TestOutboundSupervisorSkipsEnrollWhenActive(t *testing.T) {
-	stub := newAgentStubServer(t)
+	stub := newAgentStubServer(t, "agent-1")
 	defer stub.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -263,7 +263,7 @@ func TestOutboundTransportSupervisorGaugeDelta(t *testing.T) {
 // confirms multiple connects occur within the deadline, proving the getter
 // path drives the backoff.
 func TestOutboundSupervisorUsesBackoffGetters(t *testing.T) {
-	stub := newAgentStubServer(t)
+	stub := newAgentStubServer(t, "agent-getter")
 	defer stub.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -357,6 +357,38 @@ func TestOutboundEnsureSupervisorAfterStopIsNoop(t *testing.T) {
 	}
 }
 
+// TestOutboundDialVerifiesAgentServerName guards the A1 fix: the supervisor
+// must set ServerName to AgentServerName(meta.AgentID), so a certificate
+// issued to a DIFFERENT agent (same CA!) is rejected by standard x509
+// hostname verification.
+func TestOutboundDialVerifiesAgentServerName(t *testing.T) {
+	stub := newAgentStubServer(t, "agent-other") // cert SAN: agent-other.agents.panvex.internal
+	defer stub.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var connectCount atomic.Int32
+	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		connectCount.Add(1)
+		return nil
+	}
+	sup := newOutboundSupervisor(
+		NodeMeta{NodeID: "n-san", AgentID: "agent-san", DialAddress: stub.address},
+		stub.clientTLS,
+		handler,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	sup.backoffInitialFn = func() time.Duration { return 10 * time.Millisecond }
+	sup.backoffMaxFn = func() time.Duration { return 50 * time.Millisecond }
+	go sup.run(ctx)
+
+	time.Sleep(500 * time.Millisecond)
+	if connectCount.Load() != 0 {
+		t.Fatalf("supervisor connected to a stub serving another agent's certificate (%d sessions)", connectCount.Load())
+	}
+}
+
 // ----------------- helpers -----------------
 
 type agentStubServer struct {
@@ -381,10 +413,10 @@ func (s *agentStubServer) Close() {
 	s.server.GracefulStop()
 }
 
-func newAgentStubServer(t *testing.T) *agentStubServer {
+func newAgentStubServer(t *testing.T, agentID string) *agentStubServer {
 	t.Helper()
 	caCert, caKey := mustGenerateCA(t)
-	serverCert, serverKey := mustGenerateLeaf(t, caCert, caKey, "localhost")
+	serverCert, serverKey := mustGenerateLeaf(t, caCert, caKey, AgentServerName(agentID))
 
 	tlsCert := tls.Certificate{
 		Certificate: [][]byte{serverCert.Raw},
@@ -394,8 +426,10 @@ func newAgentStubServer(t *testing.T) *agentStubServer {
 		Certificates: []tls.Certificate{tlsCert},
 	}
 	clientTLSCfg := &tls.Config{
-		ServerName: "localhost",
-		RootCAs:    rootPool(caCert),
+		// ServerName intentionally empty: the supervisor must set it to
+		// AgentServerName(meta.AgentID) per dial — that is the behaviour
+		// under test since the A1 fix.
+		RootCAs: rootPool(caCert),
 	}
 
 	var lc net.ListenConfig

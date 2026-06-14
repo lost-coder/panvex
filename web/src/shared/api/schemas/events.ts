@@ -18,6 +18,9 @@ import { z } from "zod";
 export const eventEnvelopeSchema = z.object({
   type: z.string(),
   data: z.unknown(),
+  // seq is the hub-assigned global sequence number (D6c). Optional so a
+  // panel/dashboard version skew never drops every event on the floor.
+  seq: z.number().int().nonnegative().optional(),
 });
 
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;

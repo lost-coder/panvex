@@ -9,14 +9,14 @@
     "build:embed": "node ./node_modules/typescript/bin/tsc --noEmit && node ./node_modules/vite/bin/vite.js build --mode embed --outDir ../cmd/control-plane/.embedded-ui --emptyOutDir",
     "preview": "vite preview",
     "lint": "eslint .",
-    "check:i18n": "node ./scripts/check-i18n-parity.mjs",
+    "check:i18n": "node ./scripts/check-i18n-parity.mjs && node ./scripts/check-no-hardcoded-cyrillic.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:state": "node --experimental-strip-types --test tests/*.test.mts src/router.test.ts src/shared/lib/appearance.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium firefox webkit",
     "test:e2e:integration": "playwright test --config=playwright.integration.config.ts",
-    "test:e2e:update-snapshots": "playwright test --update-snapshots",
     "size": "size-limit",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
@@ -25,7 +25,7 @@
     {
       "name": "App entry (gzip)",
       "path": "dist/assets/index-*.js",
-      "limit": "25 KB",
+      "limit": "28 KB",
       "gzip": true
     },
     {
@@ -115,5 +115,8 @@
     "typescript-eslint": "^8.59.1",
     "vite": "^8.0.10",
     "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
   }
 }

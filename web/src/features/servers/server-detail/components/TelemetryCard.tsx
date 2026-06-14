@@ -37,10 +37,10 @@ export function TelemetryCard({
       <div className="grid grid-cols-[260px_minmax(0,1fr)] gap-6 items-start">
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3 pb-2 border-b border-divider">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+            <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
               {t("detail.fleetRoutes.title")}
             </span>
-            <div className="flex items-center gap-2 text-[10px] font-mono text-fg-muted">
+            <div className="flex items-center gap-2 text-nano font-mono text-fg-muted">
               <span className="flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-status-ok" />
                 {t("detail.fleetRoutes.ok", { count: dcOk })}
@@ -59,7 +59,7 @@ export function TelemetryCard({
         </div>
         <div className="flex flex-col gap-3 min-w-0">
           <div className="flex items-center justify-between pb-2 border-b border-divider">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+            <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
               {metricsChart?.timeRange
                 ? t("detail.telemetry.liveRange", { range: metricsChart.timeRange })
                 : t("detail.telemetry.live")}
@@ -74,7 +74,7 @@ export function TelemetryCard({
                       type="button"
                       onClick={() => metricsChart.onTimeRangeChange?.(r)}
                       className={cn(
-                        "h-6 px-2 rounded-xs text-[10px] font-mono transition-colors",
+                        "h-6 px-2 rounded-xs text-nano font-mono transition-colors",
                         active
                           ? "bg-bg-card-hi text-fg"
                           : "text-fg-muted hover:text-fg hover:bg-bg-hover",

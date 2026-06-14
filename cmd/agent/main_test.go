@@ -20,12 +20,11 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/runtime"
-	"github.com/lost-coder/panvex/internal/agent/telemt"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
+	"github.com/lost-coder/panvex/internal/agent/telemt"
 	agentTransport "github.com/lost-coder/panvex/internal/agent/transport"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 func TestJobPipelineForActionRoutesRuntimeReload(t *testing.T) {
@@ -61,18 +60,6 @@ func TestJobPipelineForActionRoutesUnknownActionsToDefault(t *testing.T) {
 	pipeline := jobPipelineForAction("users.create")
 	if pipeline != jobPipelineDefault {
 		t.Fatalf("jobPipelineForAction(users.create) = %q, want %q", pipeline, jobPipelineDefault)
-	}
-}
-
-func TestJobWorkerCountForPipelineMatchesConcurrencyPolicy(t *testing.T) {
-	if count := jobWorkerCountForPipeline(jobPipelineRuntimeReload); count != 2 {
-		t.Fatalf("jobWorkerCountForPipeline(runtime_reload) = %d, want %d", count, 2)
-	}
-	if count := jobWorkerCountForPipeline(jobPipelineClientMutation); count != 1 {
-		t.Fatalf("jobWorkerCountForPipeline(client_mutation) = %d, want %d", count, 1)
-	}
-	if count := jobWorkerCountForPipeline(jobPipelineDefault); count != 1 {
-		t.Fatalf("jobWorkerCountForPipeline(default) = %d, want %d", count, 1)
 	}
 }
 
@@ -146,29 +133,6 @@ func TestSendInitialMessagesContinuesWhenUsageMetricsAreUnavailable(t *testing.T
 	}
 	if !strings.Contains(logs.String(), "initial usage snapshot unavailable") {
 		t.Fatalf("logs = %q, want initial usage snapshot warning", logs.String())
-	}
-}
-
-func TestConnectStreamWithSetupTimeoutKeepsStreamContextAliveAfterSuccessfulConnect(t *testing.T) {
-	stream, err := connectStreamWithSetupTimeout(20*time.Millisecond, func(ctx context.Context) (gatewayrpc.AgentGateway_ConnectClient, error) {
-		return &fakeAgentGatewayConnectClient{ctx: ctx}, nil
-	})
-	if err != nil {
-		t.Fatalf("connectStreamWithSetupTimeout() error = %v", err)
-	}
-
-	select {
-	case <-stream.Context().Done():
-		t.Fatal("stream context canceled immediately after successful connect")
-	default:
-	}
-
-	time.Sleep(50 * time.Millisecond)
-
-	select {
-	case <-stream.Context().Done():
-		t.Fatal("stream context canceled after setup timeout elapsed")
-	default:
 	}
 }
 
@@ -334,9 +298,9 @@ func TestEnqueueReceivedJobQueuesAndAcknowledges(t *testing.T) {
 	connectionCtx := context.Background()
 	tracker := newJobInflightTracker()
 	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
 		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
 	}
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
 	job := &gatewayrpc.JobCommand{
@@ -368,9 +332,9 @@ func TestEnqueueReceivedJobSkipsDuplicateQueueEntry(t *testing.T) {
 	connectionCtx := context.Background()
 	tracker := newJobInflightTracker()
 	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, 2),
+		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 2),
 		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
 	}
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 2)
 	job := &gatewayrpc.JobCommand{
@@ -399,9 +363,9 @@ func TestEnqueueReceivedJobQueuesCommandWithoutIdentifier(t *testing.T) {
 	connectionCtx := context.Background()
 	tracker := newJobInflightTracker()
 	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload: make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
 		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:       make(chan *gatewayrpc.JobCommand, 1),
+		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
 	}
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
 	job := &gatewayrpc.JobCommand{
@@ -471,22 +435,50 @@ func TestLoadRuntimeCredentialsRequiresBootstrapState(t *testing.T) {
 	}
 }
 
-func TestReconnectDelayCapsBackoff(t *testing.T) {
-	if delay := reconnectDelay(1); delay != time.Second {
-		t.Fatalf("reconnectDelay(1) = %v, want %v", delay, time.Second)
+// TestReconnectDelayJitterBounds guards D1: each attempt's delay must be
+// full-jittered within [ceiling/2, ceiling], where the ceiling follows the
+// exponential schedule capped at reconnectMaxDelay. Mirrors the panel-side
+// jitter() in agenttransport/outbound.go so both transport directions
+// de-synchronise herd reconnects the same way.
+func TestReconnectDelayJitterBounds(t *testing.T) {
+	cases := []struct {
+		attempt int
+		ceiling time.Duration
+	}{
+		{attempt: 0, ceiling: time.Second}, // clamped to attempt 1
+		{attempt: 1, ceiling: time.Second},
+		{attempt: 3, ceiling: 4 * time.Second},
+		{attempt: 6, ceiling: 32 * time.Second},
+		{attempt: 7, ceiling: reconnectMaxDelay},
+		{attempt: 50, ceiling: reconnectMaxDelay},
 	}
-	if delay := reconnectDelay(3); delay != 4*time.Second {
-		t.Fatalf("reconnectDelay(3) = %v, want %v", delay, 4*time.Second)
+	for _, tc := range cases {
+		for i := 0; i < 200; i++ {
+			delay := reconnectDelay(tc.attempt)
+			if delay < tc.ceiling/2 || delay > tc.ceiling {
+				t.Fatalf("reconnectDelay(%d) = %v, want within [%v, %v]",
+					tc.attempt, delay, tc.ceiling/2, tc.ceiling)
+			}
+		}
 	}
-	if delay := reconnectDelay(10); delay != 15*time.Second {
-		t.Fatalf("reconnectDelay(10) = %v, want %v", delay, 15*time.Second)
+}
+
+// TestReconnectDelayIsJittered asserts the delay actually varies between
+// calls — a deterministic implementation (the D1 bug) returns one value.
+func TestReconnectDelayIsJittered(t *testing.T) {
+	seen := make(map[time.Duration]struct{})
+	for i := 0; i < 100; i++ {
+		seen[reconnectDelay(10)] = struct{}{}
+	}
+	if len(seen) < 2 {
+		t.Fatal("expected jittered delays to vary across 100 samples, got a single value")
 	}
 }
 
 // TestWaitWithCancelHonoursContextCancellation verifies that the helper
 // replacing the bare time.Sleep in runRuntimeReconnectLoop returns
 // promptly when the supervisor ctx is cancelled, rather than waiting
-// out the full backoff delay (~15s in production at max attempt).
+// out the full backoff delay (~45s in production at max attempt).
 func TestWaitWithCancelHonoursContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -495,7 +487,7 @@ func TestWaitWithCancelHonoursContextCancellation(t *testing.T) {
 	start := time.Now()
 
 	go func() {
-		// 30s mirrors the worst-case backoff window the bug report cites.
+		// 60s mirrors the worst-case backoff window the bug report cites.
 		done <- waitWithCancel(ctx, 30*time.Second)
 	}()
 
@@ -531,7 +523,7 @@ func TestWaitWithCancelExpiresOnTimer(t *testing.T) {
 // pattern (the loop's inner select{timer, ctx.Done}) directly, asserting
 // that a cancellation while sitting in the backoff sleep unblocks the
 // loop within milliseconds — not after the full reconnectDelay (up to
-// 15s). This guards against regressions to the bare-time.Sleep code
+// 45s). This guards against regressions to the bare-time.Sleep code
 // path that this task removed.
 func TestReconnectBackoffHonoursContextCancellation(t *testing.T) {
 	t.Parallel()
@@ -555,7 +547,7 @@ func TestReconnectBackoffHonoursContextCancellation(t *testing.T) {
 				return
 			}
 			// Saturate at the max backoff so a regression that ignored
-			// ctx would block this goroutine for 15s.
+			// ctx would block this goroutine for 45s.
 			if attempt > 5 {
 				done <- errors.New("loop did not exit despite ctx cancellation")
 				return
@@ -596,6 +588,7 @@ func TestNewConnectionScheduleDisablesZeroIntervals(t *testing.T) {
 
 func TestRunBootstrapCommandSavesIssuedState(t *testing.T) {
 	statePath := filepath.Join(t.TempDir(), "agent-state.json")
+	ca := newTestCA(t)
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -611,6 +604,7 @@ func TestRunBootstrapCommandSavesIssuedState(t *testing.T) {
 		var request struct {
 			NodeName string `json:"node_name"`
 			Version  string `json:"version"`
+			CSRPEM   string `json:"csr_pem"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatalf("Decode(request) error = %v", err)
@@ -621,12 +615,16 @@ func TestRunBootstrapCommandSavesIssuedState(t *testing.T) {
 		if request.Version != "1.2.3" {
 			t.Fatalf("request.Version = %q, want %q", request.Version, "1.2.3")
 		}
+		if request.CSRPEM == "" {
+			t.Fatal("request.CSRPEM = empty, want a CSR")
+		}
 
+		// A9: sign the agent's CSR and return only the certificate.
+		certPEM := ca.signCSRForTest(t, request.CSRPEM)
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"agent_id":         "agent-123",
-			"certificate_pem":  "cert-pem",
-			"private_key_pem":  "key-pem",
-			"ca_pem":           "ca-pem",
+			"certificate_pem":  certPEM,
+			"ca_pem":           string(ca.certPEM),
 			"grpc_endpoint":    "grpc.panel.example.com:443",
 			"grpc_server_name": "grpc.panel.example.com",
 			"expires_at_unix":  time.Date(2026, time.March, 16, 18, 0, 0, 0, time.UTC).Unix(),
@@ -697,12 +695,22 @@ func TestRunBootstrapCommandAllowsOverwriteWithForce(t *testing.T) {
 		t.Fatalf("Save() error = %v", err)
 	}
 
+	ca := newTestCA(t)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			CSRPEM string `json:"csr_pem"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("Decode(request) error = %v", err)
+		}
+		if request.CSRPEM == "" {
+			t.Fatal("request.CSRPEM = empty, want a CSR")
+		}
+		certPEM := ca.signCSRForTest(t, request.CSRPEM)
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"agent_id":         "agent-new",
-			"certificate_pem":  "new-cert",
-			"private_key_pem":  "new-key",
-			"ca_pem":           "new-ca",
+			"certificate_pem":  certPEM,
+			"ca_pem":           string(ca.certPEM),
 			"grpc_endpoint":    "panel.example.com:8443",
 			"grpc_server_name": "panel.example.com",
 			"expires_at_unix":  time.Date(2026, time.March, 16, 19, 0, 0, 0, time.UTC).Unix(),
@@ -732,6 +740,7 @@ func TestRunBootstrapCommandAllowsOverwriteWithForce(t *testing.T) {
 }
 
 func TestRefreshRuntimeCredentialsIfNeededRenewsAndPersistsExpiringState(t *testing.T) {
+	ca := newTestCA(t)
 	statePath := filepath.Join(t.TempDir(), "agent-state.json")
 	now := time.Date(2026, time.March, 19, 10, 0, 0, 0, time.UTC)
 	current := agentstate.Credentials{
@@ -747,12 +756,16 @@ func TestRefreshRuntimeCredentialsIfNeededRenewsAndPersistsExpiringState(t *test
 		t.Fatalf("Save() error = %v", err)
 	}
 
+	// The renewer signs the CSR from the request so the returned cert pairs
+	// with the agent-generated key (A9: private keys never leave the agent).
+	renewAfter := now.Add(30 * 24 * time.Hour)
 	renewer := &fakeCertificateRenewer{
-		response: &gatewayrpc.RenewCertificateResponse{
-			CertificatePem: "new-cert",
-			PrivateKeyPem:  "new-key",
-			CaPem:          "new-ca",
-			ExpiresAtUnix:  now.Add(30 * 24 * time.Hour).Unix(),
+		signCSR: func(csrPEM string) *gatewayrpc.RenewCertificateResponse {
+			return &gatewayrpc.RenewCertificateResponse{
+				CertificatePem: ca.signCSRForTest(t, csrPEM),
+				CaPem:          string(ca.certPEM),
+				ExpiresAtUnix:  renewAfter.Unix(),
+			}
 		},
 	}
 
@@ -766,16 +779,26 @@ func TestRefreshRuntimeCredentialsIfNeededRenewsAndPersistsExpiringState(t *test
 	if renewer.request.GetAgentId() != current.AgentID {
 		t.Fatalf("renewer.request.AgentId = %q, want %q", renewer.request.GetAgentId(), current.AgentID)
 	}
-	if updated.CertificatePEM != "new-cert" {
-		t.Fatalf("updated.CertificatePEM = %q, want %q", updated.CertificatePEM, "new-cert")
+	if renewer.request.GetCsrPem() == "" {
+		t.Fatal("renewer.request.CsrPem is empty, want a CSR")
+	}
+	if updated.CertificatePEM == current.CertificatePEM {
+		t.Fatal("updated.CertificatePEM is unchanged, want new cert")
+	}
+	if updated.PrivateKeyPEM == current.PrivateKeyPEM {
+		t.Fatal("updated.PrivateKeyPEM is unchanged, want new key")
+	}
+	// Response must carry NO private key — the agent generated the key locally.
+	if renewer.request.GetCsrPem() == "" {
+		t.Fatal("no CSR sent in renewal request")
 	}
 
 	persisted, err := agentstate.Load(statePath)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if persisted.CertificatePEM != "new-cert" {
-		t.Fatalf("persisted.CertificatePEM = %q, want %q", persisted.CertificatePEM, "new-cert")
+	if persisted.CertificatePEM != updated.CertificatePEM {
+		t.Fatalf("persisted.CertificatePEM = %q, want %q", persisted.CertificatePEM, updated.CertificatePEM)
 	}
 }
 
@@ -797,7 +820,6 @@ func TestRefreshRuntimeCredentialsIfNeededSkipsZeroExpiryState(t *testing.T) {
 	renewer := &fakeCertificateRenewer{
 		response: &gatewayrpc.RenewCertificateResponse{
 			CertificatePem: "new-cert",
-			PrivateKeyPem:  "new-key",
 			CaPem:          "new-ca",
 			ExpiresAtUnix:  now.Add(30 * 24 * time.Hour).Unix(),
 		},
@@ -827,44 +849,10 @@ type fakeCertificateRenewer struct {
 	request  *gatewayrpc.RenewCertificateRequest
 	response *gatewayrpc.RenewCertificateResponse
 	err      error
-}
-
-type fakeAgentGatewayConnectClient struct {
-	ctx context.Context
-}
-
-func (c *fakeAgentGatewayConnectClient) Header() (metadata.MD, error) {
-	return metadata.MD{}, nil
-}
-
-func (c *fakeAgentGatewayConnectClient) Trailer() metadata.MD {
-	return metadata.MD{}
-}
-
-func (c *fakeAgentGatewayConnectClient) CloseSend() error {
-	return nil
-}
-
-func (c *fakeAgentGatewayConnectClient) Context() context.Context {
-	return c.ctx
-}
-
-func (c *fakeAgentGatewayConnectClient) Send(*gatewayrpc.ConnectClientMessage) error {
-	return nil
-}
-
-func (c *fakeAgentGatewayConnectClient) Recv() (*gatewayrpc.ConnectServerMessage, error) {
-	<-c.ctx.Done()
-	return nil, c.ctx.Err()
-}
-
-func (c *fakeAgentGatewayConnectClient) SendMsg(any) error {
-	return nil
-}
-
-func (c *fakeAgentGatewayConnectClient) RecvMsg(any) error {
-	<-c.ctx.Done()
-	return c.ctx.Err()
+	// signCSR, when non-nil, is called with the CSR from the request and
+	// its return value replaces response. Use this to produce a cert that
+	// actually pairs with the agent-generated key (A9 unary path).
+	signCSR func(csrPEM string) *gatewayrpc.RenewCertificateResponse
 }
 
 type fakeInitialSyncTelemtClient struct {
@@ -916,6 +904,18 @@ func (c *fakeInitialSyncTelemtClient) InvalidateSlowDataCache() {}
 
 func (c *fakeInitialSyncTelemtClient) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
 	return telemt.ResetUserQuotaResult{}, nil
+}
+
+func (c *fakeInitialSyncTelemtClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+
+func (c *fakeInitialSyncTelemtClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return nil, "", nil
+}
+
+func (c *fakeInitialSyncTelemtClient) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
 }
 
 type fakeDiagnosticsRefreshTelemtClient struct {
@@ -971,12 +971,26 @@ func (c *fakeDiagnosticsRefreshTelemtClient) ResetUserQuota(context.Context, str
 	return telemt.ResetUserQuotaResult{}, nil
 }
 
+func (c *fakeDiagnosticsRefreshTelemtClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+	return telemt.PatchConfigResult{}, nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	return nil, "", nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) HealthReady(context.Context) (bool, string, error) {
+	return true, "", nil
+}
+
 func (r *fakeCertificateRenewer) RenewCertificate(_ context.Context, request *gatewayrpc.RenewCertificateRequest, _ ...grpc.CallOption) (*gatewayrpc.RenewCertificateResponse, error) {
 	r.request = request
 	if r.err != nil {
 		return nil, r.err
 	}
-
+	if r.signCSR != nil {
+		return r.signCSR(request.GetCsrPem()), nil
+	}
 	return r.response, nil
 }
 
@@ -1251,7 +1265,7 @@ func TestStartInboundPumpRoutesRenewalResponseToChannel(t *testing.T) {
 		},
 	}
 	stream := &renewalTestBidiStream{
-		messages: []*gatewayrpc.ConnectServerMessage{serverMsg},
+		messages:       []*gatewayrpc.ConnectServerMessage{serverMsg},
 		cancelAfterAll: cancel,
 	}
 

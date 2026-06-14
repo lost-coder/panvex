@@ -1,4 +1,9 @@
 {
+  "toasts": {
+    "deleteScheduled": "Клиент «{{name}}» будет удалён через 7 секунд.",
+    "undo": "Отменить",
+    "deleteCancelled": "Удаление отменено."
+  },
   "page": {
     "title": "Клиенты",
     "count_one": "{{count}} клиент",
@@ -10,7 +15,7 @@
   },
   "empty": {
     "title": "Клиентов пока нет",
-    "description": "Создайте первого клиента, чтобы начать назначать его на ноды Telemt."
+    "description": "Создайте первого клиента, чтобы начать назначать его на серверы."
   },
   "row": {
     "totalClients": "Всего клиентов",
@@ -23,8 +28,12 @@
       "placeholder": "Статус",
       "all": "Все · {{count}}",
       "active": "Активные · {{count}}",
+      "expiring": "Истекает · {{count}}",
       "disabled": "Отключены · {{count}}",
-      "expired": "Истекли · {{count}}"
+      "expired": "Истекли · {{count}}",
+      "overQuota": "Сверх квоты · {{count}}",
+      "notDeployed": "Не развёрнут · {{count}}",
+      "deployFailed": "Ошибка деплоя · {{count}}"
     },
     "bulk": {
       "enable": "Включить",
@@ -45,9 +54,13 @@
     "quotaExhaustedHintNone": "все в пределах лимитов"
   },
   "statusBadge": {
-    "active": "Активен",
-    "disabled": "Отключён",
-    "expired": "Истёк"
+    "active": "АКТИВЕН",
+    "disabled": "ОТКЛЮЧЁН",
+    "expired": "ИСТЁК",
+    "expiring": "ИСТЕКАЕТ",
+    "overQuota": "КВОТА ИСЧЕРПАНА",
+    "notDeployed": "НЕ РАЗВЁРНУТ",
+    "deployFailed": "ОШИБКА РАЗВЁРТЫВАНИЯ"
   },
   "table": {
     "client": "Клиент",
@@ -89,12 +102,15 @@
     "fleetGroupsLabel": "Группы серверов",
     "pinnedAgentsLabel": "Закреплённые агенты",
     "pinnedAgentsDescription": "Переопределение для нод вне выбранных групп",
+    "defaultGroup": "По умолчанию",
     "agentOffline": "оффлайн",
     "limitsToggleCollapsed": "▸ Лимиты (опционально)",
     "limitsToggleExpanded": "▾ Лимиты (опционально)",
     "maxTcpConnsLabel": "Макс. TCP-соединений",
     "maxUniqueIpsLabel": "Макс. уникальных IP",
-    "dataQuotaLabel": "Квота трафика (байт)",
+    "dataQuotaLabel": "Квота трафика",
+    "quotaUnitLabel": "Единица",
+    "quotaUnits": { "MB": "МБ", "GB": "ГБ", "TB": "ТБ" },
     "unlimitedPlaceholder": "0 = без ограничений",
     "cancel": "Отмена",
     "saving": "Сохраняем…",
@@ -117,12 +133,16 @@
   },
   "detail": {
     "breadcrumb": "Клиенты",
-    "subtitle": "{{status}} · {{expires}}",
-    "statusActive": "АКТИВЕН",
-    "statusDisabled": "ОТКЛЮЧЁН",
-    "statusExpired": "ИСТЁК",
+    "subtitle": "{{expires}}",
+    "expiresRelative": {
+      "never": "никогда",
+      "today": "сегодня",
+      "inDays": "через {{days}} дн.",
+      "daysAgo": "{{days}} дн. назад"
+    },
     "actions": {
       "edit": "Изменить",
+      "more": "Ещё действия",
       "disable": "Отключить",
       "enable": "Включить",
       "redeploy": "Перевыкатить",
@@ -208,8 +228,16 @@
     "rotating": "Меняем…",
     "reveal": "Показать",
     "hide": "Скрыть",
-    "absent": "Текущий секрет не возвращается detail API — извлеките его из свежей ссылки ниже либо смените, чтобы получить новый.",
+    "absent": "В целях безопасности текущий секрет здесь не показывается. Скопируйте ссылку подключения на вкладке «Развёртывания» или смените секрет, чтобы выпустить новый.",
     "pendingRedeploy": "Секрет сменён — дождитесь повторного применения агентами перед раздачей новых ссылок."
+  },
+  "subscription": {
+    "title": "Ссылка подписки",
+    "copy": "Копировать",
+    "copied": "Скопировано",
+    "rotate": "Ротировать токен",
+    "rotateConfirm": "Старая ссылка перестанет работать. Продолжить?",
+    "none": "Публичный домен подписки не настроен. Задайте его в «Настройки → Подписка»."
   },
   "deployments": {
     "noneYet": "Развёртываний пока нет.",
@@ -223,13 +251,17 @@
       "tls": "TLS",
       "secure": "Secure",
       "classic": "Classic",
-      "none": "Ссылки ещё не сгенерированы."
+      "none": "Ссылки ещё не сгенерированы.",
+      "qr": "Показать QR-код",
+      "share": "Поделиться ссылкой",
+      "shareTitle": "Ссылка подключения Panvex",
+      "qrTitle": "Отсканируйте для подключения"
     }
   },
   "ipHistory": {
     "title": "История IP",
     "uniqueCount": "{{count}} уникальных",
-    "geoipNote": "Обогащение GeoIP в работе — см. backend-followup #3",
+    "geoipNote": "Обогащение GeoIP пока недоступно.",
     "empty": "Активность по IP не зафиксирована.",
     "emptyShort": "Нет IP",
     "ip": "IP",
@@ -285,10 +317,12 @@
     "pendingSection_few": "Ожидают ({{count}})",
     "pendingSection_many": "Ожидают ({{count}})",
     "reviewedSection": "Ранее просмотренные ({{count}})",
+    "loadMore": "Показать ещё (осталось {{count}})",
     "selection": {
-      "summary_one": "{{count}} выбран · {{records}} записей",
-      "summary_few": "{{count}} выбрано · {{records}} записей",
-      "summary_many": "{{count}} выбрано · {{records}} записей",
+      "summary_one": "Выбран {{count}} клиент",
+      "summary_few": "Выбрано {{count}} клиента",
+      "summary_many": "Выбрано {{count}} клиентов",
+      "summaryRecords": "в {{records}} развёртываниях",
       "adopt": "Принять",
       "ignore": "Игнорировать",
       "clear": "Очистить"
@@ -328,6 +362,11 @@
       "adoptOneBody": "Клиент будет зарегистрирован как управляемый на каждой ноде, где он был обнаружен.",
       "adoptManyBody": "Каждый из {{count}} клиентов будет зарегистрирован как управляемый на каждой ноде, где он был обнаружен.",
       "adoptConfirm": "Принять"
+    },
+    "rescan": {
+      "button": "Пересканировать серверы",
+      "success": "Запрос повторного обнаружения отправлен на {{count}} сервер(а/ов)",
+      "error": "Не удалось запросить повторное обнаружение"
     }
   }
 }

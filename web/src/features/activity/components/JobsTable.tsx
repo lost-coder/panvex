@@ -54,7 +54,7 @@ export function getJobColumns(t: (key: string) => string) {
             // Failure reason as a dim second line under the action so operators
             // see *why* a job failed without opening a detail modal.
             <span
-              className="text-[11px] text-status-error/80 truncate"
+              className="text-micro text-status-error/80 truncate"
               title={j.failureReason}
             >
               {j.failureReason}
@@ -86,7 +86,7 @@ export function getJobColumns(t: (key: string) => string) {
       render: (j: Readonly<JobListItem>) => (
         <span
           className={cn(
-            "text-[11px] truncate",
+            "text-micro truncate",
             j.actorLabel ? "text-fg" : "font-mono text-fg-muted",
           )}
           title={j.actorId}

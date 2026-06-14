@@ -24,6 +24,7 @@ export function mockDirectServer(overrides: MockDirectServerOverrides = {}): Ser
     id: "n-direct-1",
     name: "node-direct",
     status: "ok",
+    state: "ok",
     systemInfo: {
       version: "1.2.3",
       targetArch: "x86_64",

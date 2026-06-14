@@ -169,6 +169,54 @@ func TestSQLiteWebhookStoreMarkPaths(t *testing.T) {
 	}
 }
 
+// TestPruneOutboxDeletesOnlyTerminalRows (C4): delivered-before-cutoff and
+// dead-before-cutoff rows go away; pending and fresh-terminal rows stay.
+func TestPruneOutboxDeletesOnlyTerminalRows(t *testing.T) {
+	ws, cleanup := seedTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	insertEndpoint(t, ws, "ep-1", "https://example.com/hook", "secret", "", false, true)
+
+	now := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
+	cutoff := now.Add(-24 * time.Hour)
+	old := now.Add(-48 * time.Hour)
+
+	mustExec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := ws.db.ExecContext(ctx, query, args...); err != nil {
+			t.Fatalf("seed outbox row: %v", err)
+		}
+	}
+	// delivered long ago — pruned
+	mustExec(`INSERT INTO webhook_outbox (id, endpoint_id, event_action, payload, next_attempt_at, created_at, delivered_at)
+		VALUES ('row-delivered-old', 'ep-1', 'a.b', '{}', ?, ?, ?)`, old, old, old)
+	// delivered recently — kept
+	mustExec(`INSERT INTO webhook_outbox (id, endpoint_id, event_action, payload, next_attempt_at, created_at, delivered_at)
+		VALUES ('row-delivered-new', 'ep-1', 'a.b', '{}', ?, ?, ?)`, now, now, now)
+	// dead long ago — pruned
+	mustExec(`INSERT INTO webhook_outbox (id, endpoint_id, event_action, payload, next_attempt_at, created_at, dead)
+		VALUES ('row-dead-old', 'ep-1', 'a.b', '{}', ?, ?, 1)`, old, old)
+	// pending, old — kept (never prune undelivered live rows)
+	mustExec(`INSERT INTO webhook_outbox (id, endpoint_id, event_action, payload, next_attempt_at, created_at)
+		VALUES ('row-pending-old', 'ep-1', 'a.b', '{}', ?, ?)`, old, old)
+
+	pruned, err := ws.PruneOutbox(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("PruneOutbox() error = %v", err)
+	}
+	if pruned != 2 {
+		t.Fatalf("PruneOutbox() = %d, want 2", pruned)
+	}
+
+	var remaining int
+	if err := ws.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM webhook_outbox`).Scan(&remaining); err != nil {
+		t.Fatalf("count remaining: %v", err)
+	}
+	if remaining != 2 {
+		t.Fatalf("remaining rows = %d, want 2 (recent delivered + old pending)", remaining)
+	}
+}
+
 func TestSQLiteWebhookStoreCRUD(t *testing.T) {
 	ws, cleanup := seedTestStore(t)
 	defer cleanup()

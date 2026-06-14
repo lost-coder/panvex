@@ -5,7 +5,7 @@
 //
 // R-Q-08: pulse strip, filter spec, pending/reviewed sections, the
 // column factory, and mobile row all live in `./components/`.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, EmptyState, PageHeader, TableView } from "@/ui";
@@ -47,7 +47,10 @@ export function DiscoveredClientsPage({
   onAdoptMany,
   onIgnoreMany,
   onBack,
+  onRescan,
+  onSelectionActiveChange,
   busy,
+  rescanning,
 }: Readonly<DiscoveredClientsPageProps>) {
   const { t } = useTranslation("clients");
   const groups = useMemo(() => groupDiscovered(clients), [clients]);
@@ -57,6 +60,12 @@ export function DiscoveredClientsPage({
   const [statusFilter, setStatusFilter] = useState("all");
   const [conflictFilter, setConflictFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // U-05: tell the container whether a selection is active so it can
+  // pause/resume the live poll (prevents the list reflowing under a tap).
+  useEffect(() => {
+    onSelectionActiveChange?.(selected.size > 0);
+  }, [selected, onSelectionActiveChange]);
 
   const matches = (g: Readonly<DiscoveredGroup>) => {
     if (search) {
@@ -171,33 +180,35 @@ export function DiscoveredClientsPage({
             t,
           })}
         >
-          {filtered.length === 0 ? (
-            <EmptyState
-              title={t("discovered.empty.title")}
-              description={t("discovered.empty.description")}
+          <div className="flex flex-col gap-6">
+            <DiscoveredPendingSection
+              rows={pendingList}
+              columns={pendingColumns}
+              selected={selected}
+              selectedRecordCount={selectedIds.length}
+              onToggleSelect={toggleOne}
+              onAdopt={runAdopt}
+              onIgnore={runIgnore}
+              onClearSelection={clearSelection}
+              onBulkAdopt={runBulkAdopt}
+              onBulkIgnore={runBulkIgnore}
+              onRescan={onRescan}
+              busy={busy}
+              rescanning={rescanning}
             />
-          ) : (
-            <div className="flex flex-col gap-6">
-              <DiscoveredPendingSection
-                rows={pendingList}
-                columns={pendingColumns}
-                selected={selected}
-                selectedRecordCount={selectedIds.length}
-                onToggleSelect={toggleOne}
-                onAdopt={runAdopt}
-                onIgnore={runIgnore}
-                onClearSelection={clearSelection}
-                onBulkAdopt={runBulkAdopt}
-                onBulkIgnore={runBulkIgnore}
-                busy={busy}
+            {filtered.length === 0 ? (
+              <EmptyState
+                title={t("discovered.empty.title")}
+                description={t("discovered.empty.description")}
               />
+            ) : (
               <DiscoveredReviewedSection
                 rows={reviewedList}
                 columns={reviewedColumns}
                 busy={busy}
               />
-            </div>
-          )}
+            )}
+          </div>
         </TableView>
       </div>
     </>

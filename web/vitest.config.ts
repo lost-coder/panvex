@@ -20,18 +20,15 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
     css: false,
-    // Existing node:test files under tests/ and a few legacy *.test.ts/mts
-    // are run via `node --test`; exclude them so vitest only owns the
-    // vitest-native suites.
+    // node:test suites are run via `npm run test:state`
+    // (CI: frontend-test job; locally: pre-push hook).
+    // Exclude them here so vitest only owns the vitest-native suites.
     include: ["src/**/*.test.{ts,tsx}"],
     exclude: [
       "node_modules/**",
       "dist/**",
       "tests/**",
-      // Legacy node:test-based suites — driven via `node --test`, not
-      // vitest. After the Phase 4c/4d moves the appearance-helper test
-      // lives under shared/lib/; the router node-test file is still at
-      // the top of src/ next to the new app/router.tsx location.
+      // node:test-based suites — driven via `npm run test:state`, not vitest.
       "src/router.test.ts",
       "src/shared/lib/appearance.test.ts",
     ],
