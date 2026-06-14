@@ -61,7 +61,7 @@ export function NodeSelector({
             />
             <span className="text-sm text-fg flex-1">{node.name}</span>
             <StatusDot status={node.status} />
-            <span className="text-[10px] text-fg-muted">{node.fleetGroup}</span>
+            <span className="text-nano text-fg-muted">{node.fleetGroup}</span>
           </label>
         ))}
       </fieldset>

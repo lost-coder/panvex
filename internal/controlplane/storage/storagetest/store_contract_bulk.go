@@ -33,7 +33,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		group := storage.FleetGroupRecord{
-			ID:        "bulk-grp",
+			ID:        "00000000-0000-4000-8000-000000000002",
 			Name:      "Bulk Group",
 			CreatedAt: time.Date(2026, time.April, 1, 10, 0, 0, 0, time.UTC),
 		}
@@ -92,7 +92,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		group := storage.FleetGroupRecord{ID: "inst-grp", Name: "Inst", CreatedAt: time.Now().UTC()}
+		group := storage.FleetGroupRecord{ID: "00000000-0000-4000-8000-000000000004", Name: "Inst", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
 			t.Fatalf(errPutFleetGroupShort, err)
 		}
@@ -125,7 +125,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		group := storage.FleetGroupRecord{ID: "m-grp", Name: "M", CreatedAt: time.Now().UTC()}
+		group := storage.FleetGroupRecord{ID: "00000000-0000-4000-8000-000000000006", Name: "M", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
 			t.Fatalf(errPutFleetGroupShort, err)
 		}
@@ -158,7 +158,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		group := storage.FleetGroupRecord{ID: "sl-grp", Name: "SL", CreatedAt: time.Now().UTC()}
+		group := storage.FleetGroupRecord{ID: "00000000-0000-4000-8000-000000000007", Name: "SL", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
 			t.Fatalf(errPutFleetGroupShort, err)
 		}
@@ -212,7 +212,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		group := storage.FleetGroupRecord{ID: "slw-grp", Name: "SLW", CreatedAt: time.Now().UTC()}
+		group := storage.FleetGroupRecord{ID: "00000000-0000-4000-8000-000000000008", Name: "SLW", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
 			t.Fatalf(errPutFleetGroupShort, err)
 		}
@@ -288,7 +288,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		group := storage.FleetGroupRecord{ID: "dc-grp", Name: "DC", CreatedAt: time.Now().UTC()}
+		group := storage.FleetGroupRecord{ID: "00000000-0000-4000-8000-000000000003", Name: "DC", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
 			t.Fatalf(errPutFleetGroupShort, err)
 		}
@@ -336,7 +336,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		group := storage.FleetGroupRecord{ID: "ip-grp", Name: "IP", CreatedAt: time.Now().UTC()}
+		group := storage.FleetGroupRecord{ID: "00000000-0000-4000-8000-000000000005", Name: "IP", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
 			t.Fatalf(errPutFleetGroupShort, err)
 		}
@@ -409,7 +409,7 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		group := storage.FleetGroupRecord{ID: "usage-grp", Name: "Usage", CreatedAt: time.Now().UTC()}
+		group := storage.FleetGroupRecord{ID: "00000000-0000-4000-8000-00000000000f", Name: "Usage", CreatedAt: time.Now().UTC()}
 		if err := store.PutFleetGroup(ctx, group); err != nil {
 			t.Fatalf(errPutFleetGroupShort, err)
 		}

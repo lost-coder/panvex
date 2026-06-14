@@ -1,6 +1,10 @@
 package server
 
-import "github.com/lost-coder/panvex/internal/controlplane/agents"
+import (
+	"context"
+
+	"github.com/lost-coder/panvex/internal/controlplane/agents"
+)
 
 // agentStreamSession is kept as an alias so existing server-internal
 // code that holds a *agentStreamSession reference continues to work.
@@ -10,9 +14,10 @@ import "github.com/lost-coder/panvex/internal/controlplane/agents"
 type agentStreamSession = agents.Session
 
 // registerAgentSession installs a new gRPC stream session for agentID.
-// Thin adapter over Server.sessions (*agents.SessionManager).
-func (s *Server) registerAgentSession(agentID string) (*agentStreamSession, func()) {
-	return s.sessions.Register(agentID)
+// cancelConn is the connection ctx cancel for the stream being registered —
+// the SessionManager invokes it if this session is later superseded (B5).
+func (s *Server) registerAgentSession(agentID string, cancelConn context.CancelFunc) (*agentStreamSession, func()) {
+	return s.sessions.Register(agentID, cancelConn)
 }
 
 // notifyAgentSession wakes the session currently attached to agentID.

@@ -143,8 +143,8 @@ func (s *WebhookStore) ClaimReady(ctx context.Context, now time.Time, max int) (
 }
 
 // MarkDelivered records a successful 2xx delivery. The row stays in
-// the table so operators can audit; a future retention worker may
-// prune delivered_at-older-than-90-days.
+// the table so operators can audit; pruned by the timeseries-rollup
+// worker via PruneOutbox.
 func (s *WebhookStore) MarkDelivered(ctx context.Context, id string, deliveredAt time.Time) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE webhook_outbox
@@ -173,6 +173,21 @@ func (s *WebhookStore) MarkFailed(ctx context.Context, id string, attempt int, n
 		return fmt.Errorf("webhooks: mark failed: %w", err)
 	}
 	return checkAffected(res)
+}
+
+// PruneOutbox deletes terminal rows per the webhooks.Storage contract.
+// Delivered rows age out by delivered_at, dead rows by created_at;
+// live pending rows are never touched.
+func (s *WebhookStore) PruneOutbox(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+		DELETE FROM webhook_outbox
+		WHERE (delivered_at IS NOT NULL AND delivered_at < ?)
+		   OR (dead = 1 AND created_at < ?)
+	`, before.UTC(), before.UTC())
+	if err != nil {
+		return 0, fmt.Errorf("webhooks: prune outbox: %w", err)
+	}
+	return res.RowsAffected()
 }
 
 // scanEndpoint reads one webhook_endpoints row and decrypts the

@@ -8,11 +8,17 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
+
+// transportSwitchJobTTL bounds how long a switch_transport_mode job may sit
+// undelivered (A2): a switch that fires hours later — against an agent whose
+// operator already re-enrolled or reverted it — is worse than a failed one.
+const transportSwitchJobTTL = 10 * time.Minute
 
 type updateAgentTransportRequest struct {
 	TransportMode string `json:"transport_mode"`
@@ -136,12 +142,25 @@ func (s *Server) handleUpdateAgentTransportMode() http.HandlerFunc {
 			ActorID:        session.UserID,
 			ReadOnlyAgents: s.readOnlyAgents([]string{agentID}),
 			PayloadJSON:    string(jobPayload),
+			TTL:            transportSwitchJobTTL,
 		}, s.now())
 		if err != nil {
 			s.logger.Error("enqueue switch_transport_mode job failed", "agent_id", agentID, "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to enqueue transport mode switch job")
 			return
 		}
+
+		// A2: track "switched but never reconnected" until the next accepted
+		// agent stream clears it (runAgentSession). In-memory only: the panel is
+		// single-instance and the agent-side probation is the durable safety net.
+		s.mu.Lock()
+		if req.TransportMode == "outbound" {
+			s.transportSwitchPendingAt[agentID] = s.now()
+		} else {
+			delete(s.transportSwitchPendingAt, agentID)
+		}
+		s.mu.Unlock()
+
 		s.notifyAgentSessions([]string{agentID})
 
 		// Notify the transport manager so outbound supervisors are

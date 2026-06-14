@@ -19,14 +19,28 @@ var (
 )
 
 const (
-	runtimeCertificateRenewWindow = 24 * time.Hour
-	runtimeCertificateRenewRetry  = time.Minute
+	runtimeCertificateRenewWindow     = 24 * time.Hour
+	runtimeCertificateRenewRetry      = time.Minute
 	runtimeInitializationFastInterval = 3 * time.Second
-	gatewayStreamConnectTimeout   = 15 * time.Second
-	certificateRefreshTimeout     = 15 * time.Second
-	jobExecutionTimeout           = 30 * time.Second
-	runtimeOperationTimeout       = 20 * time.Second
-	jobQueueCapacity              = 16
+	gatewayStreamConnectTimeout       = 15 * time.Second
+	certificateRefreshTimeout         = 15 * time.Second
+	jobExecutionTimeout               = 30 * time.Second
+	runtimeOperationTimeout           = 20 * time.Second
+	jobQueueCapacity                  = 16
+	// selfUpdateRestartDelay is the window between handing the self-update
+	// JobResult to the worker and the systemd restart, sized to flush the
+	// result through criticalOutbound + the gRPC client buffer (cf. the
+	// 50ms flush window in UpdateTransport — here the whole process dies,
+	// so the margin is much larger).
+	selfUpdateRestartDelay = 2 * time.Second
+	// A5: per-action execution budgets. config.apply = health-probe budget
+	// (from the payload, default 30s) + a restart allowance + safety margin;
+	// the blanket jobExecutionTimeout strangled the apply sequence and
+	// killed the ctx mid-health-poll. Self-update needs room for the
+	// archive download on slow links.
+	configApplyRestartAllowance = 30 * time.Second
+	configApplyBudgetMargin     = 30 * time.Second
+	selfUpdateExecutionTimeout  = 5 * time.Minute
 )
 
 var errRuntimeCredentialsRefreshed = errors.New("runtime credentials refreshed")

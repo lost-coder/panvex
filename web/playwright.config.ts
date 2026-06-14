@@ -18,22 +18,9 @@ export default defineConfig({
   // control-plane backend on :18080 and have their own playwright
   // config (playwright.integration.config.ts). The smoke runner stays
   // hermetic — page.route() stubs cover every endpoint — so this
-  // ignore keeps the two suites independent. visual.spec.ts is also
-  // skipped by default: the toHaveScreenshot baselines are not
-  // committed yet, so the first run (and every CI run) would fail.
-  // Run `npm run test:e2e -- --grep @visual --update-snapshots` to
-  // mint baselines, then commit the resulting *-snapshots/ folder
-  // and remove the testIgnore entry below.
+  // ignore keeps the two suites independent.
   testIgnore: [
     "**/integration/**",
-    "**/visual.spec.ts",
-    // TODO: server-detail-telemt-unreachable.spec.ts started failing
-    // in CI on 2026-05-13 (`expect(getByRole("alert")).toContainText`
-    // fails all 3 retries). Likely the page hits the error boundary
-    // (also `role="alert"` in AppErrorFallback) because a mock route
-    // is missing after the spec was added. Needs local playwright to
-    // inspect; skip for now so the rest of the smoke suite gates.
-    "**/server-detail-telemt-unreachable.spec.ts",
   ],
   timeout: 30_000,
   expect: { timeout: 5_000 },

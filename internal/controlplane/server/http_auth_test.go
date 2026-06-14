@@ -295,10 +295,10 @@ func TestLoginTOTPLockoutIntegration(t *testing.T) {
 
 	// Sanity: the password tracker should NOT be locked. A direct check on
 	// the in-process trackers proves the two counters are independent.
-	if srv.loginLockout.IsLocked("alice", now) {
+	if srv.loginLockout.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("password lockout tripped by TOTP-only failures, want only TOTP tracker locked")
 	}
-	if !srv.totpLockout.IsLocked("alice", now) {
+	if !srv.totpLockout.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("TOTP lockout not engaged after threshold failures")
 	}
 }
@@ -346,7 +346,7 @@ func TestLoginPasswordCounterNotBumpedByTOTPFailures(t *testing.T) {
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("wrong-totp status = %d, want %d", resp.Code, http.StatusUnauthorized)
 	}
-	if srv.loginLockout.IsLocked("bob", now) {
+	if srv.loginLockout.IsLockedWithContext(context.Background(), "bob", now) {
 		t.Fatal("password tracker locked after TOTP failure, want unaffected")
 	}
 }

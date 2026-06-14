@@ -77,7 +77,7 @@ export function ChangeFleetGroupDialog({
                   </option>
                 ))}
               </select>
-              <span className="text-[11px] font-mono text-fg-muted">
+              <span className="text-micro font-mono text-fg-muted">
                 {t("fleetGroupDialog.helper")}
               </span>
             </label>

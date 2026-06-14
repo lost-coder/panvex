@@ -22,7 +22,7 @@ func TestServiceSequenceHelpers(t *testing.T) {
 		t.Fatalf("NextDiscoveredID: got %q", got)
 	}
 
-	svc.RecoverSequencesFromRecords(
+	svc.recoverSequencesFromRecords(
 		[]string{"client-0000007", "bogus"},
 		[]string{"client-assignment-0000100"},
 		[]string{"discovered-0000050"},

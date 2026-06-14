@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
@@ -349,6 +351,87 @@ func TestProvisionOutboundAgentReturns503WhenUnconfigured(t *testing.T) {
 		f.cookies)
 	if resp.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 (body=%s)", resp.Code, resp.Body.String())
+	}
+}
+
+// provisionOutboundStoreStub wraps a real sqlite.Store but intercepts
+// UpdateAgentTransportMode (to inject an error) and DeleteAgent (to record
+// which IDs were deleted). All other methods delegate to the wrapped store.
+type provisionOutboundStoreStub struct {
+	storage.Store
+	transportModeErr error
+	deletedAgentIDs  []string
+}
+
+func (s *provisionOutboundStoreStub) UpdateAgentTransportMode(ctx context.Context, agentID, transportMode, dialAddress string) error {
+	return s.transportModeErr
+}
+
+func (s *provisionOutboundStoreStub) DeleteAgent(ctx context.Context, agentID string) error {
+	s.deletedAgentIDs = append(s.deletedAgentIDs, agentID)
+	return s.Store.DeleteAgent(ctx, agentID)
+}
+
+// TestProvisionOutboundAgentRollsBackOnTransportModeFailure characterises the
+// rollback path: when UpdateAgentTransportMode fails the handler must respond
+// 500 AND call DeleteAgent for the newly-created agent row.
+func TestProvisionOutboundAgentRollsBackOnTransportModeFailure(t *testing.T) {
+	now := time.Date(2026, time.May, 14, 12, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	stub := &provisionOutboundStoreStub{
+		Store:            store,
+		transportModeErr: errors.New("simulated transport-mode failure"),
+	}
+
+	srv := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            stub,
+		PanelRuntime: PanelRuntime{
+			HTTPListenAddress: ":8080",
+			GRPCListenAddress: ":8443",
+			TLSMode:           "proxy",
+		},
+	})
+	t.Cleanup(func() { srv.Close() })
+
+	if _, _, err := srv.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+	srv.SetProvisionOutboundDeps(&ProvisionOutboundDeps{
+		Queries:    store.Queries(),
+		PanelCAPin: "sha256:fakepin",
+		PanelCN:    "panel.example.com",
+		Now:        func() time.Time { return now },
+	})
+
+	login := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login",
+		map[string]string{"username": "admin", "password": "Admin1password"}, nil)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login status = %d", login.Code)
+	}
+
+	resp := performJSONRequest(t, srv, http.MethodPost,
+		"/api/agents/provision-outbound",
+		map[string]any{
+			"node_name":    "edge-rollback-01",
+			"dial_address": "203.0.113.10:8443",
+		},
+		login.Result().Cookies())
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body=%s)", resp.Code, resp.Body.String())
+	}
+	if len(stub.deletedAgentIDs) == 0 {
+		t.Fatal("rollback: DeleteAgent was not called after UpdateAgentTransportMode failure")
 	}
 }
 

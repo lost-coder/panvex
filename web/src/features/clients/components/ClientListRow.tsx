@@ -4,9 +4,9 @@
 
 import { useTranslation } from "react-i18next";
 
-import { StatusDot, formatBytes, type ClientListItem } from "@/ui";
+import { formatBytes, type ClientListItem } from "@/ui";
 
-import { ClientStatusBadge, effectiveClientStatus } from "./ClientsPageCells";
+import { ClientStateBadge, deriveClientState } from "./ClientsPageCells";
 
 export interface ClientListRowProps {
   client: ClientListItem;
@@ -26,7 +26,7 @@ export function ClientListRow({
   nowMs,
 }: Readonly<ClientListRowProps>) {
   const { t } = useTranslation("clients");
-  const status = effectiveClientStatus(client, nowMs);
+  const state = deriveClientState(client, nowMs);
   return (
     <div
       onClick={onClick}
@@ -50,14 +50,13 @@ export function ClientListRow({
           className="accent-accent size-4 cursor-pointer"
         />
       )}
-      <StatusDot status={client.enabled ? "ok" : "error"} />
+      <ClientStateBadge state={state} />
       <div className="flex flex-col min-w-0 flex-1">
         <span className="font-medium text-fg truncate">{client.name}</span>
-        <span className="text-[11px] font-mono text-fg-muted tabular-nums">
+        <span className="text-micro font-mono text-fg-muted tabular-nums">
           {client.activeTcpConns} {t("table.connsSuffix")} · {formatBytes(client.trafficUsedBytes)}
         </span>
       </div>
-      <ClientStatusBadge status={status} />
     </div>
   );
 }

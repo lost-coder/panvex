@@ -56,6 +56,8 @@ func convertInstanceSnapshots(in []*gatewayrpc.InstanceSnapshot) []instanceSnaps
 			Name:              instance.Name,
 			Version:           instance.Version,
 			ConfigFingerprint: instance.ConfigFingerprint,
+			ManagedConfigHash: instance.GetManagedConfigHash(),
+			ManagedConfigJSON: instance.GetManagedConfigJson(),
 			Connections:       int(instance.Connections),
 			ReadOnly:          instance.ReadOnly,
 		})

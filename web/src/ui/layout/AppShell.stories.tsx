@@ -4,7 +4,6 @@ import { PageHeader } from "./PageHeader";
 import { SectionHeader } from "./SectionHeader";
 import { GaugeStrip } from "@/ui/compositions/GaugeStrip";
 import { AlertStrip } from "@/ui/compositions/AlertStrip";
-import { StatusHero } from "@/ui/compositions/StatusHero";
 
 const meta: Meta<typeof AppShell> = {
   title: "Layout/AppShell",
@@ -33,10 +32,6 @@ export const DashboardPage: Story = {
       <div className="flex flex-col gap-4">
         <PageHeader title="Dashboard" subtitle="System-wide overview" />
         <div className="px-4 md:px-8 flex flex-col gap-6">
-          <div>
-            <SectionHeader title="Status" />
-            <StatusHero online={24} degraded={1} offline={0} />
-          </div>
           <div>
             <SectionHeader title="Server Metrics" />
             <GaugeStrip

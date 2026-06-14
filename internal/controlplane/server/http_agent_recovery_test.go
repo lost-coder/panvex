@@ -3,9 +3,12 @@ package server
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -127,9 +130,21 @@ func TestHTTPAgentCertificateRecoveryConsumesAdminGrant(t *testing.T) {
 func newAgentCertificateRecoveryRequestForTest(t *testing.T, server *Server, agentID string, observedAt time.Time) map[string]any {
 	t.Helper()
 
-	issued, err := server.authority.issueClientCertificate(agentID, observedAt.Add(-time.Hour))
+	existingKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatalf("issueClientCertificate() error = %v", err)
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	existingCSRDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: agentID},
+	}, existingKey)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest() error = %v", err)
+	}
+	existingCSRPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: existingCSRDER}))
+
+	issued, err := server.authority.issueAgentCertificateFromCSR(existingCSRPEM, agentID, agentCertificateLifetime, true, observedAt.Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("issueAgentCertificateFromCSR() error = %v", err)
 	}
 	certificate, err := parseRecoveryCertificate(issued.CertificatePEM)
 	if err != nil {
@@ -139,7 +154,7 @@ func newAgentCertificateRecoveryRequestForTest(t *testing.T, server *Server, age
 		t.Fatalf("verifyRecoveryCertificate() error = %v", err)
 	}
 
-	privateKey := parseRecoveryPrivateKeyForTest(t, issued.PrivateKeyPEM)
+	privateKey := existingKey
 	proofTimestampUnix := observedAt.Unix()
 	proofNonce := "recovery-nonce-123"
 	payload := recoveryProofPayload(agentID, proofTimestampUnix, proofNonce)
@@ -149,29 +164,24 @@ func newAgentCertificateRecoveryRequestForTest(t *testing.T, server *Server, age
 		t.Fatalf("SignASN1() error = %v", err)
 	}
 
+	// A9: generate a fresh keypair and CSR for the recovery request.
+	newKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+	csrPEM, err := buildCSRPEMForRecoveryTest(t, agentID, newKey)
+	if err != nil {
+		t.Fatalf("buildCSRPEMForRecoveryTest() error = %v", err)
+	}
+
 	return map[string]any{
 		"agent_id":             agentID,
 		"certificate_pem":      issued.CertificatePEM,
 		"proof_timestamp_unix": proofTimestampUnix,
 		"proof_nonce":          proofNonce,
 		"proof_signature":      base64.RawURLEncoding.EncodeToString(signature),
+		"csr_pem":              csrPEM,
 	}
-}
-
-func parseRecoveryPrivateKeyForTest(t *testing.T, privateKeyPEM string) *ecdsa.PrivateKey {
-	t.Helper()
-
-	block, _ := pem.Decode([]byte(privateKeyPEM))
-	if block == nil {
-		t.Fatal("pem.Decode(private key) = nil, want key block")
-	}
-
-	privateKey, err := x509.ParseECPrivateKey(block.Bytes)
-	if err != nil {
-		t.Fatalf("ParseECPrivateKey() error = %v", err)
-	}
-
-	return privateKey
 }
 
 func seedRecoveryTestAgent(t *testing.T, server *Server, store *sqlite.Store, now time.Time) {
@@ -197,6 +207,140 @@ func seedRecoveryTestAgent(t *testing.T, server *Server, store *sqlite.Store, no
 		Version:      record.Version,
 		LastSeenAt:   record.LastSeenAt,
 	})
+}
+
+// TestAgentCertificateRecoveryRequiresMatchingCSR verifies:
+//   - A recovery request with a CSR whose CN matches the agent ID succeeds (200),
+//     returns no private_key_pem, and the issued cert pairs with the locally
+//     generated key.
+//   - A recovery request with a CSR whose CN does not match the agent ID is
+//     rejected (400).
+func TestAgentCertificateRecoveryRequiresMatchingCSR(t *testing.T) {
+	now := time.Date(2026, time.March, 28, 13, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+	seedRecoveryTestAgent(t, server, store, now)
+
+	// Bootstrap an admin and create a recovery grant helper.
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
+		"username": "admin",
+		"password": "Admin1password",
+	}, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("POST /api/auth/login status = %d, want %d", loginResponse.Code, http.StatusOK)
+	}
+	cookies := loginResponse.Result().Cookies()
+
+	createGrant := func(t *testing.T) {
+		t.Helper()
+		resp := performJSONRequest(t, server, http.MethodPost, "/api/agents/agent-1/certificate-recovery-grants",
+			map[string]any{"ttl_seconds": 900}, cookies)
+		if resp.Code != http.StatusCreated {
+			t.Fatalf("create grant: status = %d, want %d, body = %s", resp.Code, http.StatusCreated, resp.Body.String())
+		}
+	}
+
+	// --- Case 1: CSR CN matches agent ID → 200, no private_key_pem, cert pairs with local key ---
+	t.Run("matching CSR", func(t *testing.T) {
+		createGrant(t)
+
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatalf("GenerateKey() error = %v", err)
+		}
+		csrPEM, err := buildCSRPEMForRecoveryTest(t, "agent-1", key)
+		if err != nil {
+			t.Fatalf("buildCSRPEM() error = %v", err)
+		}
+
+		req := newAgentCertificateRecoveryRequestForTest(t, server, "agent-1", now)
+		req["csr_pem"] = csrPEM
+
+		recoveryResp := performJSONRequestWithHeaders(t, server, http.MethodPost,
+			"https://panel.example.com/api/agent/recover-certificate", req, nil, nil)
+		if recoveryResp.Code != http.StatusOK {
+			t.Fatalf("recovery with matching CSR: status = %d, want %d, body = %s",
+				recoveryResp.Code, http.StatusOK, recoveryResp.Body.String())
+		}
+
+		var body map[string]any
+		if err := json.Unmarshal(recoveryResp.Body.Bytes(), &body); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v", err)
+		}
+		if _, ok := body["private_key_pem"]; ok {
+			t.Fatal("response must not contain private_key_pem")
+		}
+		certPEM, _ := body["certificate_pem"].(string)
+		if certPEM == "" {
+			t.Fatal("response missing certificate_pem")
+		}
+
+		// Validate the issued cert pairs with the key we generated locally.
+		keyDER, err := x509.MarshalECPrivateKey(key)
+		if err != nil {
+			t.Fatalf("MarshalECPrivateKey() error = %v", err)
+		}
+		keyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
+		if _, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM)); err != nil {
+			t.Fatalf("issued cert does not pair with local key: %v", err)
+		}
+	})
+
+	// --- Case 2: CSR CN does NOT match agent ID → 400 ---
+	t.Run("mismatched CSR CN", func(t *testing.T) {
+		createGrant(t)
+
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatalf("GenerateKey() error = %v", err)
+		}
+		csrPEM, err := buildCSRPEMForRecoveryTest(t, "wrong-agent-id", key)
+		if err != nil {
+			t.Fatalf("buildCSRPEM() error = %v", err)
+		}
+
+		req := newAgentCertificateRecoveryRequestForTest(t, server, "agent-1", now)
+		req["csr_pem"] = csrPEM
+
+		recoveryResp := performJSONRequestWithHeaders(t, server, http.MethodPost,
+			"https://panel.example.com/api/agent/recover-certificate", req, nil, nil)
+		if recoveryResp.Code != http.StatusBadRequest {
+			t.Fatalf("recovery with mismatched CSR CN: status = %d, want %d, body = %s",
+				recoveryResp.Code, http.StatusBadRequest, recoveryResp.Body.String())
+		}
+	})
+}
+
+// buildCSRPEMForRecoveryTest builds a minimal CERTIFICATE REQUEST PEM block
+// with the given CN signed by key. It mirrors the agent-side buildCSRPEM helper
+// without pulling in the cmd/agent package.
+func buildCSRPEMForRecoveryTest(t *testing.T, cn string, key *ecdsa.PrivateKey) (string, error) {
+	t.Helper()
+	template := &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: cn},
+	}
+	der, err := x509.CreateCertificateRequest(rand.Reader, template, key)
+	if err != nil {
+		return "", err
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})), nil
 }
 
 func TestHTTPAgentCertificateRecoveryGrantCreateResponseRoundTrip(t *testing.T) {

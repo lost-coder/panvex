@@ -132,7 +132,7 @@ function TimelineStripInner({
           vectorEffect="non-scaling-stroke"
         />
       </svg>
-      <div className="flex items-center justify-between text-[10px] font-mono text-fg-muted">
+      <div className="flex items-center justify-between text-nano font-mono text-fg-muted">
         <div className="flex gap-3">
           <span>
             <span style={{ color: "var(--color-accent)" }}>●</span> {t("detail.telemetry.legendConnections")}

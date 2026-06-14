@@ -73,7 +73,7 @@ export function HeroStrip({
             )}
           </div>
           {pills && pills.length > 0 && (
-            <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-fg-muted">
+            <div className="flex flex-wrap items-center gap-3 text-micro font-mono text-fg-muted">
               {pills.map((p, i) => (
                 <span key={`${p.label}-${i}`} className="inline-flex items-baseline gap-1">
                   <span className="uppercase tracking-wider text-fg-faint">
