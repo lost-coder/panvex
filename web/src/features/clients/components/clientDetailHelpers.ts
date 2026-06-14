@@ -1,28 +1,21 @@
-// R-Q-08: status / expiry helpers extracted from ClientDetailPage.tsx
-// so the host page is left with composition-only concerns.
+// R-Q-08: expiry helpers used by ClientDetailHero. The old 3-state
+// `clientStatus`/`isExpired` were removed in Plan 2h — status now flows
+// through the unified `deriveClientState` (ClientsPageCells).
 
-export function isExpired(rfc: string): boolean {
-  if (!rfc) return false;
-  const t = Date.parse(rfc);
-  return Number.isFinite(t) && t < Date.now();
-}
+import i18next from "i18next";
 
-export function clientStatus(
-  enabled: boolean,
-  rfc: string,
-): "active" | "disabled" | "expired" {
-  if (isExpired(rfc)) return "expired";
-  return enabled ? "active" : "disabled";
-}
-
+// Relative expiry label. Localised via i18next (the strings used to be
+// hardcoded English — "never"/"today"/"in 5d" — and leaked into the RU UI).
 export function expiresSuffix(rfc: string): string {
-  if (!rfc) return "never";
+  const tr = (key: string, opts?: Record<string, unknown>): string =>
+    i18next.t(`clients:detail.expiresRelative.${key}`, opts ?? {}) as unknown as string;
+  if (!rfc) return tr("never");
   const t = Date.parse(rfc);
   if (!Number.isFinite(t)) return "—";
   const days = Math.floor((t - Date.now()) / (1000 * 60 * 60 * 24));
-  if (days < 0) return `${Math.abs(days)}d ago`;
-  if (days === 0) return "today";
-  return `in ${days}d`;
+  if (days < 0) return tr("daysAgo", { days: Math.abs(days) });
+  if (days === 0) return tr("today");
+  return tr("inDays", { days });
 }
 
 export function expiresTone(rfc: string): "default" | "warn" | "error" {

@@ -178,7 +178,7 @@ export function Sidebar({
       {footer && (
         <div
           className={cn(
-            "py-3 border-t border-border text-[10px] text-fg-muted w-full",
+            "py-3 border-t border-border text-nano text-fg-muted w-full",
             expanded ? "px-2" : "flex justify-center",
           )}
         >

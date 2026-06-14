@@ -247,4 +247,42 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 			t.Fatalf("err = %v, want ErrNotFound", err)
 		}
 	})
+
+	t.Run("delete expired agent revocations keeps live rows", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		now := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
+		expired := storage.AgentRevocationRecord{
+			AgentID:       "agent-expired",
+			RevokedAt:     now.Add(-72 * time.Hour),
+			CertExpiresAt: now.Add(-time.Hour),
+		}
+		live := storage.AgentRevocationRecord{
+			AgentID:       "agent-live",
+			RevokedAt:     now.Add(-time.Hour),
+			CertExpiresAt: now.Add(24 * time.Hour),
+		}
+		for _, rec := range []storage.AgentRevocationRecord{expired, live} {
+			if err := store.PutAgentRevocation(ctx, rec); err != nil {
+				t.Fatalf("PutAgentRevocation(%s) error = %v", rec.AgentID, err)
+			}
+		}
+
+		deleted, err := store.DeleteExpiredAgentRevocations(ctx, now)
+		if err != nil {
+			t.Fatalf("DeleteExpiredAgentRevocations() error = %v", err)
+		}
+		if deleted != 1 {
+			t.Fatalf("DeleteExpiredAgentRevocations() = %d, want 1", deleted)
+		}
+		remaining, err := store.ListAgentRevocations(ctx)
+		if err != nil {
+			t.Fatalf("ListAgentRevocations() error = %v", err)
+		}
+		if len(remaining) != 1 || remaining[0].AgentID != "agent-live" {
+			t.Fatalf("remaining revocations = %+v, want only agent-live", remaining)
+		}
+	})
 }

@@ -13,7 +13,7 @@ export function SectionHeader({ title, badge, trailing, className }: Readonly<Se
       <div className="flex items-center gap-2">
         <h2 className="text-xs font-semibold text-fg-muted uppercase tracking-wider">{title}</h2>
         {badge !== undefined && (
-          <span className="text-[10px] font-mono bg-fg-faint text-fg-muted rounded px-1.5 py-0.5 leading-none">
+          <span className="text-nano font-mono bg-fg-faint text-fg-muted rounded px-1.5 py-0.5 leading-none">
             {badge}
           </span>
         )}

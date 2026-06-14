@@ -69,8 +69,12 @@ func (ClientDataRequest_RequestType) EnumDescriptor() ([]byte, []int) {
 }
 
 type RenewCertificateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentId       string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	AgentId string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	// csr_pem carries a CERTIFICATE REQUEST built by the agent with a freshly
+	// generated keypair; the private key never leaves the agent (A9). CN must
+	// equal agent_id.
+	CsrPem        string `protobuf:"bytes,2,opt,name=csr_pem,json=csrPem,proto3" json:"csr_pem,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -112,10 +116,16 @@ func (x *RenewCertificateRequest) GetAgentId() string {
 	return ""
 }
 
+func (x *RenewCertificateRequest) GetCsrPem() string {
+	if x != nil {
+		return x.CsrPem
+	}
+	return ""
+}
+
 type RenewCertificateResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	CertificatePem string                 `protobuf:"bytes,1,opt,name=certificate_pem,json=certificatePem,proto3" json:"certificate_pem,omitempty"`
-	PrivateKeyPem  string                 `protobuf:"bytes,2,opt,name=private_key_pem,json=privateKeyPem,proto3" json:"private_key_pem,omitempty"`
 	CaPem          string                 `protobuf:"bytes,3,opt,name=ca_pem,json=caPem,proto3" json:"ca_pem,omitempty"`
 	ExpiresAtUnix  int64                  `protobuf:"varint,4,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -155,13 +165,6 @@ func (*RenewCertificateResponse) Descriptor() ([]byte, []int) {
 func (x *RenewCertificateResponse) GetCertificatePem() string {
 	if x != nil {
 		return x.CertificatePem
-	}
-	return ""
-}
-
-func (x *RenewCertificateResponse) GetPrivateKeyPem() string {
-	if x != nil {
-		return x.PrivateKeyPem
 	}
 	return ""
 }
@@ -272,6 +275,14 @@ type InstanceSnapshot struct {
 	ConfigFingerprint string                 `protobuf:"bytes,4,opt,name=config_fingerprint,json=configFingerprint,proto3" json:"config_fingerprint,omitempty"`
 	Connections       int32                  `protobuf:"varint,5,opt,name=connections,proto3" json:"connections,omitempty"`
 	ReadOnly          bool                   `protobuf:"varint,6,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
+	// Canonical SHA-256 of the node's current editable config sections
+	// (general/timeouts/censorship/upstreams/show_link/dc_overrides). Sent every
+	// snapshot as a cheap drift change-detector; empty when local Telemt is too old.
+	ManagedConfigHash string `protobuf:"bytes,7,opt,name=managed_config_hash,json=managedConfigHash,proto3" json:"managed_config_hash,omitempty"`
+	// Full editable config sections as canonical JSON, sent ONLY when
+	// managed_config_hash changed since the agent last sent it (delta-gated); empty
+	// otherwise. The control plane caches the last non-empty value per agent.
+	ManagedConfigJson string `protobuf:"bytes,8,opt,name=managed_config_json,json=managedConfigJson,proto3" json:"managed_config_json,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -346,6 +357,20 @@ func (x *InstanceSnapshot) GetReadOnly() bool {
 		return x.ReadOnly
 	}
 	return false
+}
+
+func (x *InstanceSnapshot) GetManagedConfigHash() string {
+	if x != nil {
+		return x.ManagedConfigHash
+	}
+	return ""
+}
+
+func (x *InstanceSnapshot) GetManagedConfigJson() string {
+	if x != nil {
+		return x.ManagedConfigJson
+	}
+	return ""
 }
 
 type ClientUsageSnapshot struct {
@@ -2000,8 +2025,16 @@ type RuntimeDiagnosticsSnapshot struct {
 	MinimalAllJson      string                 `protobuf:"bytes,6,opt,name=minimal_all_json,json=minimalAllJson,proto3" json:"minimal_all_json,omitempty"`
 	MePoolJson          string                 `protobuf:"bytes,7,opt,name=me_pool_json,json=mePoolJson,proto3" json:"me_pool_json,omitempty"`
 	DcsJson             string                 `protobuf:"bytes,8,opt,name=dcs_json,json=dcsJson,proto3" json:"dcs_json,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// content_hash is a SHA-256 over the (state, state_reason, *_json) tuple,
+	// sent on EVERY snapshot. When the tuple is unchanged since the agent's
+	// previous report, the body fields above are omitted (empty) and the panel
+	// must carry forward its stored diagnostics row instead of overwriting it
+	// with blanks (D5). An EMPTY hash keeps the historical overwrite
+	// semantics — that covers pre-gating agents and the deliberate blank
+	// record sent by BuildRuntimeUnreachableSnapshot.
+	ContentHash   string `protobuf:"bytes,9,opt,name=content_hash,json=contentHash,proto3" json:"content_hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RuntimeDiagnosticsSnapshot) Reset() {
@@ -2090,13 +2123,28 @@ func (x *RuntimeDiagnosticsSnapshot) GetDcsJson() string {
 	return ""
 }
 
+func (x *RuntimeDiagnosticsSnapshot) GetContentHash() string {
+	if x != nil {
+		return x.ContentHash
+	}
+	return ""
+}
+
 type RuntimeSecurityInventorySnapshot struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	State         string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
-	StateReason   string                 `protobuf:"bytes,2,opt,name=state_reason,json=stateReason,proto3" json:"state_reason,omitempty"`
-	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	EntriesTotal  int32                  `protobuf:"varint,4,opt,name=entries_total,json=entriesTotal,proto3" json:"entries_total,omitempty"`
-	EntriesJson   string                 `protobuf:"bytes,5,opt,name=entries_json,json=entriesJson,proto3" json:"entries_json,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	State        string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	StateReason  string                 `protobuf:"bytes,2,opt,name=state_reason,json=stateReason,proto3" json:"state_reason,omitempty"`
+	Enabled      bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	EntriesTotal int32                  `protobuf:"varint,4,opt,name=entries_total,json=entriesTotal,proto3" json:"entries_total,omitempty"`
+	EntriesJson  string                 `protobuf:"bytes,5,opt,name=entries_json,json=entriesJson,proto3" json:"entries_json,omitempty"`
+	// content_hash is a SHA-256 over the (state, state_reason, *_json) tuple,
+	// sent on EVERY snapshot. When the tuple is unchanged since the agent's
+	// previous report, the body fields above are omitted (empty) and the panel
+	// must carry forward its stored diagnostics row instead of overwriting it
+	// with blanks (D5). An EMPTY hash keeps the historical overwrite
+	// semantics — that covers pre-gating agents and the deliberate blank
+	// record sent by BuildRuntimeUnreachableSnapshot.
+	ContentHash   string `protobuf:"bytes,6,opt,name=content_hash,json=contentHash,proto3" json:"content_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2162,6 +2210,13 @@ func (x *RuntimeSecurityInventorySnapshot) GetEntriesTotal() int32 {
 func (x *RuntimeSecurityInventorySnapshot) GetEntriesJson() string {
 	if x != nil {
 		return x.EntriesJson
+	}
+	return ""
+}
+
+func (x *RuntimeSecurityInventorySnapshot) GetContentHash() string {
+	if x != nil {
+		return x.ContentHash
 	}
 	return ""
 }
@@ -2632,11 +2687,15 @@ func (x *ClientDataRequest) GetRequestId() string {
 }
 
 type ClientDataResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Clients       []*ClientDetailRecord  `protobuf:"bytes,2,rep,name=clients,proto3" json:"clients,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Clients   []*ClientDetailRecord  `protobuf:"bytes,2,rep,name=clients,proto3" json:"clients,omitempty"`
+	// Set by the agent when it could not read the Telemt user list (Telemt API
+	// unreachable). Lets the panel distinguish a real "zero clients" snapshot
+	// from a failed fetch and skip pruning / mis-reconciling.
+	TelemtUnreachable bool `protobuf:"varint,3,opt,name=telemt_unreachable,json=telemtUnreachable,proto3" json:"telemt_unreachable,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ClientDataResponse) Reset() {
@@ -2681,6 +2740,13 @@ func (x *ClientDataResponse) GetClients() []*ClientDetailRecord {
 		return x.Clients
 	}
 	return nil
+}
+
+func (x *ClientDataResponse) GetTelemtUnreachable() bool {
+	if x != nil {
+		return x.TelemtUnreachable
+	}
+	return false
 }
 
 type ClientDetailRecord struct {
@@ -3772,28 +3838,30 @@ var File_agent_gateway_proto protoreflect.FileDescriptor
 
 const file_agent_gateway_proto_rawDesc = "" +
 	"\n" +
-	"\x13agent_gateway.proto\x12\x11panvex.gateway.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"4\n" +
+	"\x13agent_gateway.proto\x12\x11panvex.gateway.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"M\n" +
 	"\x17RenewCertificateRequest\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\"\xaa\x01\n" +
+	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x17\n" +
+	"\acsr_pem\x18\x02 \x01(\tR\x06csrPem\"\x99\x01\n" +
 	"\x18RenewCertificateResponse\x12'\n" +
-	"\x0fcertificate_pem\x18\x01 \x01(\tR\x0ecertificatePem\x12&\n" +
-	"\x0fprivate_key_pem\x18\x02 \x01(\tR\rprivateKeyPem\x12\x15\n" +
+	"\x0fcertificate_pem\x18\x01 \x01(\tR\x0ecertificatePem\x12\x15\n" +
 	"\x06ca_pem\x18\x03 \x01(\tR\x05caPem\x12&\n" +
-	"\x0fexpires_at_unix\x18\x04 \x01(\x03R\rexpiresAtUnix\"\xd0\x01\n" +
+	"\x0fexpires_at_unix\x18\x04 \x01(\x03R\rexpiresAtUnixJ\x04\b\x02\x10\x03R\x0fprivate_key_pem\"\xd0\x01\n" +
 	"\tHeartbeat\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12$\n" +
 	"\x0efleet_group_id\x18\x04 \x01(\tR\ffleetGroupId\x12\x18\n" +
 	"\aversion\x18\x05 \x01(\tR\aversion\x12\x1b\n" +
 	"\tread_only\x18\x06 \x01(\bR\breadOnly\x12(\n" +
-	"\x10observed_at_unix\x18\a \x01(\x03R\x0eobservedAtUnixJ\x04\b\x03\x10\x04\"\xbe\x01\n" +
+	"\x10observed_at_unix\x18\a \x01(\x03R\x0eobservedAtUnixJ\x04\b\x03\x10\x04\"\x9e\x02\n" +
 	"\x10InstanceSnapshot\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12-\n" +
 	"\x12config_fingerprint\x18\x04 \x01(\tR\x11configFingerprint\x12 \n" +
 	"\vconnections\x18\x05 \x01(\x05R\vconnections\x12\x1b\n" +
-	"\tread_only\x18\x06 \x01(\bR\breadOnly\"\xf0\x02\n" +
+	"\tread_only\x18\x06 \x01(\bR\breadOnly\x12.\n" +
+	"\x13managed_config_hash\x18\a \x01(\tR\x11managedConfigHash\x12.\n" +
+	"\x13managed_config_json\x18\b \x01(\tR\x11managedConfigJson\"\xf0\x02\n" +
 	"\x13ClientUsageSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +
 	"\x13traffic_delta_bytes\x18\x02 \x01(\x04R\x11trafficDeltaBytes\x12&\n" +
@@ -3962,7 +4030,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x12ConnectionTopEntry\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12 \n" +
 	"\vconnections\x18\x02 \x01(\x05R\vconnections\x12)\n" +
-	"\x10throughput_bytes\x18\x03 \x01(\x04R\x0fthroughputBytes\"\xce\x02\n" +
+	"\x10throughput_bytes\x18\x03 \x01(\x04R\x0fthroughputBytes\"\xf1\x02\n" +
 	"\x1aRuntimeDiagnosticsSnapshot\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12!\n" +
 	"\fstate_reason\x18\x02 \x01(\tR\vstateReason\x12(\n" +
@@ -3972,13 +4040,15 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x10minimal_all_json\x18\x06 \x01(\tR\x0eminimalAllJson\x12 \n" +
 	"\fme_pool_json\x18\a \x01(\tR\n" +
 	"mePoolJson\x12\x19\n" +
-	"\bdcs_json\x18\b \x01(\tR\adcsJson\"\xbd\x01\n" +
+	"\bdcs_json\x18\b \x01(\tR\adcsJson\x12!\n" +
+	"\fcontent_hash\x18\t \x01(\tR\vcontentHash\"\xe0\x01\n" +
 	" RuntimeSecurityInventorySnapshot\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12!\n" +
 	"\fstate_reason\x18\x02 \x01(\tR\vstateReason\x12\x18\n" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12#\n" +
 	"\rentries_total\x18\x04 \x01(\x05R\fentriesTotal\x12!\n" +
-	"\fentries_json\x18\x05 \x01(\tR\ventriesJson\"\xf5\a\n" +
+	"\fentries_json\x18\x05 \x01(\tR\ventriesJson\x12!\n" +
+	"\fcontent_hash\x18\x06 \x01(\tR\vcontentHash\"\xf5\a\n" +
 	"\bSnapshot\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12$\n" +
@@ -4030,11 +4100,12 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"request_id\x18\x03 \x01(\tR\trequestId\"3\n" +
 	"\vRequestType\x12\x11\n" +
 	"\rSINGLE_CLIENT\x10\x00\x12\x11\n" +
-	"\rFULL_SNAPSHOT\x10\x01\"t\n" +
+	"\rFULL_SNAPSHOT\x10\x01\"\xa3\x01\n" +
 	"\x12ClientDataResponse\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12?\n" +
-	"\aclients\x18\x02 \x03(\v2%.panvex.gateway.v1.ClientDetailRecordR\aclients\"\x89\x04\n" +
+	"\aclients\x18\x02 \x03(\v2%.panvex.gateway.v1.ClientDetailRecordR\aclients\x12-\n" +
+	"\x12telemt_unreachable\x18\x03 \x01(\bR\x11telemtUnreachable\"\x89\x04\n" +
 	"\x12ClientDetailRecord\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x1f\n" +
 	"\vclient_name\x18\x02 \x01(\tR\n" +

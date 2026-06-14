@@ -15,7 +15,9 @@ import { IPHistoryCard } from "./components/IPHistoryCard";
 import { LimitsCard } from "./components/LimitsCard";
 import { ResetQuotaHistory } from "./components/ResetQuotaHistory";
 import { SecretSection } from "./components/SecretSection";
-import { clientStatus } from "./components/clientDetailHelpers";
+import { SubscriptionLinkCard } from "./SubscriptionLinkCard";
+import { deriveClientState } from "./components/ClientsPageCells";
+import { useNowSec } from "@/shared/hooks/useNowSec";
 import {
   Breadcrumbs,
   SwipeTabView,
@@ -52,6 +54,8 @@ export function ClientDetailPage({
   onRotateSecret,
   secretRotating,
   secretPendingRedeploy,
+  onRotateSubscription,
+  subscriptionRotating,
   onRedeploy,
   redeploying,
   onDisable,
@@ -65,6 +69,9 @@ export function ClientDetailPage({
   resetEverywherePending,
 }: Readonly<ClientDetailPageProps>) {
   const { t } = useTranslation("clients");
+  // Auto-refreshing "now" — lifted out of the render path so the
+  // state derivation below stays pure (react-hooks/purity).
+  const nowMs = useNowSec() * 1000;
   // Expose "Redeploy" as a prominent action whenever at least one
   // deployment is not yet succeeded — failed (Telemt rejected the
   // apply) or queued (agent offline / job in flight too long).
@@ -82,12 +89,27 @@ export function ClientDetailPage({
     setEditOpen(true);
   };
 
-  const status = clientStatus(client.enabled, client.expirationRfc3339);
-  const statusLabel = (() => {
-    if (status === "expired") return t("detail.statusExpired");
-    if (status === "disabled") return t("detail.statusDisabled");
-    return t("detail.statusActive");
+  // Plan 2h: unified 7-state badge. The detail payload lacks
+  // assignedNodesCount / lastDeployStatus, so synthesise them from
+  // deployments[] (assigned ≈ deployment count; deploy status mirrors
+  // backend deriveClientDeployStatus).
+  const lastDeployStatus = (() => {
+    if (client.deployments.length === 0) return "idle";
+    if (client.deployments.some((d) => d.status === "failed")) return "failed";
+    if (client.deployments.some((d) => d.status !== "succeeded")) return "pending";
+    return "succeeded";
   })();
+  const clientState = deriveClientState(
+    {
+      enabled: client.enabled,
+      expirationRfc3339: client.expirationRfc3339,
+      trafficUsedBytes: client.trafficUsedBytes,
+      dataQuotaBytes: client.dataQuotaBytes,
+      assignedNodesCount: client.deployments.length,
+      lastDeployStatus,
+    },
+    nowMs,
+  );
 
   // Rotate confirmation is owned by the container (global ConfirmProvider
   // already wraps this flow with a `requireTypeMatch`-style dialog).
@@ -98,6 +120,13 @@ export function ClientDetailPage({
       onRotate={onRotateSecret}
       rotating={secretRotating}
       pendingRedeploy={secretPendingRedeploy}
+    />
+  );
+  const subscriptionCard = (
+    <SubscriptionLinkCard
+      url={client.subscriptionUrl}
+      rotating={subscriptionRotating ?? false}
+      onRotate={onRotateSubscription ?? (() => {})}
     />
   );
   const deployLinks = (
@@ -133,8 +162,7 @@ export function ClientDetailPage({
         enabled={client.enabled}
         expirationRfc3339={client.expirationRfc3339}
         fleetGroupIds={client.fleetGroupIds}
-        statusLabel={statusLabel}
-        status={status}
+        state={clientState}
         hasFailedDeployment={hasFailedDeployment}
         onEdit={onEdit ? openEdit : undefined}
         onDisable={onDisable}
@@ -155,23 +183,28 @@ export function ClientDetailPage({
 
         {/* Mobile: swipe tabs keep the scroll bounded on narrow viewports. */}
         <div className="md:hidden">
+          {/* U-17: Deployments first — handing out a connection link is the
+              primary task. Secret (a service action) moves last. */}
           <SwipeTabView
             tabs={[
-              { id: "secret", label: t("detail.tabs.secret"), content: secretSection },
               { id: "deploy", label: t("detail.tabs.deploy"), content: deployLinks },
-              { id: "ips", label: t("detail.tabs.ips"), content: ipHistoryCard },
               { id: "limits", label: t("detail.tabs.limits"), content: limitsCard },
+              { id: "ips", label: t("detail.tabs.ips"), content: ipHistoryCard },
+              { id: "secret", label: t("detail.tabs.secret"), content: secretSection },
+              { id: "subscription", label: t("subscription.title"), content: subscriptionCard },
             ]}
           />
           {resetHistoryCard}
         </div>
 
-        {/* Desktop: stacked sections in reading order. */}
+        {/* Desktop: stacked sections, deployments-first to match the
+            primary task (U-17); secret drops below the fold. */}
         <div className="hidden md:flex flex-col gap-5">
-          {secretSection}
           {deployLinks}
-          {ipHistoryCard}
           {limitsCard}
+          {ipHistoryCard}
+          {secretSection}
+          {subscriptionCard}
           {resetHistoryCard}
         </div>
       </div>

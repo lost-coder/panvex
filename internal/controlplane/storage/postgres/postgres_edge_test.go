@@ -46,7 +46,7 @@ func TestTransactRollsBackOnContextCancel(t *testing.T) {
 
 	ctx := context.Background()
 	seed := storage.FleetGroupRecord{
-		ID:        "fg-pg-tx-seed",
+		ID:        "00000000-0000-4000-8000-000000000011",
 		Name:      "seed",
 		CreatedAt: time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC),
 	}
@@ -58,7 +58,7 @@ func TestTransactRollsBackOnContextCancel(t *testing.T) {
 	cancelled := errors.New("cancelled")
 	err := store.Transact(txCtx, func(tx storage.Store) error {
 		if err := tx.PutFleetGroup(txCtx, storage.FleetGroupRecord{
-			ID:        "fg-pg-tx-rollback",
+			ID:        "00000000-0000-4000-8000-000000000012",
 			Name:      "rollback-me",
 			CreatedAt: time.Date(2026, time.April, 18, 10, 5, 0, 0, time.UTC),
 		}); err != nil {
@@ -71,7 +71,7 @@ func TestTransactRollsBackOnContextCancel(t *testing.T) {
 		t.Fatal("Transact returned nil, want non-nil after ctx-cancel")
 	}
 
-	if _, err := store.GetFleetGroup(ctx, "fg-pg-tx-rollback"); !errors.Is(err, storage.ErrNotFound) {
+	if _, err := store.GetFleetGroup(ctx, "00000000-0000-4000-8000-000000000012"); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("GetFleetGroup(rollback-me) error = %v, want ErrNotFound", err)
 	}
 
@@ -79,7 +79,7 @@ func TestTransactRollsBackOnContextCancel(t *testing.T) {
 	defer probeCancel()
 	if err := store.Transact(probeCtx, func(tx storage.Store) error {
 		return tx.PutFleetGroup(probeCtx, storage.FleetGroupRecord{
-			ID:        "fg-pg-tx-probe",
+			ID:        "00000000-0000-4000-8000-000000000013",
 			Name:      "probe",
 			CreatedAt: time.Date(2026, time.April, 18, 10, 10, 0, 0, time.UTC),
 		})
@@ -158,7 +158,7 @@ func TestUpsertClientUsageBulkLargeBatch(t *testing.T) {
 	ctx := context.Background()
 
 	group := storage.FleetGroupRecord{
-		ID: "fg-pg-bulk-large", Name: "bulk-large",
+		ID: "00000000-0000-4000-8000-000000000014", Name: "bulk-large",
 		CreatedAt: time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC),
 	}
 	if err := store.PutFleetGroup(ctx, group); err != nil {
@@ -216,7 +216,7 @@ func TestConcurrentUpsertClientUsageBulkSameKey(t *testing.T) {
 	ctx := context.Background()
 
 	group := storage.FleetGroupRecord{
-		ID: "fg-pg-bulk-conc", Name: "bulk-conc",
+		ID: "00000000-0000-4000-8000-000000000015", Name: "bulk-conc",
 		CreatedAt: time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC),
 	}
 	if err := store.PutFleetGroup(ctx, group); err != nil {

@@ -8,6 +8,15 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
+// testCSRPEM generates an ephemeral ECDSA P-256 keypair and returns a
+// PEM-encoded CSR with an arbitrary CN. Use for test fixtures that need a
+// syntactically valid csr_pem but do not need to verify key pairing.
+func testCSRPEM(t *testing.T) string {
+	t.Helper()
+	_, csrPEM := buildTestCSRPEM(t, "test-node")
+	return csrPEM
+}
+
 // mustNew constructs a Server via New and fails the test if New
 // returns an error. Plan 3 Task 4 (Q-7) made New return an error
 // instead of panicking on boot-time secret-init failures, which means

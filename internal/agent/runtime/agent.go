@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/agent/telemtrestart"
 	"github.com/lost-coder/panvex/internal/agent/updater"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -28,6 +30,14 @@ const jobActionRotateSecret = "client.rotate_secret"
 // older Telemt builds — see handleClientResetQuotaJob.
 const jobActionResetQuota = "client.reset_quota"
 
+// configRestarter restarts the local Telemt process. Implemented by
+// *telemtrestart.Restarter; nil when no (valid) strategy is configured, in which
+// case restart-required config changes are refused.
+type configRestarter interface {
+	Verify(ctx context.Context) error
+	Restart(ctx context.Context) error
+}
+
 type telemtClient interface {
 	FetchRuntimeState(context.Context) (telemt.RuntimeState, error)
 	FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error)
@@ -40,6 +50,9 @@ type telemtClient interface {
 	DeleteClient(context.Context, string) error
 	ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error)
 	InvalidateSlowDataCache()
+	PatchConfig(ctx context.Context, patch map[string]any, expectedRevision string) (telemt.PatchConfigResult, error)
+	GetManagedConfig(ctx context.Context) (map[string]any, string, error)
+	HealthReady(ctx context.Context) (bool, string, error)
 }
 
 // Config describes the control-plane identity reported by the agent.
@@ -49,6 +62,10 @@ type Config struct {
 	FleetGroupID     string
 	Version          string
 	TelemtConfigPath string
+	// TelemtRestart is the restart strategy for the local Telemt process,
+	// e.g. "systemd:telemt.service", "docker:telemt", or "command:<argv>".
+	// Empty means restart-required config changes are refused on this node.
+	TelemtRestart string
 	// InitialUsageSeq is the last snapshot sequence number persisted from a
 	// previous agent incarnation. On fresh agents it is zero. See P2-LOG-06.
 	InitialUsageSeq uint64
@@ -62,6 +79,13 @@ type Config struct {
 	// Making it optional ensures existing tests constructing Config{} continue to
 	// compile without change.
 	UpdateTransport func(mode, listenAddr, panelURL string) error
+	// ScheduleSelfRestart, if non-nil, is invoked after a successful
+	// agent.self-update binary swap, AFTER the handler has produced the
+	// JobResult. The implementation must delay the actual process restart
+	// long enough for the worker to flush the result onto the gRPC stream
+	// (see cmd/agent/runtime.go) — restarting synchronously re-creates the
+	// A3 infinite update loop. nil (tests) means no restart is scheduled.
+	ScheduleSelfRestart func()
 }
 
 type runtimeLifecycleState struct {
@@ -85,9 +109,14 @@ type completedJobRecord struct {
 
 // Agent builds snapshots and executes control-plane commands against local Telemt.
 type Agent struct {
-	config Config
-	telemt telemtClient
-	mu     sync.RWMutex
+	config    Config
+	telemt    telemtClient
+	restarter configRestarter
+	mu        sync.RWMutex
+
+	observedConfig   observedConfigReporter
+	diagnosticsGate  contentHashGate
+	securityGate     contentHashGate
 
 	clientNames                        map[string]string
 	lastOctets                         map[string]uint64
@@ -122,7 +151,7 @@ type Agent struct {
 
 // New constructs a runtime agent bound to one local Telemt client.
 func New(config Config, client telemtClient) *Agent {
-	return &Agent{
+	a := &Agent{
 		config:                config,
 		telemt:                client,
 		clientNames:           make(map[string]string),
@@ -134,14 +163,24 @@ func New(config Config, client telemtClient) *Agent {
 		usageSeq:              config.InitialUsageSeq,
 		persistUsageSeq:       config.PersistUsageSeq,
 	}
+	a.restarter = buildRestarter(config.TelemtRestart)
+	return a
 }
 
-// UsageSeq returns the last monotonic sequence number emitted on a client-usage
-// snapshot. Exposed for tests and observability.
-func (a *Agent) UsageSeq() uint64 {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.usageSeq
+// buildRestarter parses the restart strategy. Returns nil (an untyped nil
+// interface, so `restarter == nil` holds) when unset or invalid; an invalid
+// strategy is logged so the operator can fix it.
+func buildRestarter(spec string) configRestarter {
+	if strings.TrimSpace(spec) == "" {
+		return nil
+	}
+	r, err := telemtrestart.Parse(spec, telemtrestart.ExecRunner{})
+	if err != nil {
+		slog.Warn("invalid telemt restart strategy; restart-required config changes will be refused",
+			"strategy", spec, "error", err)
+		return nil
+	}
+	return r
 }
 
 // AgentID returns the persistent control-plane identity of the agent.
@@ -279,6 +318,14 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 	// overwriting them with the (possibly zeroed) partial values.
 	snapshot.Partial = state.Partial
 	snapshot.ReadOnly = state.ReadOnly
+	// Report the agent's observed managed Telemt config, delta-gated: the
+	// canonical hash every snapshot, the full canonical JSON only when the
+	// hash changed. On any error (incl. telemt.ErrConfigEditUnsupported on
+	// older Telemt builds) both stay empty.
+	var managedConfigHash, managedConfigJSON string
+	if sections, _, err := a.telemt.GetManagedConfig(fetchCtx); err == nil {
+		managedConfigHash, managedConfigJSON = a.observedConfig.next(sections)
+	}
 	snapshot.Instances = []*gatewayrpc.InstanceSnapshot{
 		{
 			Id:                "telemt-primary",
@@ -287,28 +334,55 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 			ConfigFingerprint: "runtime",
 			Connections:       int32(state.Connections),
 			ReadOnly:          state.ReadOnly,
+			ManagedConfigHash: managedConfigHash,
+			ManagedConfigJson: managedConfigJSON,
 		},
 	}
 	snapshot.Metrics = map[string]uint64{
 		"connections": uint64(state.Connections),
 	}
 	snapshot.Runtime = buildRuntimeSnapshotProto(state, dcs, upstreamRows, recentEvents, wasRestarting)
-	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
-		State:               state.Diagnostics.State,
-		StateReason:         state.Diagnostics.StateReason,
-		SystemInfoJson:      state.Diagnostics.SystemInfoJSON,
-		EffectiveLimitsJson: state.Diagnostics.EffectiveLimitsJSON,
-		SecurityPostureJson: state.Diagnostics.SecurityPostureJSON,
-		MinimalAllJson:      state.Diagnostics.MinimalAllJSON,
-		MePoolJson:          state.Diagnostics.MEPoolJSON,
-		DcsJson:             state.Diagnostics.DcsJSON,
+	diagHash, sendDiagnosticsBody := a.diagnosticsGate.next(
+		state.Diagnostics.State,
+		state.Diagnostics.StateReason,
+		state.Diagnostics.SystemInfoJSON,
+		state.Diagnostics.EffectiveLimitsJSON,
+		state.Diagnostics.SecurityPostureJSON,
+		state.Diagnostics.MinimalAllJSON,
+		state.Diagnostics.MEPoolJSON,
+		state.Diagnostics.DcsJSON,
+	)
+	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{ContentHash: diagHash}
+	if sendDiagnosticsBody {
+		snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
+			ContentHash:         diagHash,
+			State:               state.Diagnostics.State,
+			StateReason:         state.Diagnostics.StateReason,
+			SystemInfoJson:      state.Diagnostics.SystemInfoJSON,
+			EffectiveLimitsJson: state.Diagnostics.EffectiveLimitsJSON,
+			SecurityPostureJson: state.Diagnostics.SecurityPostureJSON,
+			MinimalAllJson:      state.Diagnostics.MinimalAllJSON,
+			MePoolJson:          state.Diagnostics.MEPoolJSON,
+			DcsJson:             state.Diagnostics.DcsJSON,
+		}
 	}
-	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
-		State:        state.SecurityInventory.State,
-		StateReason:  state.SecurityInventory.StateReason,
-		Enabled:      state.SecurityInventory.Enabled,
-		EntriesTotal: int32(state.SecurityInventory.EntriesTotal),
-		EntriesJson:  state.SecurityInventory.EntriesJSON,
+	securityHash, sendSecurityBody := a.securityGate.next(
+		state.SecurityInventory.State,
+		state.SecurityInventory.StateReason,
+		strconv.FormatBool(state.SecurityInventory.Enabled),
+		strconv.Itoa(state.SecurityInventory.EntriesTotal),
+		state.SecurityInventory.EntriesJSON,
+	)
+	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{ContentHash: securityHash}
+	if sendSecurityBody {
+		snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
+			ContentHash:  securityHash,
+			State:        state.SecurityInventory.State,
+			StateReason:  state.SecurityInventory.StateReason,
+			Enabled:      state.SecurityInventory.Enabled,
+			EntriesTotal: int32(state.SecurityInventory.EntriesTotal),
+			EntriesJson:  state.SecurityInventory.EntriesJSON,
+		}
 	}
 	snapshot.TotalActiveConnections = int32(state.ConnectionTotals.CurrentConnections)
 	snapshot.TotalActiveUsers = int32(state.ConnectionTotals.ActiveUsers)
@@ -331,6 +405,13 @@ func (a *Agent) BuildRuntimeUnreachableSnapshot(observedAt, since time.Time) *ga
 	}
 	snapshot.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{}
 	snapshot.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{}
+	// The panel deliberately blanks its stored diagnostics row on an
+	// unreachable snapshot (empty hash = historical overwrite semantics).
+	// Reset the gates so the first post-recovery snapshot re-sends full
+	// bodies — otherwise an unchanged hash would leave the panel blank
+	// forever (D5).
+	a.diagnosticsGate.reset()
+	a.securityGate.reset()
 	return snapshot
 }
 
@@ -731,6 +812,8 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 	switch job.GetAction() {
 	case "runtime.reload":
 		return a.handleRuntimeReloadJob(ctx, result)
+	case "runtime.restart":
+		return a.handleRuntimeRestartJob(ctx, result)
 	case "telemetry.refresh_diagnostics":
 		a.telemt.InvalidateSlowDataCache()
 		result.Success = true
@@ -744,6 +827,10 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 		return a.handleSelfUpdateJob(ctx, job, result)
 	case "switch_transport_mode":
 		return a.handleSwitchTransportModeJob(result, job)
+	case "config.apply":
+		return a.handleConfigApplyJob(ctx, job, result)
+	case "config.fetch":
+		return a.handleConfigFetchJob(ctx, result)
 	default:
 		result.Message = fmt.Sprintf("unsupported action %s", job.GetAction())
 		return result
@@ -758,6 +845,24 @@ func (a *Agent) handleRuntimeReloadJob(ctx context.Context, result *gatewayrpc.J
 	}
 	result.Success = true
 	result.Message = "runtime reloaded"
+	return result
+}
+
+// handleRuntimeRestartJob restarts the local Telemt process via the agent's
+// configured restart strategy. When no strategy is configured the restarter
+// is nil; we report a typed failure so the panel can surface "restart not
+// available on this node" instead of silently succeeding.
+func (a *Agent) handleRuntimeRestartJob(ctx context.Context, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	if a.restarter == nil {
+		result.Message = "restart not available: no restart strategy configured on this agent"
+		return result
+	}
+	if err := a.restarter.Restart(ctx); err != nil {
+		result.Message = fmt.Sprintf("telemt restart failed: %v", err)
+		return result
+	}
+	result.Success = true
+	result.Message = "telemt restarted"
 	return result
 }
 
@@ -997,19 +1102,36 @@ func marshalResetQuotaResult(payload clientResetQuotaJobResult) string {
 	return string(bytes)
 }
 
-// handleSelfUpdateJob runs the agent.self-update action.
+// selfUpdateExecute is swapped in tests so handler-level behaviour can be
+// exercised without touching the network.
+var selfUpdateExecute = updater.Execute
+
+// handleSelfUpdateJob runs the agent.self-update action. A3 contract: the
+// JobResult is RETURNED (and flushed by the job worker) before any restart
+// happens; the restart itself is delegated to Config.ScheduleSelfRestart.
 func (a *Agent) handleSelfUpdateJob(ctx context.Context, job *gatewayrpc.JobCommand, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
 	var payload updater.Payload
 	if err := json.Unmarshal([]byte(job.GetPayloadJson()), &payload); err != nil {
 		result.Message = fmt.Sprintf("invalid update payload: %v", err)
 		return result
 	}
-	if err := updater.Execute(ctx, payload, a.config.Version, slog.Default()); err != nil {
+	outcome, err := selfUpdateExecute(ctx, payload, a.config.Version, slog.Default())
+	if err != nil {
 		result.Message = err.Error()
 		return result
 	}
+	if outcome == updater.OutcomeNoop {
+		result.Success = true
+		result.Message = fmt.Sprintf("already at target version %s", a.config.Version)
+		return result
+	}
 	result.Success = true
-	result.Message = "self-update initiated"
+	result.Message = "self-update applied; restart scheduled"
+	if a.config.ScheduleSelfRestart == nil {
+		slog.Warn("self-update: no restart hook configured; new binary takes effect on next process restart")
+		return result
+	}
+	a.config.ScheduleSelfRestart()
 	return result
 }
 
@@ -1087,7 +1209,12 @@ func (a *Agent) HandleClientDataRequest(ctx context.Context, requestID string) *
 
 	users, err := a.telemt.FetchDiscoveredUsers(ctx, configPath)
 	if err != nil {
-		return &gatewayrpc.ClientDataResponse{RequestId: requestID}
+		slog.WarnContext(ctx, "client discovery skipped: telemt user list unavailable",
+			"request_id", requestID, "error", err)
+		return &gatewayrpc.ClientDataResponse{
+			RequestId:         requestID,
+			TelemtUnreachable: true,
+		}
 	}
 
 	records := make([]*gatewayrpc.ClientDetailRecord, 0, len(users))

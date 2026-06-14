@@ -14,7 +14,11 @@ type Agent struct {
 	Version             string                                 `json:"version"`
 	ReadOnly            bool                                   `json:"read_only"`
 	PresenceState       string                                 `json:"presence_state"`
-	CertificateRecovery *agentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
+	// TransportReconnectPending is true when the operator switched this
+	// agent to outbound transport and no agent session has been accepted
+	// since (A2 "switched but never reconnected"). Request-time derived.
+	TransportReconnectPending bool                                   `json:"transport_reconnect_pending,omitempty"`
+	CertificateRecovery       *agentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
 	CertIssuedAt        *time.Time                             `json:"cert_issued_at,omitempty"`
 	CertExpiresAt       *time.Time                             `json:"cert_expires_at,omitempty"`
 	// CertSerial is the serial of the most recently issued client cert.
@@ -199,6 +203,8 @@ type Instance struct {
 	Name              string    `json:"name"`
 	Version           string    `json:"version"`
 	ConfigFingerprint string    `json:"config_fingerprint"`
+	ManagedConfigHash string    `json:"managed_config_hash"`
+	ManagedConfigJSON string    `json:"managed_config_json"` // last non-empty observed editable sections (canonical JSON)
 	Connections       int       `json:"connections"`
 	ReadOnly          bool      `json:"read_only"`
 	UpdatedAt         time.Time `json:"updated_at"`

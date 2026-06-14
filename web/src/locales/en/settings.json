@@ -1,4 +1,11 @@
 {
+  "toasts": {
+    "geoipSaved": "GeoIP settings saved.",
+    "geoipRefreshed": "GeoIP databases refreshed.",
+    "retentionSaved": "Retention settings saved.",
+    "saveFailed": "Save failed: {{message}}",
+    "refreshFailed": "Refresh failed: {{message}}"
+  },
   "page": {
     "title": "Settings",
     "subtitle": "Configure your control plane",
@@ -126,6 +133,10 @@
     "storage": {
       "title": "Storage",
       "desc": "Batch flush + rollup cadences."
+    },
+    "subscription": {
+      "title": "Subscription",
+      "desc": "Public origin for client subscription links."
     }
   },
   "registryField": {

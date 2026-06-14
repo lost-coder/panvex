@@ -92,6 +92,9 @@ func run(args []string) error {
 	if len(args) > 0 && args[0] == "rotate-encryption-key" {
 		return runRotateEncryptionKey(args[1:])
 	}
+	if len(args) > 0 && args[0] == "rotate-ca" {
+		return runRotateCA(args[1:])
+	}
 	if len(args) > 0 && args[0] == "settings" {
 		return runSettings(args[1:])
 	}

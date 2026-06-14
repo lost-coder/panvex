@@ -17,7 +17,8 @@ import (
 // handler:
 //
 //  1. the panel-side per-agent ring buffer holds the converted events
-//  2. the events bus emits one "runtime.event" payload per record
+//  2. the events bus emits exactly ONE "runtime.events" batch payload
+//     carrying all records (D6a)
 //
 // Using processRegularAgentMessage matches the style of the existing
 // grpc_gateway_test.go tests which exercise the heartbeat / job-result
@@ -82,45 +83,48 @@ func TestHandleRuntimeEventsBatchPopulatesBufferAndPublishes(t *testing.T) {
 		t.Fatalf("snapshot[1].Fields[component] = %q, want %q", snap[1].Fields["component"], "telemt")
 	}
 
-	// Events bus side effect — one runtime.event per record, in the
-	// same order as the batch. drainRuntimeEvents waits a short window
-	// for both deliveries so the test does not race the publisher.
-	got := drainRuntimeEvents(t, subCh, 2, time.Second)
-	if len(got) != 2 {
-		t.Fatalf("got %d runtime.event publishes, want 2", len(got))
+	// Events bus side effect — D6a: exactly ONE runtime.events event for the
+	// whole batch. drainBatchEvent waits a short window for the delivery.
+	batchEvt := drainBatchEvent(t, subCh, time.Second)
+	if batchEvt == nil {
+		t.Fatal("expected one runtime.events bus event, got none")
 	}
-	if data0, _ := got[0].Data.(map[string]any); data0["message"] != "boom" {
-		t.Fatalf("event[0].message = %v, want %q", data0["message"], "boom")
+	data, ok := batchEvt.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("event data type = %T, want map", batchEvt.Data)
 	}
-	if data1, _ := got[1].Data.(map[string]any); data1["message"] != "still alive" {
-		t.Fatalf("event[1].message = %v, want %q", data1["message"], "still alive")
+	if data["agent_id"] != "agent-x" {
+		t.Fatalf("event.agent_id = %v, want %q", data["agent_id"], "agent-x")
 	}
-	if data0, _ := got[0].Data.(map[string]any); data0["agent_id"] != "agent-x" {
-		t.Fatalf("event[0].agent_id = %v, want %q", data0["agent_id"], "agent-x")
+	records, ok := data["events"].([]map[string]any)
+	if !ok || len(records) != 2 {
+		t.Fatalf("events payload = %#v, want 2 records", data["events"])
+	}
+	if records[0]["message"] != "boom" {
+		t.Fatalf("records[0].message = %v, want %q", records[0]["message"], "boom")
+	}
+	if records[1]["message"] != "still alive" {
+		t.Fatalf("records[1].message = %v, want %q", records[1]["message"], "still alive")
 	}
 }
 
-// drainRuntimeEvents reads up to want runtime.event entries from sub
-// within timeout, ignoring any other event types the bus may carry
-// (none expected for this test path today, but the assertion stays
-// robust if a future code path publishes an unrelated event during
-// dispatch).
-func drainRuntimeEvents(t *testing.T, ch <-chan eventbus.Event, want int, timeout time.Duration) []eventbus.Event {
+// drainBatchEvent reads at most one runtime.events batch event from ch
+// within timeout, ignoring any other event types the bus may carry.
+// Returns nil if no matching event arrives before the deadline.
+func drainBatchEvent(t *testing.T, ch <-chan eventbus.Event, timeout time.Duration) *eventbus.Event {
 	t.Helper()
-	out := make([]eventbus.Event, 0, want)
 	deadline := time.After(timeout)
-	for len(out) < want {
+	for {
 		select {
 		case ev, ok := <-ch:
 			if !ok {
-				return out
+				return nil
 			}
-			if ev.Type == "runtime.event" {
-				out = append(out, ev)
+			if ev.Type == "runtime.events" {
+				return &ev
 			}
 		case <-deadline:
-			return out
+			return nil
 		}
 	}
-	return out
 }

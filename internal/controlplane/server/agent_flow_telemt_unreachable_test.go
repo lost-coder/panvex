@@ -70,6 +70,7 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 		Token:    token.Value,
 		NodeName: "node-eu-1",
 		Version:  "1.0.0",
+		CSRPEM:   testCSRPEM(t),
 	}, getNow())
 	if err != nil {
 		t.Fatalf("enrollAgent() error = %v", err)
