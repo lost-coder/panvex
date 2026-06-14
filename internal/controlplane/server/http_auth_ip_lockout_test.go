@@ -84,7 +84,7 @@ func TestLogin_IPLockoutBlocksFurtherAttempts(t *testing.T) {
 		_ = usernames[i%len(usernames)]
 		srv.ipLockout.RecordFailureWithContext(context.Background(), ip, now.Add(time.Duration(i)*time.Second))
 	}
-	if !srv.ipLockout.IsLocked(ip, now.Add(time.Minute)) {
+	if !srv.ipLockout.IsLockedWithContext(context.Background(), ip, now.Add(time.Minute)) {
 		t.Fatalf("seeded IP should be locked")
 	}
 
@@ -216,12 +216,12 @@ func TestLogin_IPLockoutAccumulatesAcrossUsernames(t *testing.T) {
 	for i := 0; i < sessions.IPLockoutMaxFailures; i++ {
 		srv.ipLockout.RecordFailureWithContext(context.Background(), ip, now.Add(time.Duration(i)*time.Second))
 	}
-	if !srv.ipLockout.IsLocked(ip, now.Add(time.Minute)) {
+	if !srv.ipLockout.IsLockedWithContext(context.Background(), ip, now.Add(time.Minute)) {
 		t.Fatalf("IP not locked after %d failures across multiple usernames", sessions.IPLockoutMaxFailures)
 	}
 	// Username-level counter for any one user should NOT be tripped
 	// (we only sent 2 fails per user — well below 5).
-	if srv.loginLockout.IsLocked("admin", now.Add(time.Minute)) {
+	if srv.loginLockout.IsLockedWithContext(context.Background(), "admin", now.Add(time.Minute)) {
 		t.Fatalf("username-level lockout tripped unexpectedly — failures were only IP-side")
 	}
 }

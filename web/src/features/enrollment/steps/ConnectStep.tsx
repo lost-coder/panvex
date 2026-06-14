@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/ui/lib/cn";
 import { Button } from "@/ui/base/button";
 import type { EnrollmentWizardProps } from "@/shared/api/types-pages/pages";
+import { TokenFooter } from "./TokenFooter";
 
 export function ConnectStep({
   connectionStatus,
@@ -12,6 +13,9 @@ export function ConnectStep({
   tokenExpiresInSecs,
   onViewDetails,
   onCancel,
+  onRetryPolling,
+  onViewAttempts,
+  error,
 }: Readonly<EnrollmentWizardProps>) {
   const { t } = useTranslation("enrollment");
   const allDone =
@@ -26,8 +30,6 @@ export function ConnectStep({
     }
     return undefined;
   }, [allDone, connectedAgent, onViewDetails]);
-
-  const expiresMin = Math.round(tokenExpiresInSecs / 60);
   const stages: Array<{
     key: string;
     label: string;
@@ -88,11 +90,11 @@ export function ConnectStep({
                 >
                   {s.label}
                 </span>
-                <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">
+                <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">
                   {t(`connect.stages.state.${s.state}`)}
                 </span>
               </div>
-              <div className="text-[11px] font-mono text-fg-muted">{s.detail}</div>
+              <div className="text-micro font-mono text-fg-muted">{s.detail}</div>
             </div>
           );
         })}
@@ -104,17 +106,25 @@ export function ConnectStep({
         </div>
       )}
 
-      <div className="flex items-center justify-between text-xs text-fg-muted rounded-xs bg-bg-card border border-divider px-3 py-2">
-        <span>
-          {t("connect.footer.token")} <span className="font-mono">{tokenValue.slice(0, 12)}…</span>
-        </span>
-        <span>
-          {t("connect.footer.expiresIn")}{" "}
-          <span className="text-status-warn">
-            {t("connect.footer.minutes", { count: expiresMin })}
-          </span>
-        </span>
-      </div>
+      <TokenFooter tokenValue={tokenValue} remainingSecs={tokenExpiresInSecs} />
+
+      {error && (
+        <div className="rounded-xs bg-status-error/8 border border-status-error/25 p-3 text-xs text-status-error flex flex-col gap-2">
+          <span>{error}</span>
+          <div className="flex gap-2">
+            {onRetryPolling && (
+              <Button size="sm" variant="ghost" onClick={onRetryPolling}>
+                {t("connect.retry")}
+              </Button>
+            )}
+            {onViewAttempts && (
+              <Button size="sm" variant="ghost" onClick={onViewAttempts}>
+                {t("connect.viewAttempts")}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       <Button variant="ghost" onClick={onCancel}>
         {t("connect.cancel")}

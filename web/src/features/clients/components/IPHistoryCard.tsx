@@ -3,7 +3,7 @@
 // the page's local state, so a clean component move was sufficient.
 import { useTranslation } from "react-i18next";
 
-import { DataTable, MonoValue } from "@/ui";
+import { DataTable, MonoValue, formatDateTime } from "@/ui";
 
 export interface IPRow {
   ip: string;
@@ -23,6 +23,52 @@ export function IPHistoryCard({
   totalUnique: number;
 }>) {
   const { t } = useTranslation("clients");
+  // U-37: GeoIP enrichment is optional — when no row carries country/city/ASN
+  // there's no point rendering three columns of "—". Hide them entirely until
+  // data lands (and only then drop the "not available" note).
+  const hasGeo = ips.some((r) => r.countryCode || r.countryName || r.city || r.asn);
+  const geoColumns = hasGeo
+    ? [
+        {
+          key: "country",
+          header: t("ipHistory.country"),
+          render: (row: Readonly<IPRow>) =>
+            row.countryName || row.countryCode ? (
+              <span className="text-xs text-fg">
+                {row.countryCode && (
+                  <span className="font-mono text-nano text-fg-muted mr-1">{row.countryCode}</span>
+                )}
+                {row.countryName ?? ""}
+              </span>
+            ) : (
+              <span className="text-xs text-fg-faint">—</span>
+            ),
+          className: "hidden md:table-cell w-[160px]",
+        },
+        {
+          key: "city",
+          header: t("ipHistory.city"),
+          render: (row: Readonly<IPRow>) =>
+            row.city ? (
+              <span className="text-xs text-fg">{row.city}</span>
+            ) : (
+              <span className="text-xs text-fg-faint">—</span>
+            ),
+          className: "hidden lg:table-cell w-[140px]",
+        },
+        {
+          key: "asn",
+          header: t("ipHistory.asn"),
+          render: (row: Readonly<IPRow>) =>
+            row.asn ? (
+              <MonoValue className="text-xs">{row.asn}</MonoValue>
+            ) : (
+              <span className="text-xs text-fg-faint">—</span>
+            ),
+          className: "hidden xl:table-cell w-[120px]",
+        },
+      ]
+    : [];
   const columns = [
     {
       key: "ip",
@@ -30,50 +76,13 @@ export function IPHistoryCard({
       render: (row: Readonly<IPRow>) => <MonoValue>{row.ip}</MonoValue>,
       className: "w-[160px]",
     },
-    {
-      key: "country",
-      header: t("ipHistory.country"),
-      render: (row: Readonly<IPRow>) =>
-        row.countryName || row.countryCode ? (
-          <span className="text-xs text-fg">
-            {row.countryCode && (
-              <span className="font-mono text-[10px] text-fg-muted mr-1">{row.countryCode}</span>
-            )}
-            {row.countryName ?? ""}
-          </span>
-        ) : (
-          <span className="text-xs text-fg-faint">—</span>
-        ),
-      className: "hidden md:table-cell w-[160px]",
-    },
-    {
-      key: "city",
-      header: t("ipHistory.city"),
-      render: (row: Readonly<IPRow>) =>
-        row.city ? (
-          <span className="text-xs text-fg">{row.city}</span>
-        ) : (
-          <span className="text-xs text-fg-faint">—</span>
-        ),
-      className: "hidden lg:table-cell w-[140px]",
-    },
-    {
-      key: "asn",
-      header: t("ipHistory.asn"),
-      render: (row: Readonly<IPRow>) =>
-        row.asn ? (
-          <MonoValue className="text-xs">{row.asn}</MonoValue>
-        ) : (
-          <span className="text-xs text-fg-faint">—</span>
-        ),
-      className: "hidden xl:table-cell w-[120px]",
-    },
+    ...geoColumns,
     {
       key: "firstSeen",
       header: t("ipHistory.firstSeen"),
       render: (row: Readonly<IPRow>) => (
-        <span className="text-[11px] font-mono text-fg-muted tabular-nums">
-          {new Date(row.firstSeen).toLocaleString()}
+        <span className="text-micro font-mono text-fg-muted tabular-nums">
+          {formatDateTime(row.firstSeen)}
         </span>
       ),
       className: "hidden md:table-cell w-[170px]",
@@ -82,8 +91,8 @@ export function IPHistoryCard({
       key: "lastSeen",
       header: t("ipHistory.lastSeen"),
       render: (row: Readonly<IPRow>) => (
-        <span className="text-[11px] font-mono text-fg tabular-nums">
-          {new Date(row.lastSeen).toLocaleString()}
+        <span className="text-micro font-mono text-fg tabular-nums">
+          {formatDateTime(row.lastSeen)}
         </span>
       ),
       className: "w-[170px]",
@@ -94,13 +103,15 @@ export function IPHistoryCard({
       <header className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
           <span className="text-sm font-semibold text-fg">{t("ipHistory.title")}</span>
-          <span className="text-[11px] font-mono text-fg-muted">
+          <span className="text-micro font-mono text-fg-muted">
             {t("ipHistory.uniqueCount", { count: totalUnique })}
           </span>
         </div>
-        <span className="text-[10px] font-mono text-fg-muted truncate">
-          {t("ipHistory.geoipNote")}
-        </span>
+        {!hasGeo && (
+          <span className="text-nano font-mono text-fg-muted truncate">
+            {t("ipHistory.geoipNote")}
+          </span>
+        )}
       </header>
       {ips.length === 0 ? (
         <div className="px-4 py-8 text-sm text-fg-muted text-center">

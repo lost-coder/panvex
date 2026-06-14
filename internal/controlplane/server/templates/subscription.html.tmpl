@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Моя подписка</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0b0d11; color:#eef2f8; font-family:-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:480px; margin:0 auto; padding:16px; }
+  .top { padding:18px 4px 8px; }
+  .top .label { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:#7a8aa0; }
+  .top h1 { font-size:22px; margin:2px 0 0; }
+  .status { display:flex; gap:10px; margin:12px 0; }
+  .stat { flex:1; background:#161b22; border:1px solid #232a33; border-radius:14px; padding:12px; }
+  .stat .k { font-size:11px; color:#7a8aa0; text-transform:uppercase; letter-spacing:.06em; }
+  .stat .v { font-size:16px; font-weight:600; margin-top:4px; }
+  .bar { height:5px; background:#232a33; border-radius:3px; margin-top:7px; overflow:hidden; }
+  .bar > span { display:block; height:100%; background:#5aa0ff; }
+  .section-label { font-size:12px; color:#7a8aa0; text-transform:uppercase; letter-spacing:.06em; margin:14px 4px 10px; }
+  .node { background:#161b22; border:1px solid #232a33; border-radius:14px; padding:14px; margin-bottom:12px; }
+  .node.degraded { border-color:#3a2f1e; }
+  .node.offline { border-color:#3a1e1e; opacity:.75; }
+  .node-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .node-name { display:flex; align-items:center; gap:8px; font-weight:600; }
+  .dot { width:8px; height:8px; border-radius:50%; }
+  .dot.online { background:#3ddc84; } .dot.degraded { background:#e0a13d; } .dot.offline { background:#e05a5a; }
+  .pill { font-size:11px; padding:3px 8px; border-radius:20px; }
+  .pill.online { color:#7ee2a8; background:#16291e; } .pill.degraded { color:#e0a13d; background:#2b2415; } .pill.offline { color:#e0a1a1; background:#2b1515; }
+  .link { display:flex; align-items:center; gap:8px; padding:8px 0; border-top:1px solid #232a33; }
+  .link .meta { flex:1; min-width:0; }
+  .link .dom { font-size:14px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .link .sub { font-size:11px; color:#7a8aa0; }
+  .btn { padding:9px 12px; border:none; border-radius:9px; background:#2a82eb; color:#fff; font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap; }
+  .copy { padding:9px 11px; border:1px solid #2c333d; border-radius:9px; background:transparent; color:#9fb0c6; font-size:13px; cursor:pointer; }
+  .empty { background:#161b22; border:1px solid #232a33; border-radius:14px; padding:24px; text-align:center; color:#9fb0c6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="label">Моя подписка</div>
+    <h1>{{ .ClientName }}</h1>
+  </div>
+  <div class="status">
+    <div class="stat">
+      <div class="k">Действует до</div>
+      <div class="v">{{ if .ExpirationRFC3339 }}{{ .ExpirationHuman }}{{ else }}бессрочно{{ end }}</div>
+    </div>
+    <div class="stat">
+      <div class="k">Трафик</div>
+      <div class="v">{{ .TrafficHuman }}</div>
+      {{ if .HasQuota }}<div class="bar"><span style="width:{{ .UsedPercent }}%"></span></div>{{ end }}
+    </div>
+  </div>
+
+  <div class="section-label">Доступные серверы</div>
+  {{ if not .Nodes }}
+    <div class="empty">Пока нет доступных серверов. Загляните позже.</div>
+  {{ end }}
+  {{ range .Nodes }}
+  <div class="node {{ .Health }}">
+    <div class="node-head">
+      <div class="node-name"><span class="dot {{ .Health }}"></span>{{ .NodeName }}</div>
+      <span class="pill {{ .Health }}">{{ .HealthLabel }} · {{ len .Links }}</span>
+    </div>
+    {{ range .Links }}
+    <div class="link">
+      <div class="meta">
+        <div class="dom">{{ .Domain }}</div>
+        <div class="sub">{{ .Mode }}{{ if .Port }} · {{ .Port }}{{ end }}</div>
+      </div>
+      <a class="btn" href="{{ safeURL .Raw }}">Добавить</a>
+      <button class="copy" data-link="{{ .Raw }}" title="Копировать">⧉</button>
+    </div>
+    {{ end }}
+  </div>
+  {{ end }}
+</div>
+<script>
+document.querySelectorAll('.copy').forEach(function(b){
+  b.addEventListener('click', function(){
+    navigator.clipboard.writeText(b.getAttribute('data-link'));
+    var t=b.textContent; b.textContent='✓'; setTimeout(function(){ b.textContent=t; }, 1200);
+  });
+});
+</script>
+</body>
+</html>

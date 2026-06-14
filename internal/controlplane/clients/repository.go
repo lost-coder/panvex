@@ -20,6 +20,10 @@ import (
 type Repository interface {
 	// Single-client aggregate ops.
 	Get(ctx context.Context, id ClientID) (Client, error)
+	// GetBySubscriptionToken looks up a non-deleted client by its
+	// subscription_token column. Returns storage.ErrNotFound when no
+	// matching row exists or the token is blank.
+	GetBySubscriptionToken(ctx context.Context, token string) (Client, error)
 	List(ctx context.Context) ([]Client, error)
 	Save(ctx context.Context, c Client) error
 	Delete(ctx context.Context, id ClientID) error

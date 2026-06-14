@@ -30,7 +30,7 @@ export function Fold({
         />
         <span className="text-sm font-semibold text-fg">{title}</span>
         {rightHint && (
-          <span className="ml-auto text-[11px] font-mono text-fg-muted">{rightHint}</span>
+          <span className="ml-auto text-micro font-mono text-fg-muted">{rightHint}</span>
         )}
       </button>
       {open && <div className="px-4 py-4 border-t border-border">{children}</div>}

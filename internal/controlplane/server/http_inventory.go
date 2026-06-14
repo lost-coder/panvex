@@ -105,6 +105,10 @@ func (s *Server) buildAgentsResponse(scope FleetScopeAccess, recoveryGrants map[
 			continue
 		}
 		agent.PresenceState = string(s.presence.Evaluate(agent.ID, now))
+		s.mu.RLock()
+		_, pendingSwitch := s.transportSwitchPendingAt[agent.ID]
+		s.mu.RUnlock()
+		agent.TransportReconnectPending = pendingSwitch
 		if grant, ok := recoveryGrants[agent.ID]; ok {
 			recovery := agentCertificateRecoveryGrantResponseFromRecord(grant, now)
 			agent.CertificateRecovery = &recovery

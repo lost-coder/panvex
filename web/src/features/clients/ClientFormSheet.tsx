@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/ui/base/button";
 import { Input } from "@/ui/base/input";
 import { FormField } from "@/ui/base/form-field";
+import { LimitNumberInput } from "./components/LimitNumberInput";
+import { QuotaInput } from "./components/QuotaInput";
 import { cn } from "@/ui/lib/cn";
 import type { ClientFormSheetProps } from "@/shared/api/types-pages/pages";
 
@@ -67,6 +69,15 @@ export function ClientFormSheet({
     }
     return map;
   }, [agents]);
+
+  // U-30: resolve a fleet-group id to its human label for the pinned-agents
+  // group headers (they showed the raw UUID otherwise). Mirrors the
+  // label ?? name ?? id fallback used by the fleet-groups checkbox list.
+  const groupLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const g of fleetGroups ?? []) map.set(g.id, g.label ?? g.name ?? g.id);
+    return (id: string) => (id === "default" ? t("form.defaultGroup", "Default") : map.get(id) ?? id);
+  }, [fleetGroups, t]);
 
   const hasDeploymentTargets =
     data.fleetGroupIds.length > 0 || data.agentIds.length > 0;
@@ -179,7 +190,11 @@ export function ClientFormSheet({
               {t("form.deploymentTargets")}
             </span>
             {!hasDeploymentTargets && (
-              <span className="text-[11px] text-status-warn">{t("form.deploymentTargetsHint")}</span>
+              // U-28: neutral guidance, not an alarm. It shows on a fresh form
+              // before the operator has done anything, so the loud orange read
+              // as a validation error for an action not yet taken. The submit
+              // button stays disabled to actually enforce the requirement.
+              <span className="text-micro text-fg-muted">{t("form.deploymentTargetsHint")}</span>
             )}
           </div>
 
@@ -225,8 +240,8 @@ export function ClientFormSheet({
               <div className="max-h-40 overflow-y-auto rounded-xs border border-border-hi bg-bg-card divide-y divide-border/60">
                 {Array.from(agentsByGroup.entries()).map(([groupId, list]) => (
                   <div key={groupId} className="flex flex-col">
-                    <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-fg-muted bg-bg-muted/40">
-                      {groupId}
+                    <div className="px-2 py-1 text-nano uppercase tracking-wide text-fg-muted bg-bg-muted/40">
+                      {groupLabel(groupId)}
                     </div>
                     {(list ?? []).map((a) => {
                       const active = data.agentIds.includes(a.id);
@@ -247,7 +262,7 @@ export function ClientFormSheet({
                           />
                           <span className="font-mono text-fg truncate">{a.nodeName || a.id}</span>
                           {a.online === false && (
-                            <span className="ml-auto text-[10px] text-status-warn">{t("form.agentOffline")}</span>
+                            <span className="ml-auto text-nano text-status-warn">{t("form.agentOffline")}</span>
                           )}
                         </label>
                       );
@@ -270,34 +285,29 @@ export function ClientFormSheet({
         {showLimits ? t("form.limitsToggleExpanded") : t("form.limitsToggleCollapsed")}
       </button>
       {showLimits && (
-        <div id="client-form-limits-section" className="grid grid-cols-3 gap-3">
+        <div id="client-form-limits-section" className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <FormField label={t("form.maxTcpConnsLabel")} variant="compact">
-            <Input
-              type="number"
+            <LimitNumberInput
               value={data.maxTcpConns}
-              onChange={(e) => update("maxTcpConns", Number(e.target.value))}
+              onValueChange={(v) => update("maxTcpConns", v)}
               placeholder={t("form.unlimitedPlaceholder")}
-              className="font-mono text-xs"
               disabled={loading}
+              ariaLabel={t("form.maxTcpConnsLabel")}
             />
           </FormField>
           <FormField label={t("form.maxUniqueIpsLabel")} variant="compact">
-            <Input
-              type="number"
+            <LimitNumberInput
               value={data.maxUniqueIps}
-              onChange={(e) => update("maxUniqueIps", Number(e.target.value))}
+              onValueChange={(v) => update("maxUniqueIps", v)}
               placeholder={t("form.unlimitedPlaceholder")}
-              className="font-mono text-xs"
               disabled={loading}
+              ariaLabel={t("form.maxUniqueIpsLabel")}
             />
           </FormField>
           <FormField label={t("form.dataQuotaLabel")} variant="compact">
-            <Input
-              type="number"
-              value={data.dataQuotaBytes}
-              onChange={(e) => update("dataQuotaBytes", Number(e.target.value))}
-              placeholder={t("form.unlimitedPlaceholder")}
-              className="font-mono text-xs"
+            <QuotaInput
+              bytes={data.dataQuotaBytes}
+              onBytesChange={(b) => update("dataQuotaBytes", b)}
               disabled={loading}
             />
           </FormField>

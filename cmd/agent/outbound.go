@@ -89,8 +89,22 @@ func heartbeatMessage(agent *runtime.Agent, observedAt time.Time) *gatewayrpc.Co
 	}
 }
 
+// sendOrAbort enqueues msg unless ctx is already done. The initial-sync
+// path runs before the per-connection workers are guaranteed alive, so a
+// bare `outbound <- msg` could block forever on a dead connection.
+func sendOrAbort(ctx context.Context, outbound chan<- *gatewayrpc.ConnectClientMessage, msg *gatewayrpc.ConnectClientMessage) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case outbound <- msg:
+		return nil
+	}
+}
+
 func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.ConnectClientMessage, agent *runtime.Agent) error {
-	outbound <- heartbeatMessage(agent, time.Now())
+	if err := sendOrAbort(ctx, outbound, heartbeatMessage(agent, time.Now())); err != nil {
+		return err
+	}
 
 	runtimeCtx, cancelRuntime := context.WithTimeout(ctx, runtimeOperationTimeout)
 	runtimeSnapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, time.Now())
@@ -98,8 +112,10 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 	if err != nil {
 		return fmt.Errorf("initial runtime snapshot failed: %w", err)
 	}
-	outbound <- &gatewayrpc.ConnectClientMessage{
+	if err := sendOrAbort(ctx, outbound, &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: runtimeSnapshot},
+	}); err != nil {
+		return err
 	}
 	slog.Info("initial runtime snapshot sent", "agent_id", agent.AgentID(), "node", agent.NodeName())
 
@@ -107,8 +123,10 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 	usageSnapshot, err := agent.BuildUsageSnapshot(usageCtx, time.Now())
 	cancelUsage()
 	if err == nil {
-		outbound <- &gatewayrpc.ConnectClientMessage{
+		if err := sendOrAbort(ctx, outbound, &gatewayrpc.ConnectClientMessage{
 			Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: usageSnapshot},
+		}); err != nil {
+			return err
 		}
 	} else {
 		slog.Warn("initial usage snapshot unavailable, continuing without metrics", "error", err)
@@ -119,8 +137,11 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 		ipSnapshot := agent.BuildIPSnapshot(time.Now())
 		slog.Info("initial ip snapshot built", "client_ips_count", len(ipSnapshot.ClientIps))
 		if len(ipSnapshot.ClientIps) > 0 {
-			outbound <- &gatewayrpc.ConnectClientMessage{
+			if err := sendOrAbort(ctx, outbound, &gatewayrpc.ConnectClientMessage{
 				Body: &gatewayrpc.ConnectClientMessage_Snapshot{Snapshot: ipSnapshot},
+			}); err != nil {
+				cancelIPPoll()
+				return err
 			}
 		}
 	} else {
@@ -129,36 +150,6 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 	cancelIPPoll()
 
 	return nil
-}
-
-// connectStreamWithSetupTimeout opens a gRPC bidi stream via connect, cancelling
-// the connect context if it does not return within timeout. On success the stream
-// owns its context; cancelling the returned cancel is a no-op after the call.
-func connectStreamWithSetupTimeout(
-	timeout time.Duration,
-	connect func(context.Context) (gatewayrpc.AgentGateway_ConnectClient, error),
-) (gatewayrpc.AgentGateway_ConnectClient, error) {
-	connectCtx, cancelConnect := context.WithCancel(context.Background())
-	var setupTimer *time.Timer
-	if timeout > 0 {
-		setupTimer = time.AfterFunc(timeout, cancelConnect)
-	}
-
-	stream, err := connect(connectCtx)
-	if setupTimer != nil {
-		setupTimer.Stop()
-	}
-	if err != nil {
-		cancelConnect()
-		return nil, err
-	}
-
-	// On success the stream owns connectCtx — cancelling it would kill the
-	// stream immediately because gRPC derives the stream context from the
-	// one passed to Connect(). The context will be released when the stream
-	// closes naturally.
-	_ = cancelConnect //nolint:ineffassign // cancel is transferred to the stream lifecycle
-	return stream, nil
 }
 
 func handleClientDataRequest(

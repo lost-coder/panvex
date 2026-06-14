@@ -32,3 +32,9 @@ WHERE value = $2 AND consumed_at IS NULL AND revoked_at IS NULL;
 UPDATE enrollment_tokens
 SET revoked_at = $1
 WHERE value = $2 AND consumed_at IS NULL AND revoked_at IS NULL;
+
+-- name: PruneEnrollmentTokens :execrows
+DELETE FROM enrollment_tokens
+WHERE (consumed_at IS NOT NULL AND consumed_at < $1)
+   OR (revoked_at IS NOT NULL AND revoked_at < $1)
+   OR (expires_at < $1 AND consumed_at IS NULL AND revoked_at IS NULL);

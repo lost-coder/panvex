@@ -16,7 +16,12 @@ import (
 const (
 	panelTLSModeProxy  = "proxy"
 	panelTLSModeDirect = "direct"
-	// PanelRuntimeSourceLegacy reports that runtime values come from the legacy flag-based startup path.
+	// PanelRuntimeSourceLegacy reports that runtime values come from the
+	// flag/env-based startup path (no config.toml). NOT dead code: it is
+	// the live default for flag-driven deployments — see
+	// cmd/control-plane/serve.go (ConfigSource wiring) and
+	// defaultPanelRuntime below. "Legacy" only contrasts it with the
+	// config-file path. (Audit 2026-06-09 B7: verified load-bearing.)
 	PanelRuntimeSourceLegacy = "legacy"
 	// PanelRuntimeSourceConfigFile reports that runtime values come from config.toml.
 	PanelRuntimeSourceConfigFile = "config_file"

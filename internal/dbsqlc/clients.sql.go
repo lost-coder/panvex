@@ -14,18 +14,34 @@ import (
 const getClient = `-- name: GetClient :one
 
 SELECT id, name, secret_ciphertext, user_ad_tag, enabled, max_tcp_conns,
-       max_unique_ips, data_quota_bytes, expiration_rfc3339,
+       max_unique_ips, data_quota_bytes, expiration_rfc3339, subscription_token,
        created_at, updated_at, deleted_at
 FROM clients
 WHERE id = $1 AND deleted_at IS NULL
 `
 
+type GetClientRow struct {
+	ID                string
+	Name              string
+	SecretCiphertext  string
+	UserAdTag         string
+	Enabled           bool
+	MaxTcpConns       int64
+	MaxUniqueIps      int64
+	DataQuotaBytes    int64
+	ExpirationRfc3339 string
+	SubscriptionToken sql.NullString
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+}
+
 // R-Q-03: clients — managed-client core record. The `clients` group of
 // tables (assignments, deployments, usage, ip_history) gets one query
 // file per table; this file owns the parent.
-func (q *Queries) GetClient(ctx context.Context, id string) (Client, error) {
+func (q *Queries) GetClient(ctx context.Context, id string) (GetClientRow, error) {
 	row := q.db.QueryRowContext(ctx, getClient, id)
-	var i Client
+	var i GetClientRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -36,6 +52,52 @@ func (q *Queries) GetClient(ctx context.Context, id string) (Client, error) {
 		&i.MaxUniqueIps,
 		&i.DataQuotaBytes,
 		&i.ExpirationRfc3339,
+		&i.SubscriptionToken,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getClientBySubscriptionToken = `-- name: GetClientBySubscriptionToken :one
+SELECT id, name, secret_ciphertext, user_ad_tag, enabled, max_tcp_conns,
+       max_unique_ips, data_quota_bytes, expiration_rfc3339, subscription_token,
+       created_at, updated_at, deleted_at
+FROM clients
+WHERE subscription_token = $1 AND deleted_at IS NULL
+`
+
+type GetClientBySubscriptionTokenRow struct {
+	ID                string
+	Name              string
+	SecretCiphertext  string
+	UserAdTag         string
+	Enabled           bool
+	MaxTcpConns       int64
+	MaxUniqueIps      int64
+	DataQuotaBytes    int64
+	ExpirationRfc3339 string
+	SubscriptionToken sql.NullString
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+}
+
+func (q *Queries) GetClientBySubscriptionToken(ctx context.Context, subscriptionToken sql.NullString) (GetClientBySubscriptionTokenRow, error) {
+	row := q.db.QueryRowContext(ctx, getClientBySubscriptionToken, subscriptionToken)
+	var i GetClientBySubscriptionTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.SecretCiphertext,
+		&i.UserAdTag,
+		&i.Enabled,
+		&i.MaxTcpConns,
+		&i.MaxUniqueIps,
+		&i.DataQuotaBytes,
+		&i.ExpirationRfc3339,
+		&i.SubscriptionToken,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
@@ -45,22 +107,38 @@ func (q *Queries) GetClient(ctx context.Context, id string) (Client, error) {
 
 const listClients = `-- name: ListClients :many
 SELECT id, name, secret_ciphertext, user_ad_tag, enabled, max_tcp_conns,
-       max_unique_ips, data_quota_bytes, expiration_rfc3339,
+       max_unique_ips, data_quota_bytes, expiration_rfc3339, subscription_token,
        created_at, updated_at, deleted_at
 FROM clients
 WHERE deleted_at IS NULL
 ORDER BY created_at ASC, id ASC
 `
 
-func (q *Queries) ListClients(ctx context.Context) ([]Client, error) {
+type ListClientsRow struct {
+	ID                string
+	Name              string
+	SecretCiphertext  string
+	UserAdTag         string
+	Enabled           bool
+	MaxTcpConns       int64
+	MaxUniqueIps      int64
+	DataQuotaBytes    int64
+	ExpirationRfc3339 string
+	SubscriptionToken sql.NullString
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+}
+
+func (q *Queries) ListClients(ctx context.Context) ([]ListClientsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listClients)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Client
+	var items []ListClientsRow
 	for rows.Next() {
-		var i Client
+		var i ListClientsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -71,6 +149,7 @@ func (q *Queries) ListClients(ctx context.Context) ([]Client, error) {
 			&i.MaxUniqueIps,
 			&i.DataQuotaBytes,
 			&i.ExpirationRfc3339,
+			&i.SubscriptionToken,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
@@ -108,19 +187,20 @@ func (q *Queries) SoftDeleteClient(ctx context.Context, arg SoftDeleteClientPara
 const upsertClient = `-- name: UpsertClient :exec
 INSERT INTO clients (id, name, secret_ciphertext, user_ad_tag, enabled,
                      max_tcp_conns, max_unique_ips, data_quota_bytes,
-                     expiration_rfc3339, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                     expiration_rfc3339, subscription_token, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 ON CONFLICT (id) DO UPDATE
-SET name              = EXCLUDED.name,
-    secret_ciphertext = EXCLUDED.secret_ciphertext,
-    user_ad_tag       = EXCLUDED.user_ad_tag,
-    enabled           = EXCLUDED.enabled,
-    max_tcp_conns     = EXCLUDED.max_tcp_conns,
-    max_unique_ips    = EXCLUDED.max_unique_ips,
-    data_quota_bytes  = EXCLUDED.data_quota_bytes,
+SET name               = EXCLUDED.name,
+    secret_ciphertext  = EXCLUDED.secret_ciphertext,
+    user_ad_tag        = EXCLUDED.user_ad_tag,
+    enabled            = EXCLUDED.enabled,
+    max_tcp_conns      = EXCLUDED.max_tcp_conns,
+    max_unique_ips     = EXCLUDED.max_unique_ips,
+    data_quota_bytes   = EXCLUDED.data_quota_bytes,
     expiration_rfc3339 = EXCLUDED.expiration_rfc3339,
-    updated_at        = EXCLUDED.updated_at,
-    deleted_at        = NULL
+    subscription_token = EXCLUDED.subscription_token,
+    updated_at         = EXCLUDED.updated_at,
+    deleted_at         = NULL
 `
 
 type UpsertClientParams struct {
@@ -133,6 +213,7 @@ type UpsertClientParams struct {
 	MaxUniqueIps      int64
 	DataQuotaBytes    int64
 	ExpirationRfc3339 string
+	SubscriptionToken sql.NullString
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }
@@ -148,6 +229,7 @@ func (q *Queries) UpsertClient(ctx context.Context, arg UpsertClientParams) erro
 		arg.MaxUniqueIps,
 		arg.DataQuotaBytes,
 		arg.ExpirationRfc3339,
+		arg.SubscriptionToken,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)

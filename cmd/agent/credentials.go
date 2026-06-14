@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"net/http"
+
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	agentTransport "github.com/lost-coder/panvex/internal/agent/transport"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -74,16 +76,35 @@ func refreshRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, cu
 		return current, nil
 	}
 
+	newKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return current, fmt.Errorf("unary renewal: generate key: %w", err)
+	}
+	csrPEM, err := buildCSRPEM(current.AgentID, newKey)
+	if err != nil {
+		return current, fmt.Errorf("unary renewal: build CSR: %w", err)
+	}
+
 	response, err := renewer.RenewCertificate(ctx, &gatewayrpc.RenewCertificateRequest{
 		AgentId: current.AgentID,
+		CsrPem:  csrPEM,
 	})
 	if err != nil {
 		return current, err
 	}
 
+	newKeyDER, err := x509.MarshalECPrivateKey(newKey)
+	if err != nil {
+		return current, fmt.Errorf("unary renewal: marshal key: %w", err)
+	}
+	newKeyPEM := encodeCertPEM("EC PRIVATE KEY", newKeyDER)
+	if _, err := tls.X509KeyPair([]byte(response.GetCertificatePem()), []byte(newKeyPEM)); err != nil {
+		return current, fmt.Errorf("unary renewal: cert/key mismatch: %w", err)
+	}
+
 	updated := current
 	updated.CertificatePEM = response.GetCertificatePem()
-	updated.PrivateKeyPEM = response.GetPrivateKeyPem()
+	updated.PrivateKeyPEM = newKeyPEM
 	updated.CAPEM = response.GetCaPem()
 	if response.GetExpiresAtUnix() > 0 {
 		updated.ExpiresAt = time.Unix(response.GetExpiresAtUnix(), 0).UTC()
@@ -173,6 +194,22 @@ func buildCSRPEM(agentID string, key *ecdsa.PrivateKey) (string, error) {
 // encodeCertPEM encodes der bytes as a PEM block with the given type.
 func encodeCertPEM(blockType string, der []byte) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der}))
+}
+
+// recoverListenCredentialsIfExpired handles the listen-mode dead end the
+// audit flagged: an EXPIRED cert cannot complete any mTLS handshake (neither
+// the panel's dial-in nor in-stream renewal), and the dial-mode unary
+// renewal pre-flight is skipped in listen mode. The HTTP certificate
+// recovery flow works over HTTPS to PanelURL regardless of transport mode,
+// so run it before re-entering the listen loop. client==nil uses the
+// default bootstrap HTTP client.
+func recoverListenCredentialsIfExpired(ctx context.Context, stateFile string, current agentstate.Credentials, client *http.Client, now time.Time) (agentstate.Credentials, error) {
+	if !runtimeCredentialsNeedRecovery(current, now) {
+		return current, nil
+	}
+	slog.Warn("listen mode: certificate expired; attempting HTTP recovery",
+		"agent_id", current.AgentID, "expired_at", current.ExpiresAt.UTC().Format(time.RFC3339))
+	return recoverRuntimeCredentialsIfNeeded(ctx, stateFile, current, client, now)
 }
 
 // renewCertificateInStream performs in-stream cert renewal over the existing

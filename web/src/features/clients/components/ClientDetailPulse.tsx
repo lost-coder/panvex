@@ -77,7 +77,10 @@ export function ClientDetailPulse({ client }: Readonly<{ client: Client }>) {
           {
             label: t("pulseDetail.expires"),
             value: formatExpiry(client.expirationRfc3339),
-            hint: expiresSuffix(client.expirationRfc3339),
+            // U-38: for a never-expiring client value already reads "Never";
+            // the relative hint ("never") just duplicated it. Only show the
+            // relative hint when there's an actual expiry date.
+            hint: client.expirationRfc3339 ? expiresSuffix(client.expirationRfc3339) : undefined,
             tone: expiresTone(client.expirationRfc3339),
           },
         ] satisfies PulseTick[]

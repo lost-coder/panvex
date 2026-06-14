@@ -20,6 +20,11 @@ const (
 	jobDispatchRetryAfter = 30 * time.Second
 	// jobDispatchRetryInterval defines how often the dispatcher checks for unacknowledged commands.
 	jobDispatchRetryInterval = 5 * time.Second
+	// discoveryRefreshInterval is how often the panel re-requests a full client
+	// list from each connected agent, so a Telemt that recovered without a stream
+	// reconnect (and any other drift) is reconciled within one interval even if
+	// the recovery-edge trigger is missed.
+	discoveryRefreshInterval = 10 * time.Minute
 	// jobDispatchBatchSize bounds one dispatch pass to avoid monopolizing one stream under large backlogs.
 	jobDispatchBatchSize = 32
 	// priorityInboundWorkerCount defines how many workers consume critical job acknowledgements and results.
@@ -49,9 +54,9 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	}
 
 	now := s.now()
-	issued, err := s.authority.issueClientCertificate(agentID, now)
+	issued, err := s.authority.issueAgentCertificateFromCSR(request.GetCsrPem(), agentID, agentCertificateLifetime, true, now)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	// Update in-memory cert dates so the dashboard reflects the renewal.
@@ -73,10 +78,10 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 			s.logger.Warn("persist renewed agent cert serial failed", "agent_id", agentID, "error", err)
 		}
 	}
+	s.persistAgentCertPin(ctx, agentID, issued.CertificatePEM)
 
 	return &gatewayrpc.RenewCertificateResponse{
 		CertificatePem: issued.CertificatePEM,
-		PrivateKeyPem:  issued.PrivateKeyPEM,
 		CaPem:          issued.CAPEM,
 		ExpiresAtUnix:  issued.ExpiresAt.Unix(),
 	}, nil
@@ -206,7 +211,10 @@ func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentS
 		return err
 	}
 
-	session, unregisterSession := s.registerAgentSession(agentID)
+	connectionCtx, cancelConnection := context.WithCancel(ctx)
+	defer cancelConnection()
+
+	session, unregisterSession := s.registerAgentSession(agentID, cancelConnection)
 	defer unregisterSession()
 	// P2-LOG-12 / L-05: MarkConnected exactly once per stream open, here.
 	// applyAgentSnapshot now only calls Heartbeat so subsequent heartbeat
@@ -214,10 +222,8 @@ func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentS
 	// disconnects. On reconnect, the next Connect() call produces a fresh
 	// MarkConnected and the connectedAt timestamp moves forward.
 	s.presence.MarkConnected(agentID, s.now())
+	s.markTransportSwitchResolved(agentID)
 	s.logger.Info("accepted agent stream", "agent_id", agentID)
-
-	connectionCtx, cancelConnection := context.WithCancel(ctx)
-	defer cancelConnection()
 
 	channels := newAgentStreamChannels()
 	processErrorAndCancel := func(err error) {
@@ -257,6 +263,15 @@ func authenticatedAgentID(ctx context.Context) (string, error) {
 }
 
 // authenticatedAgentIdentity returns the (agent_id, serial-hex) pair
+// markTransportSwitchResolved clears the A2 "switched but never reconnected"
+// marker: any accepted agent stream (inbound or outbound) proves the agent
+// is reachable in its current transport mode.
+func (s *Server) markTransportSwitchResolved(agentID string) {
+	s.mu.Lock()
+	delete(s.transportSwitchPendingAt, agentID)
+	s.mu.Unlock()
+}
+
 // for the peer's client certificate. The CN is the agent_id; the
 // serial is hex-encoded big-endian so callers can compare it against
 // the persisted pin (Q4.U-S-04).

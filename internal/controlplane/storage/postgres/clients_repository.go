@@ -54,7 +54,7 @@ func (r *clientsRepository) List(ctx context.Context) ([]clients.Client, error) 
 	}
 	out := make([]clients.Client, len(rows))
 	for i, row := range rows {
-		out[i] = rowToClient(row)
+		out[i] = listRowToClient(row)
 	}
 	return out, nil
 }
@@ -92,6 +92,20 @@ func (r *clientsRepository) Delete(ctx context.Context, id clients.ClientID) err
 		return fmt.Errorf("clientsRepository.Delete (usage): %w", err)
 	}
 	return nil
+}
+
+func (r *clientsRepository) GetBySubscriptionToken(ctx context.Context, token string) (clients.Client, error) {
+	if token == "" {
+		return clients.Client{}, storage.ErrNotFound
+	}
+	row, err := r.q.GetClientBySubscriptionToken(ctx, sql.NullString{String: token, Valid: true})
+	if errors.Is(err, sql.ErrNoRows) {
+		return clients.Client{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return clients.Client{}, fmt.Errorf("clientsRepository.GetBySubscriptionToken: %w", err)
+	}
+	return subscriptionTokenRowToClient(row), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -213,25 +227,102 @@ func (r *clientsRepository) DeleteUsageByClient(ctx context.Context, id clients.
 // Mapping helpers — dbsqlc row → domain type
 // ---------------------------------------------------------------------------
 
-func rowToClient(row dbsqlc.Client) clients.Client {
+// clientFields holds the scalar fields shared by every SELECT-client row
+// type (GetClientRow, ListClientsRow, GetClientBySubscriptionTokenRow).
+// All three sqlc-generated types have identical column sets, so a single
+// authoritative mapping lives here and each thin wrapper populates it.
+type clientFields struct {
+	ID                string
+	Name              string
+	SecretCiphertext  string
+	UserAdTag         string
+	Enabled           bool
+	MaxTcpConns       int64
+	MaxUniqueIps      int64
+	DataQuotaBytes    int64
+	ExpirationRfc3339 string
+	SubscriptionToken sql.NullString
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+}
+
+// clientFromFields is the one authoritative body that converts the shared
+// column set into a clients.Client domain value.
+func clientFromFields(f clientFields) clients.Client {
 	c := clients.Client{
-		ID:                clients.ClientID(row.ID),
-		Name:              row.Name,
-		Secret:            row.SecretCiphertext,
-		UserADTag:         row.UserAdTag,
-		Enabled:           row.Enabled,
-		MaxTCPConns:       int(row.MaxTcpConns),
-		MaxUniqueIPs:      int(row.MaxUniqueIps),
-		DataQuotaBytes:    row.DataQuotaBytes,
-		ExpirationRFC3339: row.ExpirationRfc3339,
-		CreatedAt:         row.CreatedAt.UTC(),
-		UpdatedAt:         row.UpdatedAt.UTC(),
+		ID:                clients.ClientID(f.ID),
+		Name:              f.Name,
+		Secret:            f.SecretCiphertext,
+		UserADTag:         f.UserAdTag,
+		Enabled:           f.Enabled,
+		MaxTCPConns:       int(f.MaxTcpConns),
+		MaxUniqueIPs:      int(f.MaxUniqueIps),
+		DataQuotaBytes:    f.DataQuotaBytes,
+		ExpirationRFC3339: f.ExpirationRfc3339,
+		SubscriptionToken: f.SubscriptionToken.String, // NULL → ""
+		CreatedAt:         f.CreatedAt.UTC(),
+		UpdatedAt:         f.UpdatedAt.UTC(),
 	}
-	if row.DeletedAt.Valid {
-		t := row.DeletedAt.Time.UTC()
+	if f.DeletedAt.Valid {
+		t := f.DeletedAt.Time.UTC()
 		c.DeletedAt = &t
 	}
 	return c
+}
+
+func rowToClient(row dbsqlc.GetClientRow) clients.Client {
+	return clientFromFields(clientFields{
+		ID:                row.ID,
+		Name:              row.Name,
+		SecretCiphertext:  row.SecretCiphertext,
+		UserAdTag:         row.UserAdTag,
+		Enabled:           row.Enabled,
+		MaxTcpConns:       row.MaxTcpConns,
+		MaxUniqueIps:      row.MaxUniqueIps,
+		DataQuotaBytes:    row.DataQuotaBytes,
+		ExpirationRfc3339: row.ExpirationRfc3339,
+		SubscriptionToken: row.SubscriptionToken,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
+		DeletedAt:         row.DeletedAt,
+	})
+}
+
+func listRowToClient(row dbsqlc.ListClientsRow) clients.Client {
+	return clientFromFields(clientFields{
+		ID:                row.ID,
+		Name:              row.Name,
+		SecretCiphertext:  row.SecretCiphertext,
+		UserAdTag:         row.UserAdTag,
+		Enabled:           row.Enabled,
+		MaxTcpConns:       row.MaxTcpConns,
+		MaxUniqueIps:      row.MaxUniqueIps,
+		DataQuotaBytes:    row.DataQuotaBytes,
+		ExpirationRfc3339: row.ExpirationRfc3339,
+		SubscriptionToken: row.SubscriptionToken,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
+		DeletedAt:         row.DeletedAt,
+	})
+}
+
+func subscriptionTokenRowToClient(row dbsqlc.GetClientBySubscriptionTokenRow) clients.Client {
+	return clientFromFields(clientFields{
+		ID:                row.ID,
+		Name:              row.Name,
+		SecretCiphertext:  row.SecretCiphertext,
+		UserAdTag:         row.UserAdTag,
+		Enabled:           row.Enabled,
+		MaxTcpConns:       row.MaxTcpConns,
+		MaxUniqueIps:      row.MaxUniqueIps,
+		DataQuotaBytes:    row.DataQuotaBytes,
+		ExpirationRfc3339: row.ExpirationRfc3339,
+		SubscriptionToken: row.SubscriptionToken,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
+		DeletedAt:         row.DeletedAt,
+	})
 }
 
 func clientToUpsertParams(c clients.Client) dbsqlc.UpsertClientParams {
@@ -245,6 +336,7 @@ func clientToUpsertParams(c clients.Client) dbsqlc.UpsertClientParams {
 		MaxUniqueIps:      int64(c.MaxUniqueIPs),
 		DataQuotaBytes:    c.DataQuotaBytes,
 		ExpirationRfc3339: c.ExpirationRFC3339,
+		SubscriptionToken: sql.NullString{String: c.SubscriptionToken, Valid: c.SubscriptionToken != ""},
 		CreatedAt:         c.CreatedAt.UTC(),
 		UpdatedAt:         c.UpdatedAt.UTC(),
 	}

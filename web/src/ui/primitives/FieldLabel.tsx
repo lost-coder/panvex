@@ -3,7 +3,7 @@ import { cn } from "@/ui/lib/cn";
 export interface FieldLabelProps {
   children: React.ReactNode;
   className?: string;
-  size?: "sm" | "xs"; // sm = text-[11px], xs = text-[10px]
+  size?: "sm" | "xs"; // sm = text-micro, xs = text-nano
 }
 
 export function FieldLabel({ children, className, size = "sm" }: Readonly<FieldLabelProps>) {
@@ -11,7 +11,7 @@ export function FieldLabel({ children, className, size = "sm" }: Readonly<FieldL
     <span
       className={cn(
         "text-fg-muted uppercase tracking-wider font-medium leading-none",
-        size === "sm" ? "text-[11px]" : "text-[10px]",
+        size === "sm" ? "text-micro" : "text-nano",
         className,
       )}
     >

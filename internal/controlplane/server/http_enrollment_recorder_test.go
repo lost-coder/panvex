@@ -162,7 +162,7 @@ func TestInboundEnrollmentRecordsHappyPath(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/agent/bootstrap",
-		map[string]any{"node_name": "node-happy", "version": "0.0.0-test"},
+		map[string]any{"node_name": "node-happy", "version": "0.0.0-test", "csr_pem": testCSRPEM(t)},
 		nil,
 		map[string]string{
 			"Authorization": "Bearer " + token.Value,
@@ -275,7 +275,7 @@ func TestInboundEnrollmentRecordsExpiredToken(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/agent/bootstrap",
-		map[string]any{"node_name": "node-expired", "version": "0.0.0-test"},
+		map[string]any{"node_name": "node-expired", "version": "0.0.0-test", "csr_pem": testCSRPEM(t)},
 		nil,
 		map[string]string{"Authorization": "Bearer " + token.Value},
 	)
@@ -310,7 +310,7 @@ func TestInboundEnrollmentRecordsUsedToken(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/agent/bootstrap",
-		map[string]any{"node_name": "node-first", "version": "0.0.0-test"},
+		map[string]any{"node_name": "node-first", "version": "0.0.0-test", "csr_pem": testCSRPEM(t)},
 		nil,
 		map[string]string{"Authorization": "Bearer " + token.Value},
 	)
@@ -323,7 +323,7 @@ func TestInboundEnrollmentRecordsUsedToken(t *testing.T) {
 		srv,
 		http.MethodPost,
 		"/api/agent/bootstrap",
-		map[string]any{"node_name": "node-second", "version": "0.0.0-test"},
+		map[string]any{"node_name": "node-second", "version": "0.0.0-test", "csr_pem": testCSRPEM(t)},
 		nil,
 		map[string]string{"Authorization": "Bearer " + token.Value},
 	)

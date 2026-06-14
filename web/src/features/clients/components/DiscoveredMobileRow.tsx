@@ -3,7 +3,7 @@
 
 import { useTranslation } from "react-i18next";
 
-import { Button, cn, formatBytes } from "@/ui";
+import { Button, cn, formatBytes, formatDateTime } from "@/ui";
 import type { DiscoveredGroup } from "@/features/clients/lib/groupDiscovered";
 
 import { DiscoveredStatusPill } from "./DiscoveredColumns";
@@ -46,19 +46,19 @@ export function DiscoveredMobileRow({
         {row.discoveredOn.map((n) => (
           <span
             key={n}
-            className="font-mono text-[10px] text-fg-muted px-1.5 py-0.5 rounded-xs border border-divider bg-bg"
+            className="font-mono text-nano text-fg-muted px-1.5 py-0.5 rounded-xs border border-divider bg-bg"
           >
             {n}
           </span>
         ))}
       </div>
-      <div className="flex items-center justify-between pl-7 text-[11px] font-mono text-fg-muted">
+      <div className="flex items-center justify-between pl-7 text-micro font-mono text-fg-muted">
         <span>
           {row.currentConnections} {t("table.connsSuffix")} · {row.activeUniqueIps}{" "}
           {t("table.ipsSuffix")} · {formatBytes(row.totalOctets)}
         </span>
         {Number.isFinite(row.discoveredAtUnix) && row.discoveredAtUnix > 0 && (
-          <span>{new Date(row.discoveredAtUnix * 1000).toLocaleString()}</span>
+          <span>{formatDateTime(row.discoveredAtUnix * 1000)}</span>
         )}
       </div>
       {interactive && (
@@ -101,7 +101,7 @@ export function DiscoveredPulseCell({ i, label, value, tone }: Readonly<Discover
       )}
     >
       <div className="flex flex-col gap-1 min-w-0">
-        <span className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">{label}</span>
+        <span className="text-nano font-mono uppercase tracking-wider text-fg-muted">{label}</span>
         <span
           className={cn(
             "text-2xl font-mono font-semibold leading-none tracking-tight tabular-nums",

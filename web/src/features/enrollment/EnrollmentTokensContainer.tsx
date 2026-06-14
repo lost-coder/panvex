@@ -3,10 +3,12 @@ import { useEnrollmentTokens } from "./hooks/useEnrollmentTokens";
 import { ErrorState } from "@/components/ErrorState";
 import { SkeletonRows } from "@/ui";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
+import { useNavigate } from "@tanstack/react-router";
 
 export function EnrollmentTokensContainer() {
-  const { tokens, isLoading, error, createToken, revokeToken } = useEnrollmentTokens();
+  const { tokens, isLoading, error, refetch, createToken, revokeToken } = useEnrollmentTokens();
   const confirm = useConfirm();
+  const navigate = useNavigate();
 
   const handleCreate = () => {
     createToken.mutate({ fleet_group_id: "", ttl_seconds: 86400 });
@@ -34,7 +36,7 @@ export function EnrollmentTokensContainer() {
   }
 
   if (error) {
-    return <ErrorState description={error.message} onRetry={() => globalThis.location.reload()} />;
+    return <ErrorState description={error.message} onRetry={() => void refetch()} />;
   }
 
   return (
@@ -42,6 +44,7 @@ export function EnrollmentTokensContainer() {
       tokens={tokens}
       onCreateToken={handleCreate}
       onRevoke={handleRevoke}
+      onViewAttempts={() => void navigate({ to: "/enrollment-attempts" })}
     />
   );
 }

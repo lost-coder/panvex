@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -48,12 +51,15 @@ type bootstrapConfig struct {
 type bootstrapRequest struct {
 	NodeName string `json:"node_name"`
 	Version  string `json:"version"`
+	// CSRPEM is the PEM-encoded CERTIFICATE REQUEST generated locally by
+	// the agent. A9: the panel signs it and returns only the certificate;
+	// the private key never crosses the wire.
+	CSRPEM string `json:"csr_pem"`
 }
 
 type bootstrapResponse struct {
 	AgentID        string `json:"agent_id"`
 	CertificatePEM string `json:"certificate_pem"`
-	PrivateKeyPEM  string `json:"private_key_pem"`
 	CAPEM          string `json:"ca_pem"`
 	GRPCEndpoint   string `json:"grpc_endpoint"`
 	GRPCServerName string `json:"grpc_server_name"`
@@ -72,6 +78,22 @@ type agentCertificateRecoveryRequest struct {
 	ProofTimestampUnix int64  `json:"proof_timestamp_unix"`
 	ProofNonce         string `json:"proof_nonce"`
 	ProofSignature     string `json:"proof_signature"`
+	// CSRPEM is the PEM-encoded CERTIFICATE REQUEST generated locally by
+	// the agent (A9). The panel validates CN == AgentID and signs it;
+	// the private key never crosses the wire.
+	CSRPEM string `json:"csr_pem"`
+}
+
+// agentCertificateRecoveryResponse is the response from the panel's
+// /api/agent/recover-certificate endpoint (A9). The panel signs the CSR
+// supplied in the request; the private key is never returned.
+type agentCertificateRecoveryResponse struct {
+	AgentID        string `json:"agent_id"`
+	CertificatePEM string `json:"certificate_pem"`
+	CAPEM          string `json:"ca_pem"`
+	GRPCEndpoint   string `json:"grpc_endpoint"`
+	GRPCServerName string `json:"grpc_server_name"`
+	ExpiresAtUnix  int64  `json:"expires_at_unix"`
 }
 
 func runBootstrapCommand(args []string, client *http.Client) error {
@@ -83,7 +105,7 @@ func runBootstrapCommand(args []string, client *http.Client) error {
 	version := flags.String("version", "dev", "Agent version")
 	force := flags.Bool("force", false, "Overwrite an existing state file")
 	insecureTransport := flags.Bool("insecure-transport", false,
-		"Allow http:// panel URLs on non-loopback hosts. Use only on trusted private networks (e.g. VPN-only links) — bootstrap exchanges the private key in cleartext when this is set.")
+		"Allow http:// panel URLs on non-loopback hosts. Use only on trusted private networks (e.g. VPN-only links) — bootstrap certificate transits unencrypted when this is set.")
 	mode := flags.String("mode", "dial", "bootstrap mode: dial | reverse")
 	bootstrapToken := flags.String("bootstrap-token", "", "raw bootstrap token (reverse mode)")
 	agentID := flags.String("agent-id", "", "agent identifier (reverse mode)")
@@ -135,7 +157,7 @@ func runBootstrapCommand(args []string, client *http.Client) error {
 		// see the drift in their install logs and back it out.
 		slog.Warn("bootstrap over insecure transport",
 			slog.String("panel_url", *panelURL),
-			slog.String("hint", "private key and certificate will transit unencrypted; only use on VPN / private-network links"))
+			slog.String("hint", "certificate transits unencrypted; only use on VPN / private-network links"))
 	}
 
 	credentialsState, err := bootstrapAgent(context.Background(), client, bootstrapConfig{
@@ -160,9 +182,20 @@ func bootstrapAgent(ctx context.Context, client *http.Client, config bootstrapCo
 		return agentstate.Credentials{}, err
 	}
 
+	// A9: generate the keypair locally — it never leaves this process.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return agentstate.Credentials{}, fmt.Errorf("bootstrap: generate key: %w", err)
+	}
+	csrPEM, err := buildCSRPEM(config.NodeName, key)
+	if err != nil {
+		return agentstate.Credentials{}, fmt.Errorf("bootstrap: build CSR: %w", err)
+	}
+
 	payload, err := json.Marshal(bootstrapRequest{
 		NodeName: config.NodeName,
 		Version:  config.Version,
+		CSRPEM:   csrPEM,
 	})
 	if err != nil {
 		return agentstate.Credentials{}, err
@@ -199,14 +232,25 @@ func bootstrapAgent(ctx context.Context, client *http.Client, config bootstrapCo
 	if err := json.NewDecoder(response.Body).Decode(&bootstrap); err != nil {
 		return agentstate.Credentials{}, err
 	}
-	if bootstrap.AgentID == "" || bootstrap.CertificatePEM == "" || bootstrap.PrivateKeyPEM == "" || bootstrap.CAPEM == "" || bootstrap.GRPCEndpoint == "" || bootstrap.GRPCServerName == "" {
+	if bootstrap.AgentID == "" || bootstrap.CertificatePEM == "" || bootstrap.CAPEM == "" || bootstrap.GRPCEndpoint == "" || bootstrap.GRPCServerName == "" {
 		return agentstate.Credentials{}, errors.New("bootstrap response missing required fields")
+	}
+
+	// A9: validate that the panel's cert pairs with the key we generated
+	// locally. This catches a mis-signed cert before it is persisted.
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return agentstate.Credentials{}, err
+	}
+	keyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
+	if _, err := tls.X509KeyPair([]byte(bootstrap.CertificatePEM), []byte(keyPEM)); err != nil {
+		return agentstate.Credentials{}, fmt.Errorf("bootstrap: issued cert does not pair with generated key: %w", err)
 	}
 
 	credentialsState := agentstate.Credentials{
 		AgentID:        bootstrap.AgentID,
 		CertificatePEM: bootstrap.CertificatePEM,
-		PrivateKeyPEM:  bootstrap.PrivateKeyPEM,
+		PrivateKeyPEM:  keyPEM,
 		CAPEM:          bootstrap.CAPEM,
 		PanelURL:       strings.TrimRight(strings.TrimSpace(config.PanelURL), "/"),
 		GRPCEndpoint:   bootstrap.GRPCEndpoint,
@@ -344,12 +388,23 @@ func recoverRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, cu
 		return current, err
 	}
 
+	// A9: generate a fresh keypair locally — it never leaves this process.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return current, fmt.Errorf("recovery: generate key: %w", err)
+	}
+	csrPEM, err := buildCSRPEM(current.AgentID, key)
+	if err != nil {
+		return current, fmt.Errorf("recovery: build CSR: %w", err)
+	}
+
 	payload, err := json.Marshal(agentCertificateRecoveryRequest{
 		AgentID:            current.AgentID,
 		CertificatePEM:     current.CertificatePEM,
 		ProofTimestampUnix: now.Unix(),
 		ProofNonce:         proofNonce,
 		ProofSignature:     proofSignature,
+		CSRPEM:             csrPEM,
 	})
 	if err != nil {
 		return current, err
@@ -381,18 +436,29 @@ func recoverRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, cu
 		return current, errors.New("certificate recovery failed: " + message)
 	}
 
-	var recovery bootstrapResponse
+	var recovery agentCertificateRecoveryResponse
 	if err := json.NewDecoder(response.Body).Decode(&recovery); err != nil {
 		return current, err
 	}
-	if recovery.AgentID == "" || recovery.CertificatePEM == "" || recovery.PrivateKeyPEM == "" || recovery.CAPEM == "" || recovery.GRPCEndpoint == "" || recovery.GRPCServerName == "" {
+	if recovery.AgentID == "" || recovery.CertificatePEM == "" || recovery.CAPEM == "" || recovery.GRPCEndpoint == "" || recovery.GRPCServerName == "" {
 		return current, errors.New("certificate recovery response missing required fields")
+	}
+
+	// A9: validate that the panel's cert pairs with the key we generated
+	// locally. This catches a mis-signed cert before it is persisted.
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return current, err
+	}
+	keyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}))
+	if _, err := tls.X509KeyPair([]byte(recovery.CertificatePEM), []byte(keyPEM)); err != nil {
+		return current, fmt.Errorf("recovery: issued cert does not pair with generated key: %w", err)
 	}
 
 	updated := current
 	updated.AgentID = recovery.AgentID
 	updated.CertificatePEM = recovery.CertificatePEM
-	updated.PrivateKeyPEM = recovery.PrivateKeyPEM
+	updated.PrivateKeyPEM = keyPEM
 	updated.CAPEM = recovery.CAPEM
 	updated.PanelURL = strings.TrimRight(strings.TrimSpace(current.PanelURL), "/")
 	updated.GRPCEndpoint = recovery.GRPCEndpoint

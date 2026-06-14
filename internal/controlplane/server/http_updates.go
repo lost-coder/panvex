@@ -243,15 +243,15 @@ func (s *Server) handleForceUpdateCheck() http.HandlerFunc {
 
 		// Detached from r.Context() on purpose: the admin-triggered check must
 		// outlive the HTTP request, otherwise closing the browser tab would
-		// abort the poll. The package-level ctx is not reachable from the
-		// handler so we start fresh; the worker honours its own deadlines via
-		// the timeout in checkForUpdates -> FetchLatestVersions. N-1: tracked
+		// abort the poll. Rooted in the server lifecycle ctx so a Close()
+		// cancels it; the worker also honours its own deadlines via the
+		// timeout in checkForUpdates -> FetchLatestVersions. N-1: tracked
 		// in bgWG so a graceful Shutdown waits for it to finish.
 		s.bgWG.Add(1)
-		//nolint:contextcheck,gosec // intentionally detached from request lifecycle
+		//nolint:contextcheck,gosec // intentionally detached from request lifecycle, rooted in server lifecycle
 		go func() {
 			defer s.bgWG.Done()
-			s.checkForUpdates(context.Background())
+			s.checkForUpdates(s.Context())
 		}()
 
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "checking"})
@@ -297,10 +297,12 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 		// downloads, verifies, and replaces the running binary; killing it
 		// when the operator's HTTP request ends would leave the panel in a
 		// half-applied state. The 202 response above already tells the
-		// caller the work continues asynchronously. N-1: tracked in bgWG so
-		// shutdown waits for the binary swap to complete.
+		// caller the work continues asynchronously. Rooted in the server
+		// lifecycle ctx so Close() aborts a stalled download; a
+		// half-downloaded archive is discarded atomically. N-1: tracked in
+		// bgWG so shutdown waits for the binary swap to complete.
 		s.bgWG.Add(1)
-		//nolint:contextcheck,gosec // intentionally detached from request lifecycle
+		//nolint:contextcheck,gosec // intentionally detached from request lifecycle, rooted in server lifecycle
 		go func() {
 			defer s.bgWG.Done()
 			s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, settings.GitHubToken)
@@ -356,7 +358,7 @@ func (s *Server) resolvePanelDownloadAssets(w http.ResponseWriter, r *http.Reque
 // performPanelUpdate downloads, verifies the SHA-256 checksum (mandatory), and
 // installs a new panel binary, then requests a service restart.
 func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, token string) {
-	ctx := context.Background()
+	ctx := s.Context()
 
 	expectedChecksum, ok := s.fetchExpectedChecksum(ctx, checksumURL, token)
 	if !ok {
@@ -493,6 +495,26 @@ func buildAgentDirectUpdatePayload(repo, version string) ([]byte, error) {
 	})
 }
 
+// agentSelfUpdateJobTTL bounds how long an agent.self-update job may stay
+// outstanding before its targets expire. A3: without a TTL (TTL<=0 means
+// "never expires" in jobs.Service) a wedged update job is re-dispatched
+// every retry window forever. 10 minutes comfortably covers the download
+// (selfUpdateExecutionTimeout on the agent is 5m) plus several retries.
+const agentSelfUpdateJobTTL = 10 * time.Minute
+
+// agentSelfUpdateJobInput builds the CreateJobInput for one agent
+// self-update dispatch. Extracted so the TTL contract is unit-testable
+// without the HTTP handler scaffolding.
+func agentSelfUpdateJobInput(agentID, payloadJSON, actorID string) jobs.CreateJobInput {
+	return jobs.CreateJobInput{
+		Action:         jobs.ActionAgentSelfUpdate,
+		TargetAgentIDs: []string{agentID},
+		TTL:            agentSelfUpdateJobTTL,
+		PayloadJSON:    payloadJSON,
+		ActorID:        actorID,
+	}
+}
+
 func (s *Server) handleAgentUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		agentID := chi.URLParam(r, "id")
@@ -547,12 +569,7 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 			return
 		}
 
-		job, err := s.jobs.Enqueue(r.Context(), jobs.CreateJobInput{
-			Action:         jobs.ActionAgentSelfUpdate,
-			TargetAgentIDs: []string{agentID},
-			PayloadJSON:    string(payloadJSON),
-			ActorID:        session.UserID,
-		}, s.now())
+		job, err := s.jobs.Enqueue(r.Context(), agentSelfUpdateJobInput(agentID, string(payloadJSON), session.UserID), s.now())
 		if err != nil {
 			s.logger.Error("agent update: enqueue job failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to create update job")

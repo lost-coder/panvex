@@ -13,7 +13,6 @@
   "error": {
     "title": "Failed to load fleet",
     "fallbackDescription": "Telemetry service unreachable. Retry once the panel recovers.",
-    "telemtUnreachable": "Telemt unreachable",
     "modeUnknown": "Mode unknown",
     "loadFleet": "Failed to load fleet",
     "bulkActionFailed": "Bulk action failed",
@@ -92,7 +91,11 @@
     "ariaLabel": "Add server wizard",
     "close": "Close",
     "quickCreateTitle": "New fleet group",
-    "fleetGroupCreated": "Fleet group «{{label}}» created."
+    "fleetGroupCreated": "Fleet group «{{label}}» created.",
+    "closeConfirmTitle": "Cancel enrollment?",
+    "closeConfirmBody": "Wizard progress will be discarded. The minted token stays valid until its TTL expires — you can revoke it on the Enrollment tokens page.",
+    "closeConfirmAction": "Discard",
+    "closeConfirmCancel": "Keep going"
   },
   "detail": {
     "breadcrumbServers": "Servers",
@@ -113,6 +116,10 @@
     "actions": {
       "title": "Server actions",
       "reload": "Reload runtime",
+      "restart": "Restart Telemt",
+      "restartDone": "Telemt restart requested",
+      "restartConfirmTitle": "Restart Telemt?",
+      "restartConfirmBody": "This restarts the Telemt process on {{name}} — active connections will drop briefly.",
       "refreshDiagnostics": "Refresh diagnostics",
       "rename": "Rename server",
       "changeFleetGroup": "Change fleet group",
@@ -247,7 +254,7 @@
     "mePool": {
       "unavailable": "ME Pool is not available on this server.",
       "coverage": "Coverage",
-      "coverageCaption": "{{alive}} / {{required}} writers alive",
+      "coverageCaption": "{{alive}} alive · {{required}} required",
       "freshCoverage": "Fresh coverage",
       "freshCoverageCaption": "{{count}} fresh-alive",
       "endpoints": "Endpoints",
@@ -286,7 +293,8 @@
         "clients": "Clients",
         "idle": "Idle"
       },
-      "writerEmpty": "No writers match this filter"
+      "writerEmpty": "No writers match this filter",
+      "writersUnavailable": "Per-writer detail isn't reported by this agent."
     },
     "upstreamsTab": {
       "id": "#",
@@ -380,5 +388,54 @@
     "confirmTitle": "Deregister this server?",
     "confirmBody": "\"{{name}}\" will disconnect from the control-plane and stop receiving rollouts. Re-enrollment requires a new token.",
     "feedbackInitiated": "Update initiated"
+  },
+  "bulk": {
+    "queued_one": "Action queued for {{count}} server.",
+    "queued_other": "Action queued for {{count}} servers.",
+    "viewActivity": "View in Activity"
+  },
+  "config": {
+    "tab": "Config",
+    "section": {
+      "general": "General",
+      "censorship": "Censorship",
+      "timeouts": "Timeouts"
+    },
+    "field": {
+      "log_level": "Log level",
+      "update_every": "ME update interval",
+      "modes": "Modes",
+      "tls_domain": "SNI domain",
+      "tls_domains": "Additional SNI domains",
+      "client_handshake": "Client handshake timeout"
+    },
+    "badge": {
+      "hot": "Live",
+      "restart": "Restart",
+      "hotHint": "Applied immediately",
+      "restartHint": "Requires a Telemt restart (brief connection drop)"
+    },
+    "drift": {
+      "in_sync": "In sync",
+      "drifted": "Drifted",
+      "unknown": "Unknown",
+      "fieldsLabel": "Diverging fields"
+    },
+    "save": "Save",
+    "saved": "Configuration saved",
+    "overrideHint": "These are per-node overrides. Leave a field empty to inherit the effective value shown as its placeholder.",
+    "unsavedHint": "Save before applying",
+    "apply": {
+      "button": "Apply to node",
+      "buttonGroup": "Apply to group",
+      "restartWarningTitle": "Restart required",
+      "restartWarning": "Some changes require restarting Telemt, briefly dropping connections. Continue?",
+      "confirm": "Apply",
+      "cancel": "Cancel",
+      "applied": "Applied to {{count}} node(s)",
+      "failed": "Failed on {{agent}}: {{error}}"
+    },
+    "nodesTitle": "Nodes",
+    "noNodes": "No nodes in this group yet"
   }
 }
