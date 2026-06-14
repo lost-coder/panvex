@@ -13,6 +13,17 @@ updates:
       interval: weekly
     labels:
       - enhancement
+    # react and react-dom must move in lockstep — react-dom hard-fails on a
+    # version skew ("Incompatible React versions"). Group them (with their
+    # @types) so a bump is one coherent PR instead of a react-only PR that
+    # breaks the build against the lagging react-dom.
+    groups:
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
 
   - package-ecosystem: github-actions
     directory: /
