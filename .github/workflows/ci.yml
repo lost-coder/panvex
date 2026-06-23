@@ -24,7 +24,7 @@ jobs:
     outputs:
       go: ${{ steps.filter.outputs.go }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # Pinned to a commit SHA per the SonarCloud hotspot guidance —
       # third-party actions can have their tags rewritten to point at
       # a malicious commit, so consume the action by immutable hash.
@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -105,7 +105,7 @@ jobs:
     # cap explicitly so a regression fails fast.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -171,7 +171,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "stable"
@@ -207,7 +207,7 @@ jobs:
       PANVEX_POSTGRES_TEST_DSN: postgres://panvex:panvex@127.0.0.1:5432/panvex_test?sslmode=disable
       PANVEX_ALLOW_INSECURE_DB: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -222,7 +222,7 @@ jobs:
     name: Build Binaries
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -235,7 +235,7 @@ jobs:
     name: Go Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -251,7 +251,7 @@ jobs:
     name: Go Vulnerability Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -269,7 +269,7 @@ jobs:
     name: OpenAPI Codegen Drift
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -290,7 +290,7 @@ jobs:
     name: Frontend Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -311,7 +311,7 @@ jobs:
     name: Frontend Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -334,7 +334,7 @@ jobs:
     name: Frontend Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -355,7 +355,7 @@ jobs:
     # Running on every PR keeps regressions in the navigation /
     # auth-shell flows from sneaking past type checks.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -390,7 +390,7 @@ jobs:
     env:
       PANVEX_ENCRYPTION_KEY: ci-e2e-integration-throwaway-key
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -458,7 +458,7 @@ jobs:
     name: Frontend npm audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -481,7 +481,7 @@ jobs:
     # comment instead of broadening token scope; GitHub annotations
     # already surface buf errors inline on the diff.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: bufbuild/buf-action@v1
         with:
           lint: true
@@ -491,7 +491,7 @@ jobs:
     name: SQLc Verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: sqlc-dev/setup-sqlc@v5
         with:
           sqlc-version: '1.30.0'
@@ -507,7 +507,7 @@ jobs:
     # wall-clock budget is <30 s, so anything past 10 min is a runaway.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26"
@@ -524,7 +524,7 @@ jobs:
     name: Trivy filesystem scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Trivy scan (fs)
         # Catches vulnerable Go modules (go.sum), npm packages
         # (web/package-lock.json), and known-bad config patterns. Severity
@@ -543,7 +543,7 @@ jobs:
     name: Trivy Dockerfile scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Trivy config scan (Dockerfile)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -563,7 +563,7 @@ jobs:
     name: Trivy image scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Build image (load into local docker)
         uses: docker/build-push-action@v7
         with:
@@ -590,7 +590,7 @@ jobs:
     name: Security regression gate (Plan 1)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Plan 1 regression checks
         run: |
           set -eu
@@ -639,7 +639,7 @@ jobs:
     name: ShellCheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # CodeQL covers Go + JS but not shell. install-agent.sh, deploy/
       # install.sh and the dev fleet scripts each touch host state on
       # operator machines, so a shell-injection bug there is high blast
@@ -666,7 +666,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: moderate
@@ -676,7 +676,7 @@ jobs:
     name: gitleaks (secret scan)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Full history so gitleaks scans every commit on the branch,
           # not just the tip — leaks often slip in mid-branch and get
