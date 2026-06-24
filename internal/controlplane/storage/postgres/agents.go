@@ -16,11 +16,13 @@ import (
 // agentRecordToUpsertParams below is the domain-DTO → SQL-row bridge —
 // future PutAgent callers gain compile-time type safety on every
 // column from the sqlc-generated UpsertAgentParams.
+//
+// Uses s.db (the dbExecutor) rather than the pool-only s.sqlDB so the
+// upsert composes inside Transact — the inbound enrollment flow calls
+// this as tx.PutAgent(...) from within a transaction. dbsqlc.New accepts
+// any DBTX, which dbExecutor satisfies (both *sql.DB and *sql.Tx fit).
 func (s *Store) PutAgent(ctx context.Context, agent storage.AgentRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertAgent(ctx, agentRecordToUpsertParams(agent))
+	return dbsqlc.New(s.db).UpsertAgent(ctx, agentRecordToUpsertParams(agent))
 }
 
 // agentRecordToUpsertParams is the domain-DTO → dbsqlc params bridge.
