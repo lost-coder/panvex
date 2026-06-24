@@ -190,25 +190,37 @@ func (s *Server) handleGetGroupConfigTarget() http.HandlerFunc {
 			writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
 			return
 		}
-		nodes := []groupConfigNodeDrift{}
-		for _, agent := range s.live.List() {
-			if agent.FleetGroupID != id {
-				continue
-			}
-			override, err := s.loadConfigTargetSections(r, storage.ConfigScopeAgent, agent.ID)
-			if err != nil {
-				writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
-				return
-			}
-			effective := resolveEffectiveConfig(sections, override)
-			observed, hasObserved := s.observedConfigForAgent(agent.ID)
-			nodes = append(nodes, groupConfigNodeDrift{
-				AgentID: agent.ID,
-				Status:  driftView(effective, observed, hasObserved).Status,
-			})
+		nodes, err := s.groupConfigNodeDrifts(r, id, sections)
+		if err != nil {
+			writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
+			return
 		}
 		writeJSON(w, http.StatusOK, groupConfigTargetResponse{Sections: sections, Nodes: nodes})
 	}
+}
+
+// groupConfigNodeDrifts computes the per-agent drift rows for a fleet group:
+// for every live agent in the group, resolve its effective config (group ⊕
+// override) against the last observed snapshot. Any override-load failure is
+// surfaced so the handler can return 500.
+func (s *Server) groupConfigNodeDrifts(r *http.Request, groupID string, groupSections map[string]any) ([]groupConfigNodeDrift, error) {
+	nodes := []groupConfigNodeDrift{}
+	for _, agent := range s.live.List() {
+		if agent.FleetGroupID != groupID {
+			continue
+		}
+		override, err := s.loadConfigTargetSections(r, storage.ConfigScopeAgent, agent.ID)
+		if err != nil {
+			return nil, err
+		}
+		effective := resolveEffectiveConfig(groupSections, override)
+		observed, hasObserved := s.observedConfigForAgent(agent.ID)
+		nodes = append(nodes, groupConfigNodeDrift{
+			AgentID: agent.ID,
+			Status:  driftView(effective, observed, hasObserved).Status,
+		})
+	}
+	return nodes, nil
 }
 
 // handlePutGroupConfigTarget validates and upserts the config target for
@@ -271,22 +283,11 @@ func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
-		groupID := existing.FleetGroupID
-		groupSections := map[string]any{}
-		if groupID != "" {
-			var err error
-			groupSections, err = s.loadConfigTargetSectionsCtx(r.Context(), storage.ConfigScopeGroup, groupID)
-			if err != nil {
-				writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
-				return
-			}
-		}
-		overrideSections, err := s.loadConfigTargetSectionsCtx(r.Context(), storage.ConfigScopeAgent, id)
+		overrideSections, effective, err := s.loadAgentEffectiveConfig(r.Context(), id, existing.FleetGroupID)
 		if err != nil {
 			writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
 			return
 		}
-		effective := resolveEffectiveConfig(groupSections, overrideSections)
 		observed, hasObserved := s.observedConfigForAgent(id)
 		writeJSON(w, http.StatusOK, agentConfigTargetResponse{
 			Override:  overrideSections,
@@ -295,6 +296,25 @@ func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 			Drift:     driftView(effective, observed, hasObserved),
 		})
 	}
+}
+
+// loadAgentEffectiveConfig loads an agent's own override sections and the
+// effective config (its fleet group's sections ⊕ the override). An empty
+// groupID resolves an empty group config. Returns the override plus the
+// merged effective config.
+func (s *Server) loadAgentEffectiveConfig(ctx context.Context, agentID, groupID string) (override, effective map[string]any, err error) {
+	groupSections := map[string]any{}
+	if groupID != "" {
+		groupSections, err = s.loadConfigTargetSectionsCtx(ctx, storage.ConfigScopeGroup, groupID)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	override, err = s.loadConfigTargetSectionsCtx(ctx, storage.ConfigScopeAgent, agentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return override, resolveEffectiveConfig(groupSections, override), nil
 }
 
 // handlePutAgentConfigTarget validates and upserts the config override
