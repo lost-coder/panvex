@@ -4,10 +4,18 @@
 #   - No defaults on POSTGRES_PASSWORD or PANVEX_ENCRYPTION_KEY: an
 #     unset value fails the start instead of silently booting with a
 #     well-known credential. Use the `${VAR:?...}` form below.
-#   - DSN forces `sslmode=require` so Postgres traffic is never
-#     plaintext on the network. The `panvex` user inside the backend
-#     container trusts the system CA bundle by default; mount a private
-#     CA at /etc/ssl/certs/ca-certificates.crt if you sign your own.
+#   - Panel <-> Postgres traffic goes over a Unix domain socket, not TCP.
+#     The typical deployment runs Postgres and the panel on one host;
+#     rather than terminating TLS on a TCP listener (cert management) or
+#     leaving plaintext TCP reachable by every container on the compose
+#     network, postgres is started with `listen_addresses=''` (no TCP at
+#     all) and shares its socket dir (/var/run/postgresql) with the
+#     backend + bootstrap services via the panvex_pg_socket volume. The
+#     DSN therefore uses `host=/var/run/postgresql` + `sslmode=disable`
+#     (TLS over a local socket is pointless). Operators who put Postgres
+#     on a separate host should re-enable a TCP listener, mount a server
+#     cert (`-c ssl=on`), and switch the DSN to a host:port +
+#     `sslmode=require`/`verify-full`.
 #   - Memory + CPU limits keep one runaway component from starving the
 #     host (and act as a baseline for K8s requests/limits later).
 #   - stop_grace_period >= controlPlaneShutdownGraceMin (45s) so the
@@ -55,13 +63,32 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-panvex}
       POSTGRES_USER: ${POSTGRES_USER:-panvex}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required for the prod profile}
+    # listen_addresses='' disables the TCP listener entirely — the panel
+    # reaches Postgres only through the shared Unix socket, so the DB has
+    # zero network attack surface. unix_socket_directories is pinned so
+    # the socket path is deterministic (independent of the image's
+    # compiled default) for both the healthcheck and the backend DSN.
+    # Args start with `-`, so the image entrypoint prepends `postgres`.
+    command:
+      - "-c"
+      - "listen_addresses="
+      - "-c"
+      - "unix_socket_directories=/var/run/postgresql"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-panvex} -d ${POSTGRES_DB:-panvex}"]
+      # -h points pg_isready at the pinned socket dir; with TCP disabled
+      # the default localhost probe would never succeed.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-panvex} -d ${POSTGRES_DB:-panvex} -h /var/run/postgresql"]
       interval: 5s
       timeout: 5s
       retries: 10
     volumes:
-      - panvex_postgres_data:/var/lib/postgresql/data
+      # postgres:18+ images store data under /var/lib/postgresql (the
+      # pg_ctlcluster-compatible layout) and refuse to start when a fresh
+      # volume is mounted at the legacy .../data path.
+      - panvex_postgres_data:/var/lib/postgresql
+      # Socket dir shared with backend + bootstrap. The image entrypoint
+      # (running as root) chowns it to the postgres user on startup.
+      - panvex_pg_socket:/var/run/postgresql
     deploy:
       resources:
         limits:
@@ -103,9 +130,14 @@ services:
       PANVEX_HTTP_ADDR: :8080
       PANVEX_GRPC_ADDR: :8443
       PANVEX_STORAGE_DRIVER: postgres
-      PANVEX_STORAGE_DSN: postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-panvex}?sslmode=require
-    command:
-      - ./panvex-control-plane
+      # Unix-socket DSN: empty authority + host=<socket dir> tells pgx to
+      # dial the local socket instead of TCP. sslmode=disable because TLS
+      # over a Unix socket is meaningless. See the header note for the
+      # network-isolation rationale.
+      PANVEX_STORAGE_DSN: postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD}@/${POSTGRES_DB:-panvex}?host=/var/run/postgresql&sslmode=disable
+    # No command: ENTRYPOINT already runs ./panvex-control-plane, and the
+    # default (no-arg) subcommand is `serve`. Passing the binary path again
+    # would feed it to itself as argv[1].
     depends_on:
       postgres:
         condition: service_healthy
@@ -127,6 +159,9 @@ services:
       - "8443:8443"
     volumes:
       - panvex_geoip:/var/lib/panvex/geoip
+      # Shared Postgres socket dir (read-write: connecting writes to the
+      # socket). Postgres publishes /var/run/postgresql/.s.PGSQL.5432 here.
+      - panvex_pg_socket:/var/run/postgresql
     deploy:
       resources:
         limits:
@@ -149,12 +184,19 @@ services:
       context: ..
       dockerfile: Dockerfile
       target: web
+    # Wait for backend to be HEALTHY, not merely started: nginx resolves
+    # the `backend` upstream at config-parse time and exits (emerg "host
+    # not found in upstream") if the name is not yet registered, so on a
+    # cold `up -d` it would crash-loop while the backend runs migrations.
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     # Expose only on loopback; terminate TLS in a host reverse proxy
-    # (deploy/nginx/default.conf) before exposing publicly.
+    # (deploy/nginx/default.conf) before exposing publicly. The nginx
+    # stage is rewritten to `listen 8080;` (unprivileged port, see
+    # Dockerfile), so the container port is 8080, not 80.
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:8080:8080"
     deploy:
       resources:
         limits:
@@ -191,15 +233,22 @@ services:
       PANVEX_ENV: production
       PANVEX_ENCRYPTION_KEY: ${PANVEX_ENCRYPTION_KEY:?PANVEX_ENCRYPTION_KEY is required for the prod profile}
       PANVEX_BOOTSTRAP_PASSWORD: ${PANVEX_BOOTSTRAP_PASSWORD:?set PANVEX_BOOTSTRAP_PASSWORD before running --profile bootstrap}
+    # ENTRYPOINT already runs ./panvex-control-plane; command: supplies only
+    # the subcommand + args. The bootstrap-admin subcommand reads the admin
+    # password from PANVEX_BOOTSTRAP_PASSWORD (the -password flag's default)
+    # and the storage target from the flags below.
     command:
-      - ./panvex-control-plane
       - bootstrap-admin
       - -storage-driver
       - postgres
       - -storage-dsn
-      - postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-panvex}?sslmode=require
+      - postgres://${POSTGRES_USER:-panvex}:${POSTGRES_PASSWORD}@/${POSTGRES_DB:-panvex}?host=/var/run/postgresql&sslmode=disable
       - -username
       - ${PANVEX_BOOTSTRAP_USERNAME:-admin}
+    volumes:
+      # Same shared Postgres socket dir as backend — bootstrap dials the
+      # DB over the Unix socket too.
+      - panvex_pg_socket:/var/run/postgresql
     depends_on:
       postgres:
         condition: service_healthy
@@ -213,3 +262,6 @@ services:
 volumes:
   panvex_postgres_data:
   panvex_geoip:
+  # Holds the Postgres Unix socket, shared between postgres, backend, and
+  # bootstrap so the DB needs no TCP listener.
+  panvex_pg_socket:
