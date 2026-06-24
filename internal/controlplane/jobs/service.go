@@ -699,75 +699,105 @@ func (s *Service) supersedePendingClientJobsLocked(newJob Job, now time.Time) []
 	if clientID == "" {
 		return nil
 	}
-	newTargets := make(map[string]struct{}, len(newJob.TargetAgentIDs))
-	for _, agentID := range newJob.TargetAgentIDs {
-		newTargets[agentID] = struct{}{}
-	}
+	newTargets := targetAgentSet(newJob)
 
 	var candidates []persistCandidate
 	for jobID, job := range s.jobs {
-		if jobID == newJob.ID {
+		if !supersededByNewer(jobID, job, newJob, clientID) {
 			continue
 		}
-		if job.CreatedAt.After(newJob.CreatedAt) {
+		if !expireCoveredTargets(job.Targets, newTargets, newJob.ID, now) {
 			continue
 		}
-		if job.CreatedAt.Equal(newJob.CreatedAt) && jobID > newJob.ID {
-			continue
+		if c := s.applySupersededJob(jobID, job, newJob.ID, clientID, now); c != nil {
+			candidates = append(candidates, *c)
 		}
-		if job.Status != StatusQueued && job.Status != StatusRunning {
-			continue
-		}
-		if clientIDFromPayload(job.Action, job.PayloadJSON) != clientID {
-			continue
-		}
-
-		changed := false
-		for index := range job.Targets {
-			target := &job.Targets[index]
-			if _, covered := newTargets[target.AgentID]; !covered {
-				continue
-			}
-			switch target.Status {
-			case TargetStatusQueued, TargetStatusSent, TargetStatusAcknowledged:
-				target.Status = TargetStatusExpired
-				target.ResultText = "superseded by " + newJob.ID
-				target.UpdatedAt = now
-				changed = true
-			}
-		}
-		if !changed {
-			continue
-		}
-
-		prevStatus := job.Status
-		job.Status = deriveJobStatus(job.Targets)
-		if job.Status == StatusFailed && prevStatus != StatusFailed && s.onJobFailed != nil {
-			s.onJobFailed()
-		}
-		s.jobs[jobID] = job
-		s.syncJobTargetsIndexLocked(job)
-		if isTerminalStatus(job.Status) {
-			s.markKeyTerminalLocked(job.IdempotencyKey, now)
-		}
-		s.indexLatestSucceededLocked(job)
-		slog.Info("job target superseded by newer client job",
-			"superseded_job_id", jobID,
-			"new_job_id", newJob.ID,
-			"client_id", clientID,
-		)
-		if s.jobStore == nil {
-			continue
-		}
-		s.updateSeq++
-		s.jobVersion[jobID] = s.updateSeq
-		candidates = append(candidates, persistCandidate{
-			jobID:   jobID,
-			version: s.updateSeq,
-			job:     cloneJob(job),
-		})
 	}
 	return candidates
+}
+
+// targetAgentSet returns the set of agent IDs a job targets.
+func targetAgentSet(job Job) map[string]struct{} {
+	set := make(map[string]struct{}, len(job.TargetAgentIDs))
+	for _, agentID := range job.TargetAgentIDs {
+		set[agentID] = struct{}{}
+	}
+	return set
+}
+
+// supersededByNewer reports whether `job` is an older, still-pending job for
+// the same client that the incoming `newJob` should supersede. A job is NOT
+// superseded by itself, by an older/younger sibling, once it has left the
+// queued/running states, or when it belongs to a different client.
+func supersededByNewer(jobID string, job, newJob Job, clientID string) bool {
+	if jobID == newJob.ID {
+		return false
+	}
+	if job.CreatedAt.After(newJob.CreatedAt) {
+		return false
+	}
+	if job.CreatedAt.Equal(newJob.CreatedAt) && jobID > newJob.ID {
+		return false
+	}
+	if job.Status != StatusQueued && job.Status != StatusRunning {
+		return false
+	}
+	return clientIDFromPayload(job.Action, job.PayloadJSON) == clientID
+}
+
+// expireCoveredTargets marks every still-active target that `newTargets` also
+// covers as expired, recording the superseding job id. It mutates targets in
+// place (the slice shares its backing array with the stored job) and reports
+// whether anything changed.
+func expireCoveredTargets(targets []JobTarget, newTargets map[string]struct{}, supersederID string, now time.Time) bool {
+	changed := false
+	for index := range targets {
+		target := &targets[index]
+		if _, covered := newTargets[target.AgentID]; !covered {
+			continue
+		}
+		switch target.Status {
+		case TargetStatusQueued, TargetStatusSent, TargetStatusAcknowledged:
+			target.Status = TargetStatusExpired
+			target.ResultText = "superseded by " + supersederID
+			target.UpdatedAt = now
+			changed = true
+		}
+	}
+	return changed
+}
+
+// applySupersededJob recomputes the job status after its targets were expired,
+// persists the in-memory mutation + indexes, and returns a persist candidate
+// for the post-unlock fan-out (nil when no store is wired). Caller must hold
+// s.mu (write).
+func (s *Service) applySupersededJob(jobID string, job Job, supersederID, clientID string, now time.Time) *persistCandidate {
+	prevStatus := job.Status
+	job.Status = deriveJobStatus(job.Targets)
+	if job.Status == StatusFailed && prevStatus != StatusFailed && s.onJobFailed != nil {
+		s.onJobFailed()
+	}
+	s.jobs[jobID] = job
+	s.syncJobTargetsIndexLocked(job)
+	if isTerminalStatus(job.Status) {
+		s.markKeyTerminalLocked(job.IdempotencyKey, now)
+	}
+	s.indexLatestSucceededLocked(job)
+	slog.Info("job target superseded by newer client job",
+		"superseded_job_id", jobID,
+		"new_job_id", supersederID,
+		"client_id", clientID,
+	)
+	if s.jobStore == nil {
+		return nil
+	}
+	s.updateSeq++
+	s.jobVersion[jobID] = s.updateSeq
+	return &persistCandidate{
+		jobID:   jobID,
+		version: s.updateSeq,
+		job:     cloneJob(job),
+	}
 }
 
 // List returns a snapshot of the queued jobs known to the service.
