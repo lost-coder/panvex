@@ -160,26 +160,40 @@ func validateGeoIPSettings(s geoip.Settings) error {
 		return errors.New("at least one of city/asn must be enabled")
 	}
 	if s.Mode == geoip.ModeURL {
-		for _, src := range []geoip.Source{s.City, s.ASN} {
-			if !src.Enabled {
-				continue
-			}
-			if err := updates.CheckDownloadURL(src.URL); err != nil {
-				return err
-			}
-		}
+		return validateGeoIPURLSources(s)
 	}
 	if s.Mode == geoip.ModeLocal {
-		for _, src := range []geoip.Source{s.City, s.ASN} {
-			if !src.Enabled {
-				continue
-			}
-			if !geoipLocalPathValid(src.LocalPath) {
-				return errors.New("local_path must be a clean absolute path to a .mmdb file")
-			}
-			if !fileExists(src.LocalPath) {
-				return errors.New("local_path does not exist or is not readable")
-			}
+		return validateGeoIPLocalSources(s)
+	}
+	return nil
+}
+
+// validateGeoIPURLSources checks every enabled source's download URL for
+// URL mode (SSRF / scheme allow-list via updates.CheckDownloadURL).
+func validateGeoIPURLSources(s geoip.Settings) error {
+	for _, src := range []geoip.Source{s.City, s.ASN} {
+		if !src.Enabled {
+			continue
+		}
+		if err := updates.CheckDownloadURL(src.URL); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateGeoIPLocalSources checks every enabled source's local path for
+// local mode: it must be a clean absolute .mmdb path that exists.
+func validateGeoIPLocalSources(s geoip.Settings) error {
+	for _, src := range []geoip.Source{s.City, s.ASN} {
+		if !src.Enabled {
+			continue
+		}
+		if !geoipLocalPathValid(src.LocalPath) {
+			return errors.New("local_path must be a clean absolute path to a .mmdb file")
+		}
+		if !fileExists(src.LocalPath) {
+			return errors.New("local_path does not exist or is not readable")
 		}
 	}
 	return nil
