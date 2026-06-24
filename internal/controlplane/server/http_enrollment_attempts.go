@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -34,49 +35,7 @@ func (s *Server) handleListEnrollmentAttempts() http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		q := r.URL.Query()
-		f := enrollment.ListFilter{Limit: defaultEnrollmentAttemptsLimit}
-		if v := q.Get("limit"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				if n > maxEnrollmentAttemptsLimit {
-					n = maxEnrollmentAttemptsLimit
-				}
-				f.Limit = n
-			}
-		}
-		if v := q.Get("token_id"); v != "" {
-			f.TokenID = &v
-		}
-		if v := q.Get("agent_id"); v != "" {
-			f.AgentID = &v
-		}
-		if v := q.Get("status"); v != "" {
-			st := enrollment.Status(v)
-			f.Status = &st
-		}
-		if v := q.Get("mode"); v != "" {
-			md := enrollment.Mode(v)
-			f.Mode = &md
-		}
-		if v := q.Get("error_code"); v != "" {
-			f.ErrorCode = &v
-		}
-		if v := q.Get("started_after"); v != "" {
-			if ts, err := time.Parse(time.RFC3339, v); err == nil {
-				f.StartedAfter = &ts
-			}
-		}
-		if v := q.Get("started_before"); v != "" {
-			if ts, err := time.Parse(time.RFC3339, v); err == nil {
-				f.StartedBefore = &ts
-			}
-		}
-		if v := q.Get("cursor"); v != "" {
-			if c, err := decodeAttemptCursor(v); err == nil {
-				f.CursorTs = &c.Ts
-				f.CursorID = &c.ID
-			}
-		}
+		f := parseEnrollmentAttemptsFilter(r.URL.Query())
 
 		page, err := s.enrollmentRec.ListAttemptsPage(ctx, f)
 		if err != nil {
@@ -92,6 +51,72 @@ func (s *Server) handleListEnrollmentAttempts() http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, resp)
 	}
+}
+
+// parseEnrollmentAttemptsFilter builds a ListFilter from the request query.
+// Extracted from the handler so the per-field parsing does not inflate the
+// handler's cognitive complexity (S3776); behaviour is unchanged — unknown,
+// empty, or malformed values are simply skipped.
+func parseEnrollmentAttemptsFilter(q url.Values) enrollment.ListFilter {
+	f := enrollment.ListFilter{
+		Limit:     parseAttemptsLimit(q.Get("limit")),
+		TokenID:   queryStringPtr(q, "token_id"),
+		AgentID:   queryStringPtr(q, "agent_id"),
+		ErrorCode: queryStringPtr(q, "error_code"),
+	}
+	if v := q.Get("status"); v != "" {
+		st := enrollment.Status(v)
+		f.Status = &st
+	}
+	if v := q.Get("mode"); v != "" {
+		md := enrollment.Mode(v)
+		f.Mode = &md
+	}
+	if ts, ok := parseRFC3339(q.Get("started_after")); ok {
+		f.StartedAfter = &ts
+	}
+	if ts, ok := parseRFC3339(q.Get("started_before")); ok {
+		f.StartedBefore = &ts
+	}
+	if v := q.Get("cursor"); v != "" {
+		if c, err := decodeAttemptCursor(v); err == nil {
+			f.CursorTs = &c.Ts
+			f.CursorID = &c.ID
+		}
+	}
+	return f
+}
+
+// parseAttemptsLimit clamps the limit query param to (0, max], falling back
+// to the default for absent, non-numeric, or non-positive values.
+func parseAttemptsLimit(v string) int {
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return defaultEnrollmentAttemptsLimit
+	}
+	if n > maxEnrollmentAttemptsLimit {
+		return maxEnrollmentAttemptsLimit
+	}
+	return n
+}
+
+// queryStringPtr returns a pointer to the query value, or nil when the key
+// is absent or empty.
+func queryStringPtr(q url.Values, key string) *string {
+	if v := q.Get(key); v != "" {
+		return &v
+	}
+	return nil
+}
+
+// parseRFC3339 parses an RFC 3339 timestamp, reporting ok=false for an
+// empty or malformed value.
+func parseRFC3339(v string) (time.Time, bool) {
+	if v == "" {
+		return time.Time{}, false
+	}
+	ts, err := time.Parse(time.RFC3339, v)
+	return ts, err == nil
 }
 
 // encodeAttemptCursor packs an AttemptCursor into a URL-safe base64
