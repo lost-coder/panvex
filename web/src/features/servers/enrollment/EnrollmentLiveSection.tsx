@@ -19,7 +19,7 @@ interface Props {
 // yet, and the backend's `enrollment_attempts.token_id` column isn't
 // populated by the HTTP path, so token-based filtering would return
 // nothing useful for inbound enrollment.
-export function EnrollmentLiveSection({ agentId }: Props) {
+export function EnrollmentLiveSection({ agentId }: Readonly<Props>) {
   const { t } = useTranslation("enrollment");
   const { detail, isLoading } = useEnrollmentLiveAttempt(agentId);
 

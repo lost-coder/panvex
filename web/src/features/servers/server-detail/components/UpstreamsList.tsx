@@ -13,9 +13,9 @@ export const UpstreamsList = memo(UpstreamsListInner);
 
 function UpstreamsListInner({
   upstreams,
-}: {
+}: Readonly<{
   upstreams: ServerDetailPageProps["server"]["upstreams"];
-}) {
+}>) {
   const { t } = useTranslation("servers");
   if (upstreams.length === 0) {
     return (

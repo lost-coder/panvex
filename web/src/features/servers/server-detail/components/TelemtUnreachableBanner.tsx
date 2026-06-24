@@ -21,7 +21,7 @@ function formatHHMMSS(unix: number): string {
 }
 
 export function TelemtUnreachableBanner(
-  props: TelemtUnreachableBannerProps,
+  props: Readonly<TelemtUnreachableBannerProps>,
 ): ReactElement {
   const { t } = useTranslation("servers");
   const { sinceUnix, nowUnix } = props;

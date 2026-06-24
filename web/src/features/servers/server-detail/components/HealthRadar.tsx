@@ -15,10 +15,10 @@ export const HealthRadar = memo(HealthRadarInner);
 function HealthRadarInner({
   dcs,
   onSelect,
-}: {
+}: Readonly<{
   dcs: ServerDcData[];
   onSelect: (dc: ServerDcData) => void;
-}) {
+}>) {
   const { t } = useTranslation("servers");
   const size = 240;
   const cx = size / 2;

@@ -43,7 +43,7 @@ function colorClass(level: EnrollmentEvent["level"]): string {
 // (read-only history block). The component is stateless and takes the
 // shape returned by GET /api/enrollment-attempts/{id} verbatim — the
 // owning container is responsible for refetching / WS updates.
-export function EnrollmentTimeline({ detail }: Props) {
+export function EnrollmentTimeline({ detail }: Readonly<Props>) {
   const { t } = useTranslation("enrollment");
   const { attempt, events } = detail;
   return (

@@ -16,10 +16,10 @@ export const TimelineStrip = memo(TimelineStripInner);
 function TimelineStripInner({
   metricsPoints,
   events,
-}: {
+}: Readonly<{
   metricsPoints: MetricsPoint[];
   events: { tsEpochSecs: number; kind: "ok" | "warn" | "error" | "info" }[];
-}) {
+}>) {
   const { t } = useTranslation("servers");
   if (metricsPoints.length < 2) {
     return (

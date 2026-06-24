@@ -29,7 +29,7 @@ function statusTone(status: EnrollmentAttempt["status"]): StatusTone {
 // fetches the full timeline lazily. The block hides itself when the
 // agent has no attempts on record so older agents (enrolled before the
 // recorder shipped) don't show a permanently empty section.
-export function EnrollmentHistory({ agentId }: Props) {
+export function EnrollmentHistory({ agentId }: Readonly<Props>) {
   const { t } = useTranslation("enrollment");
   const list = useQuery({
     queryKey: ["enrollment-attempts", "by-agent", agentId],

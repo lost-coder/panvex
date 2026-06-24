@@ -33,7 +33,7 @@ function iconFor(lvl: RuntimeEventLevel): string {
   }
 }
 
-export function RuntimeEvents({ agentId }: Props) {
+export function RuntimeEvents({ agentId }: Readonly<Props>) {
   const { t } = useTranslation("runtime-events");
   const { events, isLoading, isLive } = useAgentRuntimeEvents(agentId);
   const [enabled, setEnabled] = useState<Set<RuntimeEventLevel>>(new Set(ALL_LEVELS));

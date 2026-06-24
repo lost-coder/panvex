@@ -6,7 +6,9 @@ import type { ServerEvent } from "../format";
 // is required, ME runtime is not ready, and ME→DC fallback is disabled.
 // Surfaces the recent events feed inline so operators have a starting
 // point for triage without bouncing into the Events tab.
-export function MeDownHero({ recentEvents }: { recentEvents: ServerEvent[] }) {
+export function MeDownHero({
+  recentEvents,
+}: Readonly<{ recentEvents: ServerEvent[] }>) {
   const { t } = useTranslation("servers");
   return (
     <section className="rounded-md border border-status-error bg-status-error/10 p-6 flex flex-col gap-3">
