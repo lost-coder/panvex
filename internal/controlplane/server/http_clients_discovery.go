@@ -213,53 +213,67 @@ func (s *Server) handleBulkAdoptDiscoveredClients() http.HandlerFunc {
 			return
 		}
 
-		// Filter out-of-scope ids before grabbing the adopt lock so we
-		// don't spend write-lock time iterating ids the operator can't
-		// touch. dedupe ids while we're at it — repeated entries would
-		// just resolve to "already_adopted" but waste work.
-		seen := make(map[string]struct{}, len(req.IDs))
-		filtered := make([]string, 0, len(req.IDs))
-		skipped := 0
-		for _, id := range req.IDs {
-			if id == "" {
-				continue
-			}
-			if _, dup := seen[id]; dup {
-				continue
-			}
-			seen[id] = struct{}{}
-			inScope, scopeErr := s.discoveredClientInScope(r.Context(), scope, id)
-			if scopeErr != nil {
-				if errors.Is(scopeErr, storage.ErrNotFound) {
-					skipped++
-					continue
-				}
-				s.logger.Error("scope-check discovered client failed (bulk)", "id", id, "error", scopeErr)
-				writeError(w, http.StatusInternalServerError, msgInternalError)
-				return
-			}
-			if !inScope {
-				skipped++
-				continue
-			}
-			filtered = append(filtered, id)
+		filtered, skipped, err := s.filterBulkAdoptIDsInScope(r.Context(), req.IDs, scope)
+		if err != nil {
+			s.logger.Error("scope-check discovered client failed (bulk)", "error", err)
+			writeError(w, http.StatusInternalServerError, msgInternalError)
+			return
 		}
 
 		results := s.bulkAdoptDiscoveredClients(r.Context(), filtered, session.UserID, s.now())
 
 		resp := bulkAdoptResponse{Results: results, SkippedOutOfScope: skipped}
-		for _, r := range results {
-			switch r.Status {
-			case "adopted":
-				resp.AdoptedCount++
-			case "already_adopted":
-				resp.AlreadyAdoptedCount++
-			default:
-				resp.ErrorCount++
-			}
-		}
+		resp.AdoptedCount, resp.AlreadyAdoptedCount, resp.ErrorCount = countBulkAdoptResults(results)
 		writeJSON(w, http.StatusOK, resp)
 	}
+}
+
+// filterBulkAdoptIDsInScope dedupes the requested ids and drops the ones the
+// caller's scope can't reach, before the adopt write-lock is taken. Ids that
+// no longer exist (ErrNotFound) and out-of-scope ids are counted as skipped;
+// any other scope-check failure aborts with a wrapped error.
+func (s *Server) filterBulkAdoptIDsInScope(ctx context.Context, ids []string, scope FleetScopeAccess) (filtered []string, skipped int, err error) {
+	seen := make(map[string]struct{}, len(ids))
+	filtered = make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		inScope, scopeErr := s.discoveredClientInScope(ctx, scope, id)
+		if scopeErr != nil {
+			if errors.Is(scopeErr, storage.ErrNotFound) {
+				skipped++
+				continue
+			}
+			return nil, 0, fmt.Errorf("discovered client %q: %w", id, scopeErr)
+		}
+		if !inScope {
+			skipped++
+			continue
+		}
+		filtered = append(filtered, id)
+	}
+	return filtered, skipped, nil
+}
+
+// countBulkAdoptResults tallies a bulk-adopt result set into its per-status
+// counters (adopted / already-adopted / everything else as an error).
+func countBulkAdoptResults(results []BulkAdoptResult) (adopted, alreadyAdopted, errorCount int) {
+	for _, r := range results {
+		switch r.Status {
+		case "adopted":
+			adopted++
+		case "already_adopted":
+			alreadyAdopted++
+		default:
+			errorCount++
+		}
+	}
+	return adopted, alreadyAdopted, errorCount
 }
 
 func (s *Server) handleIgnoreDiscoveredClient() http.HandlerFunc {
