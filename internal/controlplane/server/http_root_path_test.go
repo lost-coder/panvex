@@ -109,7 +109,7 @@ func TestInstallAgentScriptReachableUnderAgentRootPath(t *testing.T) {
 	if panelHit.Code != http.StatusOK {
 		t.Fatalf("GET /m_APxHhG/install-agent.sh status = %d, want %d", panelHit.Code, http.StatusOK)
 	}
-	if got := panelHit.Header().Get("X-Install-Script-SHA256"); got == "" {
+	if panelHit.Header().Get("X-Install-Script-SHA256") == "" {
 		t.Fatalf("GET /m_APxHhG/install-agent.sh missing X-Install-Script-SHA256 header")
 	}
 
@@ -117,7 +117,7 @@ func TestInstallAgentScriptReachableUnderAgentRootPath(t *testing.T) {
 	if agentHit.Code != http.StatusOK {
 		t.Fatalf("GET /bi7jXFcP/install-agent.sh status = %d, want %d (the URL the enrollment-token panel.url points at)", agentHit.Code, http.StatusOK)
 	}
-	if got := agentHit.Header().Get("X-Install-Script-SHA256"); got == "" {
+	if agentHit.Header().Get("X-Install-Script-SHA256") == "" {
 		t.Fatalf("GET /bi7jXFcP/install-agent.sh missing X-Install-Script-SHA256 header")
 	}
 	if panelHit.Body.String() != agentHit.Body.String() {

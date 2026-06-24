@@ -115,7 +115,7 @@ func TestApplyConfigAgentSuccessRoundTrip(t *testing.T) {
 
 	// Poll for the enqueued job, then record a success for its target.
 	jobID := waitForAgentJob(t, srv, agentID, jobs.ActionConfigApply)
-	if ok := srv.jobs.RecordResult(context.Background(), agentID, jobID, true, "ok", "", time.Now()); !ok {
+	if !srv.jobs.RecordResult(context.Background(), agentID, jobID, true, "ok", "", time.Now()) {
 		t.Fatalf("RecordResult(success) returned false")
 	}
 
@@ -176,7 +176,7 @@ func TestWaitJobTargetTerminalSucceeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
-	if ok := srv.jobs.RecordResult(context.Background(), agentID, job.ID, true, "applied", "", time.Now()); !ok {
+	if !srv.jobs.RecordResult(context.Background(), agentID, job.ID, true, "applied", "", time.Now()) {
 		t.Fatalf("RecordResult(success) returned false")
 	}
 	if err := srv.waitJobTargetTerminal(context.Background(), job.ID, agentID, "config.apply"); err != nil {
@@ -199,7 +199,7 @@ func TestWaitJobTargetTerminalFailed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Enqueue: %v", err)
 	}
-	if ok := srv.jobs.RecordResult(context.Background(), agentID, job.ID, false, "health check failed", "", time.Now()); !ok {
+	if !srv.jobs.RecordResult(context.Background(), agentID, job.ID, false, "health check failed", "", time.Now()) {
 		t.Fatalf("RecordResult(failure) returned false")
 	}
 	if err := srv.waitJobTargetTerminal(context.Background(), job.ID, agentID, "config.apply"); err == nil {

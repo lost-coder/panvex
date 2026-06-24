@@ -20,7 +20,7 @@ func TestGenerateTokenHasExpectedSize(t *testing.T) {
 func TestHashTokenIsStable(t *testing.T) {
 	raw := []byte("deadbeefdeadbeefdeadbeefdeadbeef")
 	expected := sha256.Sum256(raw)
-	if got := hashToken(raw); got != expected {
+	if hashToken(raw) != expected {
 		t.Fatalf("hashToken mismatch")
 	}
 }

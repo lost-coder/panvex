@@ -200,7 +200,7 @@ func TestHandleSubscriptionPage_XRobotsTag(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	if got := resp.Header.Get("X-Robots-Tag"); got == "" {
+	if resp.Header.Get("X-Robots-Tag") == "" {
 		t.Error("X-Robots-Tag header missing")
 	}
 }

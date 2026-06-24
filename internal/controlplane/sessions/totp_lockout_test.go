@@ -108,7 +108,7 @@ func TestTOTPLockoutCheckAndRecordFailure(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	for i := 0; i < TOTPLockoutMaxAttempts-1; i++ {
-		if locked := tracker.CheckAndRecordFailure("alice", now); locked {
+		if tracker.CheckAndRecordFailure("alice", now) {
 			t.Fatalf("CheckAndRecordFailure() = true on attempt %d, want false", i+1)
 		}
 	}
@@ -120,7 +120,7 @@ func TestTOTPLockoutCheckAndRecordFailure(t *testing.T) {
 	}
 
 	// All subsequent calls within the window must report locked.
-	if locked := tracker.CheckAndRecordFailure("alice", now); !locked {
+	if !tracker.CheckAndRecordFailure("alice", now) {
 		t.Fatal("CheckAndRecordFailure() = false on locked account, want true")
 	}
 }
@@ -136,7 +136,7 @@ func TestTOTPLockoutCheckAndRecordFailureResetsAfterExpiry(t *testing.T) {
 	}
 
 	future := now.Add(TOTPLockoutDuration + time.Second)
-	if locked := tracker.CheckAndRecordFailure("alice", future); locked {
+	if tracker.CheckAndRecordFailure("alice", future) {
 		t.Fatal("CheckAndRecordFailure() after expiry = true, want false")
 	}
 }

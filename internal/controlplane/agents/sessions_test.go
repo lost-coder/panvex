@@ -102,7 +102,7 @@ func TestSessionRediscoverFlagTakeOnce(t *testing.T) {
 		t.Fatal("fresh session should not have a pending rediscovery")
 	}
 
-	if ok := m.RequestRediscovery("agent-1"); !ok {
+	if !m.RequestRediscovery("agent-1") {
 		t.Fatal("RequestRediscovery should report a live session")
 	}
 

@@ -103,7 +103,7 @@ func TestUoW_PanicPropagates_Postgres(t *testing.T) {
 
 	func() {
 		defer func() {
-			if p := recover(); p == nil {
+			if recover() == nil {
 				t.Fatal("expected panic to propagate out of Do()")
 			}
 		}()
