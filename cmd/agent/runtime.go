@@ -420,7 +420,19 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 			*credentialsState = refreshed
 		}
 
-		afterConn, connErr := runConnection(supervisorCtx, cfg.gatewayAddr, cfg.gatewayServerName, cfg.stateFile, *credentialsState, agent, schedule, cfg.clientDataConcurrency, tr, reporter, jobInflight, cfg.transportProbation)
+		afterConn, connErr := runConnection(supervisorCtx, runConnectionParams{
+			gatewayAddr:           cfg.gatewayAddr,
+			serverName:            cfg.gatewayServerName,
+			stateFile:             cfg.stateFile,
+			credentialsState:      *credentialsState,
+			agent:                 agent,
+			schedule:              schedule,
+			clientDataConcurrency: cfg.clientDataConcurrency,
+			tr:                    tr,
+			reporter:              reporter,
+			jobInflight:           jobInflight,
+			transportProbation:    cfg.transportProbation,
+		})
 		*credentialsState = afterConn
 		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
 			reconnectAttempt = 0

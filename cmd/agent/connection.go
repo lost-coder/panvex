@@ -50,7 +50,39 @@ func selectTransport(creds agentstate.Credentials, dialCfg agentTransport.DialCo
 	return agentTransport.NewDialTransport(dialCfg), nil
 }
 
-func runConnection(supervisorCtx context.Context, gatewayAddr string, serverName string, stateFile string, credentialsState agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, clientDataConcurrency int, tr *transportReloadState, reporter *enrollmentReporter, jobInflight *jobInflightTracker, transportProbation time.Duration) (agentstate.Credentials, error) {
+// runConnectionParams bundles the non-context inputs of runConnection.
+// Grouping them keeps the call site readable and the signature within the
+// parameter limit (SonarQube go:S107); ctx stays an explicit first parameter
+// per Go convention (contextcheck). The connection logic below is unchanged —
+// the fields are unpacked into the original local names so the body reads
+// identically.
+type runConnectionParams struct {
+	gatewayAddr           string
+	serverName            string
+	stateFile             string
+	credentialsState      agentstate.Credentials
+	agent                 *runtime.Agent
+	schedule              connectionSchedule
+	clientDataConcurrency int
+	tr                    *transportReloadState
+	reporter              *enrollmentReporter
+	jobInflight           *jobInflightTracker
+	transportProbation    time.Duration
+}
+
+func runConnection(supervisorCtx context.Context, p runConnectionParams) (agentstate.Credentials, error) {
+	gatewayAddr := p.gatewayAddr
+	serverName := p.serverName
+	stateFile := p.stateFile
+	credentialsState := p.credentialsState
+	agent := p.agent
+	schedule := p.schedule
+	clientDataConcurrency := p.clientDataConcurrency
+	tr := p.tr
+	reporter := p.reporter
+	jobInflight := p.jobInflight
+	transportProbation := p.transportProbation
+
 	certificate, err := tls.X509KeyPair([]byte(credentialsState.CertificatePEM), []byte(credentialsState.PrivateKeyPEM))
 	if err != nil {
 		return credentialsState, err
