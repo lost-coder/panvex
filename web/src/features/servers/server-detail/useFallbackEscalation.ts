@@ -37,7 +37,9 @@ export function useFallbackEscalation(
   // Lazy initialiser: Date.now() inside `useState(() => …)` runs once at
   // mount and is exempt from react-hooks/purity. Subsequent updates land
   // through the setTimeout in the effect below.
-  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
+  const [nowSeconds, setNowSeconds] = useState(() =>
+    Math.floor(Date.now() / 1000),
+  );
 
   const normalizedEnteredAtUnix =
     typeof enteredAtUnix === "number" && Number.isFinite(enteredAtUnix)
@@ -50,7 +52,12 @@ export function useFallbackEscalation(
   // effect below re-reads Date.now() under fake timers just like before.
   const state = useMemo<FallbackEscalationState>(() => {
     if (mode !== "fallback") {
-      return { active: false, durationSeconds: 0, escalated: false, enteredAtUnix: null };
+      return {
+        active: false,
+        durationSeconds: 0,
+        escalated: false,
+        enteredAtUnix: null,
+      };
     }
     const baseSeconds = normalizedEnteredAtUnix ?? nowSeconds;
     const durationSeconds = Math.max(0, nowSeconds - baseSeconds);
@@ -75,12 +82,12 @@ export function useFallbackEscalation(
       // Already past the boundary but escalated is false (e.g. clock jump
       // across the threshold) — schedule a microtask so we re-derive
       // without re-entering the effect synchronously.
-      const id = window.setTimeout(refreshNow, 0);
-      return () => window.clearTimeout(id);
+      const id = globalThis.setTimeout(refreshNow, 0);
+      return () => globalThis.clearTimeout(id);
     }
 
-    const id = window.setTimeout(refreshNow, remainingMs);
-    return () => window.clearTimeout(id);
+    const id = globalThis.setTimeout(refreshNow, remainingMs);
+    return () => globalThis.clearTimeout(id);
   }, [mode, normalizedEnteredAtUnix, state.escalated]);
 
   return state;

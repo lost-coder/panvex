@@ -31,8 +31,8 @@ function statusTone(s: EnrollmentAttempt["status"]): StatusTone {
 // browser-history noise that operators flagged as annoying during the
 // Phase-2 retro.
 function readQueryFilters(): EnrollmentAttemptsFilter {
-  if (typeof window === "undefined") return {};
-  const sp = new URLSearchParams(window.location.search);
+  if (typeof globalThis.window === "undefined") return {};
+  const sp = new URLSearchParams(globalThis.location.search);
   const f: EnrollmentAttemptsFilter = {};
   const agentId = sp.get("agent_id");
   if (agentId) f.agent_id = agentId;
@@ -63,7 +63,9 @@ function readQueryFilters(): EnrollmentAttemptsFilter {
 // deep-link to page N of an enrollment-attempts list.
 export function EnrollmentAttemptsPage() {
   const { t } = useTranslation("enrollment-attempts");
-  const [filter, setFilter] = useState<EnrollmentAttemptsFilter>(() => readQueryFilters());
+  const [filter, setFilter] = useState<EnrollmentAttemptsFilter>(() =>
+    readQueryFilters(),
+  );
 
   const query = useInfiniteQuery({
     queryKey: ["enrollment-attempts", "page", filter],
@@ -132,21 +134,33 @@ export function EnrollmentAttemptsPage() {
             {items.map((a) => {
               const isOpen = expanded === a.id;
               return (
-                <div key={a.id} className="rounded-sm bg-bg-card border border-border overflow-hidden">
+                <div
+                  key={a.id}
+                  className="rounded-sm bg-bg-card border border-border overflow-hidden"
+                >
                   <button
                     type="button"
                     onClick={() => setExpanded(isOpen ? null : a.id)}
                     className="w-full text-left px-3 py-2.5 flex flex-col gap-1"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium text-fg truncate">{nodeLabel(a.agent_id)}</span>
-                      <StatusLabel tone={statusTone(a.status)} label={a.status} />
+                      <span className="font-medium text-fg truncate">
+                        {nodeLabel(a.agent_id)}
+                      </span>
+                      <StatusLabel
+                        tone={statusTone(a.status)}
+                        label={a.status}
+                      />
                     </div>
                     <div className="flex items-center gap-2 text-micro font-mono text-fg-muted">
                       <span>{formatDateTime(a.started_at)}</span>
                       <span>·</span>
                       <span>{a.mode}</span>
-                      {a.error_code && <span className="text-status-error">· {a.error_code}</span>}
+                      {a.error_code && (
+                        <span className="text-status-error">
+                          · {a.error_code}
+                        </span>
+                      )}
                     </div>
                   </button>
                   {isOpen && detail.data && (
@@ -164,7 +178,9 @@ export function EnrollmentAttemptsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-fg-muted">
-                  <th className="py-1 font-normal whitespace-nowrap">{t("table.startedAt")}</th>
+                  <th className="py-1 font-normal whitespace-nowrap">
+                    {t("table.startedAt")}
+                  </th>
                   <th className="py-1 font-normal">{t("table.mode")}</th>
                   <th className="py-1 font-normal">{t("table.agent")}</th>
                   <th className="py-1 font-normal">{t("table.status")}</th>
@@ -185,9 +201,14 @@ export function EnrollmentAttemptsPage() {
                           {formatDateTime(a.started_at)}
                         </td>
                         <td className="text-fg-muted">{a.mode}</td>
-                        <td className="text-fg" title={a.agent_id ?? undefined}>{nodeLabel(a.agent_id)}</td>
+                        <td className="text-fg" title={a.agent_id ?? undefined}>
+                          {nodeLabel(a.agent_id)}
+                        </td>
                         <td>
-                          <StatusLabel tone={statusTone(a.status)} label={a.status} />
+                          <StatusLabel
+                            tone={statusTone(a.status)}
+                            label={a.status}
+                          />
                         </td>
                         <td className="text-fg-muted">{a.error_code ?? ""}</td>
                         <td className="font-mono text-xs text-fg-muted">

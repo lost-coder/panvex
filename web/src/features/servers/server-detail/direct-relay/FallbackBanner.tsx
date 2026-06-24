@@ -23,12 +23,12 @@ export function FallbackBanner({
   useEffect(() => {
     setLiveDurationSeconds(durationSeconds);
     if (enteredAtUnix == null) return;
-    const id = window.setInterval(() => {
+    const id = globalThis.setInterval(() => {
       setLiveDurationSeconds(
         Math.max(0, Math.floor(Date.now() / 1000) - enteredAtUnix),
       );
     }, TICK_MS);
-    return () => window.clearInterval(id);
+    return () => globalThis.clearInterval(id);
   }, [durationSeconds, enteredAtUnix]);
 
   const severity = escalated ? "critical" : "warn";
@@ -51,7 +51,10 @@ export function FallbackBanner({
     >
       <strong>{headline}</strong>
       <p className="mt-1 text-fg">
-        {body} {t("detail.fallback.activeFor", { minutes: Math.round(liveDurationSeconds / 60) })}
+        {body}{" "}
+        {t("detail.fallback.activeFor", {
+          minutes: Math.round(liveDurationSeconds / 60),
+        })}
       </p>
     </div>
   );

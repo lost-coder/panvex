@@ -24,10 +24,13 @@ export function SubscriptionLinkCard({
 
   const handleCopy = () => {
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(url).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }).catch(() => {});
+      navigator.clipboard
+        .writeText(url)
+        .then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        })
+        .catch(() => {});
     } else {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -35,7 +38,7 @@ export function SubscriptionLinkCard({
   };
 
   const handleRotate = () => {
-    if (window.confirm(t("subscription.rotateConfirm"))) {
+    if (globalThis.confirm(t("subscription.rotateConfirm"))) {
       onRotate();
     }
   };
