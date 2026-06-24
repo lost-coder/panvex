@@ -63,7 +63,7 @@ describe("LoginContainer — transient login failures (2.1)", () => {
     render(<LoginContainer />);
     fireEvent.click(screen.getByTestId("submit"));
 
-    await screen.findByText(/temporarily unavailable/i);
+    expect(await screen.findByText(/temporarily unavailable/i)).toBeInTheDocument();
   });
 
   it("passes through the raw server message for plain login failures", async () => {
@@ -73,6 +73,6 @@ describe("LoginContainer — transient login failures (2.1)", () => {
     render(<LoginContainer />);
     fireEvent.click(screen.getByTestId("submit"));
 
-    await screen.findByText(/invalid credentials/);
+    expect(await screen.findByText(/invalid credentials/)).toBeInTheDocument();
   });
 });

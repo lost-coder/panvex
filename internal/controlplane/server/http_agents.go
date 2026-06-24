@@ -10,6 +10,10 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
+// msgMissingAgentID is returned when a handler is called without the agent
+// id path segment; hoisted to avoid duplicating the literal (go:S1192).
+const msgMissingAgentID = "missing agent id"
+
 type renameAgentRequest struct {
 	NodeName string `json:"node_name"`
 }
@@ -58,7 +62,7 @@ func (s *Server) handleRenameAgent() http.HandlerFunc {
 func decodeRenameAgentRequest(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	agentID := chi.URLParam(r, "id")
 	if agentID == "" {
-		writeError(w, http.StatusBadRequest, "missing agent id")
+		writeError(w, http.StatusBadRequest, msgMissingAgentID)
 		return "", "", false
 	}
 
@@ -138,7 +142,7 @@ func (s *Server) applyAgentRename(w http.ResponseWriter, agentID, nodeName strin
 func (s *Server) agentDeregisterScope(w http.ResponseWriter, r *http.Request, user auth.User) (string, bool) {
 	agentID := chi.URLParam(r, "id")
 	if agentID == "" {
-		writeError(w, http.StatusBadRequest, "missing agent id")
+		writeError(w, http.StatusBadRequest, msgMissingAgentID)
 		return "", false
 	}
 	preCheck, preExists := s.live.Get(agentID)
@@ -278,7 +282,7 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 
 		agentID := chi.URLParam(r, "id")
 		if agentID == "" {
-			writeError(w, http.StatusBadRequest, "missing agent id")
+			writeError(w, http.StatusBadRequest, msgMissingAgentID)
 			return
 		}
 

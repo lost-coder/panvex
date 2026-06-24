@@ -19,6 +19,10 @@ import (
 // retries; no session cookie is issued when the persist is not confirmed.
 const loginAuditPersistTimeout = 2 * time.Second
 
+// msgAccountLocked is the response shown while a login is under lockout;
+// hoisted so the literal is not duplicated across handlers (go:S1192).
+const msgAccountLocked = "account temporarily locked, try again later"
+
 // resolveLoginTimingFloor picks the runtime floor used by the login
 // handler. The zero value (Options.LoginTimingFloor unset) falls back
 // to the production default; any negative value is interpreted as
@@ -127,7 +131,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		if s.loginLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
 			s.logger.Info("login attempt on locked account", "username_hash", s.logUsername(request.Username))
 			ensureFloor()
-			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+			writeError(w, http.StatusUnauthorized, msgAccountLocked)
 			return
 		}
 
@@ -138,7 +142,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		if s.totpLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
 			s.logger.Info("login attempt on totp-locked account", "username_hash", s.logUsername(request.Username))
 			ensureFloor()
-			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+			writeError(w, http.StatusUnauthorized, msgAccountLocked)
 			return
 		}
 
@@ -261,14 +265,14 @@ func (s *Server) handleLoginAuthError(w http.ResponseWriter, r *http.Request, us
 		if s.loginLockout.CheckAndRecordFailureWithContext(r.Context(), username, s.now()) {
 			s.logger.Info("account locked out", "username_hash", s.logUsername(username))
 			ensureFloor()
-			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+			writeError(w, http.StatusUnauthorized, msgAccountLocked)
 			return
 		}
 	case errors.Is(err, auth.ErrInvalidTotpCode):
 		if s.totpLockout.CheckAndRecordFailureWithContext(r.Context(), username, s.now()) {
 			s.logger.Info("account totp locked out", "username_hash", s.logUsername(username))
 			ensureFloor()
-			writeError(w, http.StatusUnauthorized, "account temporarily locked, try again later")
+			writeError(w, http.StatusUnauthorized, msgAccountLocked)
 			return
 		}
 	}

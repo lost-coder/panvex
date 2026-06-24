@@ -72,12 +72,10 @@ describe("request schema contract — Go fixtures ↔ Zod", () => {
     for (const [variantName, payload] of Object.entries(variants)) {
       it(`${name}/${variantName} parses cleanly`, () => {
         const result = schema.safeParse(payload);
-        if (!result.success) {
-          throw new Error(
-            `Zod rejected fixture ${name}/${variantName}:\n` +
-              JSON.stringify(result.error.issues, null, 2),
-          );
-        }
+        const detail = result.success
+          ? ""
+          : `Zod rejected fixture ${name}/${variantName}:\n${JSON.stringify(result.error.issues, null, 2)}`;
+        expect(result.success, detail).toBe(true);
       });
     }
   }

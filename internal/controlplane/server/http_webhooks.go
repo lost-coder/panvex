@@ -20,6 +20,13 @@ import (
 // See C-2 in docs/superpowers/specs/2026-05-12-code-review-batch-2.md.
 const webhookSecretMinLength = 16
 
+// Shared response messages, hoisted so the same literal is not repeated
+// across handlers (SonarQube go:S1192).
+const (
+	msgWebhookSubsystemDisabled = "webhook subsystem not configured"
+	msgWebhookEndpointNotFound  = "webhook endpoint not found"
+)
+
 // webhookEndpointDTO is the JSON shape returned by GET endpoints.
 // Mirrors webhooks.Endpoint minus the secret (which never leaves the
 // server). EventFilter is shipped as a comma-separated string for
@@ -60,7 +67,7 @@ type webhookUpdateRequest struct {
 func (s *Server) handleListWebhookEndpoints() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.webhookStorage == nil {
-			writeErrorWithCode(w, http.StatusServiceUnavailable, "webhook subsystem not configured", "webhooks_disabled")
+			writeErrorWithCode(w, http.StatusServiceUnavailable, msgWebhookSubsystemDisabled, "webhooks_disabled")
 			return
 		}
 		eps, err := s.webhookStorage.ListEndpointMeta(r.Context())
@@ -80,14 +87,14 @@ func (s *Server) handleListWebhookEndpoints() http.HandlerFunc {
 func (s *Server) handleGetWebhookEndpoint() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.webhookStorage == nil {
-			writeErrorWithCode(w, http.StatusServiceUnavailable, "webhook subsystem not configured", "webhooks_disabled")
+			writeErrorWithCode(w, http.StatusServiceUnavailable, msgWebhookSubsystemDisabled, "webhooks_disabled")
 			return
 		}
 		id := chi.URLParam(r, "id")
 		ep, err := s.webhookStorage.GetEndpointMeta(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, webhooks.ErrNotFound) {
-				writeErrorWithCode(w, http.StatusNotFound, "webhook endpoint not found", "not_found")
+				writeErrorWithCode(w, http.StatusNotFound, msgWebhookEndpointNotFound, "not_found")
 				return
 			}
 			s.logger.Error("webhook endpoint get", "id", id, "error", err)
@@ -101,7 +108,7 @@ func (s *Server) handleGetWebhookEndpoint() http.HandlerFunc {
 func (s *Server) handleCreateWebhookEndpoint() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.webhookStorage == nil {
-			writeErrorWithCode(w, http.StatusServiceUnavailable, "webhook subsystem not configured", "webhooks_disabled")
+			writeErrorWithCode(w, http.StatusServiceUnavailable, msgWebhookSubsystemDisabled, "webhooks_disabled")
 			return
 		}
 		var req webhookCreateRequest
@@ -148,7 +155,7 @@ func (s *Server) handleCreateWebhookEndpoint() http.HandlerFunc {
 func (s *Server) handleUpdateWebhookEndpoint() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.webhookStorage == nil {
-			writeErrorWithCode(w, http.StatusServiceUnavailable, "webhook subsystem not configured", "webhooks_disabled")
+			writeErrorWithCode(w, http.StatusServiceUnavailable, msgWebhookSubsystemDisabled, "webhooks_disabled")
 			return
 		}
 		id := chi.URLParam(r, "id")
@@ -183,7 +190,7 @@ func (s *Server) handleUpdateWebhookEndpoint() http.HandlerFunc {
 		}, now)
 		if err != nil {
 			if errors.Is(err, webhooks.ErrNotFound) {
-				writeErrorWithCode(w, http.StatusNotFound, "webhook endpoint not found", "not_found")
+				writeErrorWithCode(w, http.StatusNotFound, msgWebhookEndpointNotFound, "not_found")
 				return
 			}
 			s.logger.Error("webhook endpoint update", "id", id, "error", err)
@@ -205,13 +212,13 @@ func (s *Server) handleUpdateWebhookEndpoint() http.HandlerFunc {
 func (s *Server) handleDeleteWebhookEndpoint() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.webhookStorage == nil {
-			writeErrorWithCode(w, http.StatusServiceUnavailable, "webhook subsystem not configured", "webhooks_disabled")
+			writeErrorWithCode(w, http.StatusServiceUnavailable, msgWebhookSubsystemDisabled, "webhooks_disabled")
 			return
 		}
 		id := chi.URLParam(r, "id")
 		if err := s.webhookStorage.DeleteEndpoint(r.Context(), id); err != nil {
 			if errors.Is(err, webhooks.ErrNotFound) {
-				writeErrorWithCode(w, http.StatusNotFound, "webhook endpoint not found", "not_found")
+				writeErrorWithCode(w, http.StatusNotFound, msgWebhookEndpointNotFound, "not_found")
 				return
 			}
 			s.logger.Error("webhook endpoint delete", "id", id, "error", err)
