@@ -10,7 +10,7 @@
 # (or `docker buildx imagetools inspect <image>:<tag>` once docker is
 # new enough on the operator's box).
 
-FROM node:26-alpine@sha256:3ad34ca6292aec4a91d8ddeb9229e29d9c2f689efd0dd242860889ac71842eba AS web-builder
+FROM node:26-alpine@sha256:9c0e1e52125d6b67d505cf75b4880fcf1290ccea5c480849910e1d57b2cf72b5 AS web-builder
 WORKDIR /src/web
 
 # .npmrc carries `legacy-peer-deps=true` — eslint-plugin-jsx-a11y@6.10.2
@@ -25,7 +25,7 @@ COPY web ./
 COPY cmd/control-plane /src/cmd/control-plane
 RUN npm run build:embed
 
-FROM golang:1.26-alpine@sha256:7a3e50096189ad57c9f9f865e7e4aa8585ed1585248513dc5cda498e2f41812c AS control-plane-builder
+FROM golang:1.26-alpine@sha256:f1ddd9fe14fffc091dd98cb4bfa999f32c5fc77d2f2305ea9f0e2595c5437c14 AS control-plane-builder
 WORKDIR /src
 
 # modernc.org/sqlite is pure-Go, so we build with CGO disabled — drops
@@ -40,6 +40,10 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY proto ./proto
 COPY db ./db
+# internal/controlplane/server/openapi_adapter.go imports the generated
+# github.com/lost-coder/panvex/openapi package, so its source must be in
+# the build context alongside cmd/internal/proto/db.
+COPY openapi ./openapi
 # deploy/install-agent.sh is the canonical bash installer. //go:embed in
 # internal/controlplane/server/install_script.go cannot reference paths
 # outside the package, so we mirror the file into the package via
@@ -67,16 +71,21 @@ RUN go build -ldflags="-s -w" -trimpath -o /out/panvex-control-plane ./cmd/contr
 #     docker manifest inspect anchore/syft:<tag> \
 #       | jq -r '.manifests[0].digest // .config.digest'
 # and update the tag + @sha256 below together.
-FROM anchore/syft:v1.45.1@sha256:c6d5719f48f5a5986acf2847eb1ed7c53176e712d5721fcd156184cfb262f6eb AS sbom-builder
+# The anchore/syft image ships only the static `syft` binary with no
+# shell — a shell-form RUN inside it fails with `exec: "/bin/sh": no such
+# file or directory`. Copy the pinned syft binary into an alpine stage
+# (busybox sh/test/head/grep) and run it there instead.
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS sbom-builder
+COPY --from=anchore/syft:v1.45.1@sha256:c6d5719f48f5a5986acf2847eb1ed7c53176e712d5721fcd156184cfb262f6eb /syft /usr/local/bin/syft
 COPY --from=control-plane-builder /out/panvex-control-plane /panvex-control-plane
-RUN /syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json && \
+RUN syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json && \
     # Defensive assert: a future syft major that changes the -o flag
     # semantics could exit zero with an empty file, leaving the final
     # image carrying a useless SBOM. Fail the build instead.
     test -s /sbom/control-plane.cdx.json && \
     head -c1 /sbom/control-plane.cdx.json | grep -q '{'
 
-FROM alpine:3.24@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4 AS control-plane
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS control-plane
 WORKDIR /app
 
 # OCI image labels — operator scanners look these up to attribute the
