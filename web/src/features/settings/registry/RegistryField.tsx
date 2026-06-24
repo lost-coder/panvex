@@ -30,7 +30,7 @@ function toStr(v: unknown): string {
 function humanizeKey(key: string): string {
   const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
   const parts = key.split(".");
-  const leaf = cap((parts[parts.length - 1] ?? key).replace(/_/g, " "));
+  const leaf = cap((parts[parts.length - 1] ?? key).replaceAll("_", " "));
   return parts.length > 1 ? `${cap(parts[0]!)} · ${leaf}` : leaf;
 }
 

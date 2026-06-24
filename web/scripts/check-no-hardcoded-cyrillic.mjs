@@ -31,7 +31,9 @@ function* walk(dir) {
 function stripComments(source) {
   return source
     .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    // `[^\n]*` (negated class, no `$` anchor) strips the // tail to end of
+    // line without the unanchored backtracking of `.*$` (Sonar S8786).
+    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 }
 
 let bad = 0;

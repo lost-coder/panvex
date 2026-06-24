@@ -27,6 +27,7 @@ import {
   DEFAULT_TELEMT_URL,
 } from "@/shared/lib/defaults";
 import { isValidNodeName } from "@/shared/lib/shell-quote";
+import { stripTrailingSlashes } from "@/shared/lib/runtime-path";
 import { buildInstallCommand } from "./install-command";
 
 const POLL_INTERVAL_MS = 3000;
@@ -158,7 +159,7 @@ export function AddServerContainer() {
   // Panel toggle is never blocked by missing payload.
   const panelScriptUrl =
     tokenData?.script_sources?.panel.url ??
-    (panelUrl ? `${panelUrl.replace(/\/+$/, "")}/install-agent.sh` : "");
+    (panelUrl ? `${stripTrailingSlashes(panelUrl)}/install-agent.sh` : "");
   const githubScriptUrl =
     tokenData?.script_sources?.github.url ??
     "https://raw.githubusercontent.com/lost-coder/panvex/main/deploy/install-agent.sh";

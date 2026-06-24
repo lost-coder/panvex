@@ -1,3 +1,14 @@
+/**
+ * Removes any trailing "/" characters in linear time. Equivalent to
+ * `value.replace(/\/+$/, "")` but without that pattern's non-linear
+ * backtracking on unanchored input (Sonar S8786).
+ */
+export function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end--;
+  return value.slice(0, end);
+}
+
 export function normalizeRootPath(value: string | undefined | null): string {
   const trimmed = (value ?? "").trim();
   if (trimmed === "" || trimmed === "/") {
@@ -5,7 +16,7 @@ export function normalizeRootPath(value: string | undefined | null): string {
   }
 
   const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  return withLeadingSlash.replace(/\/+$/, "");
+  return stripTrailingSlashes(withLeadingSlash);
 }
 
 export function resolveConfiguredRootPath(): string {

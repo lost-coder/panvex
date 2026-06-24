@@ -83,7 +83,7 @@ for (const lng of LANGUAGES) {
 
 let problems = 0;
 
-for (const ns of [...allNamespaces].sort()) {
+for (const ns of [...allNamespaces].sort((a, b) => a.localeCompare(b))) {
   // Build per-language key sets (empty set if the file is absent).
   const keysByLng = {};
   for (const lng of LANGUAGES) {
@@ -101,7 +101,9 @@ for (const ns of [...allNamespaces].sort()) {
   for (const lng of LANGUAGES) for (const k of keysByLng[lng]) union.add(k);
 
   for (const lng of LANGUAGES) {
-    const missing = [...union].filter((k) => !keysByLng[lng].has(k)).sort();
+    const missing = [...union]
+      .filter((k) => !keysByLng[lng].has(k))
+      .sort((a, b) => a.localeCompare(b));
     if (missing.length > 0) {
       problems++;
       console.error(

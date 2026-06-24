@@ -18,6 +18,9 @@ spec:
       # S-04: keep this strictly above controlPlaneShutdownGraceMin (45s)
       # so the audit-event flush completes before SIGKILL.
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      # The control-plane never calls the Kubernetes API, so it does not need
+      # a service-account token projected into the pod (S6865).
+      automountServiceAccountToken: false
       securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: control-plane

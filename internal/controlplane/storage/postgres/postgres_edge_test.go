@@ -55,6 +55,7 @@ func TestTransactRollsBackOnContextCancel(t *testing.T) {
 	}
 
 	txCtx, txCancel := context.WithCancel(ctx)
+	defer txCancel()
 	cancelled := errors.New("cancelled")
 	err := store.Transact(txCtx, func(tx storage.Store) error {
 		if err := tx.PutFleetGroup(txCtx, storage.FleetGroupRecord{

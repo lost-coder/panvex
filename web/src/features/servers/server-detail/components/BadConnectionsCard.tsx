@@ -165,6 +165,6 @@ function humaniseClass(cls: string, t: TFunction<"servers">): string {
   if (translated !== key) return translated;
   // Fallback: snake_case → "Snake case"
   return cls
-    .replace(/_/g, " ")
+    .replaceAll("_", " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }

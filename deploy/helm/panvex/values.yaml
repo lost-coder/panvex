@@ -81,9 +81,13 @@ resources:
   requests:
     cpu: 100m
     memory: 256Mi
+    # ephemeral-storage bounds the container's writable layer + emptyDir
+    # so a runaway log/temp file cannot exhaust node disk (S6897/S6870).
+    ephemeral-storage: 256Mi
   limits:
     cpu: 1000m
     memory: 1Gi
+    ephemeral-storage: 1Gi
 
 # S-04 (audit-events vs SIGKILL): terminationGracePeriodSeconds MUST exceed
 # controlPlaneShutdownGraceMin = 45s in cmd/control-plane/server_lifecycle.go

@@ -12,19 +12,19 @@ set -euo pipefail
 # panel-side wrapper remains the primary defense in that path.
 panvex_self_check_hash() {
     local expected="${PANVEX_INSTALL_SCRIPT_SHA256:-}"
-    [ -z "$expected" ] && return 0
+    [[ -z "$expected" ]] && return 0
     if ! command -v sha256sum >/dev/null 2>&1; then
         echo "panvex: PANVEX_INSTALL_SCRIPT_SHA256 set but sha256sum unavailable" >&2
         return 1
     fi
     local script_path="${BASH_SOURCE[0]:-$0}"
-    if [ ! -r "$script_path" ]; then
+    if [[ ! -r "$script_path" ]]; then
         echo "panvex: PANVEX_INSTALL_SCRIPT_SHA256 set but script path unreadable: $script_path" >&2
         return 1
     fi
     local actual
     actual=$(sha256sum "$script_path" | awk '{print $1}')
-    if [ "$actual" != "$expected" ]; then
+    if [[ "$actual" != "$expected" ]]; then
         echo "panvex: install-script self-check failed (expected $expected, got $actual)" >&2
         return 1
     fi

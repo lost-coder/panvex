@@ -38,6 +38,7 @@ func TestTransactRollsBackOnContextCancel(t *testing.T) {
 	}
 
 	txCtx, txCancel := context.WithCancel(rootCtx)
+	defer txCancel()
 	cancelled := errors.New("cancelled mid-tx")
 	err := store.Transact(txCtx, func(tx storage.Store) error {
 		// First write inside the tx — uses BEGIN IMMEDIATE so the writer
