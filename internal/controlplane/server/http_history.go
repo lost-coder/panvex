@@ -187,21 +187,8 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "missing client id")
 			return
 		}
-		if !scope.Global {
-			_, assignments, _, lookupErr := s.clientDetailSnapshot(clientID)
-			if lookupErr != nil {
-				if errors.Is(lookupErr, storage.ErrNotFound) {
-					writeError(w, http.StatusNotFound, msgClientNotFound)
-					return
-				}
-				s.logger.Error("client ip history scope lookup failed", "client_id", clientID, "error", lookupErr)
-				writeError(w, http.StatusInternalServerError, msgInternalError)
-				return
-			}
-			if !s.clientInScope(scope, assignments) {
-				writeError(w, http.StatusNotFound, msgClientNotFound)
-				return
-			}
+		if !s.clientVisibleInScope(w, scope, clientID) {
+			return
 		}
 
 		from, to := s.parseTimeRange(r, 24*30) // default 30 days for IPs
@@ -210,31 +197,11 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			return
 		}
 
-		// Q4.U-P-04 follow-up: push the per-IP fold into SQL via
-		// AggregateClientIPHistory + LIMIT. Pull (limit + 1) so we can
-		// detect truncation without a separate COUNT round-trip;
-		// total_unique reflects the raw distinct count and uses the
-		// dedicated CountUniqueClientIPs query.
-		limit := parseClientIPHistoryLimit(r)
-		aggregates, err := s.store.AggregateClientIPHistory(r.Context(), clientID, from, to, limit+1)
+		ips, truncated, limit, err := s.fetchClientIPRows(r, clientID, from, to)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
-		truncated := false
-		if len(aggregates) > limit {
-			aggregates = aggregates[:limit]
-			truncated = true
-		}
-		ips := make([]clientIPRow, len(aggregates))
-		for i, agg := range aggregates {
-			ips[i] = clientIPRow{
-				IPAddress: agg.IPAddress,
-				FirstSeen: agg.FirstSeen,
-				LastSeen:  agg.LastSeen,
-			}
-		}
-		s.enrichIPRows(ips)
 		totalUnique, err := s.store.CountUniqueClientIPs(r.Context(), clientID)
 		if err != nil {
 			s.logger.Warn("count unique client ips failed", "client_id", clientID, "error", err)
@@ -247,6 +214,62 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			"limit":        limit,
 		})
 	}
+}
+
+// clientVisibleInScope reports whether the caller's fleet scope may see the
+// client, writing the appropriate 404/500 response (and returning false) when
+// it may not. Global scopes always pass; otherwise the client's assignments
+// are loaded and checked. A missing client is reported as not-found so the
+// endpoint never discloses a client's existence to an out-of-scope operator.
+func (s *Server) clientVisibleInScope(w http.ResponseWriter, scope FleetScopeAccess, clientID string) bool {
+	if scope.Global {
+		return true
+	}
+	_, assignments, _, lookupErr := s.clientDetailSnapshot(clientID)
+	if lookupErr != nil {
+		if errors.Is(lookupErr, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, msgClientNotFound)
+			return false
+		}
+		s.logger.Error("client ip history scope lookup failed", "client_id", clientID, "error", lookupErr)
+		writeError(w, http.StatusInternalServerError, msgInternalError)
+		return false
+	}
+	if !s.clientInScope(scope, assignments) {
+		writeError(w, http.StatusNotFound, msgClientNotFound)
+		return false
+	}
+	return true
+}
+
+// fetchClientIPRows aggregates the client's per-IP history in the window and
+// returns the page rows, whether the result was truncated, and the applied
+// limit.
+//
+// Q4.U-P-04 follow-up: the per-IP fold is pushed into SQL via
+// AggregateClientIPHistory + LIMIT. We pull (limit + 1) so truncation can be
+// detected without a separate COUNT round-trip; the caller reports
+// total_unique from the dedicated CountUniqueClientIPs query.
+func (s *Server) fetchClientIPRows(r *http.Request, clientID string, from, to time.Time) (ips []clientIPRow, truncated bool, limit int, err error) {
+	limit = parseClientIPHistoryLimit(r)
+	aggregates, err := s.store.AggregateClientIPHistory(r.Context(), clientID, from, to, limit+1)
+	if err != nil {
+		return nil, false, limit, err
+	}
+	if len(aggregates) > limit {
+		aggregates = aggregates[:limit]
+		truncated = true
+	}
+	ips = make([]clientIPRow, len(aggregates))
+	for i, agg := range aggregates {
+		ips[i] = clientIPRow{
+			IPAddress: agg.IPAddress,
+			FirstSeen: agg.FirstSeen,
+			LastSeen:  agg.LastSeen,
+		}
+	}
+	s.enrichIPRows(ips)
+	return ips, truncated, limit, nil
 }
 
 // parseClientIPHistoryLimit honours the operator's ?limit= override
