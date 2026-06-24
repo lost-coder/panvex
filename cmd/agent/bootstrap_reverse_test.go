@@ -11,6 +11,8 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
+	"io"
 	"math/big"
 	"net"
 	"os"
@@ -206,7 +208,22 @@ func panelEnrollStub(
 		return err
 	}
 
-	return stream.CloseSend()
+	if err := stream.CloseSend(); err != nil {
+		return err
+	}
+
+	// Wait for the agent to finish processing the certificate before letting
+	// the deferred conn.Close() tear the transport down. The agent records the
+	// cert in its EnrollOutbound handler and then returns, which closes the
+	// stream — so this final Recv returns io.EOF once the cert is consumed.
+	// Without it, conn.Close() can race the agent's stream.Recv(): the cert is
+	// dropped, the handler errors out, nothing reaches resultCh, and
+	// reverseBootstrap blocks until its 5-minute timeout. That race is the
+	// flaky failure in TestReverseBootstrapEndToEnd.
+	if _, err := stream.Recv(); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
 }
 
 // errorf wraps a string error (avoids importing fmt/errors just for tests).
