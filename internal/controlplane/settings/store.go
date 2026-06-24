@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+// panelSettingsPrefix marks a registry field's Store as a panel_settings
+// column (vs a runtime setting); hoisted to avoid duplicating the literal
+// across the prefix check and trim (go:S1192).
+const panelSettingsPrefix = "panel_settings."
+
 // StoreReader is the minimum surface OperationalStore needs from
 // persistence. The control-plane wires this onto its sqlc-generated
 // store; tests pass a hand-rolled fake.
@@ -112,8 +117,8 @@ func (s *OperationalStore) Reload(ctx context.Context) error {
 }
 
 func (s *OperationalStore) read(ctx context.Context, f FieldMeta) (string, bool, error) {
-	if strings.HasPrefix(f.Store, "panel_settings.") {
-		col := strings.TrimPrefix(f.Store, "panel_settings.")
+	if strings.HasPrefix(f.Store, panelSettingsPrefix) {
+		col := strings.TrimPrefix(f.Store, panelSettingsPrefix)
 		raw, err := s.reader.ReadPanelColumn(ctx, col)
 		if err != nil {
 			return "", false, nil // not-set is not fatal at load time
@@ -222,9 +227,11 @@ func (s *OperationalStore) PanelSettingsUpdatedAt(ctx context.Context) int64 {
 	return n
 }
 
-func (s *OperationalStore) HTTPPublicURL() string             { return s.rawByName("http.public_url") }
-func (s *OperationalStore) GRPCPublicEndpoint() string        { return s.rawByName("grpc.public_endpoint") }
-func (s *OperationalStore) SubscriptionPublicBaseURL() string { return s.rawByName("subscription.public_base_url") }
+func (s *OperationalStore) HTTPPublicURL() string      { return s.rawByName("http.public_url") }
+func (s *OperationalStore) GRPCPublicEndpoint() string { return s.rawByName("grpc.public_endpoint") }
+func (s *OperationalStore) SubscriptionPublicBaseURL() string {
+	return s.rawByName("subscription.public_base_url")
+}
 
 func (s *OperationalStore) PasswordMinLength() int {
 	n, _ := strconv.Atoi(s.rawByName("auth.password_min_length"))
@@ -375,8 +382,8 @@ func (s *OperationalStore) Put(ctx context.Context, updates map[string]string, w
 
 	for name, raw := range updates {
 		f := allByName[name]
-		if strings.HasPrefix(f.Store, "panel_settings.") {
-			col := strings.TrimPrefix(f.Store, "panel_settings.")
+		if strings.HasPrefix(f.Store, panelSettingsPrefix) {
+			col := strings.TrimPrefix(f.Store, panelSettingsPrefix)
 			if err := s.writer.WritePanelColumn(ctx, col, raw, who); err != nil {
 				return err
 			}

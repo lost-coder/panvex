@@ -462,14 +462,14 @@ func issueServerCertificate(caCertificate *x509.Certificate, caKey *ecdsa.Privat
 	template := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			CommonName:   "control-plane.panvex.internal",
+			CommonName:   PanelClientCN,
 			Organization: []string{"Panvex"},
 		},
-		DNSNames:     []string{"localhost", "control-plane.panvex.internal"},
-		NotBefore:    now.Add(-time.Minute),
-		NotAfter:     now.Add(serverCertificateLifetime),
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:    []string{"localhost", PanelClientCN},
+		NotBefore:   now.Add(-time.Minute),
+		NotAfter:    now.Add(serverCertificateLifetime),
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, template, caCertificate, privateKey.Public(), caKey)

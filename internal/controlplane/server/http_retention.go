@@ -38,7 +38,7 @@ func (s *Server) handlePutRetentionSettings() http.HandlerFunc {
 		canonicalJSON, err := json.Marshal(settings)
 		if err != nil {
 			s.logger.Error("marshal retention settings", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
+			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
 
@@ -57,14 +57,14 @@ func (s *Server) handlePutRetentionSettings() http.HandlerFunc {
 			who := fmt.Sprintf("user:%s", session.UserID)
 			if err := s.settings.Put(r.Context(), map[string]string{"retention": string(canonicalJSON)}, who); err != nil {
 				s.logger.Error("put retention settings via OperationalStore failed", "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
 		}
 		if s.store != nil {
 			if err := s.store.PutRetentionSettings(r.Context(), retentionSettingsToRecord(settings)); err != nil {
 				s.logger.Error("put retention settings failed", "error", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
+				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
 			}
 		}

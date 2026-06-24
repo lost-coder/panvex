@@ -9,6 +9,10 @@ import (
 	"strings"
 )
 
+// headerCacheControl is the Cache-Control header name, hoisted so the
+// literal is not repeated across the asset/handler responses (go:S1192).
+const headerCacheControl = "Cache-Control"
+
 // htmlOpenTagPattern matches the opening <html> tag regardless of attributes
 // already present. Used to inject data-root-path for runtime configuration
 // without introducing an inline <script> (which would require CSP
@@ -50,9 +54,9 @@ func newUIHandler(uiFiles fs.FS, rootPath string) http.HandlerFunc {
 			// so they are safe to mark immutable. Anything else (favicons,
 			// public/ files) gets a short revalidate-friendly window.
 			if strings.HasPrefix(requestPath, "assets/") {
-				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				w.Header().Set(headerCacheControl, "public, max-age=31536000, immutable")
 			} else {
-				w.Header().Set("Cache-Control", "public, max-age=300")
+				w.Header().Set(headerCacheControl, "public, max-age=300")
 			}
 			fileServer.ServeHTTP(w, r)
 			return
@@ -118,7 +122,7 @@ func serveUIIndex(w http.ResponseWriter, r *http.Request, uiFiles fs.FS, rootPat
 	// references to the latest hashed bundle, so a stale copy means
 	// the browser keeps importing yesterday's chunks. The hashed
 	// /assets/ files keep the immutable-year cache.
-	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set(headerCacheControl, "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(body))

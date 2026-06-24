@@ -8,6 +8,10 @@ import (
 	"github.com/lost-coder/panvex/openapi"
 )
 
+// routeWebhookEndpoint is the chi path pattern for a single webhook
+// endpoint, shared by the GET/PUT/DELETE registrations (go:S1192).
+const routeWebhookEndpoint = "/webhook-endpoints/{id}"
+
 // routes wires every HTTP endpoint into a chi router and returns the
 // handler the public Server.Handler() exposes. Split out of server.go
 // (R-Q-01/07) to keep the constructor + lifecycle code separate from
@@ -263,10 +267,10 @@ func (s *Server) routes() http.Handler {
 					// operators don't need to touch them. CRUD audits
 					// itself via webhook.endpoint.{create,update,delete}.
 					admin.Get("/webhook-endpoints", s.handleListWebhookEndpoints())
-					admin.Get("/webhook-endpoints/{id}", s.handleGetWebhookEndpoint())
+					admin.Get(routeWebhookEndpoint, s.handleGetWebhookEndpoint())
 					admin.With(sensitive).Post("/webhook-endpoints", s.handleCreateWebhookEndpoint())
-					admin.With(sensitive).Put("/webhook-endpoints/{id}", s.handleUpdateWebhookEndpoint())
-					admin.With(sensitive).Delete("/webhook-endpoints/{id}", s.handleDeleteWebhookEndpoint())
+					admin.With(sensitive).Put(routeWebhookEndpoint, s.handleUpdateWebhookEndpoint())
+					admin.With(sensitive).Delete(routeWebhookEndpoint, s.handleDeleteWebhookEndpoint())
 				})
 			})
 		})

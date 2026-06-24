@@ -26,6 +26,10 @@ import (
 	"github.com/shirou/gopsutil/v4/host"
 )
 
+// labelPanelCA is the diagnostic row label for the panel CA check; hoisted
+// so the literal is not repeated across its result branches (go:S1192).
+const labelPanelCA = "Panel CA"
+
 // runDiagnose collects a one-shot health snapshot of the control-plane
 // store and emits it as a copy-pasteable Markdown table. Operators run
 // this with the panel down (or against an external store) when they need
@@ -269,17 +273,17 @@ func certExpiryRow(ctx context.Context, store storage.Store) diagnosticRow {
 	authority, err := store.GetCertificateAuthority(ctx)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
-			return diagnosticRow{"Panel CA", "(no CA initialised)"}
+			return diagnosticRow{labelPanelCA, "(no CA initialised)"}
 		}
-		return diagnosticRow{"Panel CA", fmt.Sprintf("error: %v", err)}
+		return diagnosticRow{labelPanelCA, fmt.Sprintf("error: %v", err)}
 	}
 	block, _ := pem.Decode([]byte(authority.CAPEM))
 	if block == nil {
-		return diagnosticRow{"Panel CA", "error: CA PEM decode failed"}
+		return diagnosticRow{labelPanelCA, "error: CA PEM decode failed"}
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return diagnosticRow{"Panel CA", fmt.Sprintf("error: parse cert: %v", err)}
+		return diagnosticRow{labelPanelCA, fmt.Sprintf("error: parse cert: %v", err)}
 	}
 	remaining := time.Until(cert.NotAfter)
 	days := int(remaining.Hours() / 24)
