@@ -40,6 +40,10 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY proto ./proto
 COPY db ./db
+# internal/controlplane/server/openapi_adapter.go imports the generated
+# github.com/lost-coder/panvex/openapi package, so its source must be in
+# the build context alongside cmd/internal/proto/db.
+COPY openapi ./openapi
 # deploy/install-agent.sh is the canonical bash installer. //go:embed in
 # internal/controlplane/server/install_script.go cannot reference paths
 # outside the package, so we mirror the file into the package via
@@ -67,9 +71,14 @@ RUN go build -ldflags="-s -w" -trimpath -o /out/panvex-control-plane ./cmd/contr
 #     docker manifest inspect anchore/syft:<tag> \
 #       | jq -r '.manifests[0].digest // .config.digest'
 # and update the tag + @sha256 below together.
-FROM anchore/syft:v1.45.1@sha256:c6d5719f48f5a5986acf2847eb1ed7c53176e712d5721fcd156184cfb262f6eb AS sbom-builder
+# The anchore/syft image ships only the static `syft` binary with no
+# shell — a shell-form RUN inside it fails with `exec: "/bin/sh": no such
+# file or directory`. Copy the pinned syft binary into an alpine stage
+# (busybox sh/test/head/grep) and run it there instead.
+FROM alpine:3.24@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4 AS sbom-builder
+COPY --from=anchore/syft:v1.45.1@sha256:c6d5719f48f5a5986acf2847eb1ed7c53176e712d5721fcd156184cfb262f6eb /syft /usr/local/bin/syft
 COPY --from=control-plane-builder /out/panvex-control-plane /panvex-control-plane
-RUN /syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json && \
+RUN syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json && \
     # Defensive assert: a future syft major that changes the -o flag
     # semantics could exit zero with an empty file, leaving the final
     # image carrying a useless SBOM. Fail the build instead.
