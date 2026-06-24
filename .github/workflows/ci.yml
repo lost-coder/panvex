@@ -530,7 +530,7 @@ jobs:
         # (web/package-lock.json), and known-bad config patterns. Severity
         # gate matches the npm-audit bar so behaviour is consistent across
         # ecosystems.
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -545,7 +545,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Trivy config scan (Dockerfile)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config
           scan-ref: Dockerfile
@@ -565,14 +565,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build image (load into local docker)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
           context: .
           push: false
           load: true
           tags: panvex:ci
       - name: Trivy scan (image)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: panvex:ci
@@ -645,7 +645,7 @@ jobs:
       # operator machines, so a shell-injection bug there is high blast
       # radius. ludeeus/action-shellcheck enumerates *.sh by default
       # and respects shellcheckdirective comments inline.
-      - uses: ludeeus/action-shellcheck@2.0.0
+      - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
         env:
           SHELLCHECK_OPTS: -e SC1091
         with:
