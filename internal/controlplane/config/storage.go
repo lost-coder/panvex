@@ -104,7 +104,12 @@ func ValidateStorageSecurity(storage StorageConfig) error {
 		return nil
 	}
 	prod := isProductionEnv()
-	if dsnHasSSLModeDisabled(storage.DSN) {
+	// A Unix-socket DSN never puts DB traffic on the network, so the
+	// sslmode=disable guard — which exists to stop plaintext exfiltration
+	// over a network channel — does not apply. TLS over a local socket is
+	// meaningless, and Postgres rejects sslmode=require there anyway. This
+	// is the recommended single-host topology (deploy/docker-compose.prod.yml).
+	if dsnHasSSLModeDisabled(storage.DSN) && !dsnUsesUnixSocket(storage.DSN) {
 		if prod {
 			// S4: the dev-loopback opt-in must not weaken a prod start.
 			return ErrInsecureDBDSNProd
@@ -159,6 +164,37 @@ func dsnHasEmptyPostgresPassword(dsn string) bool {
 		return true
 	}
 	return strings.TrimSpace(password) == ""
+}
+
+// dsnUsesUnixSocket reports whether the DSN targets a PostgreSQL Unix
+// domain socket rather than a TCP host. pgx/libpq interpret a host that is
+// an absolute filesystem path as a socket directory — supplied either as
+// the URL authority (rare, percent-encoded) or, more commonly, as a
+// host=/path query parameter on a URL DSN or a host=/path field on a
+// keyword DSN. Socket connections never traverse the network, so the
+// plaintext-DSN guard does not apply to them.
+func dsnUsesUnixSocket(dsn string) bool {
+	trimmed := strings.TrimSpace(dsn)
+	if trimmed == "" {
+		return false
+	}
+	if strings.Contains(trimmed, "://") {
+		parsed, err := url.Parse(trimmed)
+		if err != nil {
+			return false
+		}
+		if strings.HasPrefix(parsed.Hostname(), "/") {
+			return true
+		}
+		return strings.HasPrefix(strings.TrimSpace(parsed.Query().Get("host")), "/")
+	}
+	// Keyword form: host=/var/run/postgresql among space-delimited pairs.
+	for _, field := range strings.Fields(trimmed) {
+		if strings.HasPrefix(field, "host=/") {
+			return true
+		}
+	}
+	return false
 }
 
 func dsnHasSSLModeDisabled(dsn string) bool {
