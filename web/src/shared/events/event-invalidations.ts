@@ -14,7 +14,10 @@ import { agentsKeys, controlRoomKeys } from "@/features/servers/queryKeys";
 
 export interface EventEnvelope {
   type: string;
-  data: unknown;
+  // Optional: the WS envelope may omit `data` entirely (mirrors
+  // `eventEnvelopeSchema`, where `data` is `z.unknown().optional()`).
+  // Consumers (`extractAgentID`) handle absent/untyped data defensively.
+  data?: unknown;
 }
 
 export interface EventInvalidation {
