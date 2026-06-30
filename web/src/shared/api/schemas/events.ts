@@ -17,7 +17,11 @@ import { z } from "zod";
 
 export const eventEnvelopeSchema = z.object({
   type: z.string(),
-  data: z.unknown(),
+  // `.optional()` is required since zod 4.4: a bare `z.unknown()` key is no
+  // longer implicitly optional, so a missing `data` would fail with
+  // "expected nonoptional". The payload stays `unknown` (shape varies per
+  // event family; downstream helpers handle untyped/absent data defensively).
+  data: z.unknown().optional(),
   // seq is the hub-assigned global sequence number (D6c). Optional so a
   // panel/dashboard version skew never drops every event on the floor.
   seq: z.number().int().nonnegative().optional(),
