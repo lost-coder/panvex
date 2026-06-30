@@ -25,7 +25,7 @@ COPY web ./
 COPY cmd/control-plane /src/cmd/control-plane
 RUN npm run build:embed
 
-FROM golang:1.26-alpine@sha256:f1ddd9fe14fffc091dd98cb4bfa999f32c5fc77d2f2305ea9f0e2595c5437c14 AS control-plane-builder
+FROM golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS control-plane-builder
 WORKDIR /src
 
 # modernc.org/sqlite is pure-Go, so we build with CGO disabled — drops
