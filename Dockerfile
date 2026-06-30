@@ -10,7 +10,7 @@
 # (or `docker buildx imagetools inspect <image>:<tag>` once docker is
 # new enough on the operator's box).
 
-FROM node:26-alpine@sha256:9c0e1e52125d6b67d505cf75b4880fcf1290ccea5c480849910e1d57b2cf72b5 AS web-builder
+FROM node:26-alpine@sha256:725aeba2364a9b16beae49e180d83bd597dbd0b15c47f1f28875c290bfd255b9 AS web-builder
 WORKDIR /src/web
 
 # .npmrc carries `legacy-peer-deps=true` — eslint-plugin-jsx-a11y@6.10.2
