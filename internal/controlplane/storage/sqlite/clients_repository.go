@@ -176,6 +176,10 @@ func (r *clientsRepository) Save(ctx context.Context, c clients.Client) error {
 // rows so ListAssignments / ListDeployments / ListUsage observe the deletion
 // immediately. Soft-delete does not trigger ON DELETE CASCADE because the
 // client row still exists.
+//
+// Delete is NOT atomic on its own — callers must invoke it within a
+// transaction (uow.Do / Store.Transact) so partial progress is not visible
+// on crash.
 func (r *clientsRepository) Delete(ctx context.Context, id clients.ClientID) error {
 	now := toUnix(time.Now().UTC())
 	result, err := r.db.ExecContext(ctx, `
@@ -239,6 +243,10 @@ func (r *clientsRepository) ListAssignments(ctx context.Context, clientID client
 
 // SaveAssignments replaces the full assignment set for clientID: delete all
 // existing rows then insert the new ones.
+//
+// SaveAssignments is NOT atomic on its own — callers must invoke it within a
+// transaction (uow.Do / Store.Transact) so partial progress is not visible
+// on crash.
 func (r *clientsRepository) SaveAssignments(ctx context.Context, clientID clients.ClientID, assignments []clients.Assignment) error {
 	if err := r.deleteAssignmentsRaw(ctx, string(clientID)); err != nil {
 		return fmt.Errorf("clientsRepository.SaveAssignments (delete): %w", err)
@@ -295,6 +303,10 @@ func (r *clientsRepository) ListDeployments(ctx context.Context, clientID client
 
 // SaveDeployments replaces the full deployment set for clientID: delete all
 // existing rows then upsert the new ones.
+//
+// SaveDeployments is NOT atomic on its own — callers must invoke it within a
+// transaction (uow.Do / Store.Transact) so partial progress is not visible
+// on crash.
 func (r *clientsRepository) SaveDeployments(ctx context.Context, clientID clients.ClientID, deployments []clients.Deployment) error {
 	if err := r.deleteDeploymentsRaw(ctx, string(clientID)); err != nil {
 		return fmt.Errorf("clientsRepository.SaveDeployments (delete): %w", err)
