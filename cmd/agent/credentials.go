@@ -98,8 +98,14 @@ func refreshRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, cu
 		return current, fmt.Errorf("unary renewal: marshal key: %w", err)
 	}
 	newKeyPEM := encodeCertPEM("EC PRIVATE KEY", newKeyDER)
-	if _, err := tls.X509KeyPair([]byte(response.GetCertificatePem()), []byte(newKeyPEM)); err != nil {
+	newCert, err := tls.X509KeyPair([]byte(response.GetCertificatePem()), []byte(newKeyPEM))
+	if err != nil {
 		return current, fmt.Errorf("unary renewal: cert/key mismatch: %w", err)
+	}
+	if err := checkRenewedCertCN(newCert, current.AgentID); err != nil {
+		slog.ErrorContext(ctx, "unary renewal: issued certificate CN does not match agent identity; refusing to apply",
+			"agent_id", current.AgentID, "issued_cn", renewedCertCN(newCert), "error", err)
+		return current, fmt.Errorf("unary renewal: %w", err)
 	}
 
 	updated := current
@@ -196,6 +202,59 @@ func encodeCertPEM(blockType string, der []byte) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der}))
 }
 
+// errRenewalCNMismatch is returned by checkRenewedCertCN when the leaf
+// certificate returned by a renewal response does not carry the expected
+// agent ID as its CommonName. Kept as a sentinel so callers/tests can assert
+// on it with errors.Is rather than string-matching (3.6).
+var errRenewalCNMismatch = errors.New("renewal: certificate CN mismatch")
+
+// checkRenewedCertCN validates that a freshly-renewed certificate's leaf CN
+// matches the expected agent ID before the caller persists/applies it.
+// Both the unary (refreshRuntimeCredentialsIfNeeded) and in-stream
+// (renewCertificateInStream) renewal paths call this immediately after their
+// tls.X509KeyPair pairing check succeeds — a cert that pairs with the key we
+// just generated but was issued for a DIFFERENT agent identity indicates a
+// misrouted or malicious panel response and must not be adopted.
+//
+// cert.Leaf is populated by tls.X509KeyPair as of Go 1.23; the explicit
+// re-parse of Certificate[0] is a defensive fallback in case that invariant
+// ever changes upstream.
+func checkRenewedCertCN(cert tls.Certificate, expectedAgentID string) error {
+	leaf := cert.Leaf
+	if leaf == nil {
+		if len(cert.Certificate) == 0 {
+			return fmt.Errorf("%w: no certificate bytes to inspect", errRenewalCNMismatch)
+		}
+		parsed, err := x509.ParseCertificate(cert.Certificate[0])
+		if err != nil {
+			return fmt.Errorf("renewal: parse leaf certificate: %w", err)
+		}
+		leaf = parsed
+	}
+	if leaf.Subject.CommonName != expectedAgentID {
+		return fmt.Errorf("%w: got %q, want %q", errRenewalCNMismatch, leaf.Subject.CommonName, expectedAgentID)
+	}
+	return nil
+}
+
+// renewedCertCN best-effort extracts the leaf CommonName for logging
+// alongside a checkRenewedCertCN failure. Returns "" if the leaf cannot be
+// determined — logging must never itself panic on a malformed response.
+func renewedCertCN(cert tls.Certificate) string {
+	leaf := cert.Leaf
+	if leaf == nil {
+		if len(cert.Certificate) == 0 {
+			return ""
+		}
+		parsed, err := x509.ParseCertificate(cert.Certificate[0])
+		if err != nil {
+			return ""
+		}
+		leaf = parsed
+	}
+	return leaf.Subject.CommonName
+}
+
 // recoverListenCredentialsIfExpired handles the listen-mode dead end the
 // audit flagged: an EXPIRED cert cannot complete any mTLS handshake (neither
 // the panel's dial-in nor in-stream renewal), and the dial-mode unary
@@ -271,8 +330,14 @@ func renewCertificateInStream(
 		return current, fmt.Errorf("in-stream renewal: marshal new key: %w", err)
 	}
 	newKeyPEM := encodeCertPEM("EC PRIVATE KEY", newKeyDER)
-	if _, err := tls.X509KeyPair([]byte(resp.GetCertificatePem()), []byte(newKeyPEM)); err != nil {
+	newCert, err := tls.X509KeyPair([]byte(resp.GetCertificatePem()), []byte(newKeyPEM))
+	if err != nil {
 		return current, fmt.Errorf("in-stream renewal: cert/key mismatch: %w", err)
+	}
+	if err := checkRenewedCertCN(newCert, current.AgentID); err != nil {
+		slog.ErrorContext(ctx, "in-stream renewal: issued certificate CN does not match agent identity; refusing to apply",
+			"agent_id", current.AgentID, "issued_cn", renewedCertCN(newCert), "error", err)
+		return current, fmt.Errorf("in-stream renewal: %w", err)
 	}
 
 	updated := current
