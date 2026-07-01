@@ -4,10 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/updatehosts"
 )
 
 // gitHubRepoPattern matches valid GitHub `owner/repo` slugs. Owners are up to
@@ -30,36 +31,13 @@ func ValidateGitHubRepo(s string) error {
 	return nil
 }
 
-// allowedDownloadHosts lists the hostnames we trust to serve release artifacts.
-// GitHub may 302 from github.com to objects.githubusercontent.com,
-// release-assets.githubusercontent.com (current release-asset CDN), or
-// codeload.github.com, so all must be allowed. Any redirect whose final
-// host is not in this set is refused to avoid exfiltration to attacker-controlled
-// domains via a compromised/malicious repo setting. Keep in sync with the agent
-// updater allowlist in internal/agent/updater/download.go.
-var allowedDownloadHosts = map[string]struct{}{
-	"github.com":                           {},
-	"api.github.com":                       {},
-	"objects.githubusercontent.com":        {},
-	"release-assets.githubusercontent.com": {},
-	"codeload.github.com":                  {},
-}
-
-// CheckDownloadURL rejects URLs whose scheme is not https or whose host is not
-// in allowedDownloadHosts.
+// CheckDownloadURL rejects URLs whose scheme is not https or whose host is
+// not permitted by the update host policy (see internal/updatehosts). The
+// policy is resolved from PANVEX_UPDATE_ALLOWED_HOSTS on each call so an
+// operator's "*" or mirror list takes effect without a restart; env is fixed
+// at runtime so re-reading it is cheap and correct.
 func CheckDownloadURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("parse url: %w", err)
-	}
-	if u.Scheme != "https" {
-		return fmt.Errorf("url %q: only https is allowed", raw)
-	}
-	host := strings.ToLower(u.Host)
-	if _, ok := allowedDownloadHosts[host]; !ok {
-		return fmt.Errorf("url %q: host %q is not in the allow-list", raw, host)
-	}
-	return nil
+	return updatehosts.PolicyFromEnv().CheckURL(raw)
 }
 
 // RestrictedRedirectPolicy returns a CheckRedirect function that enforces

@@ -82,6 +82,23 @@ func TestCheckDownloadURL_Rejected(t *testing.T) {
 	}
 }
 
+func TestCheckDownloadURLWildcardDisables(t *testing.T) {
+	t.Setenv("PANVEX_UPDATE_ALLOWED_HOSTS", "*")
+	if err := CheckDownloadURL("https://my-mirror.internal/panvex.tar.gz"); err != nil {
+		t.Fatalf("wildcard policy rejected an https mirror host: %v", err)
+	}
+	if err := CheckDownloadURL("http://my-mirror.internal/panvex.tar.gz"); err == nil {
+		t.Fatal("wildcard policy accepted http — https must still be enforced")
+	}
+}
+
+func TestCheckDownloadURLAcceptsReleaseAssets(t *testing.T) {
+	t.Setenv("PANVEX_UPDATE_ALLOWED_HOSTS", "")
+	if err := CheckDownloadURL("https://release-assets.githubusercontent.com/x"); err != nil {
+		t.Fatalf("release-assets host rejected: %v", err)
+	}
+}
+
 func TestSecureDownloadClient_RejectsExternalRedirect(t *testing.T) {
 	// Origin server responds with a 302 that points at a host NOT in the allow-list;
 	// the secure client's CheckRedirect must abort the request rather than follow.
