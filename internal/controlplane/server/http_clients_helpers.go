@@ -157,6 +157,16 @@ func (s *Server) buildClientListRow(
 
 // handleClientMutationError translates client mutation errors to HTTP
 // responses. Returns true when err is nil (no error to write).
+//
+// 3.10: this is an ALLOWLIST, not the denylist scrubErrorMessage applies to
+// the default 5xx branch. Every sentinel below maps to a fixed, constant
+// operator-safe message (http_messages.go); err.Error() is never echoed to
+// the client for a recognised sentinel, so a future change to how an
+// underlying error is wrapped (e.g. a storage driver adding row/column
+// detail to ErrNotFound's wrapped text) cannot leak internal detail through
+// the HTTP response. Only the true fallback (unrecognised error) goes
+// through the msgInternalError + scrub path, matching the existing 5xx
+// behaviour.
 func handleClientMutationError(w http.ResponseWriter, err error) bool {
 	if err == nil {
 		return true
@@ -164,11 +174,21 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 
 	switch {
 	case errors.Is(err, storage.ErrNotFound):
-		writeError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, errClientNameRequired), errors.Is(err, errClientNameInvalid), errors.Is(err, errClientUserADTag), errors.Is(err, errClientExpiration), errors.Is(err, errClientTargetsRequired), errors.Is(err, errClientLimitNegative):
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, http.StatusNotFound, msgClientNotFound)
+	case errors.Is(err, errClientNameRequired):
+		writeError(w, http.StatusBadRequest, msgClientNameRequired)
+	case errors.Is(err, errClientNameInvalid):
+		writeError(w, http.StatusBadRequest, msgClientNameInvalid)
+	case errors.Is(err, errClientUserADTag):
+		writeError(w, http.StatusBadRequest, msgClientUserADTag)
+	case errors.Is(err, errClientExpiration):
+		writeError(w, http.StatusBadRequest, msgClientExpiration)
+	case errors.Is(err, errClientTargetsRequired):
+		writeError(w, http.StatusBadRequest, msgClientTargetsRequired)
+	case errors.Is(err, errClientLimitNegative):
+		writeError(w, http.StatusBadRequest, msgClientLimitNegative)
 	case errors.Is(err, jobs.ErrReadOnlyTarget):
-		writeError(w, http.StatusConflict, err.Error())
+		writeError(w, http.StatusConflict, msgClientReadOnlyTarget)
 	default:
 		slog.Error("client mutation failed", "error", err)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
@@ -221,6 +241,28 @@ func (s *Server) subscriptionURLFor(token string) string {
 	return base + "/sub/" + token
 }
 
+// appendBulkClientFailureFromError records a per-item bulk failure for an
+// error returned from a client lookup/mutation call (clientDetailSnapshot,
+// updateClient, deleteClient). 3.13: previously every such error — including
+// a genuine operational failure (a DB error, a job-dispatch error) — was
+// folded into the same "failed" shape as storage.ErrNotFound, so an operator
+// had no way to tell "this id doesn't exist, don't retry" apart from "this
+// failed transiently, retrying may help". storage.ErrNotFound (and its
+// wrapped forms) is reported as-is with Retryable left false (the default,
+// omitted from the wire payload); every other error is tagged
+// Retryable:true and uses the fixed operator-safe msgInternalError text
+// instead of echoing err.Error() (keeping this path consistent with the
+// 3.10 allowlist — a bulk operational failure is exactly the kind of
+// internal-detail-bearing error scrubErrorMessage exists to catch, so route
+// it through the same fixed message rather than trusting the denylist).
+func appendBulkClientFailureFromError(response *bulkClientResponse, id string, err error) {
+	if errors.Is(err, storage.ErrNotFound) {
+		response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: msgClientNotFound})
+		return
+	}
+	response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: msgInternalError, Retryable: true})
+}
+
 // applyBulkClientEnable runs the enable/disable variant. It loads each
 // client, flips Enabled if it differs from the requested value, and
 // dispatches the existing updateClient flow. Clients whose
@@ -235,7 +277,7 @@ func (s *Server) applyBulkClientEnable(ctx context.Context, actorID string, scop
 		}
 		current, assignments, _, lookupErr := s.clientDetailSnapshot(id)
 		if lookupErr != nil {
-			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: lookupErr.Error()})
+			appendBulkClientFailureFromError(response, id, lookupErr)
 			continue
 		}
 		if !s.clientInScope(scope, assignments) {
@@ -260,7 +302,7 @@ func (s *Server) applyBulkClientEnable(ctx context.Context, actorID string, scop
 			AgentIDs:          assignmentAgentIDs(assignments),
 		}
 		if _, _, _, err := s.updateClient(ctx, id, actorID, input, s.now()); err != nil {
-			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: err.Error()})
+			appendBulkClientFailureFromError(response, id, err)
 			continue
 		}
 		response.Succeeded = append(response.Succeeded, id)
@@ -279,7 +321,7 @@ func (s *Server) applyBulkClientDelete(ctx context.Context, actorID string, scop
 		}
 		_, assignments, _, lookupErr := s.clientDetailSnapshot(id)
 		if lookupErr != nil {
-			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: lookupErr.Error()})
+			appendBulkClientFailureFromError(response, id, lookupErr)
 			continue
 		}
 		if !s.clientInScope(scope, assignments) {
@@ -287,7 +329,7 @@ func (s *Server) applyBulkClientDelete(ctx context.Context, actorID string, scop
 			continue
 		}
 		if err := s.deleteClient(ctx, id, actorID, s.now()); err != nil {
-			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: err.Error()})
+			appendBulkClientFailureFromError(response, id, err)
 			continue
 		}
 		response.Succeeded = append(response.Succeeded, id)

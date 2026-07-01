@@ -59,6 +59,13 @@ export const clientIPHistoryResponseSchema = z.object({
 const bulkClientFailureSchema = z.object({
   id: z.string(),
   error: z.string(),
+  // Phase 3 audit remediation (3.13): true when the failure was an
+  // operational error (a real DB/storage failure) rather than the item
+  // genuinely not existing — lets the UI distinguish "retry may help" from
+  // "this id is gone". Optional so older server builds that omit the field
+  // still validate; a missing flag means "not known to be retryable"
+  // (historical behaviour: treat as a terminal not-found-shaped failure).
+  retryable: z.boolean().optional(),
 });
 
 export const bulkClientResponseSchema = z.object({
