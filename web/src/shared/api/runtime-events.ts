@@ -1,4 +1,5 @@
 import { api, apiBasePath } from "./http";
+import { runtimeEventsListResponseSchema } from "./schemas/runtime-events";
 import type {
   RuntimeEventLevel,
   RuntimeEventsListResponse,
@@ -26,6 +27,8 @@ export const runtimeEventsApi = {
     const qs = params.toString();
     return api<RuntimeEventsListResponse>(
       `${apiBasePath}/agents/${encodeURIComponent(agentId)}/runtime-events${qs ? "?" + qs : ""}`,
+      undefined,
+      runtimeEventsListResponseSchema,
     );
   },
 };
