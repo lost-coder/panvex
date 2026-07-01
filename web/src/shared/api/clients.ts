@@ -169,6 +169,11 @@ export type BulkClientServerAction = "enable" | "disable" | "delete";
 export type BulkClientFailure = {
   id: string;
   error: string;
+  // 3.13: true when the failure was an operational error (DB/storage
+  // failure) rather than the item genuinely not existing. Absent/false
+  // means "not known to be retryable" — treat like the historical
+  // not-found-shaped failure.
+  retryable?: boolean | undefined;
 };
 
 export type BulkClientResponse = {

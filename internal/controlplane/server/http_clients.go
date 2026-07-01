@@ -324,6 +324,13 @@ type bulkClientRequest struct {
 type bulkClientFailure struct {
 	ID    string `json:"id"`
 	Error string `json:"error"`
+	// Retryable distinguishes an operational failure (a real DB/storage
+	// error, a job-dispatch error, etc.) from a legitimate per-item
+	// "doesn't exist" or "outside scope" result (3.13). Omitted (absent /
+	// false) for the common not-found case so existing frontend consumers
+	// that only read id/error are unaffected; true tells the operator the
+	// item might succeed on a retry rather than being permanently gone.
+	Retryable bool `json:"retryable,omitempty"`
 }
 
 type bulkClientResponse struct {
