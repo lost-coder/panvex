@@ -79,4 +79,12 @@ var skippedTables = map[string]string{
 	"telemt_diagnostics_current":        "derived snapshot: overwritten by the next agent telemetry report",
 	"telemt_security_inventory_current": "derived snapshot: overwritten by the next agent telemetry report",
 	"telemt_runtime_events":             "recoverable: runtime event ring buffer, re-populated post cut-over",
+
+	// group config-apply rollout batches (Phase A storage layer) — no
+	// bulk list-all method exists yet (only ListRunningConfigApplyBatches,
+	// scoped to active rollouts, plus a per-id Get), so the offline
+	// migrate-schema copy cannot enumerate historical batches. Revisit if
+	// a later phase needs full batch-history parity across backends.
+	"config_apply_batches":       "not yet covered by offline migrate-schema copy — see comment above",
+	"config_apply_batch_targets": "child of config_apply_batches (FK ON DELETE CASCADE); skipped alongside its parent",
 }

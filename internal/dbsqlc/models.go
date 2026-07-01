@@ -136,6 +136,25 @@ type ClientUsage struct {
 	QuotaLastResetUnix int64
 }
 
+type ConfigApplyBatch struct {
+	ID               string
+	FleetGroupID     uuid.UUID
+	Mode             string
+	WaveSize         int32
+	ExpectedRevision string
+	Status           string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type ConfigApplyBatchTarget struct {
+	BatchID   string
+	AgentID   string
+	WaveIndex int32
+	JobID     string
+	Status    string
+}
+
 type ConsumedTotp struct {
 	UserID string
 	Code   string

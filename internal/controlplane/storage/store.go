@@ -559,6 +559,42 @@ type AgentFallbackStateStore interface {
 	ListAgentFallbackState(ctx context.Context) ([]AgentFallbackStateRecord, error)
 }
 
+// ConfigApplyBatchStore persists group-wide config-apply rollout batches
+// and their per-agent target rows (see ConfigApplyBatchRecord /
+// ConfigApplyBatchTargetRecord).
+type ConfigApplyBatchStore interface {
+	// CreateConfigApplyBatch inserts a batch row and its full target set
+	// atomically: either every row lands or none does. Implementations
+	// MUST run this inside a single transaction.
+	CreateConfigApplyBatch(ctx context.Context, b ConfigApplyBatchRecord, targets []ConfigApplyBatchTargetRecord) error
+	// GetConfigApplyBatch returns the batch plus every target row, ordered
+	// by wave_index then agent_id. Returns ErrNotFound when no batch with
+	// the given id exists.
+	GetConfigApplyBatch(ctx context.Context, id string) (ConfigApplyBatchRecord, []ConfigApplyBatchTargetRecord, error)
+	// ListRunningConfigApplyBatches returns every batch whose status is
+	// ConfigApplyBatchStatusRunning. Used by the coordinator to resume
+	// in-flight rollouts after a restart.
+	ListRunningConfigApplyBatches(ctx context.Context) ([]ConfigApplyBatchRecord, error)
+	// ActiveConfigApplyBatchForGroup returns the running batch for a fleet
+	// group, if any. The bool is false (with a zero-value record) when the
+	// group has no batch in ConfigApplyBatchStatusRunning.
+	ActiveConfigApplyBatchForGroup(ctx context.Context, fleetGroupID string) (ConfigApplyBatchRecord, bool, error)
+	// UpdateConfigApplyBatchStatus transitions a batch's status and bumps
+	// updated_at. Returns ErrNotFound when no batch with the given id exists.
+	UpdateConfigApplyBatchStatus(ctx context.Context, id, status string, now time.Time) error
+	// SetConfigApplyBatchTargetJob records the job enqueued for one target
+	// (wave enqueue) and updates its status in the same write.
+	SetConfigApplyBatchTargetJob(ctx context.Context, batchID, agentID, jobID, status string) error
+	// UpdateConfigApplyBatchTargetStatus updates one target's delivery
+	// status without touching its job id.
+	UpdateConfigApplyBatchTargetStatus(ctx context.Context, batchID, agentID, status string) error
+	// PruneConfigApplyBatches deletes batches in a terminal status
+	// (succeeded/failed/halted) whose updated_at predates the cutoff.
+	// Targets are removed via ON DELETE CASCADE. Returns the number of
+	// batches deleted.
+	PruneConfigApplyBatches(ctx context.Context, before time.Time) (int64, error)
+}
+
 // MigrationStore is the full storage surface required by the
 // migrate-schema CLI subcommand and storagetest Transact contract tests.
 // It composes Store with the legacy row-level client and discovered-client
@@ -608,6 +644,7 @@ type Store interface {
 	CertificateAuthorityStore
 	TimeseriesStore
 	IntegrationStore
+	ConfigApplyBatchStore
 
 	// Transact runs fn inside a single database transaction. The tx
 	// argument is a Store implementation bound to the transaction:

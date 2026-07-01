@@ -62,6 +62,8 @@ type memoryStore struct {
 	integrationProviders           map[string]storage.IntegrationProviderRecord
 	fleetGroupIntegrations         map[string]storage.FleetGroupIntegrationRecord
 	agentConfigTargets             map[string]storage.AgentConfigTargetRecord
+	configApplyBatches             map[string]storage.ConfigApplyBatchRecord
+	configApplyBatchTargets        map[string][]storage.ConfigApplyBatchTargetRecord
 }
 
 func newMemoryStore() *memoryStore {
@@ -96,6 +98,8 @@ func newMemoryStore() *memoryStore {
 		integrationProviders:           make(map[string]storage.IntegrationProviderRecord),
 		fleetGroupIntegrations:         make(map[string]storage.FleetGroupIntegrationRecord),
 		agentConfigTargets:             make(map[string]storage.AgentConfigTargetRecord),
+		configApplyBatches:             make(map[string]storage.ConfigApplyBatchRecord),
+		configApplyBatchTargets:        make(map[string][]storage.ConfigApplyBatchTargetRecord),
 	}
 }
 
@@ -131,6 +135,116 @@ func (s *memoryStore) DeleteAgentConfigTarget(_ context.Context, scopeType, scop
 	}
 	delete(s.agentConfigTargets, key)
 	return 1, nil
+}
+
+func (s *memoryStore) CreateConfigApplyBatch(_ context.Context, b storage.ConfigApplyBatchRecord, targets []storage.ConfigApplyBatchTargetRecord) error {
+	s.configApplyBatches[b.ID] = b
+	stored := append([]storage.ConfigApplyBatchTargetRecord(nil), targets...)
+	sortConfigApplyBatchTargets(stored)
+	s.configApplyBatchTargets[b.ID] = stored
+	return nil
+}
+
+func (s *memoryStore) GetConfigApplyBatch(_ context.Context, id string) (storage.ConfigApplyBatchRecord, []storage.ConfigApplyBatchTargetRecord, error) {
+	b, ok := s.configApplyBatches[id]
+	if !ok {
+		return storage.ConfigApplyBatchRecord{}, nil, storage.ErrNotFound
+	}
+	targets := append([]storage.ConfigApplyBatchTargetRecord(nil), s.configApplyBatchTargets[id]...)
+	return b, targets, nil
+}
+
+func (s *memoryStore) ListRunningConfigApplyBatches(_ context.Context) ([]storage.ConfigApplyBatchRecord, error) {
+	out := make([]storage.ConfigApplyBatchRecord, 0)
+	for _, b := range s.configApplyBatches {
+		if b.Status == storage.ConfigApplyBatchStatusRunning {
+			out = append(out, b)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+func (s *memoryStore) ActiveConfigApplyBatchForGroup(_ context.Context, fleetGroupID string) (storage.ConfigApplyBatchRecord, bool, error) {
+	var found *storage.ConfigApplyBatchRecord
+	for _, b := range s.configApplyBatches {
+		if b.FleetGroupID != fleetGroupID || b.Status != storage.ConfigApplyBatchStatusRunning {
+			continue
+		}
+		if found == nil || b.CreatedAt.Before(found.CreatedAt) || (b.CreatedAt.Equal(found.CreatedAt) && b.ID < found.ID) {
+			bCopy := b
+			found = &bCopy
+		}
+	}
+	if found == nil {
+		return storage.ConfigApplyBatchRecord{}, false, nil
+	}
+	return *found, true, nil
+}
+
+func (s *memoryStore) UpdateConfigApplyBatchStatus(_ context.Context, id, status string, now time.Time) error {
+	b, ok := s.configApplyBatches[id]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	b.Status = status
+	b.UpdatedAt = now
+	s.configApplyBatches[id] = b
+	return nil
+}
+
+func (s *memoryStore) SetConfigApplyBatchTargetJob(_ context.Context, batchID, agentID, jobID, status string) error {
+	targets := s.configApplyBatchTargets[batchID]
+	for i := range targets {
+		if targets[i].AgentID == agentID {
+			targets[i].JobID = jobID
+			targets[i].Status = status
+			return nil
+		}
+	}
+	return nil
+}
+
+func (s *memoryStore) UpdateConfigApplyBatchTargetStatus(_ context.Context, batchID, agentID, status string) error {
+	targets := s.configApplyBatchTargets[batchID]
+	for i := range targets {
+		if targets[i].AgentID == agentID {
+			targets[i].Status = status
+			return nil
+		}
+	}
+	return nil
+}
+
+func (s *memoryStore) PruneConfigApplyBatches(_ context.Context, before time.Time) (int64, error) {
+	var pruned int64
+	for id, b := range s.configApplyBatches {
+		terminal := b.Status == storage.ConfigApplyBatchStatusSucceeded ||
+			b.Status == storage.ConfigApplyBatchStatusFailed ||
+			b.Status == storage.ConfigApplyBatchStatusHalted
+		if terminal && b.UpdatedAt.Before(before) {
+			delete(s.configApplyBatches, id)
+			delete(s.configApplyBatchTargets, id)
+			pruned++
+		}
+	}
+	return pruned, nil
+}
+
+// sortConfigApplyBatchTargets orders targets by wave_index then agent_id,
+// matching the SQL backends' GetConfigApplyBatch ORDER BY clause.
+func sortConfigApplyBatchTargets(targets []storage.ConfigApplyBatchTargetRecord) {
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].WaveIndex != targets[j].WaveIndex {
+			return targets[i].WaveIndex < targets[j].WaveIndex
+		}
+		return targets[i].AgentID < targets[j].AgentID
+	})
 }
 
 func (s *memoryStore) UpsertLoginLockout(_ context.Context, record storage.LoginLockoutRecord) error {
