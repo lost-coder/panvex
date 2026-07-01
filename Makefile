@@ -41,16 +41,29 @@ test: gen-install-script
 	# Mirror CI: race-suite excludes loadtest, then loadtest runs without -race.
 	# loadtest scenarios (100 concurrent Argon2id, 200-agent enroll) tip past
 	# 22 GB RSS under -race and OOM-kill on memory-constrained dev hosts.
-	go test -race -count=1 $$(go list ./... | grep -v '^github.com/lost-coder/panvex/internal/loadtest$$')
+	# H7: also filter out web/node_modules — some npm packages (e.g.
+	# flatted's vendored Go port) ship a nested go.mod/package that `go
+	# list ./...` happily discovers when web/node_modules exists locally.
+	# CI never runs `npm ci` before the Go steps, so this only bites local
+	# dev/pre-push runs; filtering here keeps both paths identical.
+	go test -race -count=1 $$(go list ./... | grep -vE 'node_modules|^github.com/lost-coder/panvex/internal/loadtest$$')
 	go test -count=1 ./internal/loadtest/...
 
 test-fast: gen-install-script
-	go test -count=1 ./...
+	go test -count=1 $$(go list ./... | grep -vE 'node_modules')
 
 test-pkg: gen-install-script
 	@if [ -z "$(PKG)" ]; then echo "usage: make test-pkg PKG=./path/to/pkg"; exit 1; fi
 	go test -race -count=1 -v $(PKG)
 
+# H7: golangci-lint and govulncheck both resolve `./...` (and their own
+# module/gitignore-aware directory walk) themselves; feeding them a `go
+# list`-expanded argument list breaks their path resolution (they expect
+# relative patterns, not fully-qualified import paths passed as CLI
+# args). They already skip web/node_modules on their own (verified: it's
+# gitignored and neither tool descends into it), so no filtering is
+# needed here — unlike the `go test $(go list ...)` invocations above,
+# which truly do take go-list output as their package set.
 lint:
 	golangci-lint run ./...
 
