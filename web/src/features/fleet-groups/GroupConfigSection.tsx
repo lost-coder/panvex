@@ -12,7 +12,7 @@
 // restart-warning only fires — for genuinely-changed fields, surviving a
 // Save→refetch round trip via the data-keyed reset effect.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -148,19 +148,41 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
   );
   const [values, setValues] = useState<Record<string, unknown>>(initialValues);
 
-  // Re-seed the editor whenever a fresh target arrives (initial load or a
-  // post-Save / post-Apply refetch). Keyed on the flattened initial so a
-  // payload with an identical target doesn't clobber in-flight edits.
-  useEffect(() => {
-    setValues(initialValues);
-  }, [initialValues]);
-
   // Paths the operator has edited but not yet saved — drives the dirty state
   // that blocks Apply (you save the target before rolling it out).
   const changedPaths = useMemo(
     () => diffPaths(initialValues, values),
     [initialValues, values],
   );
+
+  // 3.12: re-seed the editor from a fresh target on initial load, on a
+  // genuine identity change (switched to a different group), or on a
+  // post-Save/post-Apply refetch where the operator has no unsaved edits.
+  // Previously this ran on every `initialValues` change unconditionally —
+  // a background refetch (including the WS seq-gap full-cache
+  // invalidation, or the async-apply status poll) while the operator was
+  // mid-edit would silently wipe their unsaved changes.
+  //
+  // `lastSeededRef` snapshots the initialValues the editor was last reset
+  // to. Dirtiness is `values` vs. THAT snapshot, not vs. the just-arrived
+  // `initialValues` — on the render where `groupId` changes, `values`
+  // still holds the previous group's draft, so diffing it against the
+  // brand-new `initialValues` would spuriously read as "dirty" and block
+  // the very re-seed a group-id change is supposed to force.
+  const lastSeededRef = useRef(initialValues);
+  const lastGroupIdRef = useRef(groupId);
+  useEffect(() => {
+    const idChanged = lastGroupIdRef.current !== groupId;
+    lastGroupIdRef.current = groupId;
+    if (!idChanged && diffPaths(lastSeededRef.current, values).length > 0) {
+      // Refetch landed while the operator has unsaved edits on the SAME
+      // group — keep their draft.
+      return;
+    }
+    lastSeededRef.current = initialValues;
+    setValues(initialValues);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, initialValues]);
 
   // Audit E4: guard in-app navigation while there are unsaved config changes.
   useUnsavedChangesGuard(changedPaths.length > 0);

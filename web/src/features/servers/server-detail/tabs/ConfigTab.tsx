@@ -13,7 +13,7 @@
 // only fires — for genuinely-changed fields, surviving a Save→refetch round
 // trip via the data-keyed reset effect.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge, Button, Spinner } from "@/ui";
@@ -74,19 +74,41 @@ export function ConfigTab({
   );
   const [values, setValues] = useState<Record<string, unknown>>(initialValues);
 
-  // Re-seed the editor whenever a fresh override arrives (initial load or a
-  // post-Save / post-Apply refetch). Keyed on the flattened initial so a
-  // server object with an identical override doesn't clobber in-flight edits.
-  useEffect(() => {
-    setValues(initialValues);
-  }, [initialValues]);
-
   // Paths the operator has edited but not yet saved — drives the dirty
   // state that blocks Apply (you save the override before pushing it).
   const changedPaths = useMemo(
     () => diffPaths(initialValues, values),
     [initialValues, values],
   );
+
+  // 3.12: re-seed the editor from a fresh override on initial load, on a
+  // genuine identity change (switched to a different server), or on a
+  // post-Save/post-Apply refetch where the operator has no unsaved edits.
+  // Previously this ran on every `initialValues` change unconditionally —
+  // a background refetch (including the WS seq-gap full-cache
+  // invalidation) while the operator was mid-edit would silently wipe
+  // their unsaved changes.
+  //
+  // `lastSeededRef` snapshots the initialValues the editor was last reset
+  // to. Dirtiness is `values` vs. THAT snapshot, not vs. the just-arrived
+  // `initialValues` — on the render where `agentId` changes, `values` still
+  // holds the previous server's draft, so diffing it against the brand-new
+  // `initialValues` would spuriously read as "dirty" and block the very
+  // re-seed an id-change is supposed to force.
+  const lastSeededRef = useRef(initialValues);
+  const lastAgentIdRef = useRef(agentId);
+  useEffect(() => {
+    const idChanged = lastAgentIdRef.current !== agentId;
+    lastAgentIdRef.current = agentId;
+    if (!idChanged && diffPaths(lastSeededRef.current, values).length > 0) {
+      // Refetch landed while the operator has unsaved edits on the SAME
+      // server — keep their draft.
+      return;
+    }
+    lastSeededRef.current = initialValues;
+    setValues(initialValues);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, initialValues]);
 
   // What Apply will push: the persisted override's own paths. Feeding these
   // to ApplyConfigButton lets it decide whether a restart-warning confirm is
