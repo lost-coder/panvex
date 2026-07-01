@@ -31,20 +31,27 @@ type RetentionSettings struct {
 	// forensics before the rollup loop prunes them via
 	// PruneEnrollmentTokens (C4).
 	EnrollmentTokenSeconds int `json:"enrollment_token_seconds"`
+	// ConfigApplyBatchSeconds bounds how long terminal group config-apply
+	// batches (succeeded/failed/halted) and their targets live before the
+	// rollup loop deletes them via PruneConfigApplyBatches (Phase A / A5).
+	// Active (running) batches are preserved so an in-flight rollout can
+	// never be pruned mid-flight.
+	ConfigApplyBatchSeconds int `json:"config_apply_batch_seconds"`
 }
 
 func defaultRetentionSettings() RetentionSettings {
 	return RetentionSettings{
-		TSRawSeconds:          86400,   // 24h
-		TSHourlySeconds:       604800,  // 7d
-		TSDCSeconds:           86400,   // 24h
-		IPHistorySeconds:      2592000, // 30d
-		EventSeconds:          86400,   // 24h
-		AuditEventSeconds:     7776000, // 90d (P2-REL-04 / finding M-R2)
-		MetricSnapshotSeconds: 2592000, // 30d (P2-REL-05)
-		JobsSeconds:           2592000, // 30d (Q2.U-P-02)
-		WebhookOutboxSeconds:   2592000, // 30d
-		EnrollmentTokenSeconds: 2592000, // 30d
+		TSRawSeconds:            86400,   // 24h
+		TSHourlySeconds:         604800,  // 7d
+		TSDCSeconds:             86400,   // 24h
+		IPHistorySeconds:        2592000, // 30d
+		EventSeconds:            86400,   // 24h
+		AuditEventSeconds:       7776000, // 90d (P2-REL-04 / finding M-R2)
+		MetricSnapshotSeconds:   2592000, // 30d (P2-REL-05)
+		JobsSeconds:             2592000, // 30d (Q2.U-P-02)
+		WebhookOutboxSeconds:    2592000, // 30d
+		EnrollmentTokenSeconds:  2592000, // 30d
+		ConfigApplyBatchSeconds: 86400,   // 24h (Phase A / A5)
 	}
 }
 
@@ -53,32 +60,34 @@ func defaultRetentionSettings() RetentionSettings {
 // the helper exists so callers do not depend on the alias in storage/store.go.
 func retentionSettingsToRecord(settings RetentionSettings) storage.RetentionSettings {
 	return storage.RetentionSettings{
-		TSRawSeconds:           settings.TSRawSeconds,
-		TSHourlySeconds:        settings.TSHourlySeconds,
-		TSDCSeconds:            settings.TSDCSeconds,
-		IPHistorySeconds:       settings.IPHistorySeconds,
-		EventSeconds:           settings.EventSeconds,
-		AuditEventSeconds:      settings.AuditEventSeconds,
-		MetricSnapshotSeconds:  settings.MetricSnapshotSeconds,
-		JobsSeconds:            settings.JobsSeconds,
-		WebhookOutboxSeconds:   settings.WebhookOutboxSeconds,
-		EnrollmentTokenSeconds: settings.EnrollmentTokenSeconds,
+		TSRawSeconds:            settings.TSRawSeconds,
+		TSHourlySeconds:         settings.TSHourlySeconds,
+		TSDCSeconds:             settings.TSDCSeconds,
+		IPHistorySeconds:        settings.IPHistorySeconds,
+		EventSeconds:            settings.EventSeconds,
+		AuditEventSeconds:       settings.AuditEventSeconds,
+		MetricSnapshotSeconds:   settings.MetricSnapshotSeconds,
+		JobsSeconds:             settings.JobsSeconds,
+		WebhookOutboxSeconds:    settings.WebhookOutboxSeconds,
+		EnrollmentTokenSeconds:  settings.EnrollmentTokenSeconds,
+		ConfigApplyBatchSeconds: settings.ConfigApplyBatchSeconds,
 	}
 }
 
 // retentionSettingsFromRecord is the inverse of retentionSettingsToRecord.
 func retentionSettingsFromRecord(record storage.RetentionSettings) RetentionSettings {
 	return RetentionSettings{
-		TSRawSeconds:           record.TSRawSeconds,
-		TSHourlySeconds:        record.TSHourlySeconds,
-		TSDCSeconds:            record.TSDCSeconds,
-		IPHistorySeconds:       record.IPHistorySeconds,
-		EventSeconds:           record.EventSeconds,
-		AuditEventSeconds:      record.AuditEventSeconds,
-		MetricSnapshotSeconds:  record.MetricSnapshotSeconds,
-		JobsSeconds:            record.JobsSeconds,
-		WebhookOutboxSeconds:   record.WebhookOutboxSeconds,
-		EnrollmentTokenSeconds: record.EnrollmentTokenSeconds,
+		TSRawSeconds:            record.TSRawSeconds,
+		TSHourlySeconds:         record.TSHourlySeconds,
+		TSDCSeconds:             record.TSDCSeconds,
+		IPHistorySeconds:        record.IPHistorySeconds,
+		EventSeconds:            record.EventSeconds,
+		AuditEventSeconds:       record.AuditEventSeconds,
+		MetricSnapshotSeconds:   record.MetricSnapshotSeconds,
+		JobsSeconds:             record.JobsSeconds,
+		WebhookOutboxSeconds:    record.WebhookOutboxSeconds,
+		EnrollmentTokenSeconds:  record.EnrollmentTokenSeconds,
+		ConfigApplyBatchSeconds: record.ConfigApplyBatchSeconds,
 	}
 }
 
@@ -189,6 +198,11 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	// rows are kept EnrollmentTokenSeconds for operator forensics, then
 	// dropped.
 	s.runRetentionPrune(ctx, "enrollment_tokens", now, retention.EnrollmentTokenSeconds, s.store.PruneEnrollmentTokens)
+
+	// 13. Prune terminal group config-apply batches (Phase A / A5). Running
+	// batches are preserved by the store query so an in-flight rollout can
+	// never be pruned mid-flight; targets cascade with their batch.
+	s.runRetentionPrune(ctx, "config_apply_batches", now, retention.ConfigApplyBatchSeconds, s.store.PruneConfigApplyBatches)
 }
 
 // rollupRecentHours rebuilds hourly aggregates for the previous 2 hours so
