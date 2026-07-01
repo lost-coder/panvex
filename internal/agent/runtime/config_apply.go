@@ -3,7 +3,9 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -115,6 +117,7 @@ type configApplyPayload struct {
 // telemtConfigPort is the subset of the telemt client the orchestrator needs.
 type telemtConfigPort interface {
 	PatchConfig(ctx context.Context, patch map[string]any, expectedRevision string) (telemt.PatchConfigResult, error)
+	GetManagedConfig(ctx context.Context) (map[string]any, string, error)
 	HealthReady(ctx context.Context) (bool, string, error)
 }
 
@@ -150,6 +153,24 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 		return configApplyResult{message: fmt.Sprintf("config.apply: preflight health check failed (ready=%v err=%v)", ready, err)}
 	}
 
+	// D3: every apply must be a genuine compare-and-swap against Telemt's
+	// current revision, never a blind write. Callers (control-plane job
+	// enqueue, UI) are not required to supply expected_revision — if it's
+	// absent the agent reads the live revision itself and uses that as the
+	// If-Match, so a retried/duplicated config.apply job (at-least-once job
+	// delivery) lands on the revision it actually observed rather than
+	// bypassing Telemt's 409 guard.
+	expectedRevision := p.ExpectedRevision
+	if expectedRevision == "" {
+		_, currentRevision, err := d.telemt.GetManagedConfig(ctx)
+		if err != nil {
+			return configApplyResult{message: fmt.Sprintf("config.apply: fetch current revision failed: %v", err)}
+		}
+		expectedRevision = currentRevision
+		slog.DebugContext(ctx, "config.apply: no expected_revision supplied, using agent-observed revision for CAS",
+			slog.String("revision", expectedRevision))
+	}
+
 	backup, err := backupConfigFile(d.configPath)
 	if err != nil {
 		return configApplyResult{message: fmt.Sprintf("config.apply: backup failed: %v", err)}
@@ -160,8 +181,13 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 	// into memory before this fires, so removing it after is never a race.
 	defer func() { _ = os.Remove(backup) }()
 
-	res, err := d.telemt.PatchConfig(ctx, p.Patch, p.ExpectedRevision)
+	res, err := d.telemt.PatchConfig(ctx, p.Patch, expectedRevision)
 	if err != nil {
+		if errors.Is(err, telemt.ErrConfigRevisionConflict) {
+			slog.WarnContext(ctx, "config.apply: revision conflict, config changed underneath",
+				slog.String("expected_revision", expectedRevision))
+			return configApplyResult{message: "config.apply: revision conflict — config changed underneath since expected_revision was read; re-fetch and retry"}
+		}
 		return configApplyResult{message: fmt.Sprintf("config.apply: patch failed: %v", err)}
 	}
 
