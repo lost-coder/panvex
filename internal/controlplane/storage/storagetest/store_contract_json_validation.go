@@ -2,6 +2,8 @@ package storagetest
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -33,6 +35,17 @@ import (
 // caller no way to hand the store a malformed string for those columns,
 // on either backend. Coverage there is structural (encodeStringArray /
 // json.Marshal can't produce invalid JSON), not a CHECK-driven test.
+//
+// enrollment_events.fields_json and webhook_outbox.payload are also JSONB
+// on PostgreSQL (db/migrations/postgres/0041_enrollment_attempts.sql,
+// 0039_webhook_outbox.sql) and gained a matching json_valid CHECK on
+// SQLite in 0052_json_valid_checks.sql, so they belong in this
+// cross-backend parity contract too. Neither table is reachable through
+// storage.MigrationStore — enrollment timeline events and the webhook
+// outbox are written by separate stores (enrollment.SQLStore,
+// sqlite/postgres WebhookStore) that take a raw *sql.DB rather than the
+// Store interface — so these two subtests fall back to a direct INSERT
+// against the pooled connection exposed by the backend's DB() method.
 func RunJSONValidationContract(t *testing.T, open OpenStore) {
 	t.Helper()
 
@@ -112,6 +125,71 @@ func RunJSONValidationContract(t *testing.T, open OpenStore) {
 		})
 		if err != nil {
 			t.Fatalf("CreateFleetGroupIntegration() with valid config: %v", err)
+		}
+	})
+
+	t.Run("enrollment_events rejects malformed fields_json", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		attemptID := seedEnrollmentAttemptForJSONContract(t, ctx, dbHandle(t, store), "00000000-0000-4000-b000-000000000301")
+
+		err := insertEnrollmentEvent(ctx, dbHandle(t, store), "00000000-0000-4000-b000-000000000302", attemptID, sql.NullString{String: "{not json", Valid: true})
+		if err == nil {
+			t.Fatal("insert enrollment_events with malformed fields_json: got nil error, want rejection")
+		}
+	})
+
+	t.Run("enrollment_events accepts valid fields_json", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		attemptID := seedEnrollmentAttemptForJSONContract(t, ctx, dbHandle(t, store), "00000000-0000-4000-b000-000000000303")
+
+		err := insertEnrollmentEvent(ctx, dbHandle(t, store), "00000000-0000-4000-b000-000000000304", attemptID, sql.NullString{String: `{"reason":"ok"}`, Valid: true})
+		if err != nil {
+			t.Fatalf("insert enrollment_events with valid fields_json: %v", err)
+		}
+	})
+
+	t.Run("enrollment_events accepts NULL fields_json", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		attemptID := seedEnrollmentAttemptForJSONContract(t, ctx, dbHandle(t, store), "00000000-0000-4000-b000-000000000305")
+
+		err := insertEnrollmentEvent(ctx, dbHandle(t, store), "00000000-0000-4000-b000-000000000306", attemptID, sql.NullString{})
+		if err != nil {
+			t.Fatalf("insert enrollment_events with NULL fields_json: %v", err)
+		}
+	})
+
+	t.Run("webhook_outbox rejects malformed payload", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		endpointID := seedWebhookEndpointForJSONContract(t, ctx, dbHandle(t, store), "00000000-0000-4000-b000-000000000401")
+
+		err := insertWebhookOutbox(ctx, dbHandle(t, store), "00000000-0000-4000-b000-000000000402", endpointID, "{not json")
+		if err == nil {
+			t.Fatal("insert webhook_outbox with malformed payload: got nil error, want rejection")
+		}
+	})
+
+	t.Run("webhook_outbox accepts valid payload", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		endpointID := seedWebhookEndpointForJSONContract(t, ctx, dbHandle(t, store), "00000000-0000-4000-b000-000000000403")
+
+		err := insertWebhookOutbox(ctx, dbHandle(t, store), "00000000-0000-4000-b000-000000000404", endpointID, `{"action":"agent.created"}`)
+		if err != nil {
+			t.Fatalf("insert webhook_outbox with valid payload: %v", err)
 		}
 	})
 }
@@ -232,4 +310,130 @@ func seedFleetGroupForJSONContract(t *testing.T, ctx context.Context, store stor
 	}); err != nil {
 		t.Fatalf("PutFleetGroup() error = %v", err)
 	}
+}
+
+// dbHandleStore is satisfied by both concrete backends (sqlite.Store,
+// postgres.Store) but is deliberately not part of storage.MigrationStore
+// (see that interface's doc comment: production code must not grow a
+// dependency on the raw pool). The two subtests below need it because
+// enrollment_events / webhook_outbox are written by separate stores that
+// take a *sql.DB directly rather than the Store interface, so there is no
+// typed method on MigrationStore to reach them through.
+type dbHandleStore interface {
+	DB() *sql.DB
+}
+
+// dbHandle extracts the raw connection pool from a storage.MigrationStore
+// for the direct-SQL fallback inserts used by the enrollment_events /
+// webhook_outbox subtests. Fails the test if the concrete backend doesn't
+// expose one (it always does today for sqlite.Store and postgres.Store).
+func dbHandle(t *testing.T, store storage.MigrationStore) *sql.DB {
+	t.Helper()
+	h, ok := store.(dbHandleStore)
+	if !ok {
+		t.Fatalf("store %T does not expose DB() *sql.DB", store)
+	}
+	return h.DB()
+}
+
+// isPostgresHandle distinguishes the two backends by their registered
+// database/sql driver type name (pgx's stdlib driver vs modernc.org/sqlite)
+// so the direct-SQL helpers below can pick the right placeholder syntax —
+// pgx requires "$1"-style params and rejects "?", SQLite is the reverse.
+func isPostgresHandle(db *sql.DB) bool {
+	return fmt.Sprintf("%T", db.Driver()) == "*stdlib.Driver"
+}
+
+// seedEnrollmentAttemptForJSONContract inserts a minimal in_progress
+// enrollment_attempts row so the fields_json subtests have a valid
+// attempt_id to satisfy enrollment_events' FK. Returns the attempt id.
+func seedEnrollmentAttemptForJSONContract(t *testing.T, ctx context.Context, db *sql.DB, attemptID string) string {
+	t.Helper()
+	now := time.Now().UTC()
+	var err error
+	if isPostgresHandle(db) {
+		_, err = db.ExecContext(ctx, `
+			INSERT INTO enrollment_attempts (id, mode, request_id, status, started_at)
+			VALUES ($1, 'inbound', $2, 'in_progress', $3)
+		`, attemptID, "json-contract-"+attemptID, now)
+	} else {
+		_, err = db.ExecContext(ctx, `
+			INSERT INTO enrollment_attempts (id, mode, request_id, status, started_at)
+			VALUES (?, 'inbound', ?, 'in_progress', ?)
+		`, attemptID, "json-contract-"+attemptID, now)
+	}
+	if err != nil {
+		t.Fatalf("seed enrollment_attempts: %v", err)
+	}
+	return attemptID
+}
+
+// insertEnrollmentEvent inserts one enrollment_events row directly,
+// bypassing enrollment.SQLStore.AppendEvent (which never lets a caller
+// supply malformed JSON — see recorder.go) so the json_valid CHECK /
+// JSONB rejection can be exercised at the storage layer itself. A
+// !fieldsJSON.Valid sql.NullString binds a SQL NULL, matching what
+// AppendEvent does today for the empty-fields case.
+func insertEnrollmentEvent(ctx context.Context, db *sql.DB, id, attemptID string, fieldsJSON sql.NullString) error {
+	now := time.Now().UTC()
+	var raw any
+	if fieldsJSON.Valid {
+		raw = fieldsJSON.String
+	}
+	if isPostgresHandle(db) {
+		_, err := db.ExecContext(ctx, `
+			INSERT INTO enrollment_events (attempt_id, ts, step, level, message, fields_json)
+			VALUES ($1, $2, 'validate', 'info', $3, $4)
+		`, attemptID, now, "json-contract-"+id, raw)
+		return err
+	}
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO enrollment_events (attempt_id, ts, step, level, message, fields_json)
+		VALUES (?, ?, 'validate', 'info', ?, ?)
+	`, attemptID, now, "json-contract-"+id, raw)
+	return err
+}
+
+// seedWebhookEndpointForJSONContract inserts a minimal webhook_endpoints
+// row so the payload subtests have a valid endpoint_id to satisfy
+// webhook_outbox's FK. Returns the endpoint id.
+func seedWebhookEndpointForJSONContract(t *testing.T, ctx context.Context, db *sql.DB, endpointID string) string {
+	t.Helper()
+	var err error
+	if isPostgresHandle(db) {
+		_, err = db.ExecContext(ctx, `
+			INSERT INTO webhook_endpoints (id, name, url, secret_ciphertext)
+			VALUES ($1, $2, 'https://example.invalid/hook', 'ciphertext')
+		`, endpointID, "json-contract-"+endpointID)
+	} else {
+		_, err = db.ExecContext(ctx, `
+			INSERT INTO webhook_endpoints (id, name, url, secret_ciphertext)
+			VALUES (?, ?, 'https://example.invalid/hook', 'ciphertext')
+		`, endpointID, "json-contract-"+endpointID)
+	}
+	if err != nil {
+		t.Fatalf("seed webhook_endpoints: %v", err)
+	}
+	return endpointID
+}
+
+// insertWebhookOutbox inserts one webhook_outbox row directly, bypassing
+// WebhookStore.InsertOutbox (which substitutes "{}" for an empty payload
+// but never rejects a malformed one — see sqlite/webhooks.go) so the
+// json_valid CHECK / JSONB rejection can be exercised at the storage
+// layer itself.
+func insertWebhookOutbox(ctx context.Context, db *sql.DB, id, endpointID, payload string) error {
+	now := time.Now().UTC()
+	if isPostgresHandle(db) {
+		_, err := db.ExecContext(ctx, `
+			INSERT INTO webhook_outbox (id, endpoint_id, event_action, payload, next_attempt_at)
+			VALUES ($1, $2, 'agent.created', $3, $4)
+		`, id, endpointID, payload, now)
+		return err
+	}
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO webhook_outbox (id, endpoint_id, event_action, payload, next_attempt_at)
+		VALUES (?, ?, 'agent.created', ?, ?)
+	`, id, endpointID, payload, now)
+	return err
 }

@@ -187,14 +187,14 @@ CREATE TABLE enrollment_attempts (
     finished_at     TIMESTAMP
 );
 
-CREATE TABLE enrollment_events (
+CREATE TABLE "enrollment_events" (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    attempt_id  TEXT NOT NULL REFERENCES enrollment_attempts(id) ON DELETE CASCADE,
+    attempt_id  TEXT NOT NULL REFERENCES enrollment_attempts (id) ON DELETE CASCADE,
     ts          TIMESTAMP NOT NULL,
     step        TEXT NOT NULL,
     level       TEXT NOT NULL CHECK (level IN ('info', 'warn', 'error')),
     message     TEXT,
-    fields_json TEXT
+    fields_json TEXT CHECK (fields_json IS NULL OR json_valid(fields_json))
 );
 
 CREATE TABLE "enrollment_tokens" (
@@ -528,11 +528,11 @@ CREATE TABLE webhook_endpoints (
     updated_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE webhook_outbox (
+CREATE TABLE "webhook_outbox" (
     id              TEXT PRIMARY KEY,
-    endpoint_id     TEXT NOT NULL REFERENCES webhook_endpoints(id) ON DELETE CASCADE,
+    endpoint_id     TEXT NOT NULL REFERENCES webhook_endpoints (id) ON DELETE CASCADE,
     event_action    TEXT NOT NULL,
-    payload         TEXT NOT NULL,
+    payload         TEXT NOT NULL CHECK (json_valid(payload)),
     attempt         INTEGER NOT NULL DEFAULT 0,
     next_attempt_at TIMESTAMP NOT NULL,
     last_error      TEXT NOT NULL DEFAULT '',
@@ -594,7 +594,7 @@ CREATE INDEX idx_enrollment_attempts_started ON enrollment_attempts(started_at);
 
 CREATE INDEX idx_enrollment_attempts_token   ON enrollment_attempts(token_id);
 
-CREATE INDEX idx_enrollment_events_attempt ON enrollment_events(attempt_id, ts);
+CREATE INDEX idx_enrollment_events_attempt ON enrollment_events (attempt_id, ts);
 
 CREATE INDEX idx_enrollment_tokens_fleet_group_id ON enrollment_tokens (fleet_group_id);
 

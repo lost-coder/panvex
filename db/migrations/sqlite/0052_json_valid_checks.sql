@@ -17,7 +17,7 @@
 -- BEGIN/COMMIT — SQLite forbids toggling it inside a transaction — which
 -- is also why this whole file runs under NO TRANSACTION.
 --
--- Seven columns across six tables are covered. Per-column CHECK/default
+-- Nine columns across eight tables are covered. Per-column CHECK/default
 -- decision (all chosen so NO existing valid row can be rejected by the
 -- new CHECK):
 --
@@ -51,6 +51,26 @@
 --       valid JSON; plain `CHECK (json_valid(connection_links))`.
 --   discovered_clients.connection_links — same as above; plain
 --       `CHECK (json_valid(connection_links))`.
+--   enrollment_events.fields_json — JSONB and nullable on PostgreSQL
+--       (db/migrations/postgres/0041_enrollment_attempts.sql); no default
+--       on either backend. enrollment.Recorder.Event/Ingest
+--       (internal/controlplane/enrollment/recorder.go) only ever calls
+--       json.Marshal(fields) when len(fields) > 0 and otherwise leaves
+--       FieldsJSON == ""; SQLStore.AppendEvent
+--       (internal/controlplane/enrollment/sqlstore.go) maps that empty
+--       string to a NULL bind param, never an empty-string column value.
+--       So the column is either NULL or valid JSON, never "". CHECK must
+--       explicitly admit NULL: `CHECK (fields_json IS NULL OR
+--       json_valid(fields_json))` — SQLite's json_valid(NULL) already
+--       evaluates to NULL, which a CHECK treats as passing, but the
+--       explicit IS NULL keeps the constraint's intent unambiguous.
+--   webhook_outbox.payload — JSONB and NOT NULL on PostgreSQL
+--       (db/migrations/postgres/0039_webhook_outbox.sql); no default on
+--       either backend. The only writer, WebhookStore.InsertOutbox
+--       (internal/controlplane/storage/sqlite/webhooks.go), substitutes
+--       the literal `{}` whenever the caller-supplied payload is empty,
+--       so every persisted value is valid JSON; plain
+--       `CHECK (json_valid(payload))`.
 --
 -- Every rebuilt table's INSERT..SELECT is a straight column-for-column
 -- copy (no backfill needed): every existing default above is already
@@ -261,6 +281,62 @@ CREATE INDEX IF NOT EXISTS idx_discovered_clients_agent_id ON discovered_clients
 CREATE UNIQUE INDEX IF NOT EXISTS idx_discovered_clients_pending_unique
     ON discovered_clients (agent_id, client_name)
     WHERE status = 'pending_review';
+
+COMMIT;
+
+-- ─── enrollment_events ───────────────────────────────────────────────
+BEGIN;
+
+CREATE TABLE enrollment_events_new (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    attempt_id  TEXT NOT NULL REFERENCES enrollment_attempts (id) ON DELETE CASCADE,
+    ts          TIMESTAMP NOT NULL,
+    step        TEXT NOT NULL,
+    level       TEXT NOT NULL CHECK (level IN ('info', 'warn', 'error')),
+    message     TEXT,
+    fields_json TEXT CHECK (fields_json IS NULL OR json_valid(fields_json))
+);
+
+INSERT INTO enrollment_events_new (id, attempt_id, ts, step, level, message, fields_json)
+SELECT id, attempt_id, ts, step, level, message, fields_json FROM enrollment_events;
+
+DROP TABLE enrollment_events;
+ALTER TABLE enrollment_events_new RENAME TO enrollment_events;
+
+CREATE INDEX IF NOT EXISTS idx_enrollment_events_attempt ON enrollment_events (attempt_id, ts);
+
+COMMIT;
+
+-- ─── webhook_outbox ──────────────────────────────────────────────────
+BEGIN;
+
+CREATE TABLE webhook_outbox_new (
+    id              TEXT PRIMARY KEY,
+    endpoint_id     TEXT NOT NULL REFERENCES webhook_endpoints (id) ON DELETE CASCADE,
+    event_action    TEXT NOT NULL,
+    payload         TEXT NOT NULL CHECK (json_valid(payload)),
+    attempt         INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMP NOT NULL,
+    last_error      TEXT NOT NULL DEFAULT '',
+    dead            INTEGER NOT NULL DEFAULT 0 CHECK (dead IN (0, 1)),
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    delivered_at    TIMESTAMP
+);
+
+INSERT INTO webhook_outbox_new (
+    id, endpoint_id, event_action, payload, attempt, next_attempt_at,
+    last_error, dead, created_at, delivered_at
+)
+SELECT id, endpoint_id, event_action, payload, attempt, next_attempt_at,
+       last_error, dead, created_at, delivered_at
+FROM webhook_outbox;
+
+DROP TABLE webhook_outbox;
+ALTER TABLE webhook_outbox_new RENAME TO webhook_outbox;
+
+CREATE INDEX IF NOT EXISTS idx_webhook_outbox_ready
+    ON webhook_outbox (next_attempt_at)
+    WHERE dead = 0 AND delivered_at IS NULL;
 
 COMMIT;
 
