@@ -473,10 +473,10 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 				LastSeq: 9, ObservedAt: later,
 			},
 		}
-		if err := store.UpsertClientUsageBulk(ctx, batch); err != nil {
+		if err := store.UpsertClientUsageBulk(ctx, batch); err != nil { //nolint:staticcheck // reason: exercising the deprecated-but-not-yet-removed contract; this test IS the reason it's still alive
 			t.Fatalf("UpsertClientUsageBulk: %v", err)
 		}
-		if err := store.UpsertClientUsageBulk(ctx, nil); err != nil {
+		if err := store.UpsertClientUsageBulk(ctx, nil); err != nil { //nolint:staticcheck // reason: see above
 			t.Fatalf("UpsertClientUsageBulk(nil): %v", err)
 		}
 		if !persistent {

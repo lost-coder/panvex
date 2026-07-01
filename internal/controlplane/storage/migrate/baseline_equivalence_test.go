@@ -56,7 +56,9 @@ func TestBaselineEquivalence_SQLite(t *testing.T) {
 		t.Fatalf("dump raw schema: %v", err)
 	}
 	if rawSchema != fastSchema {
-		t.Errorf("schema drift between MigrateContext and raw baseline apply:\n"+
+		t.Errorf("schema drift between MigrateContext and raw baseline apply "+
+			"(baseline_v1.sql is stale — regenerate it with: "+
+			"go test -run TestRegenerateSQLiteBaseline -regen-baseline ./internal/controlplane/storage/migrate/...):\n"+
 			" fast = %q\n raw  = %q", truncate(fastSchema, 400), truncate(rawSchema, 400))
 	}
 
