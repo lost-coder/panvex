@@ -384,3 +384,114 @@ describe("configApi.groupConfigApplyStatus", () => {
     expect(url).toContain("job=job-2");
   });
 });
+
+// ---------------------------------------------------------------------------
+// GET /api/fleet-groups/{id}/config/apply/batches/{batchId}
+// ---------------------------------------------------------------------------
+
+describe("configApi.getGroupConfigApplyBatch", () => {
+  const originalFetch = globalThis.fetch;
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+    __seedCSRFTokenForTesting("test-csrf-token");
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("GETs the persistent-batch aggregate and parses the response, including skipped/halted", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          batch_id: "batch-1",
+          mode: "rolling",
+          status: "halted",
+          done: true,
+          total: 3,
+          applied: 1,
+          failed: 1,
+          pending: 0,
+          skipped: 1,
+          agents: [
+            { agent_id: "a-1", job_id: "job-1", status: "succeeded", message: "" },
+            { agent_id: "a-2", job_id: "job-2", status: "failed", message: "disk full" },
+            { agent_id: "a-3", job_id: "job-3", status: "skipped", message: "" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const result = await configApi.getGroupConfigApplyBatch("fg-1", "batch-1");
+
+    expect(result.batch_id).toBe("batch-1");
+    expect(result.status).toBe("halted");
+    expect(result.skipped).toBe(1);
+    expect(result.agents[1]?.message).toBe("disk full");
+    expect(result.agents[2]?.status).toBe("skipped");
+
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(call[0]).toBe("/api/fleet-groups/fg-1/config/apply/batches/batch-1");
+  });
+
+  it("throws ApiSchemaError on an unrecognised batch status", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          batch_id: "batch-1",
+          mode: "all_at_once",
+          status: "bogus",
+          agents: [],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await expect(
+      configApi.getGroupConfigApplyBatch("fg-1", "batch-1"),
+    ).rejects.toBeInstanceOf(ApiSchemaError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/fleet-groups/{id}/config/apply/batches?active=1
+// ---------------------------------------------------------------------------
+
+describe("configApi.activeGroupConfigApplyBatch", () => {
+  const originalFetch = globalThis.fetch;
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+    __seedCSRFTokenForTesting("test-csrf-token");
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("GETs the active-batch lookup and parses the running batch id", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response(JSON.stringify({ batch_id: "batch-active-1" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await configApi.activeGroupConfigApplyBatch("fg-1");
+
+    expect(result?.batch_id).toBe("batch-active-1");
+
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(call[0]).toBe("/api/fleet-groups/fg-1/config/apply/batches?active=1");
+  });
+
+  it("resolves undefined on 204 No Content (no batch in flight)", async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response(null, { status: 204 }),
+    );
+
+    const result = await configApi.activeGroupConfigApplyBatch("fg-2");
+
+    expect(result).toBeUndefined();
+  });
+});

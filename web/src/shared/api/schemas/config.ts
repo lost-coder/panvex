@@ -57,11 +57,14 @@ export const groupApplyAcceptedSchema = z.object({
   jobs: z.array(groupApplyJobHandleSchema).default([]),
 });
 
-// The per-agent status returned by GET /fleet-groups/{id}/config/apply/status.
+// The per-agent status returned by GET /fleet-groups/{id}/config/apply/status
+// and by the persistent-batch endpoints below. "skipped" was added alongside
+// Phase A's persistent batches — a target the batch never got to (e.g. a
+// halted rolling rollout) is reported as skipped rather than pending forever.
 export const groupApplyAgentStatusSchema = z.object({
   agent_id: z.string(),
   job_id: z.string().default(""),
-  status: z.enum(["pending", "running", "succeeded", "failed"]),
+  status: z.enum(["pending", "running", "succeeded", "failed", "skipped"]),
   message: z.string().default(""),
 });
 
@@ -72,6 +75,36 @@ export const groupApplyStatusSchema = z.object({
   failed: z.number().default(0),
   pending: z.number().default(0),
   agents: z.array(groupApplyAgentStatusSchema).default([]),
+});
+
+// groupApplyBatchStatusSchema mirrors the Go groupApplyBatchStatusResponse
+// (internal/controlplane/server/http_config_apply.go) returned by
+// GET /fleet-groups/{id}/config/apply/batches/{batchId}. Unlike
+// groupApplyStatusSchema (built from the job/agent ids the client happened to
+// receive from the 202 response), this is derived entirely from the
+// persisted batch + target rows, so a fresh page load can reconstruct the
+// rollout view without remembering anything in React state. "halted" is a
+// batch-only status (a rolling rollout stopped after too many failures);
+// there is no per-agent "halted" — those targets are reported "skipped".
+export const groupApplyBatchStatusSchema = z.object({
+  batch_id: z.string(),
+  mode: z.string(),
+  status: z.enum(["running", "succeeded", "failed", "halted"]),
+  done: z.boolean().default(false),
+  total: z.number().default(0),
+  applied: z.number().default(0),
+  failed: z.number().default(0),
+  pending: z.number().default(0),
+  skipped: z.number().default(0),
+  agents: z.array(groupApplyAgentStatusSchema).default([]),
+});
+
+// groupApplyActiveBatchSchema mirrors groupApplyActiveBatchResponse, the 200
+// body for GET /fleet-groups/{id}/config/apply/batches?active=1. The backend
+// answers 204 No Content (no body, so `api()` resolves to undefined before
+// this schema is even consulted) when the group has no batch in flight.
+export const groupApplyActiveBatchSchema = z.object({
+  batch_id: z.string(),
 });
 
 // Request body schema for PUT endpoints.
@@ -88,3 +121,5 @@ export type GroupApplyAccepted = z.infer<typeof groupApplyAcceptedSchema>;
 export type GroupApplyJobHandle = z.infer<typeof groupApplyJobHandleSchema>;
 export type GroupApplyStatus = z.infer<typeof groupApplyStatusSchema>;
 export type GroupApplyAgentStatus = z.infer<typeof groupApplyAgentStatusSchema>;
+export type GroupApplyBatchStatus = z.infer<typeof groupApplyBatchStatusSchema>;
+export type GroupApplyActiveBatch = z.infer<typeof groupApplyActiveBatchSchema>;
