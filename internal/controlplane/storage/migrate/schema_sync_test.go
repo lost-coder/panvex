@@ -447,8 +447,18 @@ func normalizeCheckExpr(expr string) string {
 // so these checks are engine-inherent and excluded from parity.
 var sqliteBooleanCheckRE = regexp.MustCompile(`^[a-z0-9_]+ in 0 1$`)
 
+// sqliteJSONValidCheckRE matches SQLite's json_valid(...) CHECK guards
+// added by 0052_json_valid_checks.sql (M3). SQLite has no JSONB type, so
+// these CHECKs are the compensating control for what PostgreSQL's native
+// JSONB column type already enforces at write time — there is no PG-side
+// CHECK constraint to match because the type system does the job, so
+// these are engine-inherent and excluded from parity. The pattern also
+// matches the permissive `col = '' or json_valid(col)` form used for
+// jobs.payload_json, where '' is a legitimate empty-payload sentinel.
+var sqliteJSONValidCheckRE = regexp.MustCompile(`json_valid`)
+
 func isEngineInherentCheck(normalized string) bool {
-	return sqliteBooleanCheckRE.MatchString(normalized)
+	return sqliteBooleanCheckRE.MatchString(normalized) || sqliteJSONValidCheckRE.MatchString(normalized)
 }
 
 // normalizeFK renders one FK as "column->ref_table [RULE]". Column
