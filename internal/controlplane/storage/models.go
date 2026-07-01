@@ -392,6 +392,12 @@ type RetentionSettingsRecord struct {
 	// forensics before the rollup loop prunes them via
 	// PruneEnrollmentTokens (C4).
 	EnrollmentTokenSeconds int `json:"enrollment_token_seconds"`
+	// ConfigApplyBatchSeconds bounds how long terminal group config-apply
+	// batches (succeeded/failed/halted) and their targets live before the
+	// rollup loop deletes them via PruneConfigApplyBatches (Phase A / A5).
+	// Zero disables the prune, matching JobsSeconds's zero-disables
+	// convention, so existing dev fixtures keep their full history.
+	ConfigApplyBatchSeconds int `json:"config_apply_batch_seconds"`
 }
 
 // CertificateAuthorityRecord stores the persisted control-plane root CA material.

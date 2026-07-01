@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -31,7 +32,7 @@ func TestRollupWorkerPrunesAuditAndMetrics(t *testing.T) {
 	t.Cleanup(func() { _ = sqliteStore.Close() })
 
 	server := mustNew(t, Options{
-		LoginTimingFloor: -1,
+		LoginTimingFloor:   -1,
 		Now:                func() time.Time { return now },
 		Store:              sqliteStore,
 		MetricsScrapeToken: "devtoken",
@@ -112,7 +113,7 @@ func TestRollupWorkerPrunesAuditAndMetrics(t *testing.T) {
 	}
 
 	// Assert the Prometheus counter reflects the deletions.
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
 	req.Header.Set("Authorization", "Bearer devtoken")
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
@@ -145,8 +146,8 @@ func TestRollupWorkerSkipsDisabledRetention(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: sqliteStore,
+		Now:              func() time.Time { return now },
+		Store:            sqliteStore,
 	})
 	t.Cleanup(server.Close)
 
@@ -298,6 +299,152 @@ func TestRunRetentionPruneNonZeroTTLStillPrunesAndDoesNotWarn(t *testing.T) {
 	if strings.Contains(logBuf.String(), "retention disabled for series") {
 		t.Fatalf("non-zero TTL must not log the disabled-retention warning, got:\n%s", logBuf.String())
 	}
+}
+
+// TestRollupWorkerPrunesConfigApplyBatches (Phase A / A5) verifies that
+// runTimeseriesRollup registers PruneConfigApplyBatches behind
+// ConfigApplyBatchSeconds: a terminal batch older than the cutoff is
+// deleted (targets cascade via the store, already covered by the A1
+// contract test) while a running batch survives regardless of age, and the
+// panvex_retention_pruned_rows_total counter picks up the "config_apply_batches"
+// label. The prune SQL itself is exercised by the A1 storagetest contract;
+// this test only exercises the settings field + registration wiring.
+func TestRollupWorkerPrunesConfigApplyBatches(t *testing.T) {
+	now := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = sqliteStore.Close() })
+
+	server := mustNew(t, Options{
+		LoginTimingFloor:   -1,
+		Now:                func() time.Time { return now },
+		Store:              sqliteStore,
+		MetricsScrapeToken: "devtoken",
+	})
+	t.Cleanup(server.Close)
+
+	ctx := context.Background()
+
+	settings := defaultRetentionSettings()
+	settings.ConfigApplyBatchSeconds = 3600 // 1h — short enough to catch the fixtures below
+	server.settingsMu.Lock()
+	server.retention = settings
+	server.settingsMu.Unlock()
+
+	fleetGroupID := seedFleetGroupForConfigApplyBatchTest(t, sqliteStore, ctx)
+
+	oldTerminal := storage.ConfigApplyBatchRecord{
+		ID:               "batch-old-terminal",
+		FleetGroupID:     fleetGroupID,
+		Mode:             storage.ConfigApplyBatchModeAllAtOnce,
+		WaveSize:         1,
+		ExpectedRevision: "rev-1",
+		Status:           storage.ConfigApplyBatchStatusSucceeded,
+		CreatedAt:        now.Add(-48 * time.Hour),
+		UpdatedAt:        now.Add(-48 * time.Hour),
+	}
+	if err := sqliteStore.CreateConfigApplyBatch(ctx, oldTerminal, nil); err != nil {
+		t.Fatalf("CreateConfigApplyBatch(old terminal) error = %v", err)
+	}
+
+	stillRunning := storage.ConfigApplyBatchRecord{
+		ID:               "batch-still-running",
+		FleetGroupID:     fleetGroupID,
+		Mode:             storage.ConfigApplyBatchModeRolling,
+		WaveSize:         1,
+		ExpectedRevision: "rev-2",
+		Status:           storage.ConfigApplyBatchStatusRunning,
+		CreatedAt:        now.Add(-48 * time.Hour),
+		UpdatedAt:        now.Add(-48 * time.Hour),
+	}
+	if err := sqliteStore.CreateConfigApplyBatch(ctx, stillRunning, nil); err != nil {
+		t.Fatalf("CreateConfigApplyBatch(still running) error = %v", err)
+	}
+
+	server.runTimeseriesRollup(ctx)
+
+	if _, _, err := sqliteStore.GetConfigApplyBatch(ctx, "batch-old-terminal"); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("GetConfigApplyBatch(batch-old-terminal) after rollup: want ErrNotFound, got %v", err)
+	}
+	if _, _, err := sqliteStore.GetConfigApplyBatch(ctx, "batch-still-running"); err != nil {
+		t.Fatalf("GetConfigApplyBatch(batch-still-running) after rollup: want survival, got %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer devtoken")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/metrics status = %d, want 200", rec.Code)
+	}
+	body, _ := io.ReadAll(rec.Body)
+	if want := `panvex_retention_pruned_rows_total{table="config_apply_batches"} 1`; !strings.Contains(string(body), want) {
+		t.Errorf("missing expected metric line %q in:\n%s", want, string(body))
+	}
+}
+
+// TestRollupWorkerSkipsDisabledConfigApplyBatchRetention mirrors
+// TestRollupWorkerSkipsDisabledRetention for the new ConfigApplyBatchSeconds
+// knob: ConfigApplyBatchSeconds<=0 must skip the prune entirely.
+func TestRollupWorkerSkipsDisabledConfigApplyBatchRetention(t *testing.T) {
+	now := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	sqliteStore, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = sqliteStore.Close() })
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            sqliteStore,
+	})
+	t.Cleanup(server.Close)
+
+	settings := defaultRetentionSettings()
+	settings.ConfigApplyBatchSeconds = 0
+	server.settingsMu.Lock()
+	server.retention = settings
+	server.settingsMu.Unlock()
+
+	ctx := context.Background()
+	fleetGroupID := seedFleetGroupForConfigApplyBatchTest(t, sqliteStore, ctx)
+
+	old := storage.ConfigApplyBatchRecord{
+		ID:               "batch-old-disabled",
+		FleetGroupID:     fleetGroupID,
+		Mode:             storage.ConfigApplyBatchModeAllAtOnce,
+		WaveSize:         1,
+		ExpectedRevision: "rev-1",
+		Status:           storage.ConfigApplyBatchStatusSucceeded,
+		CreatedAt:        now.Add(-1000 * time.Hour),
+		UpdatedAt:        now.Add(-1000 * time.Hour),
+	}
+	if err := sqliteStore.CreateConfigApplyBatch(ctx, old, nil); err != nil {
+		t.Fatalf("CreateConfigApplyBatch(old) error = %v", err)
+	}
+
+	server.runTimeseriesRollup(ctx)
+
+	if _, _, err := sqliteStore.GetConfigApplyBatch(ctx, "batch-old-disabled"); err != nil {
+		t.Fatalf("expected batch to survive disabled retention, got %v", err)
+	}
+}
+
+// seedFleetGroupForConfigApplyBatchTest creates the minimal fleet group row
+// config_apply_batches.fleet_group_id references, returning its ID.
+func seedFleetGroupForConfigApplyBatchTest(t *testing.T, st *sqlite.Store, ctx context.Context) string {
+	t.Helper()
+	group := storage.FleetGroupRecord{
+		ID:   "fg-rollup-test",
+		Name: "fg-rollup-test",
+	}
+	if err := st.CreateFleetGroup(ctx, group); err != nil {
+		t.Fatalf("CreateFleetGroup() error = %v", err)
+	}
+	return group.ID
 }
 
 // TestRunRetentionPruneWarnsAgainAfterReenable verifies that once a series
