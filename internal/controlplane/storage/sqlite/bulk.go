@@ -376,10 +376,15 @@ func clientUsageBulkArgs(r storage.ClientUsageRecord) []any {
 
 // UpsertClientUsageBulk upserts a batch of (client, agent) usage counters in
 // a single transaction. Same ON CONFLICT (client_id, agent_id) DO UPDATE
-// semantics as the single-row UpsertClientUsage; duplicate keys within one
-// batch collapse to last-write-wins. P-1 (sprint S-23 perf-critical) — the
-// hot-path agent-flow tick was issuing N single-row Exec calls per snapshot
-// (500 clients x 50 agents = 25k round-trips); this batches them into one.
+// semantics as the single-row UpsertClientUsage, including the last_seq
+// monotonicity guard (a conflicting row only applies when its last_seq is
+// strictly newer than the stored one — stale/out-of-order reports are a
+// no-op, not a regression). Duplicate keys within one batch collapse to
+// last-write-wins, since SQLite applies VALUES rows to the same statement
+// in order, each one conflicting against the row as updated by the previous
+// row. P-1 (sprint S-23 perf-critical) — the hot-path agent-flow tick was
+// issuing N single-row Exec calls per snapshot (500 clients x 50 agents =
+// 25k round-trips); this batches them into one.
 func (s *Store) UpsertClientUsageBulk(ctx context.Context, records []storage.ClientUsageRecord) error {
 	if len(records) == 0 {
 		return nil
@@ -399,7 +404,8 @@ func (s *Store) UpsertClientUsageBulk(ctx context.Context, records []storage.Cli
 						active_tcp_conns   = excluded.active_tcp_conns,
 						active_unique_ips  = excluded.active_unique_ips,
 						last_seq           = excluded.last_seq,
-						observed_at_unix   = excluded.observed_at_unix`,
+						observed_at_unix   = excluded.observed_at_unix
+					WHERE excluded.last_seq > client_usage.last_seq`,
 					placeholders)
 			},
 			func(start, end int) ([]any, error) {

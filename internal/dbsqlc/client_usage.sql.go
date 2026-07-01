@@ -123,6 +123,7 @@ SET traffic_used_bytes    = EXCLUDED.traffic_used_bytes,
     quota_last_reset_unix = EXCLUDED.quota_last_reset_unix,
     last_seq              = EXCLUDED.last_seq,
     observed_at           = EXCLUDED.observed_at
+WHERE EXCLUDED.last_seq > client_usage.last_seq
 `
 
 type UpsertClientUsageParams struct {
@@ -138,6 +139,12 @@ type UpsertClientUsageParams struct {
 	ObservedAt         time.Time
 }
 
+// last_seq is the agent's per-connection report cursor; the DO UPDATE only
+// fires when the incoming last_seq is strictly newer than the stored one,
+// so an out-of-order or duplicate/older report is a no-op rather than
+// regressing the stored counters (audit finding: monotonicity guard). A
+// brand-new (client, agent) pair always inserts normally since ON CONFLICT
+// only triggers against an existing row.
 func (q *Queries) UpsertClientUsage(ctx context.Context, arg UpsertClientUsageParams) error {
 	_, err := q.db.ExecContext(ctx, upsertClientUsage,
 		arg.ClientID,

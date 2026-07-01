@@ -19,6 +19,12 @@ ORDER BY client_id ASC, agent_id ASC;
 
 
 -- name: UpsertClientUsage :exec
+-- last_seq is the agent's per-connection report cursor; the DO UPDATE only
+-- fires when the incoming last_seq is strictly newer than the stored one,
+-- so an out-of-order or duplicate/older report is a no-op rather than
+-- regressing the stored counters (audit finding: monotonicity guard). A
+-- brand-new (client, agent) pair always inserts normally since ON CONFLICT
+-- only triggers against an existing row.
 INSERT INTO client_usage (client_id, agent_id, traffic_used_bytes,
                           unique_ips_used, active_tcp_conns,
                           active_unique_ips, quota_used_bytes,
@@ -32,7 +38,8 @@ SET traffic_used_bytes    = EXCLUDED.traffic_used_bytes,
     quota_used_bytes      = EXCLUDED.quota_used_bytes,
     quota_last_reset_unix = EXCLUDED.quota_last_reset_unix,
     last_seq              = EXCLUDED.last_seq,
-    observed_at           = EXCLUDED.observed_at;
+    observed_at           = EXCLUDED.observed_at
+WHERE EXCLUDED.last_seq > client_usage.last_seq;
 
 -- name: DeleteClientUsageByClient :exec
 DELETE FROM client_usage WHERE client_id = $1;
