@@ -193,6 +193,17 @@ var acceptedTypePairs = map[[2]string]bool{
 	// audit_events.details JSONB vs sqlite TEXT + CHECK). The json_valid
 	// CHECKs are engine-inherent and excluded from CHECK parity by
 	// isEngineInherentCheck, so this pair covers the type side.
+	//
+	// integration_providers.config used to be one of the columns relying
+	// on this pair (PG JSONB vs SQLite TEXT+json_valid CHECK) until
+	// bug1/H-6 (db/migrations/postgres/0052_integration_providers_config_text.sql)
+	// converted PostgreSQL's side to TEXT too — that column is now
+	// text/text on both engines and no longer needs this allowlist entry.
+	// The entry itself stays: audit_events.details, metric_snapshots.values,
+	// webhook_outbox.payload, and enrollment_events.fields_json are all
+	// still JSONB on PostgreSQL / TEXT+CHECK on SQLite (verified against
+	// db/migrations/postgres/0001_init.sql, 0039_webhook_outbox.sql,
+	// 0041_enrollment_attempts.sql — none of those were touched by 0052).
 	typePairKey("jsonb", "text"): true,
 	// SQLite has no UUID type; fleet_groups.id and dependent FK columns
 	// are UUID on PostgreSQL (postgres/0014_fleet_groups_redesign.sql)
@@ -489,8 +500,17 @@ func readPostgresSchema(ctx context.Context, db *sql.DB) (map[string]tableSchema
 		if err := checkRows.Scan(&table, &def); err != nil {
 			return nil, err
 		}
+		norm := normalizeCheckExpr(def)
+		// Symmetric with readSQLiteSchema's filtering below: an
+		// engine-inherent compensating control (e.g. the PVS-sealed JSON
+		// CHECK, bug1/H-6) has no counterpart CHECK on the other engine by
+		// design, so it must be excluded here too or it would show up as
+		// "CHECK constraints only in PostgreSQL".
+		if isEngineInherentCheck(norm) {
+			continue
+		}
 		ts := result[table]
-		ts.checks = append(ts.checks, normalizeCheckExpr(def))
+		ts.checks = append(ts.checks, norm)
 		result[table] = ts
 	}
 	if err := checkRows.Err(); err != nil {
@@ -867,10 +887,74 @@ var sqliteBooleanCheckRE = regexp.MustCompile(`^[a-z0-9_]+ in 0 1$`)
 // these are engine-inherent and excluded from parity. The pattern also
 // matches the permissive `col = '' or json_valid(col)` form used for
 // jobs.payload_json, where '' is a legitimate empty-payload sentinel.
+//
+// This pattern also happens to match integration_providers.config's
+// permissive `json_valid(config) OR config LIKE 'PVS_:%'` SQLite CHECK,
+// which is harmless — see pvsSealedJSONCheckRE below for the reason that
+// column needs its OWN, more tightly scoped pattern to also exclude
+// PostgreSQL's counterpart CHECK (which does not contain the literal
+// substring "json_valid" and so would never match here).
 var sqliteJSONValidCheckRE = regexp.MustCompile(`json_valid`)
 
+// pvsSealedJSONCheckRE matches the "plain JSON OR vault-sealed PVSn:
+// ciphertext" compensating control that exists identically in spirit on
+// BOTH engines for integration_providers.config (bug1/H-6):
+//
+//   - SQLite: `json_valid(config) OR config LIKE 'PVS_:%'`
+//     (db/migrations/sqlite/0052_json_valid_checks.sql), normalized to
+//     "json_valid config or config like pvs_:%".
+//   - PostgreSQL: `config LIKE 'PVS_:%' OR config IS JSON`
+//     (db/migrations/postgres/0052_integration_providers_config_text.sql),
+//     normalized to "config ~~ pvs_:% or config is json" — `~~` is
+//     Postgres's internal LIKE operator token, which normalizeCheckExpr
+//     does not rewrite (unlike the `= any (array[...])` enum idiom it
+//     does fold), so `~~` survives normalization verbatim.
+//
+// Neither side has a matching CHECK on the other engine's information
+// schema (PostgreSQL's validation comes from its former JSONB type,
+// SQLite's from json_valid()), so without this exclusion the schema-sync
+// comparator would flag one side's CHECK as "only in PostgreSQL"/"only in
+// SQLite" even though both enforce the identical compensating control.
+// The pattern requires BOTH the PVS-prefix fragment AND a JSON-validation
+// idiom (json_valid or "is json") in the SAME normalized expression — not
+// just "any is json check" — so an unrelated future column that happens
+// to use `IS JSON` for a different reason is not silently exempted from
+// CHECK parity.
+var pvsSealedJSONCheckRE = regexp.MustCompile(`pvs_:%`)
+
+// jsonValidationIdiomRE matches either engine's "this string is valid
+// JSON" predicate after normalizeCheckExpr: SQLite's json_valid(...) call
+// or PostgreSQL's IS JSON predicate (normalizes to "is json" — see
+// normalizeCheckExpr's `::text`/paren-stripping, which leaves the two
+// keywords space-separated).
+var jsonValidationIdiomRE = regexp.MustCompile(`json_valid|is json`)
+
+// isEngineInherentCheck reports whether a normalized CHECK expression is
+// one of the engine-inherent compensating controls that intentionally has
+// no counterpart CHECK constraint on the other engine, and so must be
+// excluded from CHECK-expression parity rather than reported as
+// only-in-one-engine drift. Applied on BOTH read paths (readPostgresSchema
+// and readSQLiteSchema) — previously only readSQLiteSchema filtered checks
+// through this function, which was a latent gap: a PG CHECK matching one
+// of these patterns would still have unconditionally been asserted
+// against SQLite. That gap only became load-bearing once PostgreSQL
+// gained its own inherent CHECK (the IS JSON pair introduced by
+// pvsSealedJSONCheckRE); the boolean-emulation pattern
+// (sqliteBooleanCheckRE) only ever appears on the SQLite side in
+// practice, so filtering it on the PG path too is a no-op today but
+// keeps the function's contract symmetric and correct if that ever
+// changes.
 func isEngineInherentCheck(normalized string) bool {
-	return sqliteBooleanCheckRE.MatchString(normalized) || sqliteJSONValidCheckRE.MatchString(normalized)
+	if sqliteBooleanCheckRE.MatchString(normalized) {
+		return true
+	}
+	if sqliteJSONValidCheckRE.MatchString(normalized) {
+		return true
+	}
+	if pvsSealedJSONCheckRE.MatchString(normalized) && jsonValidationIdiomRE.MatchString(normalized) {
+		return true
+	}
+	return false
 }
 
 // normalizeFK renders one FK as "column->ref_table [RULE]". Column

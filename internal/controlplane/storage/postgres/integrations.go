@@ -8,19 +8,29 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
+// CreateIntegrationProvider inserts a new provider row. config is opaque
+// TEXT, not JSONB: fleet.Service.encryptProviderConfig may seal the
+// caller-supplied JSON into a "PVS1:"/"PVS2:"/"PVS3:"-prefixed ciphertext
+// string before it reaches this store (see
+// db/migrations/postgres/0052_integration_providers_config_text.sql for
+// why a jsonb column/cast cannot hold that). The table's CHECK constraint
+// enforces "plain JSON OR PVS_:%-prefixed ciphertext" at write time in
+// place of JSONB's native validation.
 func (s *Store) CreateIntegrationProvider(ctx context.Context, p storage.IntegrationProviderRecord) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO integration_providers (id, kind, label, config, created_at, updated_at)
-		VALUES ($1, $2, $3, $4::jsonb, $5, $6)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`, p.ID, p.Kind, p.Label, string(p.Config), p.CreatedAt.UTC(), p.UpdatedAt.UTC())
 	return err
 }
 
+// UpdateIntegrationProvider — see CreateIntegrationProvider's doc comment
+// for why config binds as plain TEXT rather than a ::jsonb cast.
 func (s *Store) UpdateIntegrationProvider(ctx context.Context, p storage.IntegrationProviderRecord) error {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE integration_providers
 		SET label      = $1,
-		    config     = $2::jsonb,
+		    config     = $2,
 		    updated_at = $3
 		WHERE id = $4
 	`, p.Label, string(p.Config), p.UpdatedAt.UTC(), p.ID)

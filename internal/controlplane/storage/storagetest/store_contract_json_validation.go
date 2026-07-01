@@ -46,6 +46,13 @@ import (
 // sqlite/postgres WebhookStore) that take a raw *sql.DB rather than the
 // Store interface — so these two subtests fall back to a direct INSERT
 // against the pooled connection exposed by the backend's DB() method.
+//
+// integration_providers.config additionally accepts a vault-sealed
+// "PVSn:"-prefixed ciphertext string alongside plain JSON on BOTH engines
+// (see the "CreateIntegrationProvider accepts vault-sealed config" subtest
+// below) — this used to be SQLite-only coverage until
+// db/migrations/postgres/0052_integration_providers_config_text.sql fixed
+// the PostgreSQL side to match (bug1/H-6).
 func RunJSONValidationContract(t *testing.T, open OpenStore) {
 	t.Helper()
 
@@ -128,6 +135,68 @@ func RunJSONValidationContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	// CreateIntegrationProvider accepts a vault-sealed config (H-6/bug1):
+	// fleet.Service.encryptProviderConfig seals integration_providers.config
+	// under the vault's "integration_config" domain whenever a secretvault
+	// is configured (SetVault), producing a "PVS1:"/"PVS2:"/"PVS3:" prefixed
+	// ciphertext string instead of JSON. This is cross-backend parity, not
+	// SQLite-only behavior: integration_providers.config is TEXT with a
+	// permissive `json_valid(config) OR config LIKE 'PVS_:%'`-equivalent
+	// CHECK on BOTH engines (db/migrations/sqlite/0052_json_valid_checks.sql
+	// on SQLite; db/migrations/postgres/0052_integration_providers_config_text.sql
+	// on PostgreSQL, which also converts the column from JSONB to TEXT so a
+	// non-JSON ciphertext string can be stored at all). Before that
+	// PostgreSQL migration, this subtest failed on PostgreSQL with a
+	// "invalid input syntax for type json" error from the `config::jsonb`
+	// cast in postgres/integrations.go — see that migration's header for
+	// the full bug writeup. fleet_group_integrations.config is NOT covered
+	// here: only provider configs ever get vault-sealed
+	// (encryptProviderConfig/decryptProviderConfig in fleet/service.go
+	// apply exclusively to CreateProvider/UpdateProvider/GetProvider, never
+	// to fleet-group-integration configs), so that column stays strict
+	// JSON-only on both engines.
+	t.Run("CreateIntegrationProvider accepts vault-sealed config", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		err := store.CreateIntegrationProvider(ctx, storage.IntegrationProviderRecord{
+			ID:        "00000000-0000-4000-a000-000000000103",
+			Kind:      "cloudflare",
+			Label:     "test",
+			Config:    []byte("PVS3:sealed-ciphertext-not-json"),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+		if err != nil {
+			t.Fatalf("CreateIntegrationProvider() with vault-sealed config: %v", err)
+		}
+
+		got, err := store.GetIntegrationProvider(ctx, "00000000-0000-4000-a000-000000000103")
+		if err != nil {
+			t.Fatalf("GetIntegrationProvider() after vault-sealed create: %v", err)
+		}
+		if string(got.Config) != "PVS3:sealed-ciphertext-not-json" {
+			t.Fatalf("GetIntegrationProvider() config = %q, want %q", got.Config, "PVS3:sealed-ciphertext-not-json")
+		}
+
+		updated := got
+		updated.Label = "test-updated"
+		updated.Config = []byte("PVS3:rotated-ciphertext-not-json")
+		updated.UpdatedAt = time.Now()
+		if err := store.UpdateIntegrationProvider(ctx, updated); err != nil {
+			t.Fatalf("UpdateIntegrationProvider() with vault-sealed config: %v", err)
+		}
+
+		gotAfterUpdate, err := store.GetIntegrationProvider(ctx, "00000000-0000-4000-a000-000000000103")
+		if err != nil {
+			t.Fatalf("GetIntegrationProvider() after vault-sealed update: %v", err)
+		}
+		if string(gotAfterUpdate.Config) != "PVS3:rotated-ciphertext-not-json" {
+			t.Fatalf("GetIntegrationProvider() config after update = %q, want %q", gotAfterUpdate.Config, "PVS3:rotated-ciphertext-not-json")
+		}
+	})
+
 	t.Run("enrollment_events rejects malformed fields_json", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
@@ -201,20 +270,18 @@ func RunJSONValidationContract(t *testing.T, open OpenStore) {
 //     cross-backend parity assertion: payload_json is plain TEXT on both
 //     SQLite and PostgreSQL (PostgreSQL never promoted it to JSONB), so
 //     PostgreSQL accepts malformed JSON there today.
-//   - integration_providers.config accepts a vault-sealed "PVSn:"
-//     ciphertext string alongside plain JSON. fleet.Service transparently
-//     seals this column's plaintext when a secretvault is configured
-//     (SetVault), independent of storage backend. The permissive CHECK in
-//     0052_json_valid_checks.sql (`json_valid(config) OR config LIKE
-//     'PVS_:%'`) exists so a live install with vault encryption enabled
-//     can still write providers. This is SQLite-only coverage because
-//     PostgreSQL's config column is JSONB and a PVSn: string is not valid
-//     JSON — encrypting a provider config with a PostgreSQL-backed store
-//     already fails today regardless of this migration (pre-existing,
-//     out of scope for M3).
 //
-// Callers must not run this against a PostgreSQL-backed store — both
-// sub-tests assume SQLite-specific behavior.
+// integration_providers.config's vault-sealed "PVSn:" ciphertext coverage
+// used to live here (SQLite-only, because PostgreSQL's config column was
+// JSONB and rejected non-JSON ciphertext). That asymmetry was the bug
+// (bug1/H-6): PostgreSQL's config column is now TEXT with a matching
+// permissive CHECK (db/migrations/postgres/0052_integration_providers_config_text.sql),
+// so that subtest moved to RunJSONValidationContract as a real cross-backend
+// parity assertion — see the doc comment on that subtest for the full
+// writeup.
+//
+// Callers must not run this against a PostgreSQL-backed store — the
+// remaining sub-tests assume SQLite-specific behavior.
 func RunSQLiteOnlyJSONValidationContract(t *testing.T, open OpenStore) {
 	t.Helper()
 
@@ -278,24 +345,6 @@ func RunSQLiteOnlyJSONValidationContract(t *testing.T, open OpenStore) {
 		})
 		if err != nil {
 			t.Fatalf("PutJob() with empty payload_json: %v", err)
-		}
-	})
-
-	t.Run("CreateIntegrationProvider accepts vault-sealed config", func(t *testing.T) {
-		store := open(t)
-		defer store.Close()
-
-		ctx := context.Background()
-		err := store.CreateIntegrationProvider(ctx, storage.IntegrationProviderRecord{
-			ID:        "00000000-0000-4000-a000-000000000103",
-			Kind:      "cloudflare",
-			Label:     "test",
-			Config:    []byte("PVS3:sealed-ciphertext-not-json"),
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		})
-		if err != nil {
-			t.Fatalf("CreateIntegrationProvider() with vault-sealed config: %v", err)
 		}
 	})
 }
