@@ -233,13 +233,11 @@ func TestGeoIPSettingsPutRejectsLocalModePathOracle(t *testing.T) {
 	}
 }
 
-// TestRunGeoIPUpdateRejectsNonAllowlistedURL covers the SSRF fix (CodeQL
-// go/request-forgery #6). It sets s.geoipSettings directly to a URL-mode
-// config with an internal/non-allow-listed host — simulating the
-// /settings/values + restore smuggle path that bypasses validateGeoIPSettings
-// — then drives the worker's runGeoIPUpdate and asserts the fetch is refused
-// at the sink (CheckDownloadURL), never reaching the network.
-func TestRunGeoIPUpdateRejectsNonAllowlistedURL(t *testing.T) {
+// TestRunGeoIPUpdateRejectsInternalURL covers the GeoIP egress guard: a
+// URL-mode source pointing at an internal/link-local address (the cloud
+// metadata endpoint here) must be refused at dial time, never reaching the
+// network, even though the host is no longer on a GitHub allow-list.
+func TestRunGeoIPUpdateRejectsInternalURL(t *testing.T) {
 	now := time.Date(2026, time.May, 4, 10, 24, 0, 0, time.UTC)
 	t.Setenv("PANVEX_GEOIP_DIR", t.TempDir())
 	server := testServerWithSQLite(t, now)
@@ -253,10 +251,10 @@ func TestRunGeoIPUpdateRejectsNonAllowlistedURL(t *testing.T) {
 
 	state := server.runGeoIPUpdate(t.Context(), geoip.KindCity)
 	if state.Error == "" {
-		t.Fatal("runGeoIPUpdate accepted a non-allow-listed URL; SSRF guard missing")
+		t.Fatal("runGeoIPUpdate accepted an internal URL; SSRF egress guard missing")
 	}
-	if !strings.Contains(state.Error, "allow-list") {
-		t.Fatalf("state.Error = %q, want it to mention the host allow-list", state.Error)
+	if !strings.Contains(state.Error, "non-public address") {
+		t.Fatalf("state.Error = %q, want it to mention the blocked non-public address", state.Error)
 	}
 }
 

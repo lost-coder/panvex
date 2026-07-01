@@ -169,13 +169,14 @@ func validateGeoIPSettings(s geoip.Settings) error {
 }
 
 // validateGeoIPURLSources checks every enabled source's download URL for
-// URL mode (SSRF / scheme allow-list via updates.CheckDownloadURL).
+// URL mode (https-only via updates.CheckGeoIPURL; SSRF is enforced at dial
+// time by the egress guard, not by a host allow-list).
 func validateGeoIPURLSources(s geoip.Settings) error {
 	for _, src := range []geoip.Source{s.City, s.ASN} {
 		if !src.Enabled {
 			continue
 		}
-		if err := updates.CheckDownloadURL(src.URL); err != nil {
+		if err := updates.CheckGeoIPURL(src.URL); err != nil {
 			return err
 		}
 	}
@@ -304,19 +305,19 @@ func (s *Server) downloadGeoIP(ctx context.Context, k geoip.Kind, url string, pr
 	// SSRF guard at the fetch sink, not just the settings-write handler: the
 	// geoip blob can also be persisted via the generic /settings/values path
 	// (validated as JSON shape only) and reloaded unvalidated on restart, so
-	// the host allow-list MUST be enforced here too. Covers URL mode and the
+	// the egress guard MUST be enforced here too. Covers URL mode and the
 	// auto-mode resolved GitHub asset URL.
-	if err := updates.CheckDownloadURL(url); err != nil {
+	if err := updates.CheckGeoIPURL(url); err != nil {
 		state := prev
 		state.LastCheckedAt = now
 		state.Error = err.Error()
 		return state
 	}
 	dest := geoip.PathFor(dir, k)
-	// SecureDownloadClient enforces RestrictedRedirectPolicy — every redirect
-	// hop is re-checked against the allow-list, so an open redirect on an
-	// allowed host cannot steer the fetch to an internal target.
-	d := geoip.NewDownloader(updates.SecureDownloadClient())
+	// GeoIPDownloadClient enforces the dial-time egress guard on every
+	// redirect hop, so an open redirect on a public host cannot steer the
+	// fetch to an internal target.
+	d := geoip.NewDownloader(updates.GeoIPDownloadClient())
 	res, err := d.Fetch(ctx, geoip.FetchRequest{URL: url, Dest: dest, Kind: k, IfNoneMatch: prev.ETag})
 
 	// Always start from prev so we never erase a known-good
