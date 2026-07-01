@@ -66,6 +66,21 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
     let reconnectDelayMs = 1_000;
     let reconnectTimerID: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
+    // 3.11: a busy fleet can drop several frames in a row, so a burst of
+    // seq-gap detections would otherwise fire the same no-arg
+    // `invalidateQueries()` (full-cache refetch) once per gap — a refetch
+    // storm. Coalesce with a trailing-edge debounce: each gap (re)starts a
+    // short timer and only the last one in a ~500ms window actually
+    // triggers the resync. Correctness is preserved (a gap still resyncs
+    // the whole cache), just collapsed to one call per burst.
+    let resyncTimerID: ReturnType<typeof setTimeout> | null = null;
+    const scheduleFullResync = () => {
+      if (resyncTimerID !== null) { globalThis.clearTimeout(resyncTimerID); }
+      resyncTimerID = globalThis.setTimeout(() => {
+        resyncTimerID = null;
+        void queryClient.invalidateQueries();
+      }, 500);
+    };
     const applyInvalidation = async (invalidation: EventInvalidation) => {
       for (const key of invalidation.keys) {
         // Q-10: queryKey was previously typed via `key as unknown[]`. The
@@ -143,7 +158,7 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
             // event burst) — per-event invalidation can no longer be
             // trusted, so refetch everything once and resync.
             setLastEventAt(Date.now());
-            void queryClient.invalidateQueries();
+            scheduleFullResync();
             return;
           }
         }
@@ -177,6 +192,7 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
     return () => {
       stopped = true;
       if (reconnectTimerID !== null) { globalThis.clearTimeout(reconnectTimerID); }
+      if (resyncTimerID !== null) { globalThis.clearTimeout(resyncTimerID); }
       if (socket !== null && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         socket.close();
       }
