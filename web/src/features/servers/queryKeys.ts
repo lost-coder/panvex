@@ -60,4 +60,12 @@ export const configKeys = {
   /** In-flight async group-apply status, keyed by the batch id. */
   groupApplyStatus: (groupId: string, batchId: string) =>
     ["config", "group", groupId, "apply-status", batchId] as const,
+
+  /** Persistent-batch aggregate (resumable rollout view), keyed by batch id. */
+  groupApplyBatch: (groupId: string, batchId: string) =>
+    ["config", "group", groupId, "apply-batch", batchId] as const,
+
+  /** The fleet group's currently-running batch, if any (resume-on-mount). */
+  activeGroupApplyBatch: (groupId: string) =>
+    ["config", "group", groupId, "apply-batch", "active"] as const,
 };

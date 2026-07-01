@@ -448,11 +448,15 @@
       "inFlight": "Применение к {{count}} узлам…",
       "done": "Применено ко всем {{count}} узлам",
       "partial": "Применено к {{applied}} из {{total}} узлов, {{failed}} с ошибкой",
+      "halted": "Развёртывание остановлено после {{applied}} из {{total}} узлов, пропущено: {{skipped}}",
+      "skipped": "Пропущено: {{count}}",
       "progressTitle": "Ход развёртывания",
       "statusPending": "Ожидание",
       "statusRunning": "Применение",
       "statusSucceeded": "Готово",
-      "statusFailed": "Ошибка"
+      "statusFailed": "Ошибка",
+      "statusSkipped": "Пропущено",
+      "statusHalted": "Остановлено"
     },
     "nodesTitle": "Ноды",
     "noNodes": "В этой группе пока нет нод"

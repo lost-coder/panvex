@@ -4,12 +4,16 @@ import {
   applyResultSchema,
   configSectionsRequestSchema,
   groupApplyAcceptedSchema,
+  groupApplyActiveBatchSchema,
+  groupApplyBatchStatusSchema,
   groupApplyStatusSchema,
   groupConfigSchema,
   type AgentConfig,
   type ApplyResult,
   type ConfigSections,
   type GroupApplyAccepted,
+  type GroupApplyActiveBatch,
+  type GroupApplyBatchStatus,
   type GroupApplyJobHandle,
   type GroupApplyStatus,
   type GroupConfig,
@@ -20,6 +24,8 @@ export type {
   ApplyResult,
   ConfigSections,
   GroupApplyAccepted,
+  GroupApplyActiveBatch,
+  GroupApplyBatchStatus,
   GroupApplyJobHandle,
   GroupApplyStatus,
   GroupConfig,
@@ -88,4 +94,30 @@ export const configApi = {
       groupApplyStatusSchema,
     );
   },
+
+  // Persistent-batch aggregate for a single rollout, keyed by the batch id
+  // POST .../config/apply returned. Unlike groupConfigApplyStatus above,
+  // this is built entirely from the stored batch + target rows, so it can
+  // be re-fetched after a browser reload or from a different device — the
+  // whole point of Phase A persisting batches.
+  getGroupConfigApplyBatch: (id: string, batchId: string) =>
+    api<GroupApplyBatchStatus>(
+      `${apiBasePath}/fleet-groups/${id}/config/apply/batches/${batchId}`,
+      undefined,
+      groupApplyBatchStatusSchema,
+    ),
+
+  // Resolves the fleet group's currently-running config-apply batch, if
+  // any. This is the entry point a dashboard uses to discover whether
+  // there is anything to resume-poll on mount, without needing to
+  // remember a batch id across a page reload. The backend answers 204 No
+  // Content (no body) when nothing is in flight; `api()` resolves that to
+  // undefined before the schema is consulted, so the return type reflects
+  // that honestly rather than lying about a guaranteed batch_id.
+  activeGroupConfigApplyBatch: (id: string): Promise<GroupApplyActiveBatch | undefined> =>
+    api(
+      `${apiBasePath}/fleet-groups/${id}/config/apply/batches?active=1`,
+      undefined,
+      groupApplyActiveBatchSchema,
+    ),
 };

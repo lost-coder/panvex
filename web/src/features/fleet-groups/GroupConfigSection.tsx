@@ -23,15 +23,13 @@ import { SectionHeader } from "@/ui/layout/SectionHeader";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useUnsavedChangesGuard } from "@/shared/hooks";
 import { useServersList } from "@/features/servers/hooks/useServersList";
-import type {
-  GroupApplyAgentStatus,
-  GroupApplyJobHandle,
-} from "@/shared/api/schemas/config";
+import type { GroupApplyAgentStatus } from "@/shared/api/schemas/config";
 
 import {
+  useActiveGroupConfigApplyBatch,
   useApplyGroupConfig,
   useGroupConfig,
-  useGroupConfigApplyStatus,
+  useGroupConfigApplyBatch,
   usePutGroupConfig,
 } from "@/features/servers/config/configHooks";
 import { ConfigSectionEditor } from "@/features/servers/config/ConfigSectionEditor";
@@ -74,19 +72,29 @@ function toDriftStatus(status: string): DriftStatus {
 
 // Map an async apply status to a StatusPill tone (color-blind-safe glyph
 // rides along) so partial failures read at a glance: a failed agent is a
-// red pill, a succeeded one green, in-flight ones neutral/amber.
-const APPLY_TONE: Record<GroupApplyAgentStatus["status"], PillTone> = {
+// red pill, a succeeded one green, in-flight ones neutral/amber. "halted"
+// is a BATCH-level status only (a rolling rollout stopped after too many
+// failures) — there is no per-agent "halted", those targets read "skipped"
+// — so the map is keyed by the union of both vocabularies and reused for
+// the overall rollout pill as well as the per-agent ones.
+type ApplyDisplayStatus = GroupApplyAgentStatus["status"] | "halted";
+
+const APPLY_TONE: Record<ApplyDisplayStatus, PillTone> = {
   pending: "neutral",
   running: "warn",
   succeeded: "ok",
   failed: "error",
+  skipped: "neutral",
+  halted: "error",
 };
 
-const APPLY_GLYPH: Record<GroupApplyAgentStatus["status"], string> = {
+const APPLY_GLYPH: Record<ApplyDisplayStatus, string> = {
   pending: "•",
   running: "…",
   succeeded: "✓",
   failed: "✕",
+  skipped: "⊘",
+  halted: "■",
 };
 
 export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
@@ -107,26 +115,39 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
   const putMutation = usePutGroupConfig(groupId);
   const applyMutation = useApplyGroupConfig(groupId);
 
-  // The active async rollout: the 202 batch id + per-agent job handles from
-  // the last Apply. useGroupConfigApplyStatus polls until every target is
-  // terminal, so the operator watches per-agent progress instead of a
-  // blocking request that could silently time out.
-  const [batchId, setBatchId] = useState<string | null>(null);
-  const [handles, setHandles] = useState<readonly GroupApplyJobHandle[]>([]);
-  const applyStatus = useGroupConfigApplyStatus(groupId, batchId, handles);
+  // RESUMABLE rollout view (Phase A / A6): on mount, ask the backend
+  // whether this group already has a batch in flight — this is what makes
+  // the rollout survive a page reload or being opened from a different
+  // device, since a fresh mount has no React state to remember a batch id.
+  // `startedBatchId` covers the OTHER case: an Apply kicked off in THIS
+  // session, before the active-batch query has had a chance to refetch.
+  // Either way, the per-agent panel is always driven by a batch id fed to
+  // useGroupConfigApplyBatch, which polls the PERSISTENT status endpoint —
+  // never by the job handles from a single 202 response.
+  const activeBatch = useActiveGroupConfigApplyBatch(groupId);
+  const [startedBatchId, setStartedBatchId] = useState<string | null>(null);
+  const batchId = startedBatchId ?? activeBatch.data?.batch_id ?? null;
+  const applyStatus = useGroupConfigApplyBatch(groupId, batchId);
 
   // Kick off the async apply and remember the batch so polling can start.
   async function startApply() {
     const accepted = await applyMutation.mutateAsync();
-    setHandles(accepted.jobs);
-    setBatchId(accepted.batch_id);
+    setStartedBatchId(accepted.batch_id);
   }
 
   // Surface a terminal rollout via the global toast once, when done flips.
   const rollout = applyStatus.data;
   useEffect(() => {
     if (!rollout?.done) return;
-    if (rollout.failed > 0) {
+    if (rollout.status === "halted") {
+      toast.error(
+        t("config.apply.halted", {
+          applied: rollout.applied,
+          total: rollout.total,
+          skipped: rollout.skipped,
+        }),
+      );
+    } else if (rollout.failed > 0) {
       toast.error(
         t("config.apply.partial", {
           applied: rollout.applied,
@@ -273,18 +294,45 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
           <SectionHeader
             title={t("config.apply.progressTitle")}
             badge={`${rollout.applied}/${rollout.total}`}
+            trailing={
+              rollout.status === "halted" ? (
+                <StatusPill
+                  tone={APPLY_TONE.halted}
+                  glyph={APPLY_GLYPH.halted}
+                  label={t("config.apply.statusHalted")}
+                />
+              ) : undefined
+            }
           />
+          {rollout.skipped > 0 && (
+            <p className="text-micro text-fg-muted">
+              {t("config.apply.skipped", { count: rollout.skipped })}
+            </p>
+          )}
           <ul className="flex flex-col gap-2" aria-live="polite">
             {rollout.agents.map((agent) => (
               <li
                 key={agent.agent_id}
                 className="flex items-center justify-between gap-3 rounded-xs border border-divider px-3 py-2"
               >
-                <span
-                  className="font-mono text-xs text-fg truncate"
-                  title={agent.message || agent.agent_id}
-                >
-                  {nameById.get(agent.agent_id) ?? agent.agent_id}
+                <span className="flex flex-col min-w-0">
+                  <span
+                    className="font-mono text-xs text-fg truncate"
+                    title={agent.agent_id}
+                  >
+                    {nameById.get(agent.agent_id) ?? agent.agent_id}
+                  </span>
+                  {/* Persisted failure reason (survives job eviction / a
+                      reload) — shown inline rather than only on hover so a
+                      resumed view is actionable at a glance. */}
+                  {agent.message && (
+                    <span
+                      className="text-micro text-status-error truncate"
+                      title={agent.message}
+                    >
+                      {agent.message}
+                    </span>
+                  )}
                 </span>
                 <StatusPill
                   tone={APPLY_TONE[agent.status]}

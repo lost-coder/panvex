@@ -437,11 +437,15 @@
       "inFlight": "Applying to {{count}} node(s)…",
       "done": "Applied to all {{count}} node(s)",
       "partial": "Applied to {{applied}} of {{total}} node(s), {{failed}} failed",
+      "halted": "Rollout halted after {{applied}} of {{total}} node(s), {{skipped}} skipped",
+      "skipped": "{{count}} skipped",
       "progressTitle": "Rollout progress",
       "statusPending": "Pending",
       "statusRunning": "Applying",
       "statusSucceeded": "Done",
-      "statusFailed": "Failed"
+      "statusFailed": "Failed",
+      "statusSkipped": "Skipped",
+      "statusHalted": "Halted"
     },
     "nodesTitle": "Nodes",
     "noNodes": "No nodes in this group yet"

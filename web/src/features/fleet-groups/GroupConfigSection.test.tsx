@@ -44,16 +44,16 @@ const applyMutateAsync = vi.fn().mockResolvedValue({
   ],
 });
 const useGroupConfig = vi.fn();
-const useGroupConfigApplyStatus = vi.fn();
+const useGroupConfigApplyBatch = vi.fn();
+const useActiveGroupConfigApplyBatch = vi.fn();
 vi.mock("@/features/servers/config/configHooks", () => ({
   useGroupConfig: (id: string) => useGroupConfig(id),
   usePutGroupConfig: () => ({ mutate: putMutate, isPending: false }),
   useApplyGroupConfig: () => ({ mutateAsync: applyMutateAsync, isPending: false }),
-  useGroupConfigApplyStatus: (
-    groupId: string,
-    batchId: string | null,
-    handles: unknown,
-  ) => useGroupConfigApplyStatus(groupId, batchId, handles),
+  useGroupConfigApplyBatch: (groupId: string, batchId: string | null) =>
+    useGroupConfigApplyBatch(groupId, batchId),
+  useActiveGroupConfigApplyBatch: (groupId: string) =>
+    useActiveGroupConfigApplyBatch(groupId),
 }));
 
 import { GroupConfigSection } from "./GroupConfigSection";
@@ -77,8 +77,13 @@ describe("GroupConfigSection", () => {
       isLoading: false,
       isError: false,
     });
-    // Default: no rollout in flight (no batch kicked off yet).
-    useGroupConfigApplyStatus.mockReturnValue({
+    // Default: no rollout in flight (no batch kicked off yet, and no
+    // active batch to resume on mount).
+    useGroupConfigApplyBatch.mockReturnValue({
+      data: undefined,
+      isFetching: false,
+    });
+    useActiveGroupConfigApplyBatch.mockReturnValue({
       data: undefined,
       isFetching: false,
     });
@@ -235,13 +240,17 @@ describe("GroupConfigSection", () => {
 
   it("renders per-agent rollout progress while the async apply is in flight", () => {
     // Simulate the poller mid-rollout: one done, one still applying.
-    useGroupConfigApplyStatus.mockReturnValue({
+    useGroupConfigApplyBatch.mockReturnValue({
       data: {
+        batch_id: "cfgapply-1",
+        mode: "all_at_once",
+        status: "running",
         done: false,
         total: 2,
         applied: 1,
         failed: 0,
         pending: 1,
+        skipped: 0,
         agents: [
           { agent_id: "agent-1", job_id: "job-1", status: "succeeded", message: "" },
           { agent_id: "agent-2", job_id: "job-2", status: "running", message: "" },
@@ -259,14 +268,18 @@ describe("GroupConfigSection", () => {
     expect(toastApi.error).not.toHaveBeenCalled();
   });
 
-  it("surfaces a PARTIAL failure via toast + a failed pill when the rollout ends mixed", () => {
-    useGroupConfigApplyStatus.mockReturnValue({
+  it("surfaces a PARTIAL failure via toast + a failed pill when the rollout ends mixed, showing the persisted message", () => {
+    useGroupConfigApplyBatch.mockReturnValue({
       data: {
+        batch_id: "cfgapply-1",
+        mode: "all_at_once",
+        status: "failed",
         done: true,
         total: 2,
         applied: 1,
         failed: 1,
         pending: 0,
+        skipped: 0,
         agents: [
           { agent_id: "agent-1", job_id: "job-1", status: "succeeded", message: "" },
           {
@@ -282,6 +295,9 @@ describe("GroupConfigSection", () => {
     render(<GroupConfigSection groupId="fg-1" />);
     // The failing agent gets a Failed pill — the partial outcome is visible.
     expect(screen.getByText("Failed")).toBeInTheDocument();
+    // Its persisted failure message is rendered, not just tucked into a
+    // hover tooltip — this is what survives job eviction / a page reload.
+    expect(screen.getByText("health check failed")).toBeInTheDocument();
     // And the terminal partial toast fires exactly once.
     expect(toastApi.error).toHaveBeenCalledWith(
       "Applied to 1 of 2 node(s), 1 failed",
@@ -289,13 +305,17 @@ describe("GroupConfigSection", () => {
   });
 
   it("toasts a clean success when every agent succeeds", () => {
-    useGroupConfigApplyStatus.mockReturnValue({
+    useGroupConfigApplyBatch.mockReturnValue({
       data: {
+        batch_id: "cfgapply-1",
+        mode: "all_at_once",
+        status: "succeeded",
         done: true,
         total: 2,
         applied: 2,
         failed: 0,
         pending: 0,
+        skipped: 0,
         agents: [
           { agent_id: "agent-1", job_id: "job-1", status: "succeeded", message: "" },
           { agent_id: "agent-2", job_id: "job-2", status: "succeeded", message: "" },
@@ -305,5 +325,105 @@ describe("GroupConfigSection", () => {
     });
     render(<GroupConfigSection groupId="fg-1" />);
     expect(toastApi.success).toHaveBeenCalledWith("Applied to all 2 node(s)");
+  });
+
+  it("renders a skipped pill and a halted overall pill, and toasts the halted summary", () => {
+    useGroupConfigApplyBatch.mockReturnValue({
+      data: {
+        batch_id: "cfgapply-halted",
+        mode: "rolling",
+        status: "halted",
+        done: true,
+        total: 3,
+        applied: 1,
+        failed: 1,
+        pending: 0,
+        skipped: 1,
+        agents: [
+          { agent_id: "agent-1", job_id: "job-1", status: "succeeded", message: "" },
+          { agent_id: "agent-2", job_id: "job-2", status: "failed", message: "disk full" },
+          { agent_id: "agent-3", job_id: "job-3", status: "skipped", message: "" },
+        ],
+      },
+      isFetching: false,
+    });
+    render(<GroupConfigSection groupId="fg-1" />);
+    // Per-agent skipped pill + the overall batch-level halted pill.
+    expect(screen.getByText("Skipped")).toBeInTheDocument();
+    expect(screen.getByText("Halted")).toBeInTheDocument();
+    expect(screen.getByText("1 skipped")).toBeInTheDocument();
+    expect(toastApi.error).toHaveBeenCalledWith(
+      "Rollout halted after 1 of 3 node(s), 1 skipped",
+    );
+  });
+
+  // A6: the rollout view must be RESUMABLE — driven by the active-batch
+  // endpoint on mount, not by React state that a page reload wipes.
+  it("on mount, resumes a running batch discovered via the active-batch endpoint", () => {
+    useActiveGroupConfigApplyBatch.mockReturnValue({
+      data: { batch_id: "cfgapply-resume" },
+      isFetching: false,
+    });
+    useGroupConfigApplyBatch.mockReturnValue({
+      data: {
+        batch_id: "cfgapply-resume",
+        mode: "all_at_once",
+        status: "running",
+        done: false,
+        total: 2,
+        applied: 0,
+        failed: 0,
+        pending: 2,
+        skipped: 0,
+        agents: [
+          { agent_id: "agent-1", job_id: "job-1", status: "running", message: "" },
+          { agent_id: "agent-2", job_id: "job-2", status: "pending", message: "" },
+        ],
+      },
+      isFetching: true,
+    });
+    render(<GroupConfigSection groupId="fg-1" />);
+    // No Apply was ever clicked in this render, yet the rollout panel is
+    // driven by the batch the active-batch endpoint resolved.
+    expect(applyMutateAsync).not.toHaveBeenCalled();
+    expect(useGroupConfigApplyBatch).toHaveBeenCalledWith("fg-1", "cfgapply-resume");
+    expect(screen.getByText("Rollout progress")).toBeInTheDocument();
+    expect(screen.getByText("Applying")).toBeInTheDocument();
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+  });
+
+  it("a REMOUNT still shows the resumed rollout, fetched again from the active-batch endpoint (not React state)", () => {
+    // First mount: no active batch, no rollout kicked off in this session.
+    const { unmount } = render(<GroupConfigSection groupId="fg-1" />);
+    expect(screen.queryByText("Rollout progress")).not.toBeInTheDocument();
+    unmount();
+
+    // Simulate the page having been reloaded: a fresh mount, with the
+    // active-batch endpoint now reporting a batch that was running all
+    // along (started from another tab/device, or before the reload).
+    useActiveGroupConfigApplyBatch.mockReturnValue({
+      data: { batch_id: "cfgapply-resume" },
+      isFetching: false,
+    });
+    useGroupConfigApplyBatch.mockReturnValue({
+      data: {
+        batch_id: "cfgapply-resume",
+        mode: "all_at_once",
+        status: "succeeded",
+        done: true,
+        total: 1,
+        applied: 1,
+        failed: 0,
+        pending: 0,
+        skipped: 0,
+        agents: [
+          { agent_id: "agent-1", job_id: "job-1", status: "succeeded", message: "" },
+        ],
+      },
+      isFetching: false,
+    });
+    render(<GroupConfigSection groupId="fg-1" />);
+    expect(useGroupConfigApplyBatch).toHaveBeenCalledWith("fg-1", "cfgapply-resume");
+    expect(screen.getByText("Rollout progress")).toBeInTheDocument();
   });
 });

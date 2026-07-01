@@ -123,3 +123,48 @@ export function useGroupConfigApplyStatus(
       query.state.data?.done ? false : GROUP_APPLY_POLL_MS,
   });
 }
+
+// useGroupConfigApplyBatch polls the PERSISTENT batch-status endpoint
+// (GET .../config/apply/batches/{batchId}) until the batch reaches a
+// terminal status. This is what makes the rollout view resumable: the
+// aggregate is rebuilt from the stored batch + target rows rather than the
+// job handles the client happened to receive from the 202 response, so it
+// survives a page reload, a panel restart, or being opened from a different
+// device. Mirrors useGroupConfigApplyStatus's refetchInterval-until-done
+// pattern; the group config query is invalidated on each settle so the
+// per-node drift summary converges alongside the rollout.
+export function useGroupConfigApplyBatch(groupId: string, batchId: string | null) {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: configKeys.groupApplyBatch(groupId, batchId ?? ""),
+    queryFn: async () => {
+      // `enabled` guards batchId being non-null before this ever runs.
+      const status = await configApi.getGroupConfigApplyBatch(groupId, batchId as string);
+      void qc.invalidateQueries({ queryKey: configKeys.group(groupId) });
+      return status;
+    },
+    enabled: !!groupId && !!batchId,
+    refetchInterval: (query) =>
+      query.state.data?.done ? false : GROUP_APPLY_POLL_MS,
+  });
+}
+
+// useActiveGroupConfigApplyBatch resolves the fleet group's currently
+// running config-apply batch (if any) on mount/groupId change. This is the
+// RESUME entry point: instead of a page reload wiping the batch id that
+// used to live only in React state, the section asks "is anything in
+// flight for this group right now" and, if so, feeds the resolved id to
+// useGroupConfigApplyBatch to drive the same per-agent panel. React
+// Query's default staleTime (0) means this refetches on every mount,
+// which is exactly the "reload re-fetches via the active endpoint, not
+// React state" behaviour the resumable view needs.
+export function useActiveGroupConfigApplyBatch(groupId: string) {
+  return useQuery({
+    queryKey: configKeys.activeGroupApplyBatch(groupId),
+    // React Query rejects `undefined` as query data (it reads as "no data
+    // fetched yet"), so the "no batch in flight" case is normalized to
+    // `null` here rather than propagating the API's `undefined`.
+    queryFn: async () => (await configApi.activeGroupConfigApplyBatch(groupId)) ?? null,
+    enabled: !!groupId,
+  });
+}
