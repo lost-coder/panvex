@@ -26,14 +26,20 @@ type Options struct {
 	PanelRuntime   PanelRuntime
 	RequestRestart func() error
 	// TrustedProxyCIDRs lists additional CIDR ranges whose X-Forwarded-For
-	// header is trusted for rate-limit key extraction. Loopback addresses
-	// are always trusted regardless of this setting.
+	// header is trusted for client-IP resolution (login lockout, rate
+	// limiting, and the IP whitelist all share this one resolver — see
+	// resolveTrustedClientIP in trusted_proxy.go). Loopback addresses are
+	// always trusted regardless of this setting.
 	//
 	// WARNING: When the control-plane runs behind a non-loopback reverse
 	// proxy and this list is empty, every inbound request resolves to the
-	// proxy's IP for rate-limit keying. All clients then share a single
-	// bucket and will be throttled collectively. Always configure this
-	// field to include every intermediate proxy/load-balancer CIDR.
+	// proxy's IP for client identification. All clients then share a single
+	// rate-limit/lockout bucket and will be throttled/locked-out
+	// collectively. Always configure this field to include every
+	// intermediate proxy/load-balancer CIDR. Under PANVEX_ENV=production
+	// this misconfiguration is a hard boot failure (see
+	// checkTrustedProxyMisconfigured / ErrTrustedProxyMisconfiguredProd);
+	// outside production it is a startup WARNING only.
 	TrustedProxyCIDRs []*net.IPNet
 	// EncryptionKey, when set, encrypts the CA private key at rest using
 	// AES-256-GCM. The key is derived from this passphrase via SHA-256.

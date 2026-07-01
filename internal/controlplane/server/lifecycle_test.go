@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"net"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -221,6 +222,70 @@ func TestNew_ReturnsErrorOnVaultSaltFailure(t *testing.T) {
 	if !errors.Is(err, errFailingCPSecretStore) && !strings.Contains(err.Error(), "vault HKDF salt") {
 		t.Fatalf("err = %v, want wrapping errFailingCPSecretStore or vault salt context", err)
 	}
+}
+
+// TestNew_FailsInProductionWithPublicBindAndEmptyTrustedProxyCIDRs is the
+// Task 2.1 prod hard-fail regression test. The default panel runtime binds
+// HTTP to ":8080" (a public, non-loopback address). Booting with
+// PANVEX_ENV=production and no TrustedProxyCIDRs must fail outright rather
+// than merely warn: unfixed, every request (login lockout, rate limiter, IP
+// whitelist) resolves to the reverse proxy's own address and the fleet
+// shares one lockout/rate-limit bucket.
+func TestNew_FailsInProductionWithPublicBindAndEmptyTrustedProxyCIDRs(t *testing.T) {
+	t.Setenv("PANVEX_ENV", "production")
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+	srv, err := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	if srv != nil {
+		srv.Close()
+	}
+	if err == nil {
+		t.Fatalf("New must return error in production with public bind + empty TrustedProxyCIDRs, got nil")
+	}
+	if !errors.Is(err, ErrTrustedProxyMisconfiguredProd) {
+		t.Fatalf("err = %v, want ErrTrustedProxyMisconfiguredProd", err)
+	}
+}
+
+// TestNew_ProductionSucceedsWithTrustedProxyCIDRsConfigured is the positive
+// counterpart: the same public bind in production must boot cleanly once
+// the operator configures TrustedProxyCIDRs.
+func TestNew_ProductionSucceedsWithTrustedProxyCIDRsConfigured(t *testing.T) {
+	t.Setenv("PANVEX_ENV", "production")
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+	srv, err := New(Options{
+		LoginTimingFloor:  -1,
+		Now:               func() time.Time { return now },
+		TrustedProxyCIDRs: []*net.IPNet{mustCIDR(t, "10.0.0.0/8")},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v, want nil once TrustedProxyCIDRs is configured", err)
+	}
+	if srv == nil {
+		t.Fatalf("New() returned nil server with nil error")
+	}
+	srv.Close()
+}
+
+// TestNew_DevWarnsButSucceedsWithPublicBindAndEmptyTrustedProxyCIDRs pins
+// the dev-mode side of the split: outside of PANVEX_ENV=production the same
+// misconfiguration must NOT block startup (warnIfTrustedProxyMisconfigured
+// covers dev via a WARN log line instead).
+func TestNew_DevWarnsButSucceedsWithPublicBindAndEmptyTrustedProxyCIDRs(t *testing.T) {
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+	srv, err := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v, want nil outside production", err)
+	}
+	if srv == nil {
+		t.Fatalf("New() returned nil server with nil error")
+	}
+	srv.Close()
 }
 
 // TestNew_ServePathWiresPersistentConsumedTotpStore pins audit S3: on the

@@ -12,6 +12,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/config"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
@@ -661,7 +662,25 @@ func New(options Options) (*Server, error) {
 	// Plan 6: the bind address now lives in the settings store; read it via
 	// the effective accessor so the non-loopback check reflects the address
 	// the listener will actually use (env-override > db-seed > default).
-	warnIfTrustedProxyMisconfigured(server.logger, server.EffectiveHTTPListenAddress(), server.trustedProxyCIDRs)
+	effectiveHTTPAddr := server.EffectiveHTTPListenAddress()
+	// Task 2.1: in production the same misconfiguration is a hard boot
+	// failure rather than a warning — a public listener with no trusted
+	// proxies means the login-lockout/rate-limit keying (and the IP
+	// whitelist) all collapse onto the reverse proxy's own address,
+	// silently disabling brute-force protection fleet-wide. Mirrors the
+	// ErrInsecureDBDSNProd fail-loud pattern in controlplane/config.
+	if err := checkTrustedProxyMisconfigured(effectiveHTTPAddr, server.trustedProxyCIDRs, config.IsProductionEnv()); err != nil {
+		server.logger.Error(
+			"refusing to start: trusted_proxy_cidrs is empty on a public bind in production",
+			slog.String("bind_addr", effectiveHTTPAddr),
+			slog.String("alert", "trusted_proxy_misconfigured_prod"),
+			slog.String("remediation", "set PANVEX_TRUSTED_PROXY_CIDRS to your reverse-proxy/CNI subnets, or bind to loopback"),
+			slog.Any("error", err),
+		)
+		bootCancel()
+		return nil, err
+	}
+	warnIfTrustedProxyMisconfigured(server.logger, effectiveHTTPAddr, server.trustedProxyCIDRs)
 
 	server.startBackgroundWorkers()
 

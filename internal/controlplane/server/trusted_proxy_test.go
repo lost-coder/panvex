@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -141,6 +142,41 @@ func TestWarnIfTrustedProxyMisconfigured(t *testing.T) {
 			got := strings.Contains(buf.String(), "trusted_proxy_cidrs is empty")
 			if got != tt.wantWarning {
 				t.Fatalf("warning emitted = %v, want %v\nlog: %s", got, tt.wantWarning, buf.String())
+			}
+		})
+	}
+}
+
+// TestCheckTrustedProxyMisconfigured pins the prod hard-fail: a public
+// (non-loopback) HTTP bind with empty TrustedProxyCIDRs must be rejected
+// outright when PANVEX_ENV=production (mirrors the ErrInsecure*Prod
+// fail-loud idiom in controlplane/config/storage.go), while the identical
+// configuration in dev only warns (handled separately by
+// warnIfTrustedProxyMisconfigured) and must NOT fail here.
+func TestCheckTrustedProxyMisconfigured(t *testing.T) {
+	tests := []struct {
+		name    string
+		bind    string
+		cidrs   []*net.IPNet
+		prod    bool
+		wantErr bool
+	}{
+		{"prod, public bind, empty CIDR", "0.0.0.0:8080", nil, true, true},
+		{"prod, unspecified bind, empty CIDR", ":8080", nil, true, true},
+		{"prod, public bind, configured CIDR", "0.0.0.0:8080", []*net.IPNet{mustCIDR(t, "10.0.0.0/8")}, true, false},
+		{"prod, loopback bind, empty CIDR", "127.0.0.1:8080", nil, true, false},
+		{"prod, ipv6 loopback bind, empty CIDR", "[::1]:8080", nil, true, false},
+		{"dev, public bind, empty CIDR", "0.0.0.0:8080", nil, false, false},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkTrustedProxyMisconfigured(tt.bind, tt.cidrs, tt.prod)
+			if tt.wantErr && !errors.Is(err, ErrTrustedProxyMisconfiguredProd) {
+				t.Fatalf("checkTrustedProxyMisconfigured() error = %v, want ErrTrustedProxyMisconfiguredProd", err)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("checkTrustedProxyMisconfigured() error = %v, want nil", err)
 			}
 		})
 	}
