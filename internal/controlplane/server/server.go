@@ -246,6 +246,15 @@ type Server struct {
 	updateSettings UpdateSettings
 	updateState    UpdateState
 	retention      RetentionSettings
+	// retentionDisabledWarned tracks which retention series (by table name)
+	// have already had their "retention disabled, table will grow unbounded"
+	// warning logged, so a steady-state disabled setting does not spam the
+	// log on every rollup tick. Cleared implicitly on re-enable so a later
+	// re-disable (operator toggling settings) warns again. Guarded by its
+	// own mutex rather than settingsMu because it is mutated from the
+	// rollup worker goroutine, not the HTTP settings-update path.
+	retentionWarnMu         sync.Mutex
+	retentionDisabledWarned map[string]bool
 	// geoip owns the live City/ASN MaxMind readers. Constructed in
 	// New() (logger only) and reloaded from disk during boot if the
 	// configured paths exist; lookups are RWMutex-guarded inside the

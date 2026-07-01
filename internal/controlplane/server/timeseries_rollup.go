@@ -202,6 +202,41 @@ func (s *Server) rollupRecentHours(ctx context.Context, now time.Time) {
 	}
 }
 
+// warnRetentionDisabled logs a loud, one-time (per table, until re-enabled)
+// warning that retention pruning is disabled for a series. A ttlSeconds of
+// 0 (or negative) is a legitimate "keep forever" operator choice — pruning
+// intentionally no-ops rather than hard-failing — but silently doing nothing
+// risks unbounded disk growth for tables like metric_snapshots that an
+// operator might disable without realising the consequence. The warning
+// fires once per table for as long as the series stays disabled; it resets
+// (and will fire again) if the operator re-enables and later re-disables
+// retention, so a fresh disable is never missed after a restart or a
+// settings round-trip.
+func (s *Server) warnRetentionDisabled(ctx context.Context, table string) {
+	s.retentionWarnMu.Lock()
+	alreadyWarned := s.retentionDisabledWarned[table]
+	if !alreadyWarned {
+		s.retentionDisabledWarned[table] = true
+	}
+	s.retentionWarnMu.Unlock()
+	if alreadyWarned {
+		return
+	}
+	s.logger.WarnContext(ctx, "retention disabled for series; table will grow unbounded",
+		"table", table,
+		"reason", "ttl_seconds<=0",
+		"hint", "set a positive retention TTL to bound disk growth; this is a one-time warning per disable")
+}
+
+// clearRetentionDisabledWarning drops the "already warned" marker for table
+// so a future disable (after the operator re-enables retention) logs a fresh
+// warning instead of staying silent forever.
+func (s *Server) clearRetentionDisabledWarning(table string) {
+	s.retentionWarnMu.Lock()
+	delete(s.retentionDisabledWarned, table)
+	s.retentionWarnMu.Unlock()
+}
+
 // runInlineRetentionPrune mirrors runRetentionPrune for tables that have
 // table-specific log messages. It runs the prune only when ttlSeconds > 0,
 // logs a per-table error on failure, and a row count on success.
@@ -213,8 +248,10 @@ func (s *Server) runInlineRetentionPrune(
 	pruneFn func(context.Context, time.Time) (int64, error),
 ) {
 	if ttlSeconds <= 0 {
+		s.warnRetentionDisabled(ctx, table)
 		return
 	}
+	s.clearRetentionDisabledWarning(table)
 	cutoff := now.Add(-time.Duration(ttlSeconds) * time.Second)
 	pruned, err := pruneFn(ctx, cutoff)
 	if err != nil {
@@ -240,8 +277,10 @@ func (s *Server) runRetentionPrune(
 	pruneFn func(ctx context.Context, before time.Time) (int64, error),
 ) {
 	if ttlSeconds <= 0 {
+		s.warnRetentionDisabled(ctx, table)
 		return
 	}
+	s.clearRetentionDisabledWarning(table)
 	cutoff := now.Add(-time.Duration(ttlSeconds) * time.Second)
 	pruned, err := pruneFn(ctx, cutoff)
 	if err != nil {

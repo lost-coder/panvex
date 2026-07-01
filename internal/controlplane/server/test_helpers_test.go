@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"path/filepath"
 	"testing"
 	"time"
@@ -49,6 +50,28 @@ func testServerWithSQLite(t *testing.T, now time.Time) *Server {
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
 		Store:            store,
+	})
+	t.Cleanup(func() {
+		server.Close()
+		store.Close()
+	})
+	return server
+}
+
+// testServerWithSQLiteLogger is testServerWithSQLite plus a caller-supplied
+// *slog.Logger, for tests that need to assert on emitted log lines (e.g. the
+// retention-disabled warning in timeseries_rollup_test.go).
+func testServerWithSQLiteLogger(t *testing.T, now time.Time, logger *slog.Logger) *Server {
+	t.Helper()
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+		Logger:           logger,
 	})
 	t.Cleanup(func() {
 		server.Close()
