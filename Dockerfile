@@ -104,10 +104,20 @@ LABEL org.opencontainers.image.title="panvex-control-plane" \
 # between.
 RUN apk upgrade --no-cache && \
     apk add --no-cache ca-certificates && \
-    addgroup -S panvex && adduser -S panvex -G panvex
+    addgroup -S panvex && adduser -S -G panvex -H -u 10001 panvex
 
 COPY --from=control-plane-builder /out/panvex-control-plane ./panvex-control-plane
 COPY --from=sbom-builder /sbom/control-plane.cdx.json /sbom/control-plane.cdx.json
+
+# /var/lib/panvex is where the control-plane writes all local state: the
+# SQLite DB (PANVEX_STORAGE_DSN=/var/lib/panvex/panvex.db, see
+# deploy/docker-compose.sqlite.yml), the geoip DB
+# (internal/controlplane/server/geoip_settings.go), and backup/restore
+# archives (cmd/control-plane/backup.go). Create it and hand ownership to
+# the unprivileged `panvex` user before dropping root, so both a bind mount
+# and a named volume (which Docker seeds from the image's directory
+# contents/ownership on first use) are writable post-USER.
+RUN mkdir -p /var/lib/panvex && chown -R panvex:panvex /var/lib/panvex
 
 USER panvex
 
