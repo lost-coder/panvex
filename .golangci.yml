@@ -360,6 +360,12 @@ linters:
       - linters: [gosec]
         text: "G304"
         path: "cmd/control-plane/bootstrap_admin.go"
+      # self_update.go opens the operator-supplied -token-file path
+      # (3.2: replaces the argv-leaking -token flag); same rationale
+      # as bootstrap_admin.go's password-file.
+      - linters: [gosec]
+        text: "G304"
+        path: "cmd/control-plane/self_update.go"
       - linters: [gosec]
         text: "G703"
         path: "cmd/control-plane/bootstrap_admin.go"
