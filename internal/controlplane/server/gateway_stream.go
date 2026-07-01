@@ -203,9 +203,11 @@ func (s *Server) startRegularInboundLoop(ctx context.Context, cancel context.Can
 	}()
 }
 
-// startJobDispatchLoop is the only goroutine that writes back to the agent.
-// It runs an initial dispatch + discovery request and then ticks until the
-// session is woken (new job ready) or the retry interval fires.
+// startJobDispatchLoop is one of two writers to the agent stream (the other
+// is the renewal path on the regular-inbound loop); AgentSession.Send
+// serializes them via sendMu. It runs an initial dispatch + discovery
+// request and then ticks until the session is woken (new job ready) or the
+// retry interval fires.
 func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, agentSess *agents.Session, ch *agentStreamChannels) {
 	go func() {
 		defer s.recoverAgentStreamGoroutine(agentID, "job-dispatch", cancel)
