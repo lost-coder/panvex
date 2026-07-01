@@ -195,23 +195,21 @@ func TestDownloadBytes_HonoursMaxBytes(t *testing.T) {
 	}
 }
 
-func TestParseAllowedHostsFromEnv(t *testing.T) {
-	t.Setenv(EnvAllowedHosts, "  foo.example.com, bar.example.com ,baz.example.com  ")
-	got := parseAllowedHostsFromEnv()
-	want := []string{"foo.example.com", "bar.example.com", "baz.example.com"}
-	if len(got) != len(want) {
-		t.Fatalf("got %d hosts, want %d (%v vs %v)", len(got), len(want), got, want)
+func TestValidateDownloadURLWildcardAllowsAnyHost(t *testing.T) {
+	t.Setenv(EnvAllowedHosts, "*")
+	cfg := defaultConfig()
+	if err := validateDownloadURL("https://my-mirror.internal/agent.tar.gz", cfg); err != nil {
+		t.Fatalf("wildcard config rejected an https mirror host: %v", err)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("got[%d] = %q, want %q", i, got[i], want[i])
-		}
+	if err := validateDownloadURL("http://my-mirror.internal/agent.tar.gz", cfg); err == nil {
+		t.Fatal("wildcard config accepted http — https must still be enforced")
 	}
 }
 
-func TestParseAllowedHostsFromEnv_EmptyReturnsNil(t *testing.T) {
+func TestValidateDownloadURLDefaultRejectsOffList(t *testing.T) {
 	t.Setenv(EnvAllowedHosts, "")
-	if got := parseAllowedHostsFromEnv(); got != nil {
-		t.Fatalf("want nil, got %v", got)
+	cfg := defaultConfig()
+	if err := validateDownloadURL("https://evil.example.com/agent.tar.gz", cfg); err == nil {
+		t.Fatal("default config accepted an off-list host")
 	}
 }
