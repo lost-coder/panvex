@@ -231,7 +231,7 @@ function renderResetControl({ t, onReset, state, onDismiss }: ResetControlArgs):
           type="button"
           onClick={onDismiss}
           className="ml-1 px-1 text-fg-muted hover:text-fg"
-          aria-label="dismiss"
+          aria-label={t("detail.quota.dismissResetFailure")}
         >
           ×
         </button>

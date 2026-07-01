@@ -197,6 +197,7 @@
       "resetUnsupported": "Сброс недоступен на этой ноде (Telemt < 3.4.6)",
       "resetReadOnly": "Telemt в режиме read-only на этой ноде",
       "resetFailed": "Сброс не удался: {{error}}",
+      "dismissResetFailure": "Скрыть",
       "driftWarning": "Сброс не закрепился в Telemt",
       "panelLastReset": "Сброс с панели: {{when}}",
       "history": {

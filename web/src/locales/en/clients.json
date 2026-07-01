@@ -195,6 +195,7 @@
       "resetUnsupported": "Reset unavailable on this node (Telemt < 3.4.6)",
       "resetReadOnly": "Telemt is in read-only mode on this node",
       "resetFailed": "Reset failed: {{error}}",
+      "dismissResetFailure": "Dismiss",
       "driftWarning": "Reset did not stick on Telemt",
       "panelLastReset": "Panel reset: {{when}}",
       "history": {
