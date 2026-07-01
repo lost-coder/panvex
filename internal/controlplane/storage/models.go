@@ -589,3 +589,56 @@ const (
 	ConfigScopeGroup = "group"
 	ConfigScopeAgent = "agent"
 )
+
+// ConfigApplyBatchRecord tracks one group-wide config-apply rollout: the
+// operator triggers a config push to every agent in FleetGroupID, and the
+// batch coordinates delivery across one or more waves (see
+// ConfigApplyBatchTargetRecord.WaveIndex) depending on Mode.
+// ExpectedRevision pins the agent_config_targets revision this batch is
+// rolling out, so a concurrent edit to the group's desired config cannot
+// silently change what an in-flight batch delivers.
+type ConfigApplyBatchRecord struct {
+	ID               string
+	FleetGroupID     string
+	Mode             string
+	WaveSize         int
+	ExpectedRevision string
+	Status           string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// ConfigApplyBatchTargetRecord is one agent's delivery record within a
+// ConfigApplyBatchRecord. JobID is "" until the target's wave is enqueued
+// (SetConfigApplyBatchTargetJob populates it alongside the job-queued
+// status transition).
+type ConfigApplyBatchTargetRecord struct {
+	BatchID   string
+	AgentID   string
+	WaveIndex int
+	JobID     string
+	Status    string
+}
+
+// Config-apply batch rollout modes.
+const (
+	ConfigApplyBatchModeAllAtOnce = "all_at_once"
+	ConfigApplyBatchModeRolling   = "rolling"
+)
+
+// Config-apply batch lifecycle statuses.
+const (
+	ConfigApplyBatchStatusRunning   = "running"
+	ConfigApplyBatchStatusSucceeded = "succeeded"
+	ConfigApplyBatchStatusFailed    = "failed"
+	ConfigApplyBatchStatusHalted    = "halted"
+)
+
+// Config-apply batch per-target delivery statuses.
+const (
+	ConfigApplyTargetStatusPending   = "pending"
+	ConfigApplyTargetStatusRunning   = "running"
+	ConfigApplyTargetStatusSucceeded = "succeeded"
+	ConfigApplyTargetStatusFailed    = "failed"
+	ConfigApplyTargetStatusSkipped   = "skipped"
+)

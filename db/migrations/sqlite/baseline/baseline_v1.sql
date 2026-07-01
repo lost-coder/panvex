@@ -140,6 +140,26 @@ CREATE TABLE clients (
     deleted_at_unix INTEGER
 , subscription_token TEXT);
 
+CREATE TABLE config_apply_batch_targets (
+    batch_id    TEXT NOT NULL REFERENCES config_apply_batches (id) ON DELETE CASCADE,
+    agent_id    TEXT NOT NULL,
+    wave_index  INTEGER NOT NULL,
+    job_id      TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed', 'skipped')),
+    PRIMARY KEY (batch_id, agent_id)
+);
+
+CREATE TABLE config_apply_batches (
+    id                 TEXT PRIMARY KEY,
+    fleet_group_id     TEXT NOT NULL REFERENCES fleet_groups (id) ON DELETE CASCADE,
+    mode               TEXT NOT NULL CHECK (mode IN ('all_at_once', 'rolling')),
+    wave_size          INTEGER NOT NULL DEFAULT 1,
+    expected_revision  TEXT NOT NULL DEFAULT '',
+    status             TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed', 'halted')),
+    created_at_unix    INTEGER NOT NULL,
+    updated_at_unix    INTEGER NOT NULL
+);
+
 CREATE TABLE consumed_totp (
     user_id TEXT NOT NULL,
     code TEXT NOT NULL,
@@ -580,6 +600,12 @@ CREATE INDEX idx_client_ip_last_seen ON client_ip_history (last_seen_unix);
 CREATE INDEX idx_client_usage_agent_id
     ON client_usage (agent_id);
 
+CREATE INDEX idx_config_apply_batch_targets_batch_wave
+    ON config_apply_batch_targets (batch_id, wave_index);
+
+CREATE INDEX idx_config_apply_batches_status
+    ON config_apply_batches (status);
+
 CREATE INDEX idx_consumed_totp_used_at ON consumed_totp(used_at_unix);
 
 CREATE INDEX idx_discovered_clients_agent_id ON discovered_clients (agent_id);
@@ -693,4 +719,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (49, 1),
   (50, 1),
   (51, 1),
-  (52, 1);
+  (52, 1),
+  (53, 1);
