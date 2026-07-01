@@ -31,15 +31,18 @@ func ValidateGitHubRepo(s string) error {
 }
 
 // allowedDownloadHosts lists the hostnames we trust to serve release artifacts.
-// GitHub may 302 from github.com to objects.githubusercontent.com or
-// codeload.github.com, so all three must be allowed. Any redirect whose final
+// GitHub may 302 from github.com to objects.githubusercontent.com,
+// release-assets.githubusercontent.com (current release-asset CDN), or
+// codeload.github.com, so all must be allowed. Any redirect whose final
 // host is not in this set is refused to avoid exfiltration to attacker-controlled
-// domains via a compromised/malicious repo setting.
+// domains via a compromised/malicious repo setting. Keep in sync with the agent
+// updater allowlist in internal/agent/updater/download.go.
 var allowedDownloadHosts = map[string]struct{}{
-	"github.com":                    {},
-	"api.github.com":                {},
-	"objects.githubusercontent.com": {},
-	"codeload.github.com":           {},
+	"github.com":                           {},
+	"api.github.com":                       {},
+	"objects.githubusercontent.com":        {},
+	"release-assets.githubusercontent.com": {},
+	"codeload.github.com":                  {},
 }
 
 // CheckDownloadURL rejects URLs whose scheme is not https or whose host is not
