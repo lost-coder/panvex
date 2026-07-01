@@ -215,6 +215,63 @@ func TestHandleConfigFetchJob(t *testing.T) {
 	}
 }
 
+// TestConfigApplyHotReloadUnhealthyRollsBack guards H1: a hot-reload patch
+// (RestartRequired=false) that leaves Telemt unhealthy must be rolled back
+// (config file restored) and reported as a failure, not a false success —
+// previously the hot path returned success immediately with no post-apply
+// health check at all.
+func TestConfigApplyHotReloadUnhealthyRollsBack(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: false},
+		// preflight healthy, then unhealthy after the hot patch, then healthy
+		// again once the rollback restores the backup.
+		healthSeq: []bool{true, false, false, true},
+	}
+	rest := &fakeRestarter{}
+	res := runConfigApply(context.Background(), configApplyDeps{
+		telemt: tc, restarter: rest, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond,
+	}, configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
+
+	if res.success {
+		t.Fatalf("expected failure on unhealthy hot reload, got success: %q", res.message)
+	}
+	if rest.restarts != 0 {
+		t.Fatalf("hot rollback must not restart Telemt, got %d restarts", rest.restarts)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != "tls_domain=\"orig\"\n" {
+		t.Fatalf("expected backup restore (rollback) on unhealthy hot reload, got %q", got)
+	}
+	if _, err := os.Stat(path + ".panvex.bak"); !os.IsNotExist(err) {
+		t.Fatal("expected .panvex.bak cleaned up")
+	}
+}
+
+// TestConfigApplyHotReloadHealthy guards the symmetric happy path: a
+// hot-reload patch that leaves Telemt healthy must succeed, must not
+// restart, and must clean up the backup file.
+func TestConfigApplyHotReloadHealthy(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: false},
+		healthSeq:   []bool{true, true},
+	}
+	rest := &fakeRestarter{}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+		configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
+
+	if !res.success {
+		t.Fatalf("expected success, got %q", res.message)
+	}
+	if rest.restarts != 0 {
+		t.Fatalf("hot change must not restart, got %d", rest.restarts)
+	}
+	if _, err := os.Stat(path + ".panvex.bak"); !os.IsNotExist(err) {
+		t.Fatal("expected .panvex.bak cleaned up on hot success path")
+	}
+}
+
 // TestConfigApplyRollbackSurvivesExpiredJobContext guards A5: when the job
 // ctx dies mid-health-poll, the rollback (restore + restart) must still run
 // to completion on a detached context — otherwise the config file is
