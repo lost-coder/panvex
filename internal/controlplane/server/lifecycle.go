@@ -32,6 +32,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
+	"github.com/lost-coder/panvex/internal/updatehosts"
 )
 
 // R-Q-01/07: lifecycle (constructor + shutdown + seed) extracted
@@ -98,11 +99,11 @@ func initSecrets(bootCtx context.Context, options Options) (func() time.Time, *c
 // — no I/O, no error paths.
 func newServerFromOptions(options Options, now func() time.Time, csrfManager *csrf.Manager, vault *secretvault.Vault) *Server {
 	return &Server{
-		auth:     auth.NewService(),
-		store:    options.Store,
-		uiFiles:  options.UIFiles,
-		jobs:     jobs.NewService(),
-		presence: presence.NewTracker(30*time.Second, 90*time.Second),
+		auth:          auth.NewService(),
+		store:         options.Store,
+		uiFiles:       options.UIFiles,
+		jobs:          jobs.NewService(),
+		presence:      presence.NewTracker(30*time.Second, 90*time.Second),
 		events:        eventbus.NewHub(),
 		agentsUpdated: newAgentsUpdatedCoalescer(),
 		// Runtime Events Phase 3: 500-event ring buffer per agent for
@@ -708,6 +709,11 @@ func New(options Options) (*Server, error) {
 			server.batchWriter.flushInterval = server.settings.StorageBatchFlushInterval()
 		}
 		server.batchWriter.Start(server.serverCtx)
+	}
+
+	if updatehosts.PolicyFromEnv().Disabled() {
+		server.logger.WarnContext(bootCtx,
+			"update host allow-list DISABLED via PANVEX_UPDATE_ALLOWED_HOSTS=* — self-update accepts any https host (GeoIP SSRF guard is unaffected)")
 	}
 
 	return server, nil

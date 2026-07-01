@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/updatehosts"
 )
 
 // versionResponse is the JSON shape returned by GET /api/version.
@@ -412,6 +413,7 @@ func (s *Server) fetchExpectedChecksum(ctx context.Context, checksumURL, token s
 // against its SHA-256 checksum (mandatory). Returns the path on disk and true
 // on success; the caller is responsible for removing the file.
 func (s *Server) downloadAndVerifyPanelArchive(ctx context.Context, downloadURL, expectedChecksum, token string) (string, bool) {
+	updatehosts.WarnIfNonDefault(ctx, s.logger, "panel self-update", downloadURL)
 	archivePath, err := DownloadArchive(ctx, downloadURL, token)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "panel update: download archive failed", "error", err)
@@ -629,6 +631,8 @@ func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
 		if !ok {
 			return
 		}
+
+		updatehosts.WarnIfNonDefault(r.Context(), s.logger, "agent binary proxy", rawURL)
 
 		// secureDownloadClient restricts redirects to the GitHub allow-list so
 		// a rogue release asset cannot steer us toward an attacker host.
