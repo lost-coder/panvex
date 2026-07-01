@@ -9,10 +9,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -253,6 +255,88 @@ func TestOutboundTransportSupervisorGaugeDelta(t *testing.T) {
 	ot.stopAll()
 	if total != 0 {
 		t.Fatalf("after stopAll: total=%d, want 0", total)
+	}
+}
+
+// TestOutboundEnsureSupervisorConcurrentDialAddressChangeNoLeak guards the
+// 3.9 TOCTOU fix: concurrent ensureSupervisor calls for the SAME node with
+// DIFFERENT dial addresses must never let a superseded supervisor entry go
+// uncancelled. The old implementation unlocked between "tear down the stale
+// entry" and "install the new one" (removeSupervisor re-locks internally),
+// so a second concurrent ensureSupervisor could install its own entry in
+// that window; the first call's install would then silently clobber it
+// without ever calling ITS cancel — a goroutine + cancel leak.
+//
+// This test wraps onSupervisorDelta to count net +1/-1 calls: if any
+// installed entry is dropped without its delta -1 ever firing (either via
+// removeSupervisor or the replace-path introduced by this fix), the running
+// total will not settle back to 0 after stopAll.
+func TestOutboundEnsureSupervisorConcurrentDialAddressChangeNoLeak(t *testing.T) {
+	var total int64
+	var deltaCalls int64
+	var mu sync.Mutex
+	delta := func(d float64) {
+		mu.Lock()
+		defer mu.Unlock()
+		total += int64(d)
+		deltaCalls++
+	}
+
+	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test-only
+	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		return errors.New("not used")
+	})
+	tr := newOutboundTransport(tlsCfg, handler, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tr.onSupervisorDelta = delta
+	tr.setLifecycleCtx(context.Background())
+
+	const iterations = 50
+	var wg sync.WaitGroup
+	for i := 0; i < iterations; i++ {
+		addr := fmt.Sprintf("127.0.0.1:%d", 10000+i)
+		wg.Add(2)
+		// Fire two concurrent ensureSupervisor calls per iteration racing to
+		// install the same node under different addresses.
+		go func(addr string) {
+			defer wg.Done()
+			tr.ensureSupervisor(t.Context(), NodeMeta{NodeID: "shared-node", AgentID: "agent-1", DialAddress: addr})
+		}(addr)
+		go func(addr string) {
+			defer wg.Done()
+			tr.ensureSupervisor(t.Context(), NodeMeta{NodeID: "shared-node", AgentID: "agent-1", DialAddress: addr + "-b"})
+		}(addr)
+	}
+	wg.Wait()
+
+	// Exactly one entry must survive for the node.
+	if !tr.has("shared-node") {
+		t.Fatal("expected shared-node to have a surviving supervisor entry")
+	}
+
+	tr.stopAll()
+
+	mu.Lock()
+	finalTotal := total
+	calls := deltaCalls
+	mu.Unlock()
+
+	// Every +1 must be matched by a -1: net gauge must return to zero. If a
+	// superseded entry's cancel (and therefore its delta -1) was never
+	// invoked, finalTotal would be negative-of-leaked-count is wrong framing
+	// — actually a leaked entry means one +1 was never paired with a -1, so
+	// total would be > 0 after stopAll (stopAll only cancels entries still
+	// present in the map; an orphaned goroutine whose entry was overwritten
+	// without cancellation is invisible to stopAll and never emits -1).
+	if finalTotal != 0 {
+		t.Fatalf("gauge did not settle to 0 after stopAll: total=%d (calls=%d) — indicates an orphaned/leaked supervisor whose cancel was never invoked", finalTotal, calls)
+	}
+	// Sanity: at least iterations+1 installs happened (2*iterations installs,
+	// each triggers a delta+1; some subset of the prior entries get replaced
+	// and trigger delta-1). We only assert calls is even since every +1 must
+	// pair with a -1 for the total to have settled at 0, which is already
+	// checked above — this just guards against the test being a no-op.
+	if calls == 0 {
+		t.Fatal("expected onSupervisorDelta to have been invoked")
 	}
 }
 

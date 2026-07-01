@@ -509,20 +509,27 @@ func (t *outboundTransport) ensureSupervisor(_ context.Context, meta NodeMeta) {
 		t.mu.Unlock()
 		return
 	}
-	if existing, exists := t.supervisors[meta.NodeID]; exists {
-		if existing.dialAddress == meta.DialAddress {
-			t.mu.Unlock()
-			return
-		}
-		// Dial address changed: tear down the stale supervisor, then fall
-		// through to spawn a fresh one against the new address.
+	if existing, exists := t.supervisors[meta.NodeID]; exists && existing.dialAddress == meta.DialAddress {
 		t.mu.Unlock()
-		t.removeSupervisor(meta.NodeID)
-		t.mu.Lock()
-		if t.stopped {
-			t.mu.Unlock()
-			return
-		}
+		return
+	}
+	// Tear down any stale entry (dial address changed) and install the new
+	// one atomically under this single lock hold (3.9). Previously this
+	// unlocked, called removeSupervisor (which re-locks internally), then
+	// re-locked before installing the replacement — leaving a window where
+	// a concurrent ensureSupervisor for the same node could install its own
+	// entry in between, and this call's install would then silently
+	// overwrite it without ever cancelling ITS supervisor (goroutine +
+	// cancel leak). Capturing the old cancel here and invoking it only
+	// after the new entry is installed and the lock released removes that
+	// window entirely: every entry that is ever overwritten is guaranteed
+	// to have its cancel called exactly once.
+	var oldCancel context.CancelFunc
+	var hadOld bool
+	if existing, exists := t.supervisors[meta.NodeID]; exists {
+		oldCancel = existing.cancel
+		hadOld = true
+		delete(t.supervisors, meta.NodeID)
 	}
 	//nolint:gosec // G118: supervisor cancel is stored in supervisors[meta.NodeID].cancel and invoked by stopAll/removeSupervisor.
 	ctx, cancel := context.WithCancel(t.lifecycleCtx)
@@ -537,6 +544,17 @@ func (t *outboundTransport) ensureSupervisor(_ context.Context, meta NodeMeta) {
 	backoffMaxFn := t.backoffMaxFn
 	rec := t.rec
 	t.mu.Unlock()
+
+	// Invoke the old supervisor's cancel (and its delta callback) OUTSIDE
+	// the lock, now that the new entry is already installed — no window
+	// remains where a concurrent caller could see neither entry or
+	// double-count the gauge.
+	if hadOld {
+		oldCancel()
+		if fn != nil {
+			fn(-1)
+		}
+	}
 
 	if fn != nil {
 		fn(+1)
