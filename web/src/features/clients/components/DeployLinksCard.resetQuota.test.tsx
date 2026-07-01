@@ -169,7 +169,7 @@ describe("DeployLinksCard reset-quota affordance", () => {
         onDismissResetState={onDismiss}
       />,
     );
-    await user.click(screen.getByLabelText("dismiss"));
+    await user.click(screen.getByLabelText("Dismiss"));
     expect(onDismiss).toHaveBeenCalledWith("agent-1");
   });
 
