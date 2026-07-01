@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -429,6 +430,132 @@ func TestWaitJobTargetTerminalFailed(t *testing.T) {
 	}
 	if err := srv.waitJobTargetTerminal(context.Background(), job.ID, agentID, "config.apply"); err == nil {
 		t.Fatalf("waitJobTargetTerminal after failure = nil, want error")
+	}
+}
+
+// failOnAgentStore wraps a storage.Store and returns injectedErr from
+// SetConfigApplyBatchTargetJob the first time it is called for failAgentID,
+// leaving every other call (and every other method) to pass through to the
+// wrapped store unchanged. Used to force a deterministic mid-loop failure in
+// createGroupApplyBatch's per-agent fan-out.
+type failOnAgentStore struct {
+	storage.Store
+	failAgentID string
+	injectedErr error
+}
+
+func (f *failOnAgentStore) SetConfigApplyBatchTargetJob(ctx context.Context, batchID, agentID, jobID, status string) error {
+	if agentID == f.failAgentID {
+		return f.injectedErr
+	}
+	return f.Store.SetConfigApplyBatchTargetJob(ctx, batchID, agentID, jobID, status)
+}
+
+// TestCreateGroupApplyBatchMidLoopFailureMarksBatchFailed is the regression
+// test for the review finding: if a per-agent SetConfigApplyBatchTargetJob
+// call fails partway through the fan-out loop, the batch row must NOT be
+// left stuck in "running" forever (pre-fix behavior — nothing ever
+// terminates it, so the operator/UI sees what looks like a permanently
+// in-progress rollout). Post-fix, createGroupApplyBatch marks the batch
+// ConfigApplyBatchStatusFailed before returning the error.
+func TestCreateGroupApplyBatchMidLoopFailureMarksBatchFailed(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "apply-midloop-fail-group", time.Time{})
+	const okAgent = "agent-midloop-ok"
+	const failAgent = "agent-midloop-fail"
+	srv.seedLiveAgent(Agent{ID: okAgent, FleetGroupID: groupID})
+	srv.seedLiveAgent(Agent{ID: failAgent, FleetGroupID: groupID})
+	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+
+	injectedErr := fmt.Errorf("injected mid-loop failure for %s", failAgent)
+	realStore := srv.store
+	srv.store = &failOnAgentStore{Store: realStore, failAgentID: failAgent, injectedErr: injectedErr}
+
+	// Agent order is exactly what we pass in, so okAgent is enqueued/recorded
+	// first (succeeds) and failAgent second (fails), reproducing the
+	// mid-loop scenario deterministically rather than depending on map
+	// iteration order.
+	batchID, err := srv.createGroupApplyBatch(context.Background(), "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 0, []string{okAgent, failAgent})
+	if err == nil {
+		t.Fatalf("createGroupApplyBatch() error = nil, want non-nil (injected failure for %s)", failAgent)
+	}
+	if batchID == "" {
+		t.Fatalf("createGroupApplyBatch() batchID = %q, want non-empty even on mid-loop failure", batchID)
+	}
+
+	// Restore the real store to read the batch back without the injected
+	// failure interfering.
+	srv.store = realStore
+	batch, _, getErr := srv.store.GetConfigApplyBatch(context.Background(), batchID)
+	if getErr != nil {
+		t.Fatalf("GetConfigApplyBatch(%s): %v", batchID, getErr)
+	}
+	if batch.Status != storage.ConfigApplyBatchStatusFailed {
+		t.Fatalf("batch status = %q, want %q (batch must not be left running after a mid-loop failure)", batch.Status, storage.ConfigApplyBatchStatusFailed)
+	}
+}
+
+// TestCreateGroupApplyBatchEmptyAgentListNoBatch asserts the documented
+// empty-scope contract: calling createGroupApplyBatch with no agent ids
+// returns ("", nil) — the same as a group with no in-scope agents — and
+// creates no batch row at all (there is nothing to enqueue and nothing for
+// an operator to inspect).
+func TestCreateGroupApplyBatchEmptyAgentListNoBatch(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "apply-empty-agents-group", time.Time{})
+
+	batchID, err := srv.createGroupApplyBatch(context.Background(), "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 0, nil)
+	if err != nil {
+		t.Fatalf("createGroupApplyBatch(empty agentIDs) error = %v, want nil", err)
+	}
+	if batchID != "" {
+		t.Fatalf("createGroupApplyBatch(empty agentIDs) batchID = %q, want empty", batchID)
+	}
+
+	running, listErr := srv.store.ListRunningConfigApplyBatches(context.Background())
+	if listErr != nil {
+		t.Fatalf("ListRunningConfigApplyBatches: %v", listErr)
+	}
+	for _, b := range running {
+		if b.FleetGroupID == groupID {
+			t.Fatalf("found a batch row for group %s after an empty-agent-list call, want none: %+v", groupID, b)
+		}
+	}
+}
+
+// TestApplyConfigGroupEmptyScopeNoBatchViaHTTP drives the same empty-scope
+// contract through the HTTP handler: a group with zero in-scope (live)
+// agents must still return 202 Accepted with an empty job list, and must not
+// create a batch row.
+func TestApplyConfigGroupEmptyScopeNoBatchViaHTTP(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "apply-empty-scope-http-group", time.Time{})
+	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/fleet-groups/"+groupID+"/config/apply", nil, cookies)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("empty-scope group apply status = %d, want %d (body: %s)", resp.Code, http.StatusAccepted, resp.Body.String())
+	}
+	var got groupApplyAcceptedResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode accepted response: %v", err)
+	}
+	if len(got.Jobs) != 0 {
+		t.Fatalf("jobs len = %d, want 0 for a group with no in-scope agents (body: %s)", len(got.Jobs), resp.Body.String())
+	}
+
+	running, listErr := srv.store.ListRunningConfigApplyBatches(context.Background())
+	if listErr != nil {
+		t.Fatalf("ListRunningConfigApplyBatches: %v", listErr)
+	}
+	for _, b := range running {
+		if b.FleetGroupID == groupID {
+			t.Fatalf("found a batch row for empty-scope group %s, want none: %+v", groupID, b)
+		}
 	}
 }
 
