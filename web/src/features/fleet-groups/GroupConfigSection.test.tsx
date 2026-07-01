@@ -150,6 +150,57 @@ describe("GroupConfigSection", () => {
     expect(screen.getByText("Save before applying")).toBeInTheDocument();
   });
 
+  // 3.12: a background refetch (e.g. the async-apply status poll, or the WS
+  // seq-gap full-cache invalidation) firing while the operator is mid-edit
+  // must not wipe their unsaved draft.
+  it("does NOT clobber unsaved edits when the query data is refetched (same group)", () => {
+    const { rerender } = render(<GroupConfigSection groupId="fg-1" />);
+    const input = screen.getByDisplayValue("old.example.com");
+    fireEvent.change(input, { target: { value: "dirty.example.com" } });
+    expect(screen.getByDisplayValue("dirty.example.com")).toBeInTheDocument();
+
+    // Simulate a refetch that returns a NEW object with the SAME logical
+    // target sections (identity changes on every query settle, even when
+    // the server-side value hasn't changed).
+    useGroupConfig.mockReturnValue({
+      data: makeConfig({ sections: { censorship: { tls_domain: "old.example.com" } } }),
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<GroupConfigSection groupId="fg-1" />);
+
+    expect(screen.getByDisplayValue("dirty.example.com")).toBeInTheDocument();
+  });
+
+  it("re-seeds the editor when the group id changes, even mid-edit", () => {
+    const { rerender } = render(<GroupConfigSection groupId="fg-1" />);
+    const input = screen.getByDisplayValue("old.example.com");
+    fireEvent.change(input, { target: { value: "dirty.example.com" } });
+
+    useGroupConfig.mockReturnValue({
+      data: makeConfig({ sections: { censorship: { tls_domain: "fresh.example.com" } } }),
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<GroupConfigSection groupId="fg-2" />);
+
+    expect(screen.getByDisplayValue("fresh.example.com")).toBeInTheDocument();
+  });
+
+  it("re-seeds the editor on refetch when the draft is NOT dirty", () => {
+    const { rerender } = render(<GroupConfigSection groupId="fg-1" />);
+    expect(screen.getByDisplayValue("old.example.com")).toBeInTheDocument();
+
+    useGroupConfig.mockReturnValue({
+      data: makeConfig({ sections: { censorship: { tls_domain: "server-updated.example.com" } } }),
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<GroupConfigSection groupId="fg-1" />);
+
+    expect(screen.getByDisplayValue("server-updated.example.com")).toBeInTheDocument();
+  });
+
   it("shows an empty-state message when the group has no nodes", () => {
     useGroupConfig.mockReturnValue({
       data: makeConfig({ nodes: [] }),

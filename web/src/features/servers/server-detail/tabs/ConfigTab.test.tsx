@@ -126,4 +126,56 @@ describe("ConfigTab", () => {
     expect(screen.getByRole("button", { name: "Apply to node" })).toBeDisabled();
     expect(screen.getByText("Save before applying")).toBeInTheDocument();
   });
+
+  // 3.12: a background refetch (e.g. the WS seq-gap full-cache
+  // invalidation) firing while the operator is mid-edit must not wipe
+  // their unsaved draft.
+  it("does NOT clobber unsaved edits when the query data is refetched (same server)", () => {
+    const { rerender } = render(<ConfigTab server={server} />);
+    const input = screen.getByDisplayValue("old.example.com");
+    fireEvent.change(input, { target: { value: "dirty.example.com" } });
+    expect(screen.getByDisplayValue("dirty.example.com")).toBeInTheDocument();
+
+    // Simulate a refetch that returns a NEW object with the SAME logical
+    // override (identity changes on every query settle, even when the
+    // server-side value hasn't changed).
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({ override: { censorship: { tls_domain: "old.example.com" } } }),
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ConfigTab server={server} />);
+
+    expect(screen.getByDisplayValue("dirty.example.com")).toBeInTheDocument();
+  });
+
+  it("re-seeds the editor when the server id changes, even mid-edit", () => {
+    const { rerender } = render(<ConfigTab server={server} />);
+    const input = screen.getByDisplayValue("old.example.com");
+    fireEvent.change(input, { target: { value: "dirty.example.com" } });
+
+    const otherServer = { id: "agent-99", name: "edge-2" } as ServerDetailPageProps["server"];
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({ override: { censorship: { tls_domain: "fresh.example.com" } } }),
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ConfigTab server={otherServer} />);
+
+    expect(screen.getByDisplayValue("fresh.example.com")).toBeInTheDocument();
+  });
+
+  it("re-seeds the editor on refetch when the draft is NOT dirty", () => {
+    const { rerender } = render(<ConfigTab server={server} />);
+    expect(screen.getByDisplayValue("old.example.com")).toBeInTheDocument();
+
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({ override: { censorship: { tls_domain: "server-updated.example.com" } } }),
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ConfigTab server={server} />);
+
+    expect(screen.getByDisplayValue("server-updated.example.com")).toBeInTheDocument();
+  });
 });
