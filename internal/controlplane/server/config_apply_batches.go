@@ -65,6 +65,7 @@ func (s *Server) createGroupApplyBatch(ctx context.Context, actorID, fleetGroupI
 		if err != nil {
 			slog.ErrorContext(ctx, "config-apply batch: enqueue failed",
 				"batch_id", batchID, "fleet_group_id", fleetGroupID, "agent_id", agentID, "error", err)
+			s.markConfigApplyBatchFailed(ctx, batchID, fleetGroupID)
 			return batchID, fmt.Errorf("enqueue config.apply for %s: %w", agentID, err)
 		}
 		// An empty job id means the agent's effective config was already
@@ -76,10 +77,34 @@ func (s *Server) createGroupApplyBatch(ctx context.Context, actorID, fleetGroupI
 		if err := s.store.SetConfigApplyBatchTargetJob(ctx, batchID, agentID, jobID, status); err != nil {
 			slog.ErrorContext(ctx, "config-apply batch: record target job failed",
 				"batch_id", batchID, "fleet_group_id", fleetGroupID, "agent_id", agentID, "error", err)
+			s.markConfigApplyBatchFailed(ctx, batchID, fleetGroupID)
 			return batchID, fmt.Errorf("record job for %s on batch %s: %w", agentID, batchID, err)
 		}
 	}
 	return batchID, nil
+}
+
+// markConfigApplyBatchFailed transitions a batch to
+// ConfigApplyBatchStatusFailed after a mid-loop enqueue/persist error in the
+// fan-out loop above. Without this, a batch that fails partway through stays
+// "running" forever: targets after the failure point are never touched (no
+// job id, still pending) and nothing else self-terminates the batch, so the
+// operator/UI sees what looks like an actively in-progress rollout
+// indefinitely. Already-enqueued jobs are NOT rolled back — those agents
+// legitimately received the config; this only marks the group-apply as not
+// having fully dispatched.
+//
+// Uses context.WithoutCancel(ctx) for the status update because the incoming
+// ctx may already be cancelled/expired on the error path (e.g. request
+// timeout, client disconnect during the fan-out) — the status write must
+// still land, mirroring the shutdown-drain convention documented in
+// CLAUDE.md's Context Propagation section (see lifecycle.go: Close).
+func (s *Server) markConfigApplyBatchFailed(ctx context.Context, batchID, fleetGroupID string) {
+	updateCtx := context.WithoutCancel(ctx)
+	if err := s.store.UpdateConfigApplyBatchStatus(updateCtx, batchID, storage.ConfigApplyBatchStatusFailed, s.now()); err != nil {
+		slog.ErrorContext(ctx, "config-apply batch: marking batch failed after mid-loop error also failed",
+			"batch_id", batchID, "fleet_group_id", fleetGroupID, "error", err)
+	}
 }
 
 // newConfigApplyBatchID mints a time-ordered UUIDv7 for a config_apply_batches
