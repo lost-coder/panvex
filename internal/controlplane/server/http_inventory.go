@@ -66,7 +66,7 @@ func (s *Server) handleAgents() http.HandlerFunc {
 		}
 		recoveryGrants, err := s.loadAgentRecoveryGrants(r.Context())
 		if err != nil {
-			s.logger.Error("list agent certificate recovery grants failed", "error", err)
+			s.logger.ErrorContext(r.Context(), "list agent certificate recovery grants failed", "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}

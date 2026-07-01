@@ -589,7 +589,7 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 
 	if s.clientsSvc != nil {
 		if err := s.clientsSvc.PersistDeployment(ctx, deployment); err != nil {
-			s.logger.Error("client deployment persistence failed", "client_id", payload.ClientID, "agent_id", agentID, "error", err)
+			s.logger.ErrorContext(ctx, "client deployment persistence failed", "client_id", payload.ClientID, "agent_id", agentID, "error", err)
 		}
 	}
 }
@@ -633,7 +633,7 @@ func (s *Server) applyClientResetQuotaResult(ctx context.Context, agentID string
 
 	if s.clientsSvc != nil {
 		if err := s.clientsSvc.PersistDeployment(ctx, deployment); err != nil {
-			s.logger.Error("client deployment persistence failed",
+			s.logger.ErrorContext(ctx, "client deployment persistence failed",
 				"client_id", payload.ClientID, "agent_id", agentID,
 				"action", string(jobs.ActionClientResetQuota), "error", err)
 		}

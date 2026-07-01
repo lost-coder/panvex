@@ -102,7 +102,7 @@ func (s *Server) StartSubscriptionListener(ctx context.Context) (net.Addr, func(
 	go func() {
 		if serveErr := srv.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			if s.logger != nil {
-				s.logger.Error("subscription listener exited",
+				s.logger.ErrorContext(ctx, "subscription listener exited",
 					"err", serveErr,
 					"alert", "subscription_listener_exited",
 				)
@@ -110,7 +110,7 @@ func (s *Server) StartSubscriptionListener(ctx context.Context) (net.Addr, func(
 		}
 	}()
 	if s.logger != nil {
-		s.logger.Info("subscription listener started",
+		s.logger.InfoContext(ctx, "subscription listener started",
 			"addr", listener.Addr().String(),
 		)
 	}

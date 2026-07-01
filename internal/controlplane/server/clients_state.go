@@ -43,9 +43,9 @@ func (s *Server) restoreStoredClients() error {
 	// Non-fatal: a partial failure is logged but does not abort startup — the
 	// panel must still serve, and missing tokens are repaired on next restart.
 	if n, err := s.clientsSvc.BackfillSubscriptionTokens(ctx); err != nil {
-		s.logger.Error("startup: subscription token backfill failed", "error", err, "updated_so_far", n)
+		s.logger.ErrorContext(ctx, "startup: subscription token backfill failed", "error", err, "updated_so_far", n)
 	} else if n > 0 {
-		s.logger.Info("startup: subscription token backfill complete", "clients_updated", n)
+		s.logger.InfoContext(ctx, "startup: subscription token backfill complete", "clients_updated", n)
 	}
 
 	// Discovered-client seeding: when client_usage has no entry for a
@@ -66,7 +66,7 @@ func (s *Server) restoreStoredClients() error {
 func (s *Server) seedUsageFromDiscovered(ctx context.Context, snap clients.MirrorState) {
 	dcRecs, err := s.discoveredRepo.List(ctx)
 	if err != nil {
-		s.logger.Warn("restore: list discovered clients for usage seed failed", "error", err)
+		s.logger.WarnContext(ctx, "restore: list discovered clients for usage seed failed", "error", err)
 		return
 	}
 

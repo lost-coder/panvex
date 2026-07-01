@@ -212,7 +212,7 @@ func (s *Server) persistUpdateSettings(w http.ResponseWriter, r *http.Request, u
 	}
 	data, _ := json.Marshal(updated)
 	if err := s.store.PutUpdateSettings(r.Context(), data); err != nil {
-		s.logger.Error("persist update settings failed", "error", err)
+		s.logger.ErrorContext(r.Context(), "persist update settings failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return false
 	}
@@ -374,7 +374,7 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 	// caller-supplied path.
 	defer func() { _ = os.Remove(archivePath) }() //nolint:gosec
 
-	if !s.installPanelBinaryFromArchive(archivePath) {
+	if !s.installPanelBinaryFromArchive(ctx, archivePath) {
 		return
 	}
 
@@ -383,11 +383,11 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 		"to_version":   targetVersion,
 	})
 
-	s.logger.Info("panel binary updated, requesting restart", "from", s.version, "to", targetVersion)
+	s.logger.InfoContext(ctx, "panel binary updated, requesting restart", "from", s.version, "to", targetVersion)
 
 	if s.requestRestart != nil {
 		if err := s.requestRestart(); err != nil {
-			s.logger.Error("panel update: restart request failed", "error", err)
+			s.logger.ErrorContext(ctx, "panel update: restart request failed", "error", err)
 		}
 	}
 }
@@ -397,12 +397,12 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 // binary whose integrity we cannot verify.
 func (s *Server) fetchExpectedChecksum(ctx context.Context, checksumURL, token string) (string, bool) {
 	if checksumURL == "" {
-		s.logger.Error("panel update: release is missing a .sha256 asset; cannot verify integrity")
+		s.logger.ErrorContext(ctx, "panel update: release is missing a .sha256 asset; cannot verify integrity")
 		return "", false
 	}
 	checksum, err := DownloadChecksum(ctx, checksumURL, token)
 	if err != nil {
-		s.logger.Error("panel update: download checksum failed", "error", err)
+		s.logger.ErrorContext(ctx, "panel update: download checksum failed", "error", err)
 		return "", false
 	}
 	return checksum, true
@@ -414,10 +414,10 @@ func (s *Server) fetchExpectedChecksum(ctx context.Context, checksumURL, token s
 func (s *Server) downloadAndVerifyPanelArchive(ctx context.Context, downloadURL, expectedChecksum, token string) (string, bool) {
 	archivePath, err := DownloadArchive(ctx, downloadURL, token)
 	if err != nil {
-		s.logger.Error("panel update: download archive failed", "error", err)
+		s.logger.ErrorContext(ctx, "panel update: download archive failed", "error", err)
 		return "", false
 	}
-	if !s.verifyPanelArchive(archivePath, expectedChecksum) {
+	if !s.verifyPanelArchive(ctx, archivePath, expectedChecksum) {
 		// G703 false positive: archivePath comes from DownloadArchive's
 		// internal os.MkdirTemp + filepath.Join, not from a request param.
 		_ = os.Remove(archivePath) //nolint:gosec
@@ -428,13 +428,13 @@ func (s *Server) downloadAndVerifyPanelArchive(ctx context.Context, downloadURL,
 
 // verifyPanelArchive runs mandatory SHA-256 checksum verification against an
 // already-downloaded archive.
-func (s *Server) verifyPanelArchive(archivePath, expectedChecksum string) bool {
+func (s *Server) verifyPanelArchive(ctx context.Context, archivePath, expectedChecksum string) bool {
 	if expectedChecksum == "" {
-		s.logger.Error("panel update: missing checksum; refusing to install without integrity verification")
+		s.logger.ErrorContext(ctx, "panel update: missing checksum; refusing to install without integrity verification")
 		return false
 	}
 	if err := VerifyChecksum(archivePath, expectedChecksum); err != nil {
-		s.logger.Error("panel update: checksum verification failed", "error", err)
+		s.logger.ErrorContext(ctx, "panel update: checksum verification failed", "error", err)
 		return false
 	}
 	return true
@@ -442,10 +442,10 @@ func (s *Server) verifyPanelArchive(archivePath, expectedChecksum string) bool {
 
 // installPanelBinaryFromArchive extracts the binary from the verified archive
 // and atomically replaces the running executable.
-func (s *Server) installPanelBinaryFromArchive(archivePath string) bool {
+func (s *Server) installPanelBinaryFromArchive(ctx context.Context, archivePath string) bool {
 	binaryPath, err := ExtractBinaryFromArchive(archivePath)
 	if err != nil {
-		s.logger.Error("panel update: extract binary failed", "error", err)
+		s.logger.ErrorContext(ctx, "panel update: extract binary failed", "error", err)
 		return false
 	}
 	// G703 false positive: binaryPath is produced inside
@@ -455,12 +455,12 @@ func (s *Server) installPanelBinaryFromArchive(archivePath string) bool {
 
 	currentBinary, err := os.Executable()
 	if err != nil {
-		s.logger.Error("panel update: resolve current binary path failed", "error", err)
+		s.logger.ErrorContext(ctx, "panel update: resolve current binary path failed", "error", err)
 		return false
 	}
 
 	if err := AtomicReplaceBinary(currentBinary, binaryPath); err != nil {
-		s.logger.Error("panel update: atomic replace failed", "error", err)
+		s.logger.ErrorContext(ctx, "panel update: atomic replace failed", "error", err)
 		return false
 	}
 	return true
@@ -549,13 +549,13 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 		// proxy endpoint is operator-session gated and the agent has no such
 		// session. Fall back to direct download transparently (logged).
 		if settings.AgentDownloadSource == "panel" {
-			s.logger.Warn("agent update: panel proxy download is not yet supported; using direct download",
+			s.logger.WarnContext(r.Context(), "agent update: panel proxy download is not yet supported; using direct download",
 				"agent_id", agentID)
 		}
 
 		payloadJSON, err := buildAgentDirectUpdatePayload(settings.GitHubRepo, targetVersion)
 		if err != nil {
-			s.logger.Error("agent update: build payload failed", "error", err)
+			s.logger.ErrorContext(r.Context(), "agent update: build payload failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to build update payload")
 			return
 		}
@@ -564,14 +564,14 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 		// would make the action untraceable. Fail closed.
 		session, _, err := s.requireSession(r)
 		if err != nil {
-			s.logger.Warn("agent update: session check failed in handler body", "error", err)
+			s.logger.WarnContext(r.Context(), "agent update: session check failed in handler body", "error", err)
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
 		job, err := s.jobs.Enqueue(r.Context(), agentSelfUpdateJobInput(agentID, string(payloadJSON), session.UserID), s.now())
 		if err != nil {
-			s.logger.Error("agent update: enqueue job failed", "error", err)
+			s.logger.ErrorContext(r.Context(), "agent update: enqueue job failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to create update job")
 			return
 		}

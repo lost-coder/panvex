@@ -54,7 +54,7 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 		// here means "unknown", NOT "zero clients" — do not prune, do not
 		// reconcile. The recovery-edge / periodic refresh will re-request a
 		// real snapshot once Telemt is back.
-		s.logger.Warn("skipping discovery reconcile: agent reported telemt unreachable", "agent_id", agentID)
+		s.logger.WarnContext(ctx, "skipping discovery reconcile: agent reported telemt unreachable", "agent_id", agentID)
 		return
 	}
 	if len(records) == 0 {
@@ -90,7 +90,7 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 				// operator anomaly (it masks a genuinely unmanaged user as
 				// "managed"). The name is not in managedNames (checked above),
 				// so log it as a conflict instead of silently swallowing it.
-				s.logger.Warn("discovered client shares a managed secret under a different name; skipping as managed",
+				s.logger.WarnContext(ctx, "discovered client shares a managed secret under a different name; skipping as managed",
 					"agent_id", agentID,
 					"client_name", clientName,
 					"alert", "discovered_secret_name_conflict",
@@ -109,7 +109,7 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 		disc++
 		s.upsertDiscoveredClient(ctx, agentID, record, observedAt)
 	}
-	s.logger.Info("reconciled discovered clients", "agent_id", agentID, "total", len(records), "new", disc, "managed", skippedManaged, "panel_assigned", skippedPanelID)
+	s.logger.InfoContext(ctx, "reconciled discovered clients", "agent_id", agentID, "total", len(records), "new", disc, "managed", skippedManaged, "panel_assigned", skippedPanelID)
 
 	// IN-M5: prune pending discovered records for this agent that the node no
 	// longer reports (e.g. the user was removed, or the agent's fleet group
@@ -129,7 +129,7 @@ func (s *Server) pruneStaleDiscoveredForAgent(ctx context.Context, agentID strin
 	}
 	all, err := s.discoveredRepo.List(ctx)
 	if err != nil {
-		s.logger.Warn("pruneStaleDiscoveredForAgent: list failed", "agent_id", agentID, "error", err)
+		s.logger.WarnContext(ctx, "pruneStaleDiscoveredForAgent: list failed", "agent_id", agentID, "error", err)
 		return
 	}
 	pruned := 0
@@ -141,14 +141,14 @@ func (s *Server) pruneStaleDiscoveredForAgent(ctx context.Context, agentID strin
 			continue
 		}
 		if err := s.discoveredRepo.Delete(ctx, dc.ID); err != nil {
-			s.logger.Warn("pruneStaleDiscoveredForAgent: delete failed",
+			s.logger.WarnContext(ctx, "pruneStaleDiscoveredForAgent: delete failed",
 				"agent_id", agentID, "discovered_id", string(dc.ID), "error", err)
 			continue
 		}
 		pruned++
 	}
 	if pruned > 0 {
-		s.logger.Info("pruned stale discovered clients", "agent_id", agentID, "pruned", pruned)
+		s.logger.InfoContext(ctx, "pruned stale discovered clients", "agent_id", agentID, "pruned", pruned)
 	}
 }
 
@@ -182,7 +182,7 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 		case errors.Is(existingErr, storage.ErrNotFound):
 			// no-op: fall through to insert path
 		default:
-			s.logger.Error("discovered client lookup failed", "client_name", clientName, "agent_id", agentID, "error", existingErr)
+			s.logger.ErrorContext(ctx, "discovered client lookup failed", "client_name", clientName, "agent_id", agentID, "error", existingErr)
 			return
 		}
 	}
@@ -229,7 +229,7 @@ func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, rec
 
 	if s.discoveredRepo != nil {
 		if err := s.discoveredRepo.Save(ctx, dc); err != nil {
-			s.logger.Error("discovered client persistence failed", "client_name", dc.ClientName, "agent_id", agentID, "error", err)
+			s.logger.ErrorContext(ctx, "discovered client persistence failed", "client_name", dc.ClientName, "agent_id", agentID, "error", err)
 			return
 		}
 	}
@@ -317,10 +317,10 @@ func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID st
 	// assignment and deployment to the existing client instead of creating
 	// a duplicate.
 	if existing, ok := s.findManagedClientByNameAndSecret(record.ClientName, secret); ok {
-		s.logger.Info("adopting discovered client into existing managed client", "discovered_id", id, "client_id", existing.ID, "client_name", record.ClientName, "agent_id", record.AgentID, "siblings", len(siblings))
+		s.logger.InfoContext(ctx, "adopting discovered client into existing managed client", "discovered_id", id, "client_id", existing.ID, "client_name", record.ClientName, "agent_id", record.AgentID, "siblings", len(siblings))
 		return s.mergeAdoptIntoExistingClient(ctx, existing, record, siblings, actorID, id, observedAt)
 	}
-	s.logger.Info("adopting discovered client as new managed client", "discovered_id", id, "client_name", record.ClientName, "agent_id", record.AgentID, "traffic_bytes", record.TotalOctets, "active_ips", record.ActiveUniqueIPs, "siblings", len(siblings))
+	s.logger.InfoContext(ctx, "adopting discovered client as new managed client", "discovered_id", id, "client_name", record.ClientName, "agent_id", record.AgentID, "traffic_bytes", record.TotalOctets, "active_ips", record.ActiveUniqueIPs, "siblings", len(siblings))
 
 	client, assignments, deployments, err := s.buildAdoptedClientState(record, siblings, secret, expirationRFC3339, observedAt)
 	if err != nil {
@@ -364,7 +364,7 @@ func (s *Server) collectAdoptSiblings(ctx context.Context, primary discovered.Di
 	}
 	all, err := s.discoveredRepo.List(ctx)
 	if err != nil {
-		s.logger.Warn("collectAdoptSiblings: list discovered failed", "error", err)
+		s.logger.WarnContext(ctx, "collectAdoptSiblings: list discovered failed", "error", err)
 		return nil
 	}
 	siblings := make([]discovered.DiscoveredClient, 0)
@@ -423,7 +423,7 @@ func (s *Server) bulkAdoptDiscoveredClients(ctx context.Context, ids []string, a
 		case errors.Is(err, storage.ErrNotFound):
 			results = append(results, BulkAdoptResult{ID: id, Status: "error", Message: "not found"})
 		default:
-			s.logger.Error("bulk adopt: per-id failure", "discovered_id", id, "error", err)
+			s.logger.ErrorContext(ctx, "bulk adopt: per-id failure", "discovered_id", id, "error", err)
 			results = append(results, BulkAdoptResult{ID: id, Status: "error", Message: err.Error()})
 		}
 	}
@@ -583,7 +583,7 @@ func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excl
 		discIDs[i] = discovered.DiscoveredID(id)
 	}
 	if err := s.discoveredRepo.UpdateStatusBulk(ctx, discIDs, discovered.StatusAdopted, observedAt.UTC()); err != nil {
-		s.logger.Error("bulk mark duplicate discovered clients adopted failed", "count", len(ids), "error", err)
+		s.logger.ErrorContext(ctx, "bulk mark duplicate discovered clients adopted failed", "count", len(ids), "error", err)
 	}
 }
 
@@ -719,7 +719,7 @@ func (s *Server) mergeAdoptIntoExistingClient(
 	// Mark discovered record as adopted.
 	if s.discoveredRepo != nil {
 		if err := s.discoveredRepo.UpdateStatus(ctx, discovered.DiscoveredID(discoveredID), discovered.StatusAdopted, observedAt.UTC()); err != nil {
-			s.logger.Error("failed to update discovered client status", "error", err)
+			s.logger.ErrorContext(ctx, "failed to update discovered client status", "error", err)
 		}
 	}
 	if record.Secret != "" {
@@ -752,7 +752,7 @@ func (s *Server) seedClientUsage(ctx context.Context, clientID, agentID string, 
 			LastSeq:          lastSeq,
 			ObservedAt:       observedAt,
 		}); err != nil {
-			s.logger.Warn("persist client_usage (seed)",
+			s.logger.WarnContext(ctx, "persist client_usage (seed)",
 				"client_id", clientID, "agent_id", agentID, "error", err)
 		}
 	}

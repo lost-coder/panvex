@@ -145,7 +145,7 @@ func (s *Server) handlePutPanelSettings() http.HandlerFunc {
 				"auth.password_min_length": fmt.Sprintf("%d", settings.PasswordMinLength),
 			}
 			if err := s.settings.Put(r.Context(), updates, who); err != nil {
-				s.logger.Error("put panel settings failed", "error", err)
+				s.logger.ErrorContext(r.Context(), "put panel settings failed", "error", err)
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
@@ -193,7 +193,7 @@ func (s *Server) handleRestartPanel() http.HandlerFunc {
 		}
 
 		if err := s.requestRestart(); err != nil {
-			s.logger.Error("panel restart request failed", "error", err)
+			s.logger.ErrorContext(r.Context(), "panel restart request failed", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}

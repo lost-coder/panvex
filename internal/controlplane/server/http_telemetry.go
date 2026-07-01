@@ -266,7 +266,7 @@ func (s *Server) dashboardAgentLoadSeries(
 	to := now.UTC()
 	bulk, err := s.store.ListServerLoadPointsForAgents(ctx, agentIDs, from, to)
 	if err != nil {
-		s.logger.Warn("dashboard load series bulk fetch failed", "error", err)
+		s.logger.WarnContext(ctx, "dashboard load series bulk fetch failed", "error", err)
 		// Empty slices for every agent so the FE still renders.
 		for _, id := range agentIDs {
 			out = append(out, telemetryAgentLoadSeries{AgentID: id, CPUPct: []float64{}, MemPct: []float64{}})

@@ -143,7 +143,7 @@ func (s *Server) checkDiscoveredClientScope(w http.ResponseWriter, r *http.Reque
 			writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
 			return false
 		}
-		s.logger.Error("scope-check discovered client failed", "id", id, "error", scopeErr)
+		s.logger.ErrorContext(r.Context(), "scope-check discovered client failed", "id", id, "error", scopeErr)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 		return false
 	}
@@ -215,7 +215,7 @@ func (s *Server) handleBulkAdoptDiscoveredClients() http.HandlerFunc {
 
 		filtered, skipped, err := s.filterBulkAdoptIDsInScope(r.Context(), req.IDs, scope)
 		if err != nil {
-			s.logger.Error("scope-check discovered client failed (bulk)", "error", err)
+			s.logger.ErrorContext(r.Context(), "scope-check discovered client failed (bulk)", "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -290,7 +290,7 @@ func (s *Server) handleIgnoreDiscoveredClient() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
 				return
 			}
-			s.logger.Error("scope-check discovered client failed", "id", id, "error", scopeErr)
+			s.logger.ErrorContext(r.Context(), "scope-check discovered client failed", "id", id, "error", scopeErr)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}

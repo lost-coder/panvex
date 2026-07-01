@@ -91,7 +91,7 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 
 	panel, agent, err := FetchLatestVersions(fetchCtx, repo, token)
 	if err != nil {
-		s.logger.Warn("update check failed", "error", err)
+		s.logger.WarnContext(ctx, "update check failed", "error", err)
 		s.recordUpdateCheckError(ctx, err)
 		return
 	}
@@ -124,7 +124,7 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 
 	s.persistUpdateState(ctx, state)
 
-	s.logger.Info("update check completed",
+	s.logger.InfoContext(ctx, "update check completed",
 		"panel_version", state.LatestPanelVersion,
 		"agent_version", state.LatestAgentVersion,
 	)
@@ -150,10 +150,10 @@ func (s *Server) persistUpdateState(ctx context.Context, state UpdateState) {
 	}
 	data, err := json.Marshal(state)
 	if err != nil {
-		s.logger.Error("marshal update state failed", "error", err)
+		s.logger.ErrorContext(ctx, "marshal update state failed", "error", err)
 		return
 	}
 	if putErr := s.store.PutUpdateState(ctx, data); putErr != nil {
-		s.logger.Error("persist update state failed", "error", putErr)
+		s.logger.ErrorContext(ctx, "persist update state failed", "error", putErr)
 	}
 }

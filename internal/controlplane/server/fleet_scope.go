@@ -91,7 +91,7 @@ func (a FleetScopeAccess) Filter(fleetGroupIDs []string) []string {
 func (s *Server) requireFleetScope(w http.ResponseWriter, r *http.Request, user auth.User) (FleetScopeAccess, bool) {
 	scope, err := s.resolveFleetScope(r.Context(), user)
 	if err != nil {
-		s.logger.Error("resolve fleet scope failed", "user_id", user.ID, "error", err)
+		s.logger.ErrorContext(r.Context(), "resolve fleet scope failed", "user_id", user.ID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return FleetScopeAccess{}, false
 	}

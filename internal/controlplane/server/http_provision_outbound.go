@@ -253,12 +253,12 @@ func (s *Server) provisionOutboundAgentRow(
 		FleetGroupID: fleetGroupID,
 		LastSeenAt:   time.Unix(0, 0).UTC(),
 	}); err != nil {
-		s.logger.Error("insert outbound agent failed", "error", err, "node_name", req.NodeName)
+		s.logger.ErrorContext(r.Context(), "insert outbound agent failed", "error", err, "node_name", req.NodeName)
 		writeError(w, http.StatusInternalServerError, msgStorageError)
 		return "", "", 0, false
 	}
 	if err := s.store.UpdateAgentTransportMode(r.Context(), agentID, "outbound", req.DialAddress); err != nil {
-		s.logger.Error("set outbound transport mode failed", "error", err, "agent_id", agentID)
+		s.logger.ErrorContext(r.Context(), "set outbound transport mode failed", "error", err, "agent_id", agentID)
 		s.rollbackProvisionedOutboundAgent(r.Context(), agentID)
 		writeError(w, http.StatusInternalServerError, msgStorageError)
 		return "", "", 0, false
@@ -270,7 +270,7 @@ func (s *Server) provisionOutboundAgentRow(
 	// script URL when calling BuildInstallCommand below.
 	issued, err := bootstrap.IssueToken(nowT, 5*time.Minute)
 	if err != nil {
-		s.logger.Error("issue bootstrap token failed", "agent_id", agentID, "error", err)
+		s.logger.ErrorContext(r.Context(), "issue bootstrap token failed", "agent_id", agentID, "error", err)
 		// Best-effort cleanup: drop the row so the operator can retry
 		// without colliding on the (eventually-uniqued) node_name.
 		s.rollbackProvisionedOutboundAgent(r.Context(), agentID)
@@ -282,7 +282,7 @@ func (s *Server) provisionOutboundAgentRow(
 		BootstrapTokenHash: issued.Hash[:],
 		BootstrapExpiresAt: sql.NullTime{Time: issued.ExpiresAt, Valid: true},
 	}); err != nil {
-		s.logger.Error("persist bootstrap token failed", "agent_id", agentID, "error", err)
+		s.logger.ErrorContext(r.Context(), "persist bootstrap token failed", "agent_id", agentID, "error", err)
 		s.rollbackProvisionedOutboundAgent(r.Context(), agentID)
 		writeError(w, http.StatusInternalServerError, msgStorageError)
 		return "", "", 0, false
@@ -317,7 +317,7 @@ func (s *Server) rollbackProvisionedOutboundAgent(ctx context.Context, agentID s
 		return
 	}
 	if err := s.store.DeleteAgent(ctx, agentID); err != nil && !errors.Is(err, storage.ErrNotFound) {
-		s.logger.Error("rollback provisioned outbound agent failed",
+		s.logger.ErrorContext(ctx, "rollback provisioned outbound agent failed",
 			"agent_id", agentID, "error", err)
 	}
 }

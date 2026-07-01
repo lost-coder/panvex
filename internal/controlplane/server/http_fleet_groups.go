@@ -81,7 +81,7 @@ func (s *Server) handleListFleetGroups() http.HandlerFunc {
 		}
 		groups, err := s.fleetSvc.List(r.Context())
 		if err != nil {
-			s.logger.Error("list fleet groups failed", "error", err)
+			s.logger.ErrorContext(r.Context(), "list fleet groups failed", "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -126,7 +126,7 @@ func (s *Server) handleGetFleetGroup() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 				return
 			}
-			s.logger.Error("get fleet group failed", "id", id, "error", err)
+			s.logger.ErrorContext(r.Context(), "get fleet group failed", "id", id, "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -152,7 +152,7 @@ func (s *Server) handleCreateFleetGroup() http.HandlerFunc {
 			Description: request.Description,
 		})
 		if err != nil {
-			s.writeFleetGroupError(w, err)
+			s.writeFleetGroupError(r.Context(), w, err)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "fleet_groups.create", group.ID, map[string]any{
@@ -198,7 +198,7 @@ func (s *Server) handleUpdateFleetGroup() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 				return
 			}
-			s.writeFleetGroupError(w, err)
+			s.writeFleetGroupError(r.Context(), w, err)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "fleet_groups.update", group.ID, map[string]any{
@@ -235,7 +235,7 @@ func (s *Server) handleFleetGroupDeletionPreview() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 				return
 			}
-			s.logger.Error("fleet group deletion preview failed", "id", id, "error", err)
+			s.logger.ErrorContext(r.Context(), "fleet group deletion preview failed", "id", id, "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -267,7 +267,7 @@ func (s *Server) handleDeleteFleetGroup() http.HandlerFunc {
 		}
 		moved, err := s.fleetSvc.Delete(r.Context(), id, reassignTo)
 		if err != nil {
-			s.writeFleetGroupDeleteError(w, id, err)
+			s.writeFleetGroupDeleteError(r.Context(), w, id, err)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "fleet_groups.delete", id, map[string]any{
@@ -318,7 +318,7 @@ func (s *Server) authorizeFleetGroupDelete(w http.ResponseWriter, r *http.Reques
 
 // writeFleetGroupDeleteError maps service-level errors from fleetSvc.Delete
 // to HTTP responses. Pulled out so the handler stays linear.
-func (s *Server) writeFleetGroupDeleteError(w http.ResponseWriter, id string, err error) {
+func (s *Server) writeFleetGroupDeleteError(ctx context.Context, w http.ResponseWriter, id string, err error) {
 	switch {
 	case errors.Is(err, storage.ErrNotFound):
 		writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
@@ -327,7 +327,7 @@ func (s *Server) writeFleetGroupDeleteError(w http.ResponseWriter, id string, er
 	case errors.Is(err, fleet.ErrReassignTargetSame):
 		writeError(w, http.StatusBadRequest, err.Error())
 	default:
-		s.logger.Error("delete fleet group failed", "id", id, "error", err)
+		s.logger.ErrorContext(ctx, "delete fleet group failed", "id", id, "error", err)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 	}
 }
@@ -378,7 +378,7 @@ func (s *Server) fleetGroupToResponse(ctx context.Context, g storage.FleetGroupR
 	}
 	integrations, err := s.store.ListFleetGroupIntegrations(ctx, g.ID)
 	if err != nil {
-		s.logger.Error("list fleet group integrations failed", "fleet_group_id", g.ID, "error", err)
+		s.logger.ErrorContext(ctx, "list fleet group integrations failed", "fleet_group_id", g.ID, "error", err)
 		return response
 	}
 	// Deterministic order: kind first, then created_at. Storage layer
@@ -415,7 +415,7 @@ func (s *Server) fleetGroupToResponse(ctx context.Context, g storage.FleetGroupR
 // writeFleetGroupError maps domain-level validation errors to HTTP
 // status codes. Unknown errors fall through to 500 — the handler
 // logs the underlying cause.
-func (s *Server) writeFleetGroupError(w http.ResponseWriter, err error) {
+func (s *Server) writeFleetGroupError(ctx context.Context, w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, fleet.ErrNameRequired),
 		errors.Is(err, fleet.ErrNameInvalid),
@@ -427,7 +427,7 @@ func (s *Server) writeFleetGroupError(w http.ResponseWriter, err error) {
 	case errors.Is(err, fleet.ErrNameInUse):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
-		s.logger.Error("fleet group mutation failed", "error", err)
+		s.logger.ErrorContext(ctx, "fleet group mutation failed", "error", err)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 	}
 }

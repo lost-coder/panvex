@@ -42,7 +42,7 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 		CreatedAt: s.now().UTC().Truncate(time.Second),
 		Details:   normalizeAuditDetails(details),
 	}
-	record := s.chainAuditRecordLocked(event)
+	record := s.chainAuditRecordLocked(ctx, event)
 	s.metricsAuditMu.Unlock()
 
 	// P2-LOG-10 / M-R4 / P7-R6: audit writes no longer block the HTTP
@@ -102,14 +102,14 @@ func (s *Server) appendAuditSync(ctx context.Context, actorID, action, targetID 
 		CreatedAt: s.now().UTC().Truncate(time.Second),
 		Details:   normalizeAuditDetails(details),
 	}
-	record := s.chainAuditRecordLocked(event)
+	record := s.chainAuditRecordLocked(ctx, event)
 	s.metricsAuditMu.Unlock()
 
 	var persistErr error
 	if s.store != nil {
 		persistErr = s.store.AppendAuditEvent(ctx, record)
 		if persistErr != nil {
-			s.logger.Error("audit persist (sync) failed",
+			s.logger.ErrorContext(ctx, "audit persist (sync) failed",
 				"action", action,
 				"actor_id", actorID,
 				"target_id", targetID,

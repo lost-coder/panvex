@@ -13,17 +13,17 @@ import (
 // this out keeps processRegularAgentMessage's CC under threshold by isolating
 // the per-client and per-clientIP loops behind named helpers.
 func (s *Server) handleSnapshotMessage(connectionCtx context.Context, agentID string, regularSnapshots chan agentSnapshot, snap *gatewayrpc.Snapshot) {
-	s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "snapshot")
+	s.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "snapshot")
 	observedAt := time.Unix(snap.ObservedAtUnix, 0).UTC()
 
 	instances := convertInstanceSnapshots(snap.Instances)
 	clients, usageResolved, usageSkipped := s.convertClientUsageSnapshots(agentID, snap.Clients, observedAt)
 	if len(snap.Clients) > 0 {
-		s.logger.Info("client usage snapshot received", "agent_id", agentID, "total", len(snap.Clients), "resolved", usageResolved, "skipped", usageSkipped)
+		s.logger.InfoContext(connectionCtx, "client usage snapshot received", "agent_id", agentID, "total", len(snap.Clients), "resolved", usageResolved, "skipped", usageSkipped)
 	}
 	clientIPs, ipResolved, ipSkipped := s.convertClientIPSnapshots(agentID, snap.ClientIps)
 	if len(snap.ClientIps) > 0 {
-		s.logger.Info("client ip snapshot received", "agent_id", agentID, "total", len(snap.ClientIps), "resolved", ipResolved, "skipped", ipSkipped)
+		s.logger.InfoContext(connectionCtx, "client ip snapshot received", "agent_id", agentID, "total", len(snap.ClientIps), "resolved", ipResolved, "skipped", ipSkipped)
 	}
 
 	enqueueRegularSnapshot(connectionCtx, regularSnapshots, agentSnapshot{

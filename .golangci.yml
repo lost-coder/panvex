@@ -32,6 +32,17 @@ linters:
       forbid:
         - pattern: '^log\.(Printf|Print|Println|Fatal|Fatalf|Panic|Panicf)$'
           msg: "Use log/slog with context (slog.InfoContext etc.). Bare log.* is forbidden outside cmd/.../main.go preflight."
+        # H2 (audit remediation phase 2): s.logger.{Info,Warn,Error,Debug}
+        # drops request_id in HTTP handlers because it doesn't take a ctx,
+        # bypassing the slogContextHandler that reads request_id off the
+        # request context. Scoped to internal/controlplane/server/http_*.go
+        # via the path-except exclusion rule below — use the *Context
+        # variants (InfoContext/WarnContext/ErrorContext/DebugContext) or
+        # writeErrorLogged instead. s.logger is a *slog.Logger, so with
+        # analyze-types the resolved form is `slog.Logger.<Method>` (see
+        # forbidigo's package.Type.Method resolution), not `s.logger.*`.
+        - pattern: '^slog\.Logger\.(Info|Warn|Error|Debug)$'
+          msg: "Use s.logger.*Context(ctx, ...) (or writeErrorLogged) in HTTP handlers so request_id propagates. Bare s.logger.* drops request context."
       analyze-types: true
       exclude-godoc-examples: true
     gosec:
@@ -54,6 +65,15 @@ linters:
       # rationale as the two above. Source of truth: openapi/panvex.yaml.
       - "openapi"
     rules:
+      # H2: scope the s.logger.* forbidigo rule (above) to
+      # internal/controlplane/server/http_*.go only — that's where
+      # request_id loss actually matters (request-scoped handlers).
+      # path-except excludes every file that does NOT match, which
+      # leaves the rule active only inside the matching path.
+      - linters:
+          - forbidigo
+        text: "Use s\\.logger\\.\\*Context"
+        path-except: "internal/controlplane/server/http_.*\\.go$"
       - linters:
           - errcheck
         text: "Error return value of.*Close.*is not checked"

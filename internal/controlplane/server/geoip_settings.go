@@ -82,7 +82,7 @@ func (s *Server) restoreGeoIPSettings() error {
 			// starting — geoip enrichment is best-effort. Log and
 			// continue; the next worker tick (or operator-driven
 			// reload) will retry.
-			s.logger.Warn("geoip restore reload failed", "error", err)
+			s.logger.WarnContext(ctx, "geoip restore reload failed", "error", err)
 		}
 	}
 	return nil
@@ -231,11 +231,11 @@ func (s *Server) persistGeoIPState(ctx context.Context) {
 	}
 	data, err := json.Marshal(s.geoipState)
 	if err != nil {
-		s.logger.Error("marshal geoip state", "error", err)
+		s.logger.ErrorContext(ctx, "marshal geoip state", "error", err)
 		return
 	}
 	if err := s.store.PutGeoIPState(ctx, data); err != nil {
-		s.logger.Error("persist geoip state", "error", err)
+		s.logger.ErrorContext(ctx, "persist geoip state", "error", err)
 	}
 }
 
@@ -406,7 +406,7 @@ func (s *Server) runAndPersistGeoIP(ctx context.Context) {
 		s.settingsMu.Unlock()
 	}
 	s.settingsMu.Lock()
-	s.reloadGeoIPManager()
+	s.reloadGeoIPManager(ctx)
 	s.persistGeoIPState(ctx)
 	s.settingsMu.Unlock()
 }
@@ -417,10 +417,10 @@ func (s *Server) runAndPersistGeoIP(ctx context.Context) {
 // reload error is logged, not returned, because callers are either
 // boot-time or background workers — neither has a meaningful recovery
 // path beyond the next tick.
-func (s *Server) reloadGeoIPManager() {
+func (s *Server) reloadGeoIPManager(ctx context.Context) {
 	cityPath := s.geoipResolvedPath(geoip.KindCity)
 	asnPath := s.geoipResolvedPath(geoip.KindASN)
 	if err := s.geoip.Reload(cityPath, asnPath); err != nil {
-		s.logger.Warn("geoip reload failed", "error", err)
+		s.logger.WarnContext(ctx, "geoip reload failed", "error", err)
 	}
 }

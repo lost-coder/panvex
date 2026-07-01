@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -115,7 +116,7 @@ func (s *Server) handleListIntegrationProviders() http.HandlerFunc {
 		}
 		records, err := s.fleetSvc.ListProviders(r.Context())
 		if err != nil {
-			s.logger.Error("list integration providers failed", "error", err)
+			s.logger.ErrorContext(r.Context(), "list integration providers failed", "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -144,7 +145,7 @@ func (s *Server) handleGetIntegrationProvider() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, msgProviderNotFound)
 				return
 			}
-			s.logger.Error("get integration provider failed", "id", id, "error", err)
+			s.logger.ErrorContext(r.Context(), "get integration provider failed", "id", id, "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -170,7 +171,7 @@ func (s *Server) handleCreateIntegrationProvider() http.HandlerFunc {
 			Config: request.Config,
 		})
 		if err != nil {
-			s.writeIntegrationError(w, err)
+			s.writeIntegrationError(r.Context(), w, err)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "integration_providers.create", provider.ID, map[string]any{
@@ -207,7 +208,7 @@ func (s *Server) handleUpdateIntegrationProvider() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, msgProviderNotFound)
 				return
 			}
-			s.writeIntegrationError(w, err)
+			s.writeIntegrationError(r.Context(), w, err)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "integration_providers.update", provider.ID, map[string]any{
@@ -234,7 +235,7 @@ func (s *Server) handleDeleteIntegrationProvider() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, msgProviderNotFound)
 				return
 			}
-			s.logger.Error("delete integration provider failed", "id", id, "error", err)
+			s.logger.ErrorContext(r.Context(), "delete integration provider failed", "id", id, "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -295,7 +296,7 @@ func (s *Server) handleInstallFleetGroupIntegration() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, "fleet group or provider not found")
 				return
 			}
-			s.writeIntegrationError(w, err)
+			s.writeIntegrationError(r.Context(), w, err)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "fleet_group_integrations.install", record.ID, map[string]any{
@@ -324,7 +325,7 @@ func (s *Server) handleGetFleetGroupIntegration() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, msgIntegrationNotFound)
 				return
 			}
-			s.logger.Error("get integration failed", "id", id, "error", err)
+			s.logger.ErrorContext(r.Context(), "get integration failed", "id", id, "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -352,7 +353,7 @@ func (s *Server) loadIntegrationForScopedMutation(w http.ResponseWriter, r *http
 			writeError(w, http.StatusNotFound, msgIntegrationNotFound)
 			return storage.FleetGroupIntegrationRecord{}, false
 		}
-		s.logger.Error(getErrLog, "id", id, "error", err)
+		s.logger.ErrorContext(r.Context(), getErrLog, "id", id, "error", err)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 		return storage.FleetGroupIntegrationRecord{}, false
 	}
@@ -400,7 +401,7 @@ func (s *Server) handleUpdateFleetGroupIntegration() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, "integration or provider not found")
 				return
 			}
-			s.writeIntegrationError(w, err)
+			s.writeIntegrationError(r.Context(), w, err)
 			return
 		}
 		s.appendAuditWithContext(r.Context(), session.UserID, "fleet_group_integrations.update", record.ID, map[string]any{
@@ -433,7 +434,7 @@ func (s *Server) handleDeleteFleetGroupIntegration() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, msgIntegrationNotFound)
 				return
 			}
-			s.logger.Error("delete integration failed", "id", id, "error", err)
+			s.logger.ErrorContext(r.Context(), "delete integration failed", "id", id, "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -467,7 +468,7 @@ func fleetGroupIntegrationRecordToResponse(i storage.FleetGroupIntegrationRecord
 
 // writeIntegrationError maps registry-level validation errors to
 // HTTP status codes.
-func (s *Server) writeIntegrationError(w http.ResponseWriter, err error) {
+func (s *Server) writeIntegrationError(ctx context.Context, w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, integrations.ErrUnknownKind),
 		errors.Is(err, integrations.ErrUnknownProviderKind),
@@ -480,7 +481,7 @@ func (s *Server) writeIntegrationError(w http.ResponseWriter, err error) {
 			writeError(w, http.StatusConflict, "integration already installed for this kind")
 			return
 		}
-		s.logger.Error("integration mutation failed", "error", err)
+		s.logger.ErrorContext(ctx, "integration mutation failed", "error", err)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 	}
 }

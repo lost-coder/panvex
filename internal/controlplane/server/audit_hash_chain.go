@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+
 	"github.com/lost-coder/panvex/internal/controlplane/audit/hashchain"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -32,12 +34,12 @@ import (
 // truth used by the verify-audit-chain subcommand. Wave 4.1 first
 // slice (2026-05-08) extracted them out of this file to remove the
 // previous server↔cmd/control-plane duplication.
-func (s *Server) chainAuditRecordLocked(event AuditEvent) storage.AuditEventRecord {
+func (s *Server) chainAuditRecordLocked(ctx context.Context, event AuditEvent) storage.AuditEventRecord {
 	record := auditEventToRecord(event)
 	prev := s.auditChainTail
 	hash, err := hashchain.ComputeEventHash(prev, record)
 	if err != nil {
-		s.logger.Error("audit chain hash compute failed",
+		s.logger.ErrorContext(ctx, "audit chain hash compute failed",
 			"event_id", record.ID,
 			"action", record.Action,
 			"error", err,

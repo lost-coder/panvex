@@ -32,7 +32,7 @@ func (s *Server) handleGetUserAppearance() http.HandlerFunc {
 				writeError(w, http.StatusServiceUnavailable, err.Error())
 				return
 			}
-			s.logger.Error("get user appearance failed", "user_id", user.ID, "error", err)
+			s.logger.ErrorContext(r.Context(), "get user appearance failed", "user_id", user.ID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -72,7 +72,7 @@ func (s *Server) handlePutUserAppearance() http.HandlerFunc {
 				writeError(w, http.StatusServiceUnavailable, err.Error())
 				return
 			}
-			s.logger.Error("put user appearance failed", "user_id", user.ID, "error", err)
+			s.logger.ErrorContext(r.Context(), "put user appearance failed", "user_id", user.ID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}

@@ -110,7 +110,7 @@ func (s *Server) StartPprofListener(ctx context.Context) (net.Addr, func(context
 	go func() {
 		if serveErr := srv.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			if s.logger != nil {
-				s.logger.Error("pprof listener exited",
+				s.logger.ErrorContext(ctx, "pprof listener exited",
 					"err", serveErr,
 					"alert", "pprof_listener_exited",
 				)
@@ -119,14 +119,11 @@ func (s *Server) StartPprofListener(ctx context.Context) (net.Addr, func(context
 	}()
 
 	if s.logger != nil {
-		s.logger.Info("pprof listener started",
+		s.logger.InfoContext(ctx, "pprof listener started",
 			"addr", listener.Addr().String(),
 			"hint", "loopback-only — reach via `ssh -L 6060:localhost:6060 host`",
 		)
 	}
-
-	_ = ctx // accepted for future cancellation hooks; current ctx is the
-	//        request-scope ctx of the caller and not needed for the goroutine.
 
 	return listener.Addr(), srv.Shutdown, nil
 }
