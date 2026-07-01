@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -79,8 +80,24 @@ func DownloadArchive(ctx context.Context, url, token string) (string, error) {
 	return tmp.Name(), nil
 }
 
-// ExtractBinaryFromArchive extracts the first file from a .tar.gz archive
-// into a temporary executable and returns its path.
+// maxBinarySize caps the extracted binary size to avoid disk exhaustion
+// from an adversarial or corrupt archive.
+const maxBinarySize = 256 << 20 // 256 MB
+
+// ExtractBinaryFromArchive extracts the first regular-file entry from a
+// .tar.gz archive into a temporary executable and returns its path.
+//
+// Hardening (audit 2026-07-01, M12/3.3):
+//   - Only tar.TypeReg entries are considered the binary; directories,
+//     symlinks, and other special entry types are skipped so a crafted
+//     archive cannot smuggle a symlink/directory through as "the binary".
+//   - Truncation is detected via the same maxSize+1 sentinel trick as
+//     DownloadArchive: copying maxBinarySize+1 bytes proves the source
+//     entry exceeds the cap, so we fail loudly instead of silently
+//     truncating (and shipping a corrupt binary that could still pass a
+//     signature/hash check computed over the truncated bytes).
+//   - A zero-byte extracted binary is rejected — a regular-file entry with
+//     no content cannot be a legitimate release binary.
 func ExtractBinaryFromArchive(archivePath string) (string, error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -95,9 +112,17 @@ func ExtractBinaryFromArchive(archivePath string) (string, error) {
 	defer gz.Close()
 
 	tr := tar.NewReader(gz)
-	hdr, err := tr.Next()
-	if err != nil {
-		return "", fmt.Errorf("read tar entry: %w", err)
+	var hdr *tar.Header
+	for {
+		hdr, err = tr.Next()
+		if err != nil {
+			return "", fmt.Errorf("read tar entry: %w", err)
+		}
+		if hdr.Typeflag == tar.TypeReg {
+			break
+		}
+		// Skip directories, symlinks, and any other non-regular entry —
+		// only a regular file can be the binary.
 	}
 
 	tmp, err := os.CreateTemp("", "panvex-binary-*")
@@ -105,13 +130,24 @@ func ExtractBinaryFromArchive(archivePath string) (string, error) {
 		return "", fmt.Errorf("create temp binary: %w", err)
 	}
 
-	const maxBinarySize = 256 << 20 // 256 MB
-	if _, err := io.Copy(tmp, io.LimitReader(tr, maxBinarySize)); err != nil {
+	// LimitReader(+1) lets us detect when the entry would exceed the cap,
+	// mirroring DownloadArchive's truncation-detection pattern.
+	written, err := io.Copy(tmp, io.LimitReader(tr, maxBinarySize+1))
+	if err != nil {
 		tmp.Close()
 		_ = os.Remove(tmp.Name())
 		return "", fmt.Errorf("extract binary: %w", err)
 	}
-	_ = hdr                                 // name not needed — archive contains a single binary
+	if written > maxBinarySize {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", fmt.Errorf("extract binary: entry exceeds limit %d", maxBinarySize)
+	}
+	if written == 0 {
+		tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", errors.New("extract binary: entry is empty")
+	}
 	if err := tmp.Chmod(0755); err != nil { //nolint:gosec // executable binary requires 0755
 		tmp.Close()
 		_ = os.Remove(tmp.Name())
