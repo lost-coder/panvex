@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -39,12 +40,15 @@ type configApplyResponse struct {
 }
 
 // groupApplyAcceptedResponse is the 202 body returned by the ASYNC group
-// apply handler. Instead of blocking on K × TTL, the handler enqueues one
-// config.apply job per in-scope agent and returns immediately. The client
-// correlates the rollout via batch_id (a display token) and polls the
-// status endpoint with the returned job ids. jobs[i] pairs each agent with
-// the job enqueued for it — an agent whose effective config was empty
-// carries an empty job_id (nothing to apply, already in sync).
+// apply handler. Instead of blocking on K × TTL, the handler persists a
+// config_apply_batches row (createGroupApplyBatch) and enqueues one
+// config.apply job per in-scope agent, then returns immediately. BatchID is
+// now the PERSISTENT batch id — the client can look up the rollout's state
+// via the batch (surviving a panel restart or job-store eviction), or keep
+// polling the status endpoint with the returned job ids. Jobs is retained for
+// back-compat with existing pollers; jobs[i] pairs each agent with the job
+// enqueued for it — an agent whose effective config was empty carries an
+// empty job_id (nothing to apply, already in sync).
 type groupApplyAcceptedResponse struct {
 	BatchID string                `json:"batch_id"`
 	Jobs    []groupApplyJobHandle `json:"jobs"`
@@ -254,30 +258,30 @@ func (s *Server) handleApplyGroupConfig() http.HandlerFunc {
 				agentIDs = append(agentIDs, agent.ID)
 			}
 		}
+		batchID, err := s.createGroupApplyBatch(ctx, user.ID, id, storage.ConfigApplyBatchModeAllAtOnce, 1, agentIDs)
+		if err != nil {
+			writeErrorLogged(ctx, w, http.StatusInternalServerError,
+				"failed to enqueue config apply", err)
+			return
+		}
+		// Jobs is kept for back-compat with existing pollers: it's a cheap
+		// re-read of the just-written targets, not a second source of truth.
 		handles := make([]groupApplyJobHandle, 0, len(agentIDs))
-		for _, agentID := range agentIDs {
-			jobID, err := s.enqueueConfigApplyJob(ctx, user.ID, agentID)
-			if err != nil {
-				writeErrorLogged(ctx, w, http.StatusInternalServerError,
-					"failed to enqueue config apply", err)
-				return
+		if batchID != "" {
+			if _, targets, err := s.store.GetConfigApplyBatch(ctx, batchID); err != nil {
+				slog.ErrorContext(ctx, "failed to reload config-apply batch targets",
+					"batch_id", batchID, "error", err)
+			} else {
+				for _, tgt := range targets {
+					handles = append(handles, groupApplyJobHandle{AgentID: tgt.AgentID, JobID: tgt.JobID})
+				}
 			}
-			handles = append(handles, groupApplyJobHandle{AgentID: agentID, JobID: jobID})
 		}
 		writeJSON(w, http.StatusAccepted, groupApplyAcceptedResponse{
-			BatchID: newGroupApplyBatchID(s.now()),
+			BatchID: batchID,
 			Jobs:    handles,
 		})
 	}
-}
-
-// newGroupApplyBatchID mints a display-only correlation token for a group
-// apply. The job ids are the real source of truth (the status endpoint
-// aggregates over them); the batch id only gives the UI a stable handle for
-// the in-flight rollout, so it is derived from the panel clock without
-// touching the jobs store.
-func newGroupApplyBatchID(now time.Time) string {
-	return fmt.Sprintf("cfgapply-%d", now.UTC().UnixNano())
 }
 
 // handleGroupConfigApplyStatus aggregates the per-agent state of an in-flight
