@@ -47,11 +47,28 @@ type Config struct {
 // accidentally share state with production.
 func defaultConfig() Config {
 	p := updatehosts.PolicyFromEnv()
-	return Config{
-		HTTPClient:   &http.Client{Timeout: defaultDownloadTimeout},
+	cfg := Config{
 		AllowedHosts: p.Hosts(), // nil when disabled
 		AllowAnyHost: p.Disabled(),
 		MaxArchive:   defaultMaxArchive,
+	}
+	cfg.HTTPClient = &http.Client{
+		Timeout:       defaultDownloadTimeout,
+		CheckRedirect: redirectPolicy(cfg),
+	}
+	return cfg
+}
+
+// redirectPolicy re-validates every redirect hop against the same scheme +
+// host rules as the initial URL (via validateDownloadURL), so a 302 from an
+// allowed host cannot steer the agent onto an untrusted host. Caps the chain
+// at 10 hops, mirroring the control-plane's RestrictedRedirectPolicy.
+func redirectPolicy(cfg Config) func(req *http.Request, via []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		return validateDownloadURL(req.URL.String(), cfg)
 	}
 }
 

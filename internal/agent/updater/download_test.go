@@ -213,3 +213,30 @@ func TestValidateDownloadURLDefaultRejectsOffList(t *testing.T) {
 		t.Fatal("default config accepted an off-list host")
 	}
 }
+
+func TestRedirectPolicyRevalidatesHost(t *testing.T) {
+	mk := func(u string) *http.Request {
+		r, err := http.NewRequestWithContext(t.Context(), http.MethodGet, u, nil)
+		if err != nil {
+			t.Fatalf("build request: %v", err)
+		}
+		return r
+	}
+	strict := redirectPolicy(Config{AllowedHosts: []string{"github.com"}})
+	if err := strict(mk("https://github.com/x"), nil); err != nil {
+		t.Fatalf("allowed-host redirect rejected: %v", err)
+	}
+	if err := strict(mk("https://evil.example.com/x"), nil); err == nil {
+		t.Fatal("redirect to off-list host accepted")
+	}
+	if err := strict(mk("http://github.com/x"), nil); err == nil {
+		t.Fatal("redirect to http accepted")
+	}
+	wild := redirectPolicy(Config{AllowAnyHost: true})
+	if err := wild(mk("https://anything.example.com/x"), nil); err != nil {
+		t.Fatalf("wildcard redirect rejected an https host: %v", err)
+	}
+	if err := wild(mk("http://anything.example.com/x"), nil); err == nil {
+		t.Fatal("wildcard redirect accepted http")
+	}
+}
