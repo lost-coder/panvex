@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -385,6 +386,167 @@ func (s *Server) configApplyJobStatus(jobID, agentID string) (status, message st
 		}
 	}
 	return applyStatusPending, ""
+}
+
+// groupApplyBatchStatusResponse is the aggregate returned by the persistent
+// batch-status endpoint (GET .../config/apply/batches/{batchId}). Unlike
+// groupApplyStatusResponse (built from the job/agent ids the client happened
+// to receive from the 202 response), this is derived entirely from the
+// stored batch + target rows, so it can be reconstructed after a panel
+// restart, a browser refresh days later, or once the originating config.apply
+// jobs have rolled off the in-memory jobs store — the whole point of Phase A
+// persisting batches in the first place. Done mirrors the batch's own
+// persisted status rather than re-deriving "all terminal" from the targets,
+// so it agrees with advanceConfigApplyBatch's finalization exactly.
+type groupApplyBatchStatusResponse struct {
+	BatchID string                  `json:"batch_id"`
+	Mode    string                  `json:"mode"`
+	Status  string                  `json:"status"`
+	Done    bool                    `json:"done"`
+	Total   int                     `json:"total"`
+	Applied int                     `json:"applied"`
+	Failed  int                     `json:"failed"`
+	Pending int                     `json:"pending"`
+	Skipped int                     `json:"skipped"`
+	Agents  []groupApplyAgentStatus `json:"agents"`
+}
+
+// groupApplyActiveBatchResponse is the 200 body for
+// GET .../config/apply/batches?active=1: the id of the fleet group's
+// currently running batch. The handler returns 204 No Content (no body)
+// instead of this shape when the group has no batch in-flight.
+type groupApplyActiveBatchResponse struct {
+	BatchID string `json:"batch_id"`
+}
+
+// handleGetGroupApplyBatchStatus returns the persisted-batch aggregate for a
+// single config-apply rollout. batchId is looked up independently of the
+// fleet-group scope check, then cross-checked against the URL's group id —
+// a batch that exists but belongs to a different group (or one outside the
+// operator's fleet scope) is reported as not-found, matching the sibling
+// endpoints' scope-mismatch behaviour rather than leaking the batch's
+// existence.
+func (s *Server) handleGetGroupApplyBatchStatus() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		_, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			writeError(w, http.StatusBadRequest, msgConfigTargetIDReq)
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(id) {
+			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
+			return
+		}
+		batchID := chi.URLParam(r, "batchId")
+		batch, targets, err := s.store.GetConfigApplyBatch(ctx, batchID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				writeError(w, http.StatusNotFound, msgConfigApplyBatchNotFound)
+				return
+			}
+			writeErrorLogged(ctx, w, http.StatusInternalServerError, "failed to load config-apply batch", err)
+			return
+		}
+		if batch.FleetGroupID != id {
+			writeError(w, http.StatusNotFound, msgConfigApplyBatchNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, s.aggregateGroupApplyBatchStatus(batch, targets))
+	}
+}
+
+// handleGetActiveGroupApplyBatch returns the id of the fleet group's
+// currently running config-apply batch (?active=1), or 204 No Content when
+// none is in-flight. This is the entry point a dashboard uses to discover
+// whether there is anything to resume-poll after a page load, without the
+// client needing to remember a batch id across a refresh.
+func (s *Server) handleGetActiveGroupApplyBatch() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		_, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			writeError(w, http.StatusBadRequest, msgConfigTargetIDReq)
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(id) {
+			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
+			return
+		}
+		active, ok, err := s.store.ActiveConfigApplyBatchForGroup(ctx, id)
+		if err != nil {
+			writeErrorLogged(ctx, w, http.StatusInternalServerError, "failed to load active config-apply batch", err)
+			return
+		}
+		if !ok {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		writeJSON(w, http.StatusOK, groupApplyActiveBatchResponse{BatchID: active.ID})
+	}
+}
+
+// aggregateGroupApplyBatchStatus folds a batch's persisted target rows into
+// the status response. A target already in a terminal state
+// (succeeded/failed/skipped) uses its persisted Status/Message verbatim —
+// this is what survives job eviction and makes the view resumable. A target
+// still pending/running falls back to the live job via configApplyJobStatus
+// for a fresher read (the persisted row is only refreshed periodically by
+// advanceConfigApplyBatch); its Message is empty until the job reaches a
+// terminal state and pollConfigApplyBatches persists it. Done mirrors the
+// batch's own persisted status rather than being re-derived from the
+// targets, so it agrees exactly with when advanceConfigApplyBatch finalizes
+// the batch.
+func (s *Server) aggregateGroupApplyBatchStatus(batch storage.ConfigApplyBatchRecord, targets []storage.ConfigApplyBatchTargetRecord) groupApplyBatchStatusResponse {
+	resp := groupApplyBatchStatusResponse{
+		BatchID: batch.ID,
+		Mode:    batch.Mode,
+		Status:  batch.Status,
+		Done:    batch.Status != storage.ConfigApplyBatchStatusRunning,
+		Total:   len(targets),
+		Agents:  make([]groupApplyAgentStatus, 0, len(targets)),
+	}
+	for _, tgt := range targets {
+		status, message := tgt.Status, tgt.Message
+		if !isTerminalConfigApplyTargetStatus(status) {
+			status, message = s.configApplyJobStatus(tgt.JobID, tgt.AgentID)
+		}
+		switch status {
+		case storage.ConfigApplyTargetStatusSucceeded:
+			resp.Applied++
+		case storage.ConfigApplyTargetStatusFailed:
+			resp.Failed++
+		case storage.ConfigApplyTargetStatusSkipped:
+			resp.Skipped++
+		default:
+			resp.Pending++
+		}
+		resp.Agents = append(resp.Agents, groupApplyAgentStatus{
+			AgentID: tgt.AgentID,
+			JobID:   tgt.JobID,
+			Status:  status,
+			Message: message,
+		})
+	}
+	return resp
 }
 
 // handleApplyAgentConfig applies the effective config target to a single

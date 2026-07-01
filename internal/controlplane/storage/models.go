@@ -611,13 +611,18 @@ type ConfigApplyBatchRecord struct {
 // ConfigApplyBatchTargetRecord is one agent's delivery record within a
 // ConfigApplyBatchRecord. JobID is "" until the target's wave is enqueued
 // (SetConfigApplyBatchTargetJob populates it alongside the job-queued
-// status transition).
+// status transition). Message carries the terminal outcome's human-readable
+// reason (e.g. the agent's own failure text) and is persisted so it survives
+// eviction of the underlying job from the in-memory jobs store — see
+// UpdateConfigApplyBatchTargetStatus. Empty for non-terminal targets and for
+// successful ones.
 type ConfigApplyBatchTargetRecord struct {
 	BatchID   string
 	AgentID   string
 	WaveIndex int
 	JobID     string
 	Status    string
+	Message   string
 }
 
 // Config-apply batch rollout modes.
