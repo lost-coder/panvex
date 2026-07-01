@@ -2,6 +2,7 @@ package storagetest
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -116,4 +117,66 @@ func runMetricsContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	// M4: ListMetricSnapshots must cap at 512 rows on every backend, keeping
+	// the NEWEST 512 (oldest→newest in the returned slice). The SQLite and
+	// Postgres Store implementations enforce this with an inner
+	// "ORDER BY captured_at DESC, id DESC LIMIT 512" subquery re-sorted
+	// ascending outside; this contract test guards that both backends (and
+	// the dbsqlc-backed query, if ever wired in) honor the same cap.
+	t.Run("ListMetricSnapshots caps at 512 keeping newest", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		baseTime := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+
+		if err := store.PutAgent(ctx, storage.AgentRecord{
+			ID:         "agent-cap-000001",
+			NodeName:   "node-cap",
+			LastSeenAt: baseTime,
+		}); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+
+		const total = 600
+		const want = 512
+		batch := make([]storage.MetricSnapshotRecord, 0, total)
+		for i := 0; i < total; i++ {
+			batch = append(batch, storage.MetricSnapshotRecord{
+				ID:         fmt.Sprintf("metric-cap-%06d", i),
+				AgentID:    "agent-cap-000001",
+				InstanceID: "instance-cap-000001",
+				CapturedAt: baseTime.Add(time.Duration(i) * time.Second),
+				Values:     map[string]uint64{"seq": uint64(i)},
+			})
+		}
+		if err := store.AppendMetricSnapshotsBulk(ctx, batch); err != nil {
+			t.Fatalf("AppendMetricSnapshotsBulk() error = %v", err)
+		}
+
+		got, err := store.ListMetricSnapshots(ctx)
+		if err != nil {
+			t.Fatalf("ListMetricSnapshots() error = %v", err)
+		}
+		if len(got) != want {
+			t.Fatalf("len(ListMetricSnapshots()) = %d, want %d", len(got), want)
+		}
+
+		// The kept rows must be the newest `want` of the `total` inserted
+		// (indices total-want .. total-1), returned oldest→newest.
+		wantFirstIdx := total - want
+		for offset, snapshot := range got {
+			wantID := fmt.Sprintf("metric-cap-%06d", wantFirstIdx+offset)
+			if snapshot.ID != wantID {
+				t.Fatalf("got[%d].ID = %q, want %q (oldest-kept must be index %d, newest→ascending order)", offset, snapshot.ID, wantID, wantFirstIdx)
+			}
+		}
+		wantOldestKept := baseTime.Add(time.Duration(wantFirstIdx) * time.Second)
+		if !got[0].CapturedAt.Equal(wantOldestKept) {
+			t.Fatalf("got[0].CapturedAt = %v, want %v (oldest kept of newest %d)", got[0].CapturedAt, wantOldestKept, want)
+		}
+		if got[0].CapturedAt.After(got[len(got)-1].CapturedAt) {
+			t.Fatalf("ListMetricSnapshots() not ordered oldest→newest: got[0]=%v after got[last]=%v", got[0].CapturedAt, got[len(got)-1].CapturedAt)
+		}
+	})
 }
