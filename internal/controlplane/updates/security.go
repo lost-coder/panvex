@@ -52,9 +52,9 @@ func RestrictedRedirectPolicy() func(req *http.Request, via []*http.Request) err
 	}
 }
 
-// SecureDownloadClient returns an *http.Client with a redirect policy that
-// confines requests to allowedDownloadHosts and a reasonable timeout for
-// release-artifact fetches.
+// SecureDownloadClient returns an *http.Client whose redirect policy confines
+// requests to the update host policy (see internal/updatehosts) and a
+// reasonable timeout for release-artifact fetches.
 func SecureDownloadClient() *http.Client {
 	return &http.Client{
 		Timeout:       10 * time.Minute,

@@ -280,7 +280,7 @@ func (s *Server) runGeoIPUpdate(ctx context.Context, k geoip.Kind) geoip.SourceS
 		return state
 
 	case geoip.ModeAuto:
-		fetcher := geoip.NewFetcher(updates.SecureDownloadClient(), "")
+		fetcher := geoip.NewFetcher(updates.GeoIPDownloadClient(), "")
 		url, err := fetcher.AssetURL(ctx, k)
 		if err != nil {
 			state.Error = err.Error()
