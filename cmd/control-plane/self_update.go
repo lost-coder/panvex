@@ -11,6 +11,50 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/server"
 )
 
+// errTokenFlagInsecure is returned when the operator passes -token without
+// explicit opt-in. The flag value leaks via /proc/<pid>/cmdline to any local
+// user; -token-file or the GITHUB_TOKEN env var avoid that. Mirrors
+// errPasswordFlagInsecure in bootstrap_admin.go.
+var errTokenFlagInsecure = errors.New(
+	"--token flag exposes secrets via /proc/<pid>/cmdline; " +
+		"use -token-file or GITHUB_TOKEN instead " +
+		"(set PANVEX_SELF_UPDATE_ALLOW_INSECURE_TOKEN_FLAG=1 to bypass)",
+)
+
+// tokenSource captures the inputs resolveSelfUpdateToken needs to decide
+// which token-supply path is safe. Mirrors passwordSource in
+// bootstrap_admin.go.
+type tokenSource struct {
+	FlagValue     string
+	FlagWasSet    bool
+	FilePath      string
+	EnvValue      string
+	AllowInsecure bool
+}
+
+// resolveSelfUpdateToken picks the GitHub token from, in priority order:
+// an explicit -token flag (gated: rejected unless AllowInsecure is set,
+// since the flag value leaks via /proc/<pid>/cmdline), -token-file, then
+// the GITHUB_TOKEN env var. Returns an error if -token was supplied without
+// the insecure opt-in, or if none of the sources yield a token (empty
+// string is valid — self-update against a public repo needs no token).
+func resolveSelfUpdateToken(src tokenSource) (string, error) {
+	if src.FlagWasSet {
+		if !src.AllowInsecure {
+			return "", errTokenFlagInsecure
+		}
+		return src.FlagValue, nil
+	}
+	if fp := strings.TrimSpace(src.FilePath); fp != "" {
+		data, err := os.ReadFile(fp)
+		if err != nil {
+			return "", fmt.Errorf("read token-file %q: %w", fp, err)
+		}
+		return strings.TrimRight(string(data), " \t\r\n"), nil
+	}
+	return src.EnvValue, nil
+}
+
 type selfUpdateOptions struct {
 	version string
 	repo    string
@@ -22,15 +66,35 @@ func parseSelfUpdateFlags(args []string) (selfUpdateOptions, error) {
 	flags := flag.NewFlagSet("self-update", flag.ContinueOnError)
 	version := flags.String("version", "", "Target version to update to (e.g. 1.2.3)")
 	repo := flags.String("repo", SelfUpdateRepo, "GitHub repository for release assets")
-	token := flags.String("token", os.Getenv("GITHUB_TOKEN"), "GitHub token for private repos (env: GITHUB_TOKEN)")
+	token := flags.String("token", "", "GitHub token for private repos (leaks via /proc/<pid>/cmdline; prefer -token-file or GITHUB_TOKEN; requires PANVEX_SELF_UPDATE_ALLOW_INSECURE_TOKEN_FLAG=1)")
+	tokenFile := flags.String("token-file", "", "Read GitHub token from file (preferred over -token)")
 	force := flags.Bool("force", false, "Force update even if versions match")
 	if err := flags.Parse(args); err != nil {
 		return selfUpdateOptions{}, err
 	}
+
+	tokenFlagSet := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "token" {
+			tokenFlagSet = true
+		}
+	})
+
+	resolvedToken, err := resolveSelfUpdateToken(tokenSource{
+		FlagValue:     *token,
+		FlagWasSet:    tokenFlagSet,
+		FilePath:      *tokenFile,
+		EnvValue:      os.Getenv("GITHUB_TOKEN"),
+		AllowInsecure: os.Getenv("PANVEX_SELF_UPDATE_ALLOW_INSECURE_TOKEN_FLAG") == "1",
+	})
+	if err != nil {
+		return selfUpdateOptions{}, err
+	}
+
 	return selfUpdateOptions{
 		version: *version,
 		repo:    *repo,
-		token:   *token,
+		token:   resolvedToken,
 		force:   *force,
 	}, nil
 }
