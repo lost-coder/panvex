@@ -6,6 +6,7 @@ import {
   retentionSettingsSchema,
   restartStatusSchema,
   schemaArraySchema,
+  settingsValuesRequestSchema,
   updateAppearanceSettingsRequestSchema,
   updatePanelSettingsRequestSchema,
   valuesResponseSchema,
@@ -173,7 +174,13 @@ export const settingsApi = {
       `${apiBasePath}/settings/values`,
       {
         method: "PUT",
-        body: JSON.stringify(updates),
+        // 3.14: was `JSON.stringify(updates)` directly, bypassing the
+        // encodeRequest validation path every other mutation uses.
+        body: encodeRequest(
+          `${apiBasePath}/settings/values`,
+          settingsValuesRequestSchema,
+          updates,
+        ),
       },
     ),
 };
