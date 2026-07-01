@@ -198,6 +198,72 @@ func TestApplyConfigGroupAsyncAccepted(t *testing.T) {
 	}
 }
 
+// TestApplyConfigGroupPersistsBatch asserts the group-apply POST persists a
+// config_apply_batches row (Phase A2): the response batch_id must resolve via
+// srv.store.GetConfigApplyBatch to a running all-at-once batch with one
+// wave-0 target per in-scope agent, each target running with a non-empty
+// job_id. The handler must return promptly — no waitJobTargetTerminal — so
+// this asserts on wall-clock elapsed time with no RecordResult in sight.
+func TestApplyConfigGroupPersistsBatch(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "apply-persist-group", time.Time{})
+	srv.seedLiveAgent(Agent{ID: "agent-persist-1", FleetGroupID: groupID})
+	srv.seedLiveAgent(Agent{ID: "agent-persist-2", FleetGroupID: groupID})
+	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+
+	start := time.Now()
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/fleet-groups/"+groupID+"/config/apply", nil, cookies)
+	elapsed := time.Since(start)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("group apply status = %d, want %d (body: %s)", resp.Code, http.StatusAccepted, resp.Body.String())
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("group apply took %v, want prompt return (no terminal wait)", elapsed)
+	}
+	var got groupApplyAcceptedResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode accepted response: %v", err)
+	}
+	if got.BatchID == "" {
+		t.Fatalf("batch_id empty, want non-empty (body: %s)", resp.Body.String())
+	}
+
+	batch, targets, err := srv.store.GetConfigApplyBatch(context.Background(), got.BatchID)
+	if err != nil {
+		t.Fatalf("GetConfigApplyBatch(%s): %v", got.BatchID, err)
+	}
+	if batch.Status != storage.ConfigApplyBatchStatusRunning {
+		t.Fatalf("batch status = %q, want %q", batch.Status, storage.ConfigApplyBatchStatusRunning)
+	}
+	if batch.FleetGroupID != groupID {
+		t.Fatalf("batch fleet_group_id = %q, want %q", batch.FleetGroupID, groupID)
+	}
+	if batch.Mode != storage.ConfigApplyBatchModeAllAtOnce {
+		t.Fatalf("batch mode = %q, want %q", batch.Mode, storage.ConfigApplyBatchModeAllAtOnce)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("targets len = %d, want 2 (targets: %+v)", len(targets), targets)
+	}
+	seen := map[string]bool{}
+	for _, tgt := range targets {
+		if tgt.WaveIndex != 0 {
+			t.Fatalf("target %s wave_index = %d, want 0", tgt.AgentID, tgt.WaveIndex)
+		}
+		if tgt.Status != storage.ConfigApplyTargetStatusRunning {
+			t.Fatalf("target %s status = %q, want %q", tgt.AgentID, tgt.Status, storage.ConfigApplyTargetStatusRunning)
+		}
+		if tgt.JobID == "" {
+			t.Fatalf("target %s job_id empty, want non-empty", tgt.AgentID)
+		}
+		seen[tgt.AgentID] = true
+	}
+	if !seen["agent-persist-1"] || !seen["agent-persist-2"] {
+		t.Fatalf("targets missing expected agents: %+v", targets)
+	}
+}
+
 // TestGroupConfigApplyStatusPartialFailure drives the status endpoint through a
 // mixed outcome: two in-scope agents, one records success and one records
 // failure. The aggregate must report Done=true, Applied=1, Failed=1, and carry
