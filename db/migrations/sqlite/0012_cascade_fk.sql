@@ -14,7 +14,13 @@
 PRAGMA foreign_keys = OFF;
 
 -- sessions: current columns per 0004_sessions.sql: (id, user_id, created_at_unix).
+-- Each table rebuild below is wrapped in its own explicit transaction so a
+-- crash between DROP and RENAME can never leave a table dropped-but-not-
+-- renamed. PRAGMA foreign_keys stays outside every BEGIN/COMMIT — SQLite
+-- forbids toggling it inside a transaction.
 DELETE FROM sessions WHERE user_id NOT IN (SELECT id FROM users);
+
+BEGIN;
 
 CREATE TABLE sessions_new (
     id TEXT PRIMARY KEY,
@@ -32,6 +38,8 @@ ALTER TABLE sessions_new RENAME TO sessions;
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_created_at_unix ON sessions (created_at_unix);
 
+COMMIT;
+
 -- enrollment_tokens: deliberately NOT linked to fleet_groups by a FK — the
 -- control-plane issues tokens against a fleet group id that may not yet
 -- exist (agent_flow.consumeEnrollmentToken creates the group on first
@@ -42,6 +50,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_created_at_unix ON sessions (created_at_
 -- column was renamed from `values_json` in 0011, and since `values` is a
 -- reserved keyword in SQLite it must be double-quoted.
 DELETE FROM metric_snapshots WHERE agent_id NOT IN (SELECT id FROM agents);
+
+BEGIN;
 
 CREATE TABLE metric_snapshots_new (
     id TEXT PRIMARY KEY,
@@ -61,6 +71,8 @@ ALTER TABLE metric_snapshots_new RENAME TO metric_snapshots;
 CREATE INDEX IF NOT EXISTS idx_metric_snapshots_captured_at ON metric_snapshots (captured_at_unix);
 CREATE INDEX IF NOT EXISTS idx_metric_snapshots_agent_captured ON metric_snapshots (agent_id, captured_at_unix);
 
+COMMIT;
+
 -- client_assignments: current columns per 0001_init.sql:
 -- (id, client_id, target_type, fleet_group_id, agent_id, created_at_unix).
 DELETE FROM client_assignments WHERE client_id NOT IN (SELECT id FROM clients);
@@ -70,6 +82,8 @@ WHERE fleet_group_id IS NOT NULL
 DELETE FROM client_assignments
 WHERE agent_id IS NOT NULL
   AND agent_id NOT IN (SELECT id FROM agents);
+
+BEGIN;
 
 CREATE TABLE client_assignments_new (
     id TEXT PRIMARY KEY,
@@ -91,11 +105,15 @@ ALTER TABLE client_assignments_new RENAME TO client_assignments;
 
 CREATE INDEX IF NOT EXISTS idx_client_assignments_client_id ON client_assignments (client_id);
 
+COMMIT;
+
 -- client_deployments: current columns per 0001_init.sql:
 -- (client_id, agent_id, desired_operation, status, last_error,
 --  connection_link, last_applied_at_unix, updated_at_unix).
 DELETE FROM client_deployments WHERE client_id NOT IN (SELECT id FROM clients);
 DELETE FROM client_deployments WHERE agent_id NOT IN (SELECT id FROM agents);
+
+BEGIN;
 
 CREATE TABLE client_deployments_new (
     client_id TEXT NOT NULL,
@@ -118,6 +136,8 @@ DROP TABLE client_deployments;
 ALTER TABLE client_deployments_new RENAME TO client_deployments;
 
 CREATE INDEX IF NOT EXISTS idx_client_deployments_client_id ON client_deployments (client_id);
+
+COMMIT;
 
 PRAGMA foreign_keys = ON;
 

@@ -14,7 +14,13 @@ PRAGMA foreign_keys = OFF;
 
 -- ─── jobs ────────────────────────────────────────────────────────────
 -- Status enum mirrors jobs.IsValidStatus in the Go layer.
+-- Each table rebuild below is wrapped in its own explicit transaction so a
+-- crash between DROP and RENAME can never leave a table dropped-but-not-
+-- renamed. PRAGMA foreign_keys stays outside every BEGIN/COMMIT — SQLite
+-- forbids toggling it inside a transaction.
 DELETE FROM jobs WHERE status NOT IN ('queued','running','succeeded','failed','expired');
+
+BEGIN;
 
 CREATE TABLE jobs_new (
     id TEXT PRIMARY KEY,
@@ -37,6 +43,8 @@ CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs (created_at_unix);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status);
 CREATE INDEX IF NOT EXISTS idx_jobs_actor_id ON jobs (actor_id);
 
+COMMIT;
+
 -- ─── job_targets ─────────────────────────────────────────────────────
 -- The application enum (jobs.TargetStatus) is queued / sent /
 -- acknowledged / succeeded / failed / expired. The earlier postgres
@@ -45,6 +53,8 @@ CREATE INDEX IF NOT EXISTS idx_jobs_actor_id ON jobs (actor_id);
 -- 0027_fix_job_targets_check_enum corrects postgres; the SQLite
 -- constraint below is born correct.
 DELETE FROM job_targets WHERE status NOT IN ('queued','sent','acknowledged','succeeded','failed','expired');
+
+BEGIN;
 
 CREATE TABLE job_targets_new (
     job_id TEXT NOT NULL,
@@ -65,8 +75,12 @@ ALTER TABLE job_targets_new RENAME TO job_targets;
 
 CREATE INDEX IF NOT EXISTS idx_job_targets_agent_id ON job_targets (agent_id);
 
+COMMIT;
+
 -- ─── discovered_clients ──────────────────────────────────────────────
 DELETE FROM discovered_clients WHERE status NOT IN ('pending_review','adopted','ignored');
+
+BEGIN;
 
 CREATE TABLE discovered_clients_new (
     id TEXT PRIMARY KEY,
@@ -105,6 +119,8 @@ CREATE INDEX IF NOT EXISTS idx_discovered_clients_agent_id ON discovered_clients
 CREATE UNIQUE INDEX IF NOT EXISTS idx_discovered_clients_pending_unique
     ON discovered_clients (agent_id, client_name)
     WHERE status = 'pending_review';
+
+COMMIT;
 
 PRAGMA foreign_keys = ON;
 

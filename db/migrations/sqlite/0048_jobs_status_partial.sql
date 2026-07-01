@@ -15,6 +15,14 @@
 
 PRAGMA foreign_keys = OFF;
 
+-- The rebuild itself (create/copy/drop/rename/index) is wrapped in an
+-- explicit transaction so a crash between DROP and RENAME can never leave
+-- the table dropped-but-not-renamed. PRAGMA foreign_keys cannot be toggled
+-- inside a transaction, so it stays outside as its own statement (goose
+-- still runs this whole file outside ITS wrapping transaction because of
+-- "NO TRANSACTION" above; the BEGIN/COMMIT below is our own explicit one).
+BEGIN;
+
 CREATE TABLE jobs_new (
     id TEXT PRIMARY KEY,
     action TEXT NOT NULL,
@@ -35,6 +43,8 @@ ALTER TABLE jobs_new RENAME TO jobs;
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs (created_at_unix);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status);
 CREATE INDEX IF NOT EXISTS idx_jobs_actor_id ON jobs (actor_id);
+
+COMMIT;
 
 PRAGMA foreign_keys = ON;
 
