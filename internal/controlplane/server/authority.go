@@ -223,7 +223,7 @@ func reEncryptCertificateAuthority(ctx context.Context, store storage.Certificat
 		return nil
 	}
 	if putErr := store.PutCertificateAuthority(ctx, rec); putErr != nil {
-		slog.Warn("control-plane CA private key migration persist failed", "error", putErr)
+		slog.WarnContext(ctx, "control-plane CA private key migration persist failed", "error", putErr)
 		return nil
 	}
 	return nil
