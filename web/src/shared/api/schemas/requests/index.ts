@@ -11,6 +11,7 @@ export * from "./updateAppearanceSettingsRequest";
 export * from "./updatePanelSettingsRequest";
 export * from "./panelUpdateRequest";
 export * from "./updateSettingsRequest";
+export * from "./settingsValuesRequest";
 export * from "./agentBootstrapRequest";
 export * from "./agentCertificateRecoveryRequest";
 export * from "./agentCertificateRecoveryGrantRequest";

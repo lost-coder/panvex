@@ -15,6 +15,7 @@ import {
   loginRequestSchema,
   panelUpdateRequestSchema,
   renameAgentRequestSchema,
+  settingsValuesRequestSchema,
   updateAppearanceSettingsRequestSchema,
   updateFleetGroupRequestSchema,
   updatePanelSettingsRequestSchema,
@@ -420,5 +421,44 @@ describe("agentUpdateRequestSchema", () => {
   });
   it("defaults version to empty when omitted", () => {
     expect(agentUpdateRequestSchema.parse({})).toEqual({ version: "" });
+  });
+});
+
+// 3.14: putSettingsValues previously JSON.stringify'd its body directly,
+// bypassing the encodeRequest validation every other mutation goes
+// through. This schema is what closes that gap.
+describe("settingsValuesRequestSchema", () => {
+  it("accepts an arbitrary map of string/number/boolean setting values", () => {
+    expect(
+      settingsValuesRequestSchema.parse({
+        "auth.timeout": 120,
+        "auth.mfa_required": true,
+        "github_repo": "org/repo",
+      }),
+    ).toEqual({
+      "auth.timeout": 120,
+      "auth.mfa_required": true,
+      github_repo: "org/repo",
+    });
+  });
+
+  it("accepts an empty object (no-op save)", () => {
+    expect(settingsValuesRequestSchema.parse({})).toEqual({});
+  });
+
+  it("rejects an empty-string setting name", () => {
+    expect(() => settingsValuesRequestSchema.parse({ "": "x" })).toThrow();
+  });
+
+  it("rejects a non-scalar value", () => {
+    expect(() =>
+      settingsValuesRequestSchema.parse({ "auth.timeout": { nested: true } }),
+    ).toThrow();
+    expect(() =>
+      settingsValuesRequestSchema.parse({ "auth.timeout": null }),
+    ).toThrow();
+    expect(() =>
+      settingsValuesRequestSchema.parse({ "auth.timeout": [1, 2] }),
+    ).toThrow();
   });
 });
