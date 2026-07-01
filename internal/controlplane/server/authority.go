@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -15,6 +17,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +41,37 @@ const (
 	// leaf CN against this value; it is not operator-configurable.
 	PanelClientCN = "control-plane.panvex.internal"
 )
+
+// EnvAllowPlaintextCA is a belt-and-suspenders escape hatch for
+// certificateAuthority.record persisting the CA private key without
+// encryption. The PRIMARY guard is settings.LoadBootstrap, which fatally
+// rejects an empty/unset PANVEX_ENCRYPTION_KEY on the only production
+// entrypoint (`serve`) — so this branch is normally unreachable in
+// production. This second guard exists so a future non-`serve` entrypoint
+// (or a test/dev fixture) cannot silently write a plaintext CA private key
+// to disk/DB; it must opt in explicitly. Mirrors the
+// PANVEX_ALLOW_DIRECT_EXPOSURE env-var idiom (strconv.ParseBool, default
+// false, "1"/"true" truthy) in controlplane/server/trusted_proxy.go.
+const EnvAllowPlaintextCA = "PANVEX_ALLOW_PLAINTEXT_CA"
+
+// ErrPlaintextCAPersistDenied is returned by certificateAuthority.record
+// when no encryption key is configured and PANVEX_ALLOW_PLAINTEXT_CA has
+// not been explicitly set.
+var ErrPlaintextCAPersistDenied = errors.New("refusing to persist CA private key in plaintext: no encryption key configured; set PANVEX_ENCRYPTION_KEY, or PANVEX_ALLOW_PLAINTEXT_CA=1 to explicitly allow plaintext persistence (dev/test only)")
+
+// plaintextCAPersistAllowed reports whether the operator has explicitly
+// opted into plaintext CA private key persistence via
+// PANVEX_ALLOW_PLAINTEXT_CA. Read directly via os.Getenv, mirroring the
+// PANVEX_ALLOW_DIRECT_EXPOSURE idiom: accepts "1"/"true" (case-insensitive)
+// via strconv.ParseBool, defaulting to false.
+func plaintextCAPersistAllowed() bool {
+	v := strings.TrimSpace(os.Getenv(EnvAllowPlaintextCA))
+	if v == "" {
+		return false
+	}
+	allowed, err := strconv.ParseBool(v)
+	return err == nil && allowed
+}
 
 type issuedCertificate struct {
 	CertificatePEM string
@@ -182,9 +217,9 @@ func handleCertificateAuthorityExpiry(_ context.Context, _ storage.CertificateAu
 // private key to ENC2: (Argon2id). Errors are non-fatal: they are logged as
 // warnings so startup is not blocked by a transient store failure.
 func reEncryptCertificateAuthority(ctx context.Context, store storage.CertificateAuthorityStore, authority *certificateAuthority, now time.Time, encryptionKey string) error {
-	rec, recErr := authority.record(now, encryptionKey)
+	rec, recErr := authority.record(ctx, now, encryptionKey)
 	if recErr != nil {
-		slog.Warn("control-plane CA private key re-encryption failed", "error", recErr)
+		slog.WarnContext(ctx, "control-plane CA private key re-encryption failed", "error", recErr)
 		return nil
 	}
 	if putErr := store.PutCertificateAuthority(ctx, rec); putErr != nil {
@@ -215,7 +250,7 @@ func persistNewCertificateAuthority(ctx context.Context, store storage.Certifica
 	if err != nil {
 		return nil, err
 	}
-	record, err := authority.record(now, encryptionKey)
+	record, err := authority.record(ctx, now, encryptionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +323,7 @@ func buildCertificateAuthority(certificate *x509.Certificate, privateKey *ecdsa.
 	}, nil
 }
 
-func (a *certificateAuthority) record(now time.Time, encryptionKey string) (storage.CertificateAuthorityRecord, error) {
+func (a *certificateAuthority) record(ctx context.Context, now time.Time, encryptionKey string) (storage.CertificateAuthorityRecord, error) {
 	privateDER, err := x509.MarshalECPrivateKey(a.privateKey)
 	if err != nil {
 		return storage.CertificateAuthorityRecord{}, err
@@ -301,6 +336,17 @@ func (a *certificateAuthority) record(now time.Time, encryptionKey string) (stor
 			return storage.CertificateAuthorityRecord{}, encErr
 		}
 		keyPEM = encrypted
+	} else if !plaintextCAPersistAllowed() {
+		// Belt-and-suspenders (audit 2026-07-01, M1): LoadBootstrap already
+		// fatally rejects an empty PANVEX_ENCRYPTION_KEY on the `serve`
+		// entrypoint, but record() must not itself trust that upstream
+		// guard — a future non-serve caller (or misconfigured test) must
+		// not be able to silently write the CA private key to disk/DB in
+		// plaintext.
+		return storage.CertificateAuthorityRecord{}, ErrPlaintextCAPersistDenied
+	} else {
+		slog.WarnContext(ctx, "persisting control-plane CA private key in plaintext: PANVEX_ALLOW_PLAINTEXT_CA is set",
+			"alert", "plaintext_ca_persist_allowed")
 	}
 
 	return storage.CertificateAuthorityRecord{
@@ -308,6 +354,35 @@ func (a *certificateAuthority) record(now time.Time, encryptionKey string) (stor
 		PrivateKeyPEM: keyPEM,
 		UpdatedAt:     now.UTC(),
 	}, nil
+}
+
+// checkCSRKeyStrength rejects agent CSR public keys that are too weak to
+// trust for an issued leaf certificate (audit 2026-07-01, LOW: CSR weak-key).
+// The agent itself always generates ECDSA P-256 keys (buildCSRPEM), so this
+// exists to reject a malicious or buggy CSR presenting a deliberately weak
+// key rather than to constrain the agent's own behaviour.
+func checkCSRKeyStrength(pub any) error {
+	switch pubKey := pub.(type) {
+	case *rsa.PublicKey:
+		if pubKey.N.BitLen() < 2048 {
+			return fmt.Errorf("RSA key too small: %d bits, want >= 2048", pubKey.N.BitLen())
+		}
+		return nil
+	case *ecdsa.PublicKey:
+		if pubKey.Curve != elliptic.P256() && pubKey.Curve != elliptic.P384() {
+			return fmt.Errorf("ECDSA curve %s not permitted, want P-256 or P-384", pubKey.Curve.Params().Name)
+		}
+		return nil
+	case ed25519.PublicKey:
+		// Ed25519 keys have a fixed, adequately strong security level;
+		// no additional check needed. Not used by the agent today
+		// (buildCSRPEM always emits ECDSA P-256), but nothing downstream
+		// (x509.CreateCertificate signing an Ed25519 SPKI with an ECDSA
+		// CA key) is incompatible with it.
+		return nil
+	default:
+		return fmt.Errorf("unsupported CSR public key type %T", pub)
+	}
 }
 
 // issueAgentCertificateFromCSR is the single issuance path for agent leaf
@@ -333,6 +408,9 @@ func (a *certificateAuthority) issueAgentCertificateFromCSR(csrPEM, agentID stri
 	}
 	if err := csr.CheckSignature(); err != nil {
 		return issuedCertificate{}, fmt.Errorf("sign csr: signature check: %w", err)
+	}
+	if err := checkCSRKeyStrength(csr.PublicKey); err != nil {
+		return issuedCertificate{}, fmt.Errorf("sign csr: weak key: %w for agent %s", err, agentID)
 	}
 	if requireCNMatch && csr.Subject.CommonName != agentID {
 		return issuedCertificate{}, fmt.Errorf("sign csr: CN mismatch: got %q, want %q", csr.Subject.CommonName, agentID)
