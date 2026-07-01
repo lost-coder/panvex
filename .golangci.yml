@@ -379,6 +379,13 @@ linters:
         text: "G402"
         path: "cmd/agent/bootstrap_reverse_test.go"
 
+      # G403 — weak RSA key size. authority_test.go deliberately mints a
+      # 1024-bit RSA key to pin the 3.4 CSR key-strength rejection path;
+      # the key is never used for anything but exercising the rejection.
+      - linters: [gosec]
+        text: "G403"
+        path: "internal/controlplane/server/authority_test.go"
+
       # G404 — math/rand for non-cryptographic backoff jitter.
       # agenttransport/outbound.go and cmd/agent/runtime.go use math/rand/v2
       # to add full jitter to reconnect timers — not security-sensitive.

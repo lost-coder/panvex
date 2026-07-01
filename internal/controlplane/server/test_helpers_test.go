@@ -2,12 +2,26 @@ package server
 
 import (
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
+
+// TestMain opts the whole package's test binary into the 3.1 belt-and-
+// suspenders escape hatch (PANVEX_ALLOW_PLAINTEXT_CA). The vast majority of
+// this package's ~180 mustNew/New call sites construct a Server against a
+// throwaway SQLite store with no EncryptionKey — they exercise HTTP/business
+// logic, not CA persistence — and relied on certificateAuthority.record
+// silently persisting plaintext when unset. The guard itself is covered by
+// its own dedicated test (TestRecordDeniesPlaintextPersistByDefault), which
+// unsets/oversets the env var per-subtest via t.Setenv.
+func TestMain(m *testing.M) {
+	_ = os.Setenv(EnvAllowPlaintextCA, "1")
+	os.Exit(m.Run())
+}
 
 // testCSRPEM generates an ephemeral ECDSA P-256 keypair and returns a
 // PEM-encoded CSR with an arbitrary CN. Use for test fixtures that need a

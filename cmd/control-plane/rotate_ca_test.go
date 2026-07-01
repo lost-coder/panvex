@@ -20,6 +20,10 @@ func seedExpiredCAForCLITest(t *testing.T, dbPath string) {
 		t.Fatalf("sqlite.Open for seed: %v", err)
 	}
 	defer store.Close()
+	// These CLI tests exercise rotate-ca without an encryption key — opt
+	// into the 3.1 plaintext-CA escape hatch rather than plumbing a real
+	// passphrase through flags just to seed a fixture.
+	t.Setenv(server.EnvAllowPlaintextCA, "1")
 	past := time.Now().Add(-10 * 365 * 24 * time.Hour)
 	if err := server.RotateCertificateAuthority(context.Background(), store, past, ""); err != nil {
 		t.Fatalf("seed expired CA via RotateCertificateAuthority: %v", err)
