@@ -1,7 +1,6 @@
 package server
 
 import (
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -48,27 +47,20 @@ func (s *Server) withRateLimit(limiter *fixedWindowRateLimiter, scope string, ke
 
 // requestClientRateLimitKey extracts a per-client key for rate limiting.
 //
-// When the server sits behind a reverse proxy, the function uses the rightmost
-// X-Forwarded-For entry — the hop appended by the last trusted proxy — as the
-// client identity. This only works correctly when TrustedProxyCIDRs (in
-// Options) includes every proxy/load-balancer CIDR that may appear as
-// r.RemoteAddr. If TrustedProxyCIDRs is empty (and the proxy is not on
-// loopback), all requests are keyed by the proxy's own IP and share a single
-// rate-limit bucket, effectively rate-limiting the entire fleet as one client.
+// Client identity is resolved via resolveTrustedClientIP (trusted_proxy.go),
+// the same first-untrusted-hop algorithm ipWhitelistMiddleware uses, so the
+// login-lockout/rate-limit path and the IP-whitelist path can never drift
+// into two different notions of "client IP". This only works correctly when
+// TrustedProxyCIDRs (in Options) includes every proxy/load-balancer CIDR
+// that may appear as r.RemoteAddr. If TrustedProxyCIDRs is empty (and the
+// proxy is not on loopback), all requests resolve to the proxy's own IP and
+// share a single rate-limit/lockout bucket, effectively throttling the
+// entire fleet as one client — see warnIfTrustedProxyMisconfigured and the
+// production hard-fail in checkTrustedProxyMisconfigured.
 func (s *Server) requestClientRateLimitKey(r *http.Request) string {
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		// Use the rightmost X-Forwarded-For entry — the last hop appended
-		// by a trusted proxy. The leftmost entry is attacker-controlled.
-		parts := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
-		forwardedFor := strings.TrimSpace(parts[len(parts)-1])
-		if forwardedFor != "" && s.remoteAddrTrustsForwardedFor(host) {
-			return forwardedFor
-		}
-		if strings.TrimSpace(host) != "" {
-			return host
-		}
+	if key := trustedClientIPString(r, s.trustedProxyCIDRs); key != "" {
+		return key
 	}
-
 	return strings.TrimSpace(r.RemoteAddr)
 }
 
@@ -83,28 +75,4 @@ func (s *Server) requestSessionRateLimitKey(r *http.Request) string {
 		return "user:" + session.UserID
 	}
 	return "ip:" + s.requestClientRateLimitKey(r)
-}
-
-// remoteAddrTrustsForwardedFor reports whether the given remote address
-// belongs to a trusted proxy whose X-Forwarded-For header should be used
-// for client identification. Loopback addresses are always trusted;
-// additional ranges can be configured via TrustedProxyCIDRs.
-func (s *Server) remoteAddrTrustsForwardedFor(host string) bool {
-	if strings.EqualFold(strings.TrimSpace(host), "localhost") {
-		return true
-	}
-
-	ip := net.ParseIP(strings.TrimSpace(host))
-	if ip == nil {
-		return false
-	}
-	if ip.IsLoopback() {
-		return true
-	}
-	for _, cidr := range s.trustedProxyCIDRs {
-		if cidr.Contains(ip) {
-			return true
-		}
-	}
-	return false
 }

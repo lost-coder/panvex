@@ -135,6 +135,16 @@ func ValidateStorageSecurity(storage StorageConfig) error {
 // hatches (PANVEX_ALLOW_INSECURE_DB, PANVEX_ALLOW_EMPTY_DB_PASSWORD) are
 // ignored so a dev configuration cannot be started in prod (S4).
 func isProductionEnv() bool {
+	return IsProductionEnv()
+}
+
+// IsProductionEnv reports whether PANVEX_ENV selects the production
+// environment, case-insensitively. Exported so other packages (e.g.
+// controlplane/server's trusted-proxy misconfiguration guard) can gate
+// their own fail-loud-in-prod checks on the exact same signal this package
+// uses for the storage-security guards, instead of re-reading the env var
+// with a second, potentially-drifting implementation.
+func IsProductionEnv() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("PANVEX_ENV")), "production")
 }
 

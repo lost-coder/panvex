@@ -1,11 +1,25 @@
 package server
 
 import (
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 )
+
+// ErrTrustedProxyMisconfiguredProd reports that the panel is bound to a
+// public (non-loopback) HTTP address with no TrustedProxyCIDRs configured
+// while PANVEX_ENV=production. Left unfixed, X-Forwarded-For is silently
+// ignored and every request — from the login handler's IP lockout, the
+// generic rate limiter, and the IP whitelist middleware alike — resolves
+// to the reverse proxy's own address. That collapses every client into a
+// single shared bucket: a fleet-wide lockout (one attacker can lock out
+// every legitimate operator) and a bypass of per-attacker throttling (an
+// attacker's own requests average in with everyone else's). Mirrors the
+// ErrInsecure*Prod fail-loud pattern in controlplane/config/storage.go —
+// production must not silently start with a broken security boundary.
+var ErrTrustedProxyMisconfiguredProd = errors.New("panel is bound to a public address with no trusted_proxy_cidrs configured; PANVEX_ENV=production requires PANVEX_TRUSTED_PROXY_CIDRS to be set (or bind to loopback)")
 
 // resolveTrustedClientIP determines the real client IP for r given a set of
 // trusted-proxy CIDRs. It is used by both the IP whitelist middleware and the
@@ -129,18 +143,16 @@ func trustedClientIPString(r *http.Request, trustedCIDRs []*net.IPNet) string {
 	return ip.String()
 }
 
-// warnIfTrustedProxyMisconfigured emits a single WARN at startup when the
-// operator binds the panel to a non-loopback address but has not listed
-// any trusted-proxy CIDRs. In that configuration X-Forwarded-For is
-// ignored, every request keys to the proxy IP, and rate-limit buckets the
-// entire fleet as one client (S-06).
-func warnIfTrustedProxyMisconfigured(logger *slog.Logger, bindAddr string, trustedCIDRs []*net.IPNet) {
-	if logger == nil {
-		return
-	}
-	if len(trustedCIDRs) > 0 {
-		return
-	}
+// bindAddrIsPublic reports whether bindAddr is a non-loopback HTTP listen
+// address — i.e. one that a reverse proxy (or a direct external client)
+// could plausibly connect to over a network hop, as opposed to a loopback
+// bind that only accepts local connections. An empty host (e.g. ":8080")
+// means "listen on all interfaces", which is public.
+//
+// Shared by warnIfTrustedProxyMisconfigured (dev: WARN) and
+// checkTrustedProxyMisconfigured (prod: hard error) so the two call sites
+// can never disagree on what counts as "public".
+func bindAddrIsPublic(bindAddr string) bool {
 	host, _, err := net.SplitHostPort(bindAddr)
 	if err != nil {
 		host = bindAddr
@@ -151,9 +163,52 @@ func warnIfTrustedProxyMisconfigured(logger *slog.Logger, bindAddr string, trust
 	// Handle the edge case where the input had no port (rare but safe).
 	host = strings.Trim(host, "[]")
 	if host == "127.0.0.1" || host == "::1" || host == "localhost" {
+		return false
+	}
+	return true
+}
+
+// checkTrustedProxyMisconfigured is the production hard-fail counterpart to
+// warnIfTrustedProxyMisconfigured. When prod is true and the panel binds to
+// a public (non-loopback) address with no trusted-proxy CIDRs configured,
+// it returns ErrTrustedProxyMisconfiguredProd so the caller (New()) can
+// fail the boot outright rather than starting with a silently-broken
+// brute-force defense (S-06 / fleet-wide lockout collapse). In dev
+// (prod == false) this always returns nil — the WARN emitted by
+// warnIfTrustedProxyMisconfigured is the only signal there, matching the
+// ErrInsecureDBDSN (warn+opt-in) vs ErrInsecureDBDSNProd (hard fail, no
+// opt-in) split in controlplane/config/storage.go.
+func checkTrustedProxyMisconfigured(bindAddr string, trustedCIDRs []*net.IPNet, prod bool) error {
+	if !prod {
+		return nil
+	}
+	if len(trustedCIDRs) > 0 {
+		return nil
+	}
+	if !bindAddrIsPublic(bindAddr) {
+		return nil
+	}
+	return ErrTrustedProxyMisconfiguredProd
+}
+
+// warnIfTrustedProxyMisconfigured emits a single WARN at startup when the
+// operator binds the panel to a non-loopback address but has not listed
+// any trusted-proxy CIDRs. In that configuration X-Forwarded-For is
+// ignored, every request keys to the proxy IP, and rate-limit buckets the
+// entire fleet as one client (S-06).
+//
+// This is the dev-mode signal only. In production the same condition is a
+// hard boot failure — see checkTrustedProxyMisconfigured.
+func warnIfTrustedProxyMisconfigured(logger *slog.Logger, bindAddr string, trustedCIDRs []*net.IPNet) {
+	if logger == nil {
 		return
 	}
-	// Empty host means listening on all interfaces — a public bind.
+	if len(trustedCIDRs) > 0 {
+		return
+	}
+	if !bindAddrIsPublic(bindAddr) {
+		return
+	}
 	logger.Warn(
 		"trusted_proxy_cidrs is empty while bind is non-loopback; X-Forwarded-For/Proto headers will be ignored, rate limits will bucket the fleet as one client",
 		slog.String("bind_addr", bindAddr),
