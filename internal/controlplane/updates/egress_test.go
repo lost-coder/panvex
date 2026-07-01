@@ -2,6 +2,7 @@ package updates
 
 import (
 	"net/netip"
+	"strings"
 	"testing"
 )
 
@@ -14,6 +15,7 @@ func TestIsBlockedIP(t *testing.T) {
 		"fe80::1",         // link-local v6
 		"0.0.0.0", "::",   // unspecified
 		"224.0.0.1", "ff02::1", // multicast
+		"::ffff:169.254.169.254", "::ffff:10.0.0.1", // IPv4-mapped IPv6
 	}
 	for _, s := range blocked {
 		if !isBlockedIP(netip.MustParseAddr(s)) {
@@ -55,5 +57,19 @@ func TestGeoIPGuardIgnoresUpdateWildcard(t *testing.T) {
 	t.Setenv("PANVEX_UPDATE_ALLOWED_HOSTS", "*")
 	if err := checkDialAddress("10.0.0.5:443"); err == nil {
 		t.Fatal("update wildcard leaked into the GeoIP egress guard — SSRF reopened")
+	}
+}
+
+func TestGeoIPDownloadClientBlocksInternalDial(t *testing.T) {
+	t.Setenv("PANVEX_UPDATE_ALLOWED_HOSTS", "*") // must NOT loosen the GeoIP egress guard
+	client := GeoIPDownloadClient()
+	// Literal internal IP: the Control hook rejects before any network I/O,
+	// so this is deterministic and never actually connects.
+	_, err := client.Get("https://10.255.255.1/GeoLite2-City.mmdb")
+	if err == nil {
+		t.Fatal("GeoIPDownloadClient dialed an internal address; egress guard not wired to the client")
+	}
+	if !strings.Contains(err.Error(), "non-public address") {
+		t.Fatalf("error = %v, want it to mention the blocked non-public address", err)
 	}
 }
