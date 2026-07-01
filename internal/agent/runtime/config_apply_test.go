@@ -48,11 +48,28 @@ type fakeTelemt struct {
 	healthSeq   []bool // successive HealthReady results; empty => always true
 	healthErr   error
 	patchedWith map[string]any
+	patchedRev  string // expectedRevision observed on the last PatchConfig call
+	patchCalls  int
+
+	managedConfig    map[string]any
+	managedRevision  string
+	managedConfigErr error
+	getManagedCalls  int
 }
 
-func (f *fakeTelemt) PatchConfig(_ context.Context, patch map[string]any, _ string) (telemt.PatchConfigResult, error) {
+func (f *fakeTelemt) PatchConfig(_ context.Context, patch map[string]any, expectedRevision string) (telemt.PatchConfigResult, error) {
+	f.patchCalls++
 	f.patchedWith = patch
+	f.patchedRev = expectedRevision
 	return f.patchResult, f.patchErr
+}
+
+func (f *fakeTelemt) GetManagedConfig(context.Context) (map[string]any, string, error) {
+	f.getManagedCalls++
+	if f.managedConfigErr != nil {
+		return nil, "", f.managedConfigErr
+	}
+	return f.managedConfig, f.managedRevision, nil
 }
 func (f *fakeTelemt) HealthReady(context.Context) (bool, string, error) {
 	if f.healthErr != nil {
@@ -175,6 +192,99 @@ func TestConfigApplyRevisionConflictNoRestart(t *testing.T) {
 	}
 	if rest.restarts != 0 {
 		t.Fatalf("no restart on patch error, got %d", rest.restarts)
+	}
+	if !strings.Contains(res.message, "revision conflict") {
+		t.Fatalf("message = %q, want it to mention revision conflict", res.message)
+	}
+	if !strings.Contains(res.message, "re-fetch and retry") {
+		t.Fatalf("message = %q, want it to instruct re-fetch and retry (not a silent success/blind overwrite)", res.message)
+	}
+	// The caller-supplied expected_revision must be forwarded verbatim; the
+	// agent must not overwrite it with a freshly fetched one when present.
+	if tc.getManagedCalls != 0 {
+		t.Fatalf("expected_revision was supplied by the caller, agent must not fetch it: getManagedCalls=%d", tc.getManagedCalls)
+	}
+	if tc.patchedRev != "stale" {
+		t.Fatalf("patchedRev = %q, want caller-supplied %q forwarded unchanged", tc.patchedRev, "stale")
+	}
+}
+
+// TestConfigApplyEmptyRevisionFetchesCurrentForCAS guards the D3 fix: a
+// config.apply job with an empty expected_revision (the shape every existing
+// caller — control-plane enqueue, UI — sends today) must NOT result in a
+// blind PATCH with no If-Match. The agent fetches Telemt's current revision
+// via GetManagedConfig and forwards THAT as the CAS token, so a
+// retried/duplicated apply still goes through Telemt's 409 guard instead of
+// bypassing it.
+func TestConfigApplyEmptyRevisionFetchesCurrentForCAS(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		patchResult:     telemt.PatchConfigResult{Revision: "r2", RestartRequired: false},
+		managedRevision: "r1",
+		healthSeq:       []bool{true, true},
+	}
+	rest := &fakeRestarter{}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+		configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
+
+	if !res.success {
+		t.Fatalf("expected success, got %q", res.message)
+	}
+	if tc.getManagedCalls != 1 {
+		t.Fatalf("expected exactly 1 GetManagedConfig call to resolve the CAS token, got %d", tc.getManagedCalls)
+	}
+	if tc.patchedRev != "r1" {
+		t.Fatalf("PatchConfig If-Match/expectedRevision = %q, want agent-fetched revision %q (blind write bug: empty)", tc.patchedRev, "r1")
+	}
+}
+
+// TestConfigApplyEmptyRevisionDuplicateIsConflictNotDoubleApply guards the
+// core idempotency property end to end: simulate a duplicated/retried
+// config.apply delivery where Telemt's revision has already moved (someone
+// else applied first, or the previous delivery of the same job already
+// succeeded). The agent-resolved CAS token no longer matches what Telemt
+// holds by the time PATCH lands, so Telemt returns 409 and the result must
+// be a conflict, not a second blind re-apply.
+func TestConfigApplyEmptyRevisionDuplicateIsConflictNotDoubleApply(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		managedRevision: "r1",                             // agent observes r1 when it fetches for CAS...
+		patchErr:        telemt.ErrConfigRevisionConflict, // ...but Telemt has already moved past it.
+		healthSeq:       []bool{true},
+	}
+	rest := &fakeRestarter{}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+		configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
+
+	if res.success {
+		t.Fatalf("expected conflict/no-op, got success (blind re-apply): %q", res.message)
+	}
+	if tc.patchCalls != 1 {
+		t.Fatalf("expected exactly 1 PatchConfig attempt (no blind retry/double-apply), got %d", tc.patchCalls)
+	}
+	if rest.restarts != 0 {
+		t.Fatalf("no restart expected on a conflicted duplicate apply, got %d", rest.restarts)
+	}
+	if !strings.Contains(res.message, "revision conflict") {
+		t.Fatalf("message = %q, want it to surface the revision conflict clearly", res.message)
+	}
+}
+
+// TestConfigApplyEmptyRevisionFetchFailureAborts guards the failure path of
+// the agent-fetch: if GetManagedConfig itself errors, the apply must abort
+// with a clear message rather than falling through to a blind PATCH with an
+// empty If-Match.
+func TestConfigApplyEmptyRevisionFetchFailureAborts(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{managedConfigErr: errors.New("telemt unreachable"), healthSeq: []bool{true}}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path},
+		configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
+
+	if res.success {
+		t.Fatalf("expected failure when the agent cannot resolve a CAS revision")
+	}
+	if tc.patchCalls != 0 {
+		t.Fatalf("PatchConfig must not be attempted when the revision fetch fails, got %d calls", tc.patchCalls)
 	}
 }
 
