@@ -33,12 +33,27 @@ vi.mock("@/app/providers/ToastProvider", () => ({
 // Mock the config hooks so the section can be exercised without a
 // QueryClient or network — the same isolation strategy ConfigTab.test uses.
 const putMutate = vi.fn();
-const applyMutateAsync = vi.fn().mockResolvedValue({ applied: 2, failed: "", error: "" });
+// Async group apply: the mutation resolves with the 202 batch (batch id +
+// per-agent job handles), and the polling hook reports aggregate/per-agent
+// status. Tests override applyStatus to simulate in-flight / done rollouts.
+const applyMutateAsync = vi.fn().mockResolvedValue({
+  batch_id: "cfgapply-1",
+  jobs: [
+    { agent_id: "agent-1", job_id: "job-1" },
+    { agent_id: "agent-2", job_id: "job-2" },
+  ],
+});
 const useGroupConfig = vi.fn();
+const useGroupConfigApplyStatus = vi.fn();
 vi.mock("@/features/servers/config/configHooks", () => ({
   useGroupConfig: (id: string) => useGroupConfig(id),
   usePutGroupConfig: () => ({ mutate: putMutate, isPending: false }),
   useApplyGroupConfig: () => ({ mutateAsync: applyMutateAsync, isPending: false }),
+  useGroupConfigApplyStatus: (
+    groupId: string,
+    batchId: string | null,
+    handles: unknown,
+  ) => useGroupConfigApplyStatus(groupId, batchId, handles),
 }));
 
 import { GroupConfigSection } from "./GroupConfigSection";
@@ -61,6 +76,11 @@ describe("GroupConfigSection", () => {
       data: makeConfig(),
       isLoading: false,
       isError: false,
+    });
+    // Default: no rollout in flight (no batch kicked off yet).
+    useGroupConfigApplyStatus.mockReturnValue({
+      data: undefined,
+      isFetching: false,
     });
     // jsdom lacks <dialog> modal methods used by ApplyConfigButton's confirm.
     HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
@@ -160,5 +180,79 @@ describe("GroupConfigSection", () => {
     useGroupConfig.mockReturnValue({ data: undefined, isLoading: false, isError: true });
     render(<GroupConfigSection groupId="fg-1" />);
     expect(screen.getByText("Request failed")).toBeInTheDocument();
+  });
+
+  it("renders per-agent rollout progress while the async apply is in flight", () => {
+    // Simulate the poller mid-rollout: one done, one still applying.
+    useGroupConfigApplyStatus.mockReturnValue({
+      data: {
+        done: false,
+        total: 2,
+        applied: 1,
+        failed: 0,
+        pending: 1,
+        agents: [
+          { agent_id: "agent-1", job_id: "job-1", status: "succeeded", message: "" },
+          { agent_id: "agent-2", job_id: "job-2", status: "running", message: "" },
+        ],
+      },
+      isFetching: true,
+    });
+    render(<GroupConfigSection groupId="fg-1" />);
+    expect(screen.getByText("Rollout progress")).toBeInTheDocument();
+    // Per-agent status pills surface each node's state.
+    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(screen.getByText("Applying")).toBeInTheDocument();
+    // In-flight rollout does NOT toast a terminal result yet.
+    expect(toastApi.success).not.toHaveBeenCalled();
+    expect(toastApi.error).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a PARTIAL failure via toast + a failed pill when the rollout ends mixed", () => {
+    useGroupConfigApplyStatus.mockReturnValue({
+      data: {
+        done: true,
+        total: 2,
+        applied: 1,
+        failed: 1,
+        pending: 0,
+        agents: [
+          { agent_id: "agent-1", job_id: "job-1", status: "succeeded", message: "" },
+          {
+            agent_id: "agent-2",
+            job_id: "job-2",
+            status: "failed",
+            message: "health check failed",
+          },
+        ],
+      },
+      isFetching: false,
+    });
+    render(<GroupConfigSection groupId="fg-1" />);
+    // The failing agent gets a Failed pill — the partial outcome is visible.
+    expect(screen.getByText("Failed")).toBeInTheDocument();
+    // And the terminal partial toast fires exactly once.
+    expect(toastApi.error).toHaveBeenCalledWith(
+      "Applied to 1 of 2 node(s), 1 failed",
+    );
+  });
+
+  it("toasts a clean success when every agent succeeds", () => {
+    useGroupConfigApplyStatus.mockReturnValue({
+      data: {
+        done: true,
+        total: 2,
+        applied: 2,
+        failed: 0,
+        pending: 0,
+        agents: [
+          { agent_id: "agent-1", job_id: "job-1", status: "succeeded", message: "" },
+          { agent_id: "agent-2", job_id: "job-2", status: "succeeded", message: "" },
+        ],
+      },
+      isFetching: false,
+    });
+    render(<GroupConfigSection groupId="fg-1" />);
+    expect(toastApi.success).toHaveBeenCalledWith("Applied to all 2 node(s)");
   });
 });

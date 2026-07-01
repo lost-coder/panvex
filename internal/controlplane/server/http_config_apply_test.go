@@ -161,6 +161,165 @@ func TestApplyConfigAgentEmptyConfigNoOp(t *testing.T) {
 	}
 }
 
+// TestApplyConfigGroupAsyncAccepted asserts the group apply is ASYNC: the POST
+// returns 202 Accepted immediately (WITHOUT waiting on any config.apply job
+// reaching terminal status) and the body carries a batch id plus one job
+// handle per in-scope agent. Pre-change the handler blocked on
+// waitJobTargetTerminal and returned 200 only after each target completed —
+// with no agent reporting a result, this test would hang/time out.
+func TestApplyConfigGroupAsyncAccepted(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "apply-async-group", time.Time{})
+	srv.seedLiveAgent(Agent{ID: "agent-async-1", FleetGroupID: groupID})
+	srv.seedLiveAgent(Agent{ID: "agent-async-2", FleetGroupID: groupID})
+	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+
+	// No goroutine, no RecordResult — a synchronous handler would block here.
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/fleet-groups/"+groupID+"/config/apply", nil, cookies)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("group apply status = %d, want %d (body: %s)", resp.Code, http.StatusAccepted, resp.Body.String())
+	}
+	var got groupApplyAcceptedResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode accepted response: %v", err)
+	}
+	if got.BatchID == "" {
+		t.Fatalf("batch_id empty, want non-empty (body: %s)", resp.Body.String())
+	}
+	if len(got.Jobs) != 2 {
+		t.Fatalf("jobs len = %d, want 2 (body: %s)", len(got.Jobs), resp.Body.String())
+	}
+	for _, h := range got.Jobs {
+		if h.JobID == "" {
+			t.Fatalf("job handle for %s has empty job id (body: %s)", h.AgentID, resp.Body.String())
+		}
+	}
+}
+
+// TestGroupConfigApplyStatusPartialFailure drives the status endpoint through a
+// mixed outcome: two in-scope agents, one records success and one records
+// failure. The aggregate must report Done=true, Applied=1, Failed=1, and carry
+// the failing agent's ResultText — surfacing the PARTIAL rollout rather than
+// masking it behind a single 5xx.
+func TestGroupConfigApplyStatusPartialFailure(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "apply-status-group", time.Time{})
+	const okAgent = "agent-status-ok"
+	const failAgent = "agent-status-fail"
+	srv.seedLiveAgent(Agent{ID: okAgent, FleetGroupID: groupID})
+	srv.seedLiveAgent(Agent{ID: failAgent, FleetGroupID: groupID})
+	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+
+	// Kick off the async apply, capture the job handles.
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/fleet-groups/"+groupID+"/config/apply", nil, cookies)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("group apply status = %d, want %d", resp.Code, http.StatusAccepted)
+	}
+	var accepted groupApplyAcceptedResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode accepted response: %v", err)
+	}
+	jobByAgent := map[string]string{}
+	for _, h := range accepted.Jobs {
+		jobByAgent[h.AgentID] = h.JobID
+	}
+
+	// One agent succeeds, one fails.
+	if !srv.jobs.RecordResult(context.Background(), okAgent, jobByAgent[okAgent], true, "ok", "", time.Now()) {
+		t.Fatalf("RecordResult(success) returned false")
+	}
+	if !srv.jobs.RecordResult(context.Background(), failAgent, jobByAgent[failAgent], false, "health check failed", "", time.Now()) {
+		t.Fatalf("RecordResult(failure) returned false")
+	}
+
+	// Poll the status endpoint with the returned agent/job ids.
+	statusURL := "/api/fleet-groups/" + groupID + "/config/apply/status" +
+		"?agent=" + okAgent + "&job=" + jobByAgent[okAgent] +
+		"&agent=" + failAgent + "&job=" + jobByAgent[failAgent]
+	statusResp := performJSONRequest(t, srv, http.MethodGet, statusURL, nil, cookies)
+	if statusResp.Code != http.StatusOK {
+		t.Fatalf("status endpoint code = %d, want %d (body: %s)", statusResp.Code, http.StatusOK, statusResp.Body.String())
+	}
+	var status groupApplyStatusResponse
+	if err := json.Unmarshal(statusResp.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decode status response: %v", err)
+	}
+	if !status.Done {
+		t.Fatalf("done = false, want true (body: %s)", statusResp.Body.String())
+	}
+	if status.Total != 2 || status.Applied != 1 || status.Failed != 1 || status.Pending != 0 {
+		t.Fatalf("aggregate = %+v, want Total:2 Applied:1 Failed:1 Pending:0", status)
+	}
+	var sawFailMessage bool
+	for _, a := range status.Agents {
+		if a.AgentID == failAgent {
+			if a.Status != applyStatusFailed {
+				t.Fatalf("fail agent status = %q, want %q", a.Status, applyStatusFailed)
+			}
+			if a.Message != "health check failed" {
+				t.Fatalf("fail agent message = %q, want %q", a.Message, "health check failed")
+			}
+			sawFailMessage = true
+		}
+	}
+	if !sawFailMessage {
+		t.Fatalf("failing agent not present in status agents (body: %s)", statusResp.Body.String())
+	}
+}
+
+// TestGroupConfigApplyStatusPendingNotDone: a target with no reported result
+// yet aggregates to Done=false and Pending>0, so the poller keeps polling.
+func TestGroupConfigApplyStatusPendingNotDone(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "apply-status-pending", time.Time{})
+	const agentID = "agent-status-pending"
+	srv.seedLiveAgent(Agent{ID: agentID, FleetGroupID: groupID})
+	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/fleet-groups/"+groupID+"/config/apply", nil, cookies)
+	var accepted groupApplyAcceptedResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode accepted response: %v", err)
+	}
+	if len(accepted.Jobs) != 1 {
+		t.Fatalf("jobs len = %d, want 1", len(accepted.Jobs))
+	}
+	h := accepted.Jobs[0]
+	statusURL := "/api/fleet-groups/" + groupID + "/config/apply/status?agent=" + h.AgentID + "&job=" + h.JobID
+	statusResp := performJSONRequest(t, srv, http.MethodGet, statusURL, nil, cookies)
+	var status groupApplyStatusResponse
+	if err := json.Unmarshal(statusResp.Body.Bytes(), &status); err != nil {
+		t.Fatalf("decode status response: %v", err)
+	}
+	if status.Done {
+		t.Fatalf("done = true, want false while target is unreported (body: %s)", statusResp.Body.String())
+	}
+	if status.Pending != 1 || status.Total != 1 {
+		t.Fatalf("aggregate = %+v, want Total:1 Pending:1", status)
+	}
+}
+
+// TestGroupConfigApplyStatusOutOfScope: a fleet-scoped operator hitting the
+// status endpoint for an out-of-scope group gets the same 404 the sibling
+// endpoints return.
+func TestGroupConfigApplyStatusOutOfScope(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	inScope := seedTestFleetGroup(t, srv.store, "status-scope-in", time.Time{})
+	outOfScope := seedTestFleetGroup(t, srv.store, "status-scope-out", time.Time{})
+	cookies := loginScopedOperator(t, srv, "status-scoped-op", []string{inScope})
+
+	resp := performJSONRequest(t, srv, http.MethodGet, "/api/fleet-groups/"+outOfScope+"/config/apply/status", nil, cookies)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("out-of-scope status code = %d, want %d (body: %s)", resp.Code, http.StatusNotFound, resp.Body.String())
+	}
+}
+
 // TestWaitJobTargetTerminalSucceeded enqueues a config.apply job, records a
 // success, and asserts waitJobTargetTerminal returns nil.
 func TestWaitJobTargetTerminalSucceeded(t *testing.T) {

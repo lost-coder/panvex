@@ -17,14 +17,21 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "@tanstack/react-router";
 
 import { Button, Spinner } from "@/ui";
+import { StatusPill } from "@/ui/primitives/StatusPill";
+import type { PillTone } from "@/ui/tokens/colors";
 import { SectionHeader } from "@/ui/layout/SectionHeader";
 import { useToast } from "@/app/providers/ToastProvider";
 import { useUnsavedChangesGuard } from "@/shared/hooks";
 import { useServersList } from "@/features/servers/hooks/useServersList";
+import type {
+  GroupApplyAgentStatus,
+  GroupApplyJobHandle,
+} from "@/shared/api/schemas/config";
 
 import {
   useApplyGroupConfig,
   useGroupConfig,
+  useGroupConfigApplyStatus,
   usePutGroupConfig,
 } from "@/features/servers/config/configHooks";
 import { ConfigSectionEditor } from "@/features/servers/config/ConfigSectionEditor";
@@ -65,6 +72,23 @@ function toDriftStatus(status: string): DriftStatus {
   return KNOWN_DRIFT.has(status) ? (status as DriftStatus) : "unknown";
 }
 
+// Map an async apply status to a StatusPill tone (color-blind-safe glyph
+// rides along) so partial failures read at a glance: a failed agent is a
+// red pill, a succeeded one green, in-flight ones neutral/amber.
+const APPLY_TONE: Record<GroupApplyAgentStatus["status"], PillTone> = {
+  pending: "neutral",
+  running: "warn",
+  succeeded: "ok",
+  failed: "error",
+};
+
+const APPLY_GLYPH: Record<GroupApplyAgentStatus["status"], string> = {
+  pending: "•",
+  running: "…",
+  succeeded: "✓",
+  failed: "✕",
+};
+
 export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
   const { t } = useTranslation("servers");
   const toast = useToast();
@@ -82,6 +106,39 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
   const { data, isLoading, isError } = useGroupConfig(groupId);
   const putMutation = usePutGroupConfig(groupId);
   const applyMutation = useApplyGroupConfig(groupId);
+
+  // The active async rollout: the 202 batch id + per-agent job handles from
+  // the last Apply. useGroupConfigApplyStatus polls until every target is
+  // terminal, so the operator watches per-agent progress instead of a
+  // blocking request that could silently time out.
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [handles, setHandles] = useState<readonly GroupApplyJobHandle[]>([]);
+  const applyStatus = useGroupConfigApplyStatus(groupId, batchId, handles);
+
+  // Kick off the async apply and remember the batch so polling can start.
+  async function startApply() {
+    const accepted = await applyMutation.mutateAsync();
+    setHandles(accepted.jobs);
+    setBatchId(accepted.batch_id);
+  }
+
+  // Surface a terminal rollout via the global toast once, when done flips.
+  const rollout = applyStatus.data;
+  useEffect(() => {
+    if (!rollout?.done) return;
+    if (rollout.failed > 0) {
+      toast.error(
+        t("config.apply.partial", {
+          applied: rollout.applied,
+          failed: rollout.failed,
+          total: rollout.total,
+        }),
+      );
+    } else {
+      toast.success(t("config.apply.done", { count: rollout.total }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rollout?.done]);
 
   // Editor state — seeded from the group TARGET. We keep the initial flatten
   // so the changed-path diff is stable across re-renders.
@@ -174,11 +231,53 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
         )}
         <ApplyConfigButton
           changedPaths={targetPaths}
-          onApply={() => applyMutation.mutateAsync()}
+          onApply={startApply}
           labelKey="config.apply.buttonGroup"
-          disabled={changedPaths.length > 0 || putMutation.isPending}
+          disabled={
+            changedPaths.length > 0 ||
+            putMutation.isPending ||
+            applyMutation.isPending ||
+            (applyStatus.isFetching && !rollout?.done)
+          }
         />
       </div>
+
+      {/* Async rollout progress — per-agent status while the apply is in
+          flight (and its terminal summary), so a PARTIAL failure is visible
+          per node rather than hidden behind a single toast. Rendered only
+          once a batch has been kicked off. */}
+      {rollout && rollout.agents.length > 0 && (
+        <div className="flex flex-col gap-2 border-t border-divider pt-4">
+          <SectionHeader
+            title={t("config.apply.progressTitle")}
+            badge={`${rollout.applied}/${rollout.total}`}
+          />
+          <ul className="flex flex-col gap-2" aria-live="polite">
+            {rollout.agents.map((agent) => (
+              <li
+                key={agent.agent_id}
+                className="flex items-center justify-between gap-3 rounded-xs border border-divider px-3 py-2"
+              >
+                <span
+                  className="font-mono text-xs text-fg truncate"
+                  title={agent.message || agent.agent_id}
+                >
+                  {nameById.get(agent.agent_id) ?? agent.agent_id}
+                </span>
+                <StatusPill
+                  tone={APPLY_TONE[agent.status]}
+                  glyph={APPLY_GLYPH[agent.status]}
+                  label={t(
+                    `config.apply.status${
+                      agent.status.charAt(0).toUpperCase() + agent.status.slice(1)
+                    }`,
+                  )}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Per-node drift summary — each node in the group with its current
           alignment to the target. */}

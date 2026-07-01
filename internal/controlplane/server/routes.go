@@ -191,6 +191,7 @@ func (s *Server) routes() http.Handler {
 					operator.Get("/fleet-groups/{id}/config", s.handleGetGroupConfigTarget())
 					operator.Put("/fleet-groups/{id}/config", s.handlePutGroupConfigTarget())
 					operator.With(sensitive).Post("/fleet-groups/{id}/config/apply", s.handleApplyGroupConfig())
+					operator.Get("/fleet-groups/{id}/config/apply/status", s.handleGroupConfigApplyStatus())
 					operator.Post("/fleet-groups/{id}/integrations", s.handleInstallFleetGroupIntegration())
 					operator.Get("/fleet-groups/{id}/integrations/{integrationId}", s.handleGetFleetGroupIntegration())
 					operator.Patch("/fleet-groups/{id}/integrations/{integrationId}", s.handleUpdateFleetGroupIntegration())
