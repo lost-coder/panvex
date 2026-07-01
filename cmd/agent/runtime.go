@@ -20,6 +20,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/logutil"
+	"github.com/lost-coder/panvex/internal/updatehosts"
 )
 
 // runtimeEventsBuf is the process-wide ring of recent Info+ slog records
@@ -139,6 +140,9 @@ func runRuntime(args []string) error {
 		}
 	})
 	slog.SetDefault(slog.New(runtimeHandler))
+	if updatehosts.PolicyFromEnv().Disabled() {
+		slog.Warn("update host allow-list DISABLED via PANVEX_UPDATE_ALLOWED_HOSTS=* — agent self-update accepts any https host")
+	}
 	runtimeEventsBuf = runtimeBuf
 	runtimeEventsNotify = runtimeNotify
 

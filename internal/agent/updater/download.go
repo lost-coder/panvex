@@ -10,25 +10,18 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/updatehosts"
 )
 
-// EnvAllowedHosts overrides the default download host allowlist with a
-// comma-separated list. Use this only when the operator runs a private
-// release mirror — the default already covers the GitHub release CDN
-// hosts the published install path uses.
-const EnvAllowedHosts = "PANVEX_UPDATE_ALLOWED_HOSTS"
+// EnvAllowedHosts is re-exported from updatehosts so existing agent call
+// sites and tests keep a stable reference to the env var name.
+const EnvAllowedHosts = updatehosts.EnvAllowedHosts
 
 const (
 	defaultDownloadTimeout = 5 * time.Minute
 	defaultMaxArchive      = 256 << 20 // 256 MB
 )
-
-var defaultAllowedHosts = []string{
-	"github.com",
-	"raw.githubusercontent.com",
-	"objects.githubusercontent.com",
-	"release-assets.githubusercontent.com",
-}
 
 var (
 	errInsecureScheme  = errors.New("download URL must be https")
@@ -44,6 +37,7 @@ type Config struct {
 	HTTPClient    *http.Client
 	AllowedHosts  []string
 	AllowInsecure bool
+	AllowAnyHost  bool // set by the "*" sentinel: skip the host allow-list
 	MaxArchive    int64
 }
 
@@ -52,33 +46,13 @@ type Config struct {
 // archive cap. Each call constructs a fresh client so tests cannot
 // accidentally share state with production.
 func defaultConfig() Config {
-	hosts := parseAllowedHostsFromEnv()
-	if hosts == nil {
-		hosts = defaultAllowedHosts
-	}
+	p := updatehosts.PolicyFromEnv()
 	return Config{
 		HTTPClient:   &http.Client{Timeout: defaultDownloadTimeout},
-		AllowedHosts: hosts,
+		AllowedHosts: p.Hosts(), // nil when disabled
+		AllowAnyHost: p.Disabled(),
 		MaxArchive:   defaultMaxArchive,
 	}
-}
-
-func parseAllowedHostsFromEnv() []string {
-	raw := strings.TrimSpace(os.Getenv(EnvAllowedHosts))
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if t := strings.TrimSpace(p); t != "" {
-			out = append(out, t)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }
 
 // validateDownloadURL enforces scheme + host policy on a payload URL.
@@ -103,6 +77,9 @@ func validateDownloadURL(raw string, cfg Config) error {
 	host := u.Hostname()
 	if host == "" {
 		return fmt.Errorf("url has no host: %q", raw)
+	}
+	if cfg.AllowAnyHost {
+		return nil
 	}
 	if !hostMatchesAllowlist(host, cfg.AllowedHosts) {
 		return fmt.Errorf("%w: host=%q", errHostNotAllowed, host)

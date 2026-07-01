@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/lost-coder/panvex/internal/updatehosts"
 	"golang.org/x/mod/semver"
 )
 
@@ -117,6 +118,8 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 	archiveName := fmt.Sprintf("panvex-agent-linux-%s.tar.gz", runtime.GOARCH)
 	archiveURL := base + "/" + archiveName
 	checksumURL := archiveURL + ".sha256"
+
+	updatehosts.WarnIfNonDefault(ctx, logger, "agent self-update", archiveURL)
 
 	logger.Info("agent self-update: downloading", "version", payload.Version, "url", archiveURL)
 
