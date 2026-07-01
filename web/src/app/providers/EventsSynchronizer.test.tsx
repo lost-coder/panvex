@@ -186,23 +186,69 @@ describe("EventsSynchronizer onmessage decode", () => {
   });
 
   it("falls back to a broad refetch when a seq gap is detected", async () => {
-    const { qc } = mount();
-    const spy = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
-    const ws = FakeWebSocket.instances.at(-1)!;
+    vi.useFakeTimers();
+    try {
+      const { qc } = mount();
+      const spy = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
+      const ws = FakeWebSocket.instances.at(-1)!;
 
-    ws.onmessage?.(new MessageEvent("message", {
-      data: JSON.stringify({ type: "audit.created", data: {}, seq: 1 }),
-    }));
-    await Promise.resolve();
-    await Promise.resolve();
-    spy.mockClear();
+      ws.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({ type: "audit.created", data: {}, seq: 1 }),
+      }));
+      await vi.advanceTimersByTimeAsync(0);
+      spy.mockClear();
 
-    ws.onmessage?.(new MessageEvent("message", {
-      data: JSON.stringify({ type: "audit.created", data: {}, seq: 4 }),
-    }));
-    await Promise.resolve();
+      ws.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({ type: "audit.created", data: {}, seq: 4 }),
+      }));
+      // 3.11: the resync is debounced (trailing-edge ~500ms) — it must not
+      // fire synchronously.
+      expect(spy).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(500);
 
-    expect(spy).toHaveBeenCalledWith();
+      expect(spy).toHaveBeenCalledWith();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("coalesces a burst of seq gaps within the debounce window into one resync", async () => {
+    vi.useFakeTimers();
+    try {
+      const { qc } = mount();
+      const spy = vi.spyOn(qc, "invalidateQueries").mockResolvedValue();
+      const ws = FakeWebSocket.instances.at(-1)!;
+
+      ws.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({ type: "audit.created", data: {}, seq: 1 }),
+      }));
+      await vi.advanceTimersByTimeAsync(0);
+      spy.mockClear();
+
+      // Three gaps in quick succession, each well inside the 500ms window.
+      ws.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({ type: "audit.created", data: {}, seq: 5 }),
+      }));
+      await vi.advanceTimersByTimeAsync(100);
+      ws.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({ type: "audit.created", data: {}, seq: 9 }),
+      }));
+      await vi.advanceTimersByTimeAsync(100);
+      ws.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({ type: "audit.created", data: {}, seq: 13 }),
+      }));
+
+      // Still nothing — each new gap re-armed the trailing-edge timer.
+      await vi.advanceTimersByTimeAsync(400);
+      expect(spy).not.toHaveBeenCalled();
+
+      // Past the final gap's 500ms window, exactly one resync fires.
+      await vi.advanceTimersByTimeAsync(100);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps per-event invalidation on contiguous seq", async () => {
