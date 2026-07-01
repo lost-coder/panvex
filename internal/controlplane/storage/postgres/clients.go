@@ -324,6 +324,13 @@ func (s *Store) ListClientDeployments(ctx context.Context, clientID string) ([]s
 	return result, rows.Err()
 }
 
+// UpsertClientUsage inserts or updates one (client, agent) usage row.
+// last_seq is the agent's per-connection report cursor; the ON CONFLICT
+// DO UPDATE only fires when the incoming last_seq is strictly newer than
+// the stored one, so an out-of-order or duplicate/older report is a no-op
+// rather than regressing the stored counters (audit finding: monotonicity
+// guard). A brand-new (client, agent) pair always inserts normally since
+// ON CONFLICT only triggers against an existing row.
 func (s *Store) UpsertClientUsage(ctx context.Context, r storage.ClientUsageRecord) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO client_usage (
@@ -338,6 +345,7 @@ func (s *Store) UpsertClientUsage(ctx context.Context, r storage.ClientUsageReco
 			active_unique_ips  = EXCLUDED.active_unique_ips,
 			last_seq           = EXCLUDED.last_seq,
 			observed_at        = EXCLUDED.observed_at
+		WHERE EXCLUDED.last_seq > client_usage.last_seq
 	`,
 		r.ClientID, r.AgentID,
 		int64(r.TrafficUsedBytes), r.UniqueIPsUsed,

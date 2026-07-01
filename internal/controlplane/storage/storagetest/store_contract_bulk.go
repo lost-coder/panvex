@@ -514,4 +514,106 @@ func runBulkWriteContract(t *testing.T, open OpenStore) {
 			t.Fatalf("agentB traffic=%d seq=%d, want 50/7", rowB.TrafficUsedBytes, rowB.LastSeq)
 		}
 	})
+
+	t.Run("UpsertClientUsage last_seq monotonicity guard (task 2.10)", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{ID: "00000000-0000-4000-8000-000000000010", Name: "Mono", CreatedAt: time.Now().UTC()}
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf(errPutFleetGroupShort, err)
+		}
+		agent := storage.AgentRecord{ID: "mono-agent", NodeName: "mono", FleetGroupID: group.ID, LastSeenAt: time.Now().UTC()}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf(errPutAgentShort, err)
+		}
+		client := storage.ClientRecord{
+			ID: "mono-client", Name: "mono", SecretCiphertext: "s",
+			UserADTag: "0123456789abcdef0123456789abcdef",
+			Enabled:   true, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		}
+		if err := store.PutClient(ctx, client); err != nil {
+			t.Fatalf("PutClient: %v", err)
+		}
+
+		// Persistence probe (same pattern as the bulk test above) — the
+		// in-memory fixture backend intentionally no-ops UpsertClientUsage /
+		// ListClientUsage, so skip the monotonicity assertions there.
+		probeSeen, err := store.ListClientUsage(ctx)
+		if err != nil {
+			t.Fatalf("ListClientUsage(probe): %v", err)
+		}
+		if err := store.UpsertClientUsage(ctx, storage.ClientUsageRecord{
+			ClientID: client.ID, AgentID: agent.ID, LastSeq: 1, ObservedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("UpsertClientUsage(probe): %v", err)
+		}
+		probeAfter, err := store.ListClientUsage(ctx)
+		if err != nil {
+			t.Fatalf("ListClientUsage(probe after): %v", err)
+		}
+		if len(probeAfter) == len(probeSeen) {
+			return
+		}
+
+		findRow := func() (storage.ClientUsageRecord, bool) {
+			t.Helper()
+			all, err := store.ListClientUsage(ctx)
+			if err != nil {
+				t.Fatalf("ListClientUsage: %v", err)
+			}
+			for _, r := range all {
+				if r.ClientID == client.ID && r.AgentID == agent.ID {
+					return r, true
+				}
+			}
+			return storage.ClientUsageRecord{}, false
+		}
+
+		base := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+
+		// Establish the row at last_seq=5 ("counters A").
+		if err := store.UpsertClientUsage(ctx, storage.ClientUsageRecord{
+			ClientID: client.ID, AgentID: agent.ID,
+			TrafficUsedBytes: 500, UniqueIPsUsed: 5,
+			ActiveTCPConns: 5, ActiveUniqueIPs: 5,
+			LastSeq: 5, ObservedAt: base,
+		}); err != nil {
+			t.Fatalf("UpsertClientUsage(seq=5): %v", err)
+		}
+		row, ok := findRow()
+		if !ok || row.LastSeq != 5 || row.TrafficUsedBytes != 500 {
+			t.Fatalf("after seq=5: row=%+v ok=%v, want last_seq=5 traffic=500", row, ok)
+		}
+
+		// Out-of-order older report (last_seq=3, "counters B") must be a
+		// no-op — the stored row must NOT regress.
+		if err := store.UpsertClientUsage(ctx, storage.ClientUsageRecord{
+			ClientID: client.ID, AgentID: agent.ID,
+			TrafficUsedBytes: 3, UniqueIPsUsed: 3,
+			ActiveTCPConns: 3, ActiveUniqueIPs: 3,
+			LastSeq: 3, ObservedAt: base.Add(time.Minute),
+		}); err != nil {
+			t.Fatalf("UpsertClientUsage(seq=3, stale): %v", err)
+		}
+		row, ok = findRow()
+		if !ok || row.LastSeq != 5 || row.TrafficUsedBytes != 500 {
+			t.Fatalf("after stale seq=3: row=%+v ok=%v, want unchanged last_seq=5 traffic=500 (no regression)", row, ok)
+		}
+
+		// A newer report (last_seq=7) must apply normally.
+		if err := store.UpsertClientUsage(ctx, storage.ClientUsageRecord{
+			ClientID: client.ID, AgentID: agent.ID,
+			TrafficUsedBytes: 700, UniqueIPsUsed: 7,
+			ActiveTCPConns: 7, ActiveUniqueIPs: 7,
+			LastSeq: 7, ObservedAt: base.Add(2 * time.Minute),
+		}); err != nil {
+			t.Fatalf("UpsertClientUsage(seq=7): %v", err)
+		}
+		row, ok = findRow()
+		if !ok || row.LastSeq != 7 || row.TrafficUsedBytes != 700 {
+			t.Fatalf("after seq=7: row=%+v ok=%v, want last_seq=7 traffic=700 (newer report applies)", row, ok)
+		}
+	})
 }

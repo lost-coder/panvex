@@ -457,6 +457,13 @@ func (r *clientsRepository) upsertDeployment(ctx context.Context, d clients.Depl
 	return err
 }
 
+// upsertUsageRow inserts or updates one (client, agent) usage row. last_seq
+// is the agent's per-connection report cursor; the ON CONFLICT DO UPDATE
+// only fires when the incoming last_seq is strictly newer than the stored
+// one, so an out-of-order or duplicate/older report is a no-op rather than
+// regressing the stored counters (audit finding: monotonicity guard). A
+// brand-new (client, agent) pair always inserts normally since ON CONFLICT
+// only triggers against an existing row.
 func (r *clientsRepository) upsertUsageRow(ctx context.Context, exec dbtx, u clients.Usage) error {
 	_, err := exec.ExecContext(ctx, `
 		INSERT INTO client_usage (
@@ -474,6 +481,7 @@ func (r *clientsRepository) upsertUsageRow(ctx context.Context, exec dbtx, u cli
 			quota_last_reset_unix = excluded.quota_last_reset_unix,
 			last_seq              = excluded.last_seq,
 			observed_at_unix      = excluded.observed_at_unix
+		WHERE excluded.last_seq > client_usage.last_seq
 	`,
 		string(u.ClientID), u.AgentID,
 		int64(u.TrafficUsedBytes), u.UniqueIPsUsed, //nolint:gosec
@@ -485,7 +493,12 @@ func (r *clientsRepository) upsertUsageRow(ctx context.Context, exec dbtx, u cli
 }
 
 // bulkUpsertUsage runs chunked INSERT for the usage batch inside a single
-// BEGIN IMMEDIATE transaction. Reuses rowPlaceholders from bulk.go.
+// BEGIN IMMEDIATE transaction. Reuses rowPlaceholders from bulk.go. Same
+// last_seq monotonicity guard as upsertUsageRow: a conflicting row only
+// applies when its last_seq is strictly newer than the stored one. SQLite
+// applies each VALUES row in the statement in order, so within-batch
+// duplicates for the same (client, agent) still collapse to last-write-wins
+// as long as last_seq is non-decreasing within the batch.
 func (r *clientsRepository) bulkUpsertUsage(ctx context.Context, batch []clients.Usage) error {
 	conn, err := r.raw.Conn(ctx)
 	if err != nil {
@@ -535,7 +548,8 @@ func (r *clientsRepository) bulkUpsertUsage(ctx context.Context, batch []clients
 				quota_used_bytes      = excluded.quota_used_bytes,
 				quota_last_reset_unix = excluded.quota_last_reset_unix,
 				last_seq              = excluded.last_seq,
-				observed_at_unix      = excluded.observed_at_unix`,
+				observed_at_unix      = excluded.observed_at_unix
+			WHERE excluded.last_seq > client_usage.last_seq`,
 			rowPlaceholders(len(chunk), cols))
 		if _, err := exec.ExecContext(ctx, query, args...); err != nil {
 			return err
