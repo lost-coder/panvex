@@ -132,8 +132,8 @@ func (q *Queries) InsertConfigApplyBatch(ctx context.Context, arg InsertConfigAp
 }
 
 const insertConfigApplyBatchTarget = `-- name: InsertConfigApplyBatchTarget :exec
-INSERT INTO config_apply_batch_targets (batch_id, agent_id, wave_index, job_id, status)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO config_apply_batch_targets (batch_id, agent_id, wave_index, job_id, status, message)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type InsertConfigApplyBatchTargetParams struct {
@@ -142,6 +142,7 @@ type InsertConfigApplyBatchTargetParams struct {
 	WaveIndex int32
 	JobID     string
 	Status    string
+	Message   string
 }
 
 func (q *Queries) InsertConfigApplyBatchTarget(ctx context.Context, arg InsertConfigApplyBatchTargetParams) error {
@@ -151,12 +152,13 @@ func (q *Queries) InsertConfigApplyBatchTarget(ctx context.Context, arg InsertCo
 		arg.WaveIndex,
 		arg.JobID,
 		arg.Status,
+		arg.Message,
 	)
 	return err
 }
 
 const listConfigApplyBatchTargets = `-- name: ListConfigApplyBatchTargets :many
-SELECT batch_id, agent_id, wave_index, job_id, status
+SELECT batch_id, agent_id, wave_index, job_id, status, message
 FROM config_apply_batch_targets
 WHERE batch_id = $1
 ORDER BY wave_index ASC, agent_id ASC
@@ -177,6 +179,7 @@ func (q *Queries) ListConfigApplyBatchTargets(ctx context.Context, batchID strin
 			&i.WaveIndex,
 			&i.JobID,
 			&i.Status,
+			&i.Message,
 		); err != nil {
 			return nil, err
 		}
@@ -286,17 +289,23 @@ func (q *Queries) UpdateConfigApplyBatchStatus(ctx context.Context, arg UpdateCo
 
 const updateConfigApplyBatchTargetStatus = `-- name: UpdateConfigApplyBatchTargetStatus :exec
 UPDATE config_apply_batch_targets
-SET status = $1
-WHERE batch_id = $2 AND agent_id = $3
+SET status = $1, message = $2
+WHERE batch_id = $3 AND agent_id = $4
 `
 
 type UpdateConfigApplyBatchTargetStatusParams struct {
 	Status  string
+	Message string
 	BatchID string
 	AgentID string
 }
 
 func (q *Queries) UpdateConfigApplyBatchTargetStatus(ctx context.Context, arg UpdateConfigApplyBatchTargetStatusParams) error {
-	_, err := q.db.ExecContext(ctx, updateConfigApplyBatchTargetStatus, arg.Status, arg.BatchID, arg.AgentID)
+	_, err := q.db.ExecContext(ctx, updateConfigApplyBatchTargetStatus,
+		arg.Status,
+		arg.Message,
+		arg.BatchID,
+		arg.AgentID,
+	)
 	return err
 }

@@ -138,9 +138,13 @@ func isTerminalConfigApplyTargetStatus(status string) bool {
 	}
 }
 
-// advanceConfigApplyBatch re-derives each non-terminal target's status from
-// its config.apply job (via the shared configApplyJobStatus helper — see
-// http_config_apply.go) and persists any change. Once every target in the
+// advanceConfigApplyBatch re-derives each non-terminal target's status (and
+// message) from its config.apply job (via the shared configApplyJobStatus
+// helper — see http_config_apply.go) and persists any change. Persisting the
+// message here — not just the status — is what lets the batch-status
+// endpoints (handleGetGroupApplyBatchStatus) surface a failure reason after
+// the underlying job has rolled off the in-memory jobs store: the target row
+// becomes the durable record once it goes terminal. Once every target in the
 // batch's (only, for Phase A) wave is terminal, the batch itself is
 // finalized: succeeded if no target failed, failed otherwise.
 //
@@ -151,12 +155,12 @@ func isTerminalConfigApplyTargetStatus(status string) bool {
 // table to keep in sync.
 //
 // Idempotent: a batch that is already terminal (not Running) is a no-op, and
-// a target whose stored status already matches its job-derived status is not
-// re-written. This makes the function safe to call repeatedly from the
-// polling worker (startConfigApplyBatchWorker) without double-transitioning
-// an already-finalized batch, and safe to resume after a panel restart —
-// ListRunningConfigApplyBatches only ever hands back batches that still need
-// advancing.
+// a target whose stored status AND message already match the job-derived
+// values is not re-written. This makes the function safe to call repeatedly
+// from the polling worker (startConfigApplyBatchWorker) without
+// double-transitioning an already-finalized batch, and safe to resume after
+// a panel restart — ListRunningConfigApplyBatches only ever hands back
+// batches that still need advancing.
 //
 // Phase B (rolling, multi-wave) will need to additionally decide whether to
 // enqueue the next wave here; Phase A's all_at_once mode has exactly one
@@ -175,9 +179,9 @@ func (s *Server) advanceConfigApplyBatch(ctx context.Context, batch storage.Conf
 	for _, tgt := range targets {
 		status := tgt.Status
 		if !isTerminalConfigApplyTargetStatus(status) {
-			derived, _ := s.configApplyJobStatus(tgt.JobID, tgt.AgentID)
-			if derived != status {
-				if err := s.store.UpdateConfigApplyBatchTargetStatus(ctx, batch.ID, tgt.AgentID, derived); err != nil {
+			derived, message := s.configApplyJobStatus(tgt.JobID, tgt.AgentID)
+			if derived != status || message != tgt.Message {
+				if err := s.store.UpdateConfigApplyBatchTargetStatus(ctx, batch.ID, tgt.AgentID, derived, message); err != nil {
 					return fmt.Errorf("update config-apply batch %s target %s status: %w", batch.ID, tgt.AgentID, err)
 				}
 				status = derived

@@ -145,7 +145,7 @@ CREATE TABLE config_apply_batch_targets (
     agent_id    TEXT NOT NULL,
     wave_index  INTEGER NOT NULL,
     job_id      TEXT NOT NULL DEFAULT '',
-    status      TEXT NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed', 'skipped')),
+    status      TEXT NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed', 'skipped')), message TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (batch_id, agent_id)
 );
 
@@ -720,4 +720,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (50, 1),
   (51, 1),
   (52, 1),
-  (53, 1);
+  (53, 1),
+  (54, 1);

@@ -10,8 +10,8 @@ INSERT INTO config_apply_batches
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: InsertConfigApplyBatchTarget :exec
-INSERT INTO config_apply_batch_targets (batch_id, agent_id, wave_index, job_id, status)
-VALUES ($1, $2, $3, $4, $5);
+INSERT INTO config_apply_batch_targets (batch_id, agent_id, wave_index, job_id, status, message)
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: GetConfigApplyBatch :one
 SELECT id, fleet_group_id::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
@@ -19,7 +19,7 @@ FROM config_apply_batches
 WHERE id = $1;
 
 -- name: ListConfigApplyBatchTargets :many
-SELECT batch_id, agent_id, wave_index, job_id, status
+SELECT batch_id, agent_id, wave_index, job_id, status, message
 FROM config_apply_batch_targets
 WHERE batch_id = $1
 ORDER BY wave_index ASC, agent_id ASC;
@@ -49,8 +49,8 @@ WHERE batch_id = $3 AND agent_id = $4;
 
 -- name: UpdateConfigApplyBatchTargetStatus :exec
 UPDATE config_apply_batch_targets
-SET status = $1
-WHERE batch_id = $2 AND agent_id = $3;
+SET status = $1, message = $2
+WHERE batch_id = $3 AND agent_id = $4;
 
 -- name: DeleteTerminalConfigApplyBatches :execrows
 DELETE FROM config_apply_batches

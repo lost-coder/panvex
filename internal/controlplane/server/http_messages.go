@@ -20,6 +20,7 @@ const (
 	msgRecoveryNotAllowed         = "agent certificate recovery is not allowed"
 	msgAdminRoleRequired          = "admin role required"
 	msgClientIDRequired           = "client id is required"
+	msgConfigApplyBatchNotFound   = "config-apply batch not found"
 
 	// Client-mutation error allowlist (3.10): handleClientMutationError maps
 	// every known sentinel from the client validation/mutation path to one

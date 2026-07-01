@@ -30,9 +30,9 @@ func (s *Store) CreateConfigApplyBatch(ctx context.Context, b storage.ConfigAppl
 
 	for _, target := range targets {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO config_apply_batch_targets (batch_id, agent_id, wave_index, job_id, status)
-			VALUES (?, ?, ?, ?, ?)
-		`, target.BatchID, target.AgentID, target.WaveIndex, target.JobID, target.Status); err != nil {
+			INSERT INTO config_apply_batch_targets (batch_id, agent_id, wave_index, job_id, status, message)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, target.BatchID, target.AgentID, target.WaveIndex, target.JobID, target.Status, target.Message); err != nil {
 			return err
 		}
 	}
@@ -59,7 +59,7 @@ func (s *Store) GetConfigApplyBatch(ctx context.Context, id string) (storage.Con
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT batch_id, agent_id, wave_index, job_id, status
+		SELECT batch_id, agent_id, wave_index, job_id, status, message
 		FROM config_apply_batch_targets
 		WHERE batch_id = ?
 		ORDER BY wave_index ASC, agent_id ASC
@@ -72,7 +72,7 @@ func (s *Store) GetConfigApplyBatch(ctx context.Context, id string) (storage.Con
 	targets := make([]storage.ConfigApplyBatchTargetRecord, 0)
 	for rows.Next() {
 		var t storage.ConfigApplyBatchTargetRecord
-		if err := rows.Scan(&t.BatchID, &t.AgentID, &t.WaveIndex, &t.JobID, &t.Status); err != nil {
+		if err := rows.Scan(&t.BatchID, &t.AgentID, &t.WaveIndex, &t.JobID, &t.Status, &t.Message); err != nil {
 			return storage.ConfigApplyBatchRecord{}, nil, err
 		}
 		targets = append(targets, t)
@@ -165,13 +165,13 @@ func (s *Store) SetConfigApplyBatchTargetJob(ctx context.Context, batchID, agent
 }
 
 // UpdateConfigApplyBatchTargetStatus updates one target's delivery status
-// without touching its job id.
-func (s *Store) UpdateConfigApplyBatchTargetStatus(ctx context.Context, batchID, agentID, status string) error {
+// and message without touching its job id.
+func (s *Store) UpdateConfigApplyBatchTargetStatus(ctx context.Context, batchID, agentID, status, message string) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE config_apply_batch_targets
-		SET status = ?
+		SET status = ?, message = ?
 		WHERE batch_id = ? AND agent_id = ?
-	`, status, batchID, agentID)
+	`, status, message, batchID, agentID)
 	return err
 }
 

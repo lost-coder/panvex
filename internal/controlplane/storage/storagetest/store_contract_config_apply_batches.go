@@ -91,11 +91,14 @@ func runConfigApplyBatchContract(t *testing.T, open OpenStore) {
 			t.Fatalf("agent-2 target = %+v, want untouched (empty job, pending)", agent2)
 		}
 
-		// UpdateConfigApplyBatchTargetStatus: status-only update, job id untouched.
-		if err := st.UpdateConfigApplyBatchTargetStatus(ctx, "batch-1", "agent-1", storage.ConfigApplyTargetStatusSucceeded); err != nil {
+		// UpdateConfigApplyBatchTargetStatus: status+message update, job id
+		// untouched. agent-1's failure message must round-trip so it
+		// survives eviction of the underlying job from the jobs store — the
+		// whole point of persisting it on the target row.
+		if err := st.UpdateConfigApplyBatchTargetStatus(ctx, "batch-1", "agent-1", storage.ConfigApplyTargetStatusFailed, "health check failed"); err != nil {
 			t.Fatalf("UpdateConfigApplyBatchTargetStatus() error = %v", err)
 		}
-		if err := st.UpdateConfigApplyBatchTargetStatus(ctx, "batch-1", "agent-2", storage.ConfigApplyTargetStatusSkipped); err != nil {
+		if err := st.UpdateConfigApplyBatchTargetStatus(ctx, "batch-1", "agent-2", storage.ConfigApplyTargetStatusSkipped, ""); err != nil {
 			t.Fatalf("UpdateConfigApplyBatchTargetStatus() error = %v", err)
 		}
 		_, gotTargets, err = st.GetConfigApplyBatch(ctx, "batch-1")
@@ -103,12 +106,18 @@ func runConfigApplyBatchContract(t *testing.T, open OpenStore) {
 			t.Fatalf("GetConfigApplyBatch() after status update error = %v", err)
 		}
 		agent1 = targetByAgent(t, gotTargets, "agent-1")
-		if agent1.Status != storage.ConfigApplyTargetStatusSucceeded || agent1.JobID != "job-1" {
-			t.Fatalf("agent-1 target after status update = %+v, want Status=succeeded JobID=job-1 (unchanged)", agent1)
+		if agent1.Status != storage.ConfigApplyTargetStatusFailed || agent1.JobID != "job-1" {
+			t.Fatalf("agent-1 target after status update = %+v, want Status=failed JobID=job-1 (unchanged)", agent1)
+		}
+		if agent1.Message != "health check failed" {
+			t.Fatalf("agent-1 target Message = %q, want %q (must persist and survive job eviction)", agent1.Message, "health check failed")
 		}
 		agent2 = targetByAgent(t, gotTargets, "agent-2")
 		if agent2.Status != storage.ConfigApplyTargetStatusSkipped {
 			t.Fatalf("agent-2 target after status update = %+v, want Status=skipped", agent2)
+		}
+		if agent2.Message != "" {
+			t.Fatalf("agent-2 target Message = %q, want empty", agent2.Message)
 		}
 
 		// UpdateConfigApplyBatchStatus: batch transitions to succeeded.

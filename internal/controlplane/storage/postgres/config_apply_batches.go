@@ -47,6 +47,7 @@ func (s *Store) CreateConfigApplyBatch(ctx context.Context, b storage.ConfigAppl
 			WaveIndex: int32(target.WaveIndex), //nolint:gosec // wave index is a small ordinal, never near int32 overflow
 			JobID:     target.JobID,
 			Status:    target.Status,
+			Message:   target.Message,
 		}); err != nil {
 			return err
 		}
@@ -185,13 +186,14 @@ func (s *Store) SetConfigApplyBatchTargetJob(ctx context.Context, batchID, agent
 }
 
 // UpdateConfigApplyBatchTargetStatus updates one target's delivery status
-// without touching its job id.
-func (s *Store) UpdateConfigApplyBatchTargetStatus(ctx context.Context, batchID, agentID, status string) error {
+// and message without touching its job id.
+func (s *Store) UpdateConfigApplyBatchTargetStatus(ctx context.Context, batchID, agentID, status, message string) error {
 	if s.sqlDB == nil {
 		return errTxBoundStore
 	}
 	return dbsqlc.New(s.sqlDB).UpdateConfigApplyBatchTargetStatus(ctx, dbsqlc.UpdateConfigApplyBatchTargetStatusParams{
 		Status:  status,
+		Message: message,
 		BatchID: batchID,
 		AgentID: agentID,
 	})
@@ -216,5 +218,6 @@ func configApplyBatchTargetFromRow(row dbsqlc.ConfigApplyBatchTarget) storage.Co
 		WaveIndex: int(row.WaveIndex),
 		JobID:     row.JobID,
 		Status:    row.Status,
+		Message:   row.Message,
 	}
 }

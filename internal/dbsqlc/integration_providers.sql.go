@@ -7,7 +7,6 @@ package dbsqlc
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -98,7 +97,7 @@ type UpsertIntegrationProviderParams struct {
 	ID        uuid.UUID
 	Kind      string
 	Label     string
-	Config    json.RawMessage
+	Config    string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

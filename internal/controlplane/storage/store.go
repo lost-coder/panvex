@@ -586,8 +586,11 @@ type ConfigApplyBatchStore interface {
 	// (wave enqueue) and updates its status in the same write.
 	SetConfigApplyBatchTargetJob(ctx context.Context, batchID, agentID, jobID, status string) error
 	// UpdateConfigApplyBatchTargetStatus updates one target's delivery
-	// status without touching its job id.
-	UpdateConfigApplyBatchTargetStatus(ctx context.Context, batchID, agentID, status string) error
+	// status and message without touching its job id. message is typically
+	// the agent's own failure text (empty for succeeded/skipped targets) and
+	// is persisted so it survives eviction of the underlying job from the
+	// in-memory jobs store, keeping the batch-status view resumable.
+	UpdateConfigApplyBatchTargetStatus(ctx context.Context, batchID, agentID, status, message string) error
 	// PruneConfigApplyBatches deletes batches in a terminal status
 	// (succeeded/failed/halted) whose updated_at predates the cutoff.
 	// Targets are removed via ON DELETE CASCADE. Returns the number of

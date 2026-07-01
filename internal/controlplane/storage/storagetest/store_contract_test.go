@@ -210,11 +210,12 @@ func (s *memoryStore) SetConfigApplyBatchTargetJob(_ context.Context, batchID, a
 	return nil
 }
 
-func (s *memoryStore) UpdateConfigApplyBatchTargetStatus(_ context.Context, batchID, agentID, status string) error {
+func (s *memoryStore) UpdateConfigApplyBatchTargetStatus(_ context.Context, batchID, agentID, status, message string) error {
 	targets := s.configApplyBatchTargets[batchID]
 	for i := range targets {
 		if targets[i].AgentID == agentID {
 			targets[i].Status = status
+			targets[i].Message = message
 			return nil
 		}
 	}
