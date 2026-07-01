@@ -158,6 +158,10 @@ export type ClientIPEntry = {
 export type ClientIPHistoryResponse = {
   ips: ClientIPEntry[];
   total_unique: number;
+  // M7: false means total_unique is a 0 placeholder — the backend's
+  // count query failed rather than the client genuinely having zero
+  // unique IPs. Absent (older responses) is treated as available.
+  total_unique_available?: boolean | undefined;
 };
 
 export type BulkClientServerAction = "enable" | "disable" | "delete";

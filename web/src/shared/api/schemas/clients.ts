@@ -48,6 +48,12 @@ const clientIPEntrySchema = z.object({
 export const clientIPHistoryResponseSchema = z.object({
   ips: z.array(clientIPEntrySchema),
   total_unique: z.number(),
+  // M7 (audit remediation phase 2): false when the backend's
+  // CountUniqueClientIPs query failed — total_unique is then a 0
+  // placeholder, not a real count. Optional so older/other server
+  // builds that omit the field still validate; callers should treat a
+  // missing flag as "available" (historical behaviour).
+  total_unique_available: z.boolean().optional(),
 });
 
 const bulkClientFailureSchema = z.object({

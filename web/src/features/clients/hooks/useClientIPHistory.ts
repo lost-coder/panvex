@@ -24,6 +24,11 @@ export function useClientIPHistory(clientID: string) {
       asn: ip.asn,
     })),
     totalUnique: query.data?.total_unique ?? 0,
+    // M7: surfaces whether totalUnique above is a real count or a 0
+    // placeholder from a failed backend count query. Defaults to true
+    // so pre-fix / older responses that omit the field behave exactly
+    // as before.
+    totalUniqueAvailable: query.data?.total_unique_available ?? true,
     isLoading: query.isLoading,
   };
 }

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -57,7 +58,11 @@ func (s *Server) handleServerLoadHistory() http.HandlerFunc {
 			return
 		}
 
-		from, to := s.parseTimeRange(r, defaultHistoryRangeHours)
+		from, to, err := s.parseTimeRange(r, defaultHistoryRangeHours)
+		if err != nil {
+			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid time range", err)
+			return
+		}
 		if s.store == nil {
 			writeJSON(w, http.StatusOK, map[string]any{"points": []any{}, "resolution": "raw"})
 			return
@@ -109,7 +114,11 @@ func (s *Server) handleDCHealthHistory() http.HandlerFunc {
 			return
 		}
 
-		from, to := s.parseTimeRange(r, defaultHistoryRangeHours)
+		from, to, err := s.parseTimeRange(r, defaultHistoryRangeHours)
+		if err != nil {
+			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid time range", err)
+			return
+		}
 		if s.store == nil {
 			writeJSON(w, http.StatusOK, map[string]any{"points": []any{}})
 			return
@@ -192,9 +201,13 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			return
 		}
 
-		from, to := s.parseTimeRange(r, 24*30) // default 30 days for IPs
+		from, to, err := s.parseTimeRange(r, 24*30) // default 30 days for IPs
+		if err != nil {
+			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid time range", err)
+			return
+		}
 		if s.store == nil {
-			writeJSON(w, http.StatusOK, map[string]any{"ips": []any{}, "total_unique": 0})
+			writeJSON(w, http.StatusOK, map[string]any{"ips": []any{}, "total_unique": 0, "total_unique_available": true})
 			return
 		}
 
@@ -203,16 +216,26 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
+		// M7 (audit remediation phase 2): CountUniqueClientIPs is the
+		// authoritative source for total_unique. On error we must NOT
+		// substitute len(ips) — that is the page size (capped by
+		// `limit`), not the true total, and reporting it back looks
+		// like a plausible real count instead of a failure. Report 0
+		// with total_unique_available=false so callers can distinguish
+		// "genuinely zero" from "count unavailable" instead of quietly
+		// showing a wrong-but-plausible number.
 		totalUnique, err := s.store.CountUniqueClientIPs(r.Context(), clientID)
+		totalUniqueAvailable := err == nil
 		if err != nil {
 			s.logger.WarnContext(r.Context(), "count unique client ips failed", "client_id", clientID, "error", err)
-			totalUnique = len(ips)
+			totalUnique = 0
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ips":          ips,
-			"total_unique": totalUnique,
-			"truncated":    truncated,
-			"limit":        limit,
+			"ips":                    ips,
+			"total_unique":           totalUnique,
+			"total_unique_available": totalUniqueAvailable,
+			"truncated":              truncated,
+			"limit":                  limit,
 		})
 	}
 }
@@ -299,24 +322,39 @@ const (
 
 // parseTimeRange now takes an explicit now so it stays deterministic
 // under the injectable clock (Q5.U-Q-16). Call sites pass s.now().
-func (s *Server) parseTimeRange(r *http.Request, defaultHours int) (time.Time, time.Time) {
+//
+// M6 (audit remediation phase 2): a malformed from/to, or an inverted
+// range (from > to), used to flow through untouched — the caller would
+// silently fall back to the default window or hand storage a range
+// that returns an empty/misleading result set. Both are now reported
+// as an error so the handler can answer 400 instead of masquerading as
+// "no data".
+func (s *Server) parseTimeRange(r *http.Request, defaultHours int) (time.Time, time.Time, error) {
 	return parseTimeRangeAt(r, defaultHours, s.now())
 }
 
-func parseTimeRangeAt(r *http.Request, defaultHours int, nowAt time.Time) (time.Time, time.Time) {
+func parseTimeRangeAt(r *http.Request, defaultHours int, nowAt time.Time) (time.Time, time.Time, error) {
 	now := nowAt.UTC()
 	to := now
 	from := now.Add(-time.Duration(defaultHours) * time.Hour)
 
 	if v := r.URL.Query().Get("from"); v != "" {
-		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
-			from = parsed.UTC()
+		parsed, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid from parameter %q: expected RFC3339 timestamp: %w", v, err)
 		}
+		from = parsed.UTC()
 	}
 	if v := r.URL.Query().Get("to"); v != "" {
-		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
-			to = parsed.UTC()
+		parsed, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return time.Time{}, time.Time{}, fmt.Errorf("invalid to parameter %q: expected RFC3339 timestamp: %w", v, err)
 		}
+		to = parsed.UTC()
+	}
+
+	if from.After(to) {
+		return time.Time{}, time.Time{}, fmt.Errorf("invalid time range: from (%s) is after to (%s)", from.Format(time.RFC3339), to.Format(time.RFC3339))
 	}
 
 	// Clamp range
@@ -324,5 +362,5 @@ func parseTimeRangeAt(r *http.Request, defaultHours int, nowAt time.Time) (time.
 		from = to.Add(-time.Duration(maxHistoryRangeHours) * time.Hour)
 	}
 
-	return from, to
+	return from, to, nil
 }
