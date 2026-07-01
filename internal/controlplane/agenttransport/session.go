@@ -2,6 +2,7 @@ package agenttransport
 
 import (
 	"context"
+	"sync"
 
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -21,9 +22,12 @@ type AgentSession interface {
 // same handler can run against both server and client streams.
 type ServerStreamSession struct {
 	Stream gatewayrpc.AgentGateway_ConnectServer
+	sendMu sync.Mutex
 }
 
 func (s *ServerStreamSession) Send(msg *gatewayrpc.ConnectServerMessage) error {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
 	return s.Stream.Send(msg)
 }
 
@@ -46,9 +50,12 @@ func (s *ServerStreamSession) Context() context.Context {
 // are identical regardless of which generated wrapper "owns" the type.
 type ClientStreamSession struct {
 	Stream gatewayrpc.AgentGateway_ConnectClient
+	sendMu sync.Mutex
 }
 
 func (s *ClientStreamSession) Send(msg *gatewayrpc.ConnectServerMessage) error {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
 	return s.Stream.SendMsg(msg)
 }
 
