@@ -12,6 +12,8 @@ export * from "./updatePanelSettingsRequest";
 export * from "./panelUpdateRequest";
 export * from "./updateSettingsRequest";
 export * from "./settingsValuesRequest";
+export * from "./retentionSettingsRequest";
+export * from "./geoipSettingsRequest";
 export * from "./agentBootstrapRequest";
 export * from "./agentCertificateRecoveryRequest";
 export * from "./agentCertificateRecoveryGrantRequest";

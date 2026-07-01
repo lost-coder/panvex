@@ -12,9 +12,11 @@ import {
   createFleetGroupRequestSchema,
   createJobRequestSchema,
   createUserRequestSchema,
+  geoipSettingsRequestSchema,
   loginRequestSchema,
   panelUpdateRequestSchema,
   renameAgentRequestSchema,
+  retentionSettingsRequestSchema,
   settingsValuesRequestSchema,
   updateAppearanceSettingsRequestSchema,
   updateFleetGroupRequestSchema,
@@ -459,6 +461,81 @@ describe("settingsValuesRequestSchema", () => {
     ).toThrow();
     expect(() =>
       settingsValuesRequestSchema.parse({ "auth.timeout": [1, 2] }),
+    ).toThrow();
+  });
+});
+
+// Bug 2: putRetentionSettings previously JSON.stringify'd its body
+// directly, bypassing the encodeRequest validation path every other
+// mutation uses. This schema mirrors the operator-editable subset of
+// RetentionSettings (internal/controlplane/server/timeseries_rollup.go)
+// that the retention settings form actually sends.
+describe("retentionSettingsRequestSchema", () => {
+  const valid = {
+    ts_raw_seconds: 86400,
+    ts_hourly_seconds: 604800,
+    ts_dc_seconds: 86400,
+    ip_history_seconds: 2592000,
+    event_history_seconds: 86400,
+  };
+
+  it("accepts the full set of retention fields", () => {
+    expect(retentionSettingsRequestSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("rejects a missing field", () => {
+    const incomplete: Partial<typeof valid> = { ...valid };
+    delete incomplete.event_history_seconds;
+    expect(() => retentionSettingsRequestSchema.parse(incomplete)).toThrow();
+  });
+
+  it("rejects a non-integer value", () => {
+    expect(() =>
+      retentionSettingsRequestSchema.parse({ ...valid, ts_raw_seconds: 1.5 }),
+    ).toThrow();
+    expect(() =>
+      retentionSettingsRequestSchema.parse({ ...valid, ts_raw_seconds: "86400" }),
+    ).toThrow();
+  });
+});
+
+// Bug 2: putGeoIPSettings previously JSON.stringify'd its body directly,
+// bypassing the encodeRequest validation path. This schema mirrors
+// geoip.Settings (internal/controlplane/geoip/state.go), the exact body
+// decoded by handlePutGeoIPSettings.
+describe("geoipSettingsRequestSchema", () => {
+  const valid = {
+    mode: "auto" as const,
+    city: { enabled: true, url: "https://example.test/city.mmdb", local_path: "" },
+    asn: { enabled: false, url: "", local_path: "" },
+  };
+
+  it("accepts a full settings payload", () => {
+    expect(geoipSettingsRequestSchema.parse(valid)).toEqual(valid);
+  });
+
+  it("defaults omitted url/local_path to empty strings", () => {
+    const parsed = geoipSettingsRequestSchema.parse({
+      mode: "",
+      city: { enabled: false },
+      asn: { enabled: false },
+    });
+    expect(parsed.city).toEqual({ enabled: false, url: "", local_path: "" });
+    expect(parsed.asn).toEqual({ enabled: false, url: "", local_path: "" });
+  });
+
+  it("rejects an invalid mode", () => {
+    expect(() =>
+      geoipSettingsRequestSchema.parse({ ...valid, mode: "not-a-mode" }),
+    ).toThrow();
+  });
+
+  it("rejects a non-boolean enabled flag", () => {
+    expect(() =>
+      geoipSettingsRequestSchema.parse({
+        ...valid,
+        city: { ...valid.city, enabled: "yes" },
+      }),
     ).toThrow();
   });
 });

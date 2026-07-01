@@ -2,7 +2,9 @@ import { api, apiBasePath, encodeRequest } from "./http";
 import {
   appearanceSettingsResponseSchema,
   geoipResponseSchema,
+  geoipSettingsRequestSchema,
   panelSettingsResponseSchema,
+  retentionSettingsRequestSchema,
   retentionSettingsSchema,
   restartStatusSchema,
   schemaArraySchema,
@@ -120,7 +122,13 @@ export const settingsApi = {
       `${apiBasePath}/settings/retention`,
       {
         method: "PUT",
-        body: JSON.stringify(settings),
+        // Bug 2: was `JSON.stringify(settings)` directly, bypassing the
+        // encodeRequest validation path every other mutation uses.
+        body: encodeRequest(
+          `${apiBasePath}/settings/retention`,
+          retentionSettingsRequestSchema,
+          settings,
+        ),
       },
       retentionSettingsSchema,
     ),
@@ -135,7 +143,13 @@ export const settingsApi = {
       `${apiBasePath}/settings/geoip`,
       {
         method: "PUT",
-        body: JSON.stringify(settings),
+        // Bug 2: was `JSON.stringify(settings)` directly, bypassing the
+        // encodeRequest validation path every other mutation uses.
+        body: encodeRequest(
+          `${apiBasePath}/settings/geoip`,
+          geoipSettingsRequestSchema,
+          settings,
+        ),
       },
       geoipResponseSchema,
     ),
