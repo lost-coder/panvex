@@ -337,7 +337,7 @@ func (s *Server) aggregateGroupApplyStatus(agentIDs, jobIDs []string) groupApply
 		}
 		row := groupApplyAgentStatus{AgentID: agentID, JobID: jobID, Status: applyStatusSucceeded}
 		if jobID != "" {
-			row.Status, row.Message = s.groupApplyTargetStatus(jobID, agentID)
+			row.Status, row.Message = s.configApplyJobStatus(jobID, agentID)
 		}
 		switch row.Status {
 		case applyStatusSucceeded:
@@ -354,11 +354,15 @@ func (s *Server) aggregateGroupApplyStatus(agentIDs, jobIDs []string) groupApply
 	return resp
 }
 
-// groupApplyTargetStatus resolves a single job/agent pair to a per-agent apply
-// status and message. A job absent from the store is treated as succeeded (it
-// terminated and rolled off before the poll landed). Failed/expired targets
-// surface the agent's own ResultText.
-func (s *Server) groupApplyTargetStatus(jobID, agentID string) (status, message string) {
+// configApplyJobStatus resolves a single config.apply job/agent pair to a
+// per-agent apply status (applyStatus* consts) and message. A job absent
+// from the store is treated as succeeded (it terminated and rolled off
+// before the poll landed). Failed/expired targets surface the agent's own
+// ResultText. Shared by the legacy job-id status endpoint
+// (aggregateGroupApplyStatus) and the persistent-batch orchestrator
+// (advanceConfigApplyBatch in config_apply_batches.go) so the two status
+// paths cannot drift out of sync (DRY).
+func (s *Server) configApplyJobStatus(jobID, agentID string) (status, message string) {
 	job, ok := s.jobs.Get(jobID)
 	if !ok {
 		return applyStatusSucceeded, ""
