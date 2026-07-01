@@ -1,6 +1,7 @@
 package updatehosts
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -57,6 +58,27 @@ func TestCheckURLRejectsNonHTTPS(t *testing.T) {
 	p := PolicyFromEnv()
 	if err := p.CheckURL("http://github.com/x"); err == nil {
 		t.Fatal("http URL accepted")
+	}
+}
+
+func TestCheckURLPortInsensitive(t *testing.T) {
+	t.Setenv(EnvAllowedHosts, "")
+	p := PolicyFromEnv()
+	if err := p.CheckURL("https://github.com:443/o/r/releases"); err != nil {
+		t.Fatalf("allow-listed host with explicit port rejected: %v", err)
+	}
+}
+
+func TestPolicyFromEnvListTrimsAndSorts(t *testing.T) {
+	t.Setenv(EnvAllowedHosts, "  b.example.com , a.example.com ,c.example.com  ")
+	p := PolicyFromEnv()
+	for _, h := range []string{"a.example.com", "b.example.com", "c.example.com"} {
+		if err := p.CheckURL("https://" + h + "/x"); err != nil {
+			t.Errorf("host %q rejected: %v", h, err)
+		}
+	}
+	if got, want := p.Hosts(), []string{"a.example.com", "b.example.com", "c.example.com"}; !slices.Equal(got, want) {
+		t.Fatalf("Hosts() = %v, want sorted %v", got, want)
 	}
 }
 

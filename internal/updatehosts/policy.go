@@ -70,8 +70,11 @@ func (p HostPolicy) Hosts() []string {
 }
 
 // CheckURL enforces https always and, unless the policy is disabled, that the
-// URL host is in the allow-list. The "not in the allow-list" wording is kept
-// for compatibility with existing self-update tests.
+// URL host is in the allow-list. The host match is port-insensitive (uses
+// u.Hostname(), stripping any explicit port), consistent with the agent
+// updater and with IsDefaultHost/WarnIfNonDefault, which already use
+// Hostname(). The "not in the allow-list" wording is kept for compatibility
+// with existing self-update tests.
 func (p HostPolicy) CheckURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -83,7 +86,7 @@ func (p HostPolicy) CheckURL(raw string) error {
 	if p.disabled {
 		return nil
 	}
-	host := strings.ToLower(u.Host)
+	host := strings.ToLower(u.Hostname())
 	if _, ok := p.allowed[host]; !ok {
 		return fmt.Errorf("url %q: host %q is not in the allow-list", raw, host)
 	}
