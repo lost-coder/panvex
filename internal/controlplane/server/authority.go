@@ -393,18 +393,18 @@ func (s *Server) persistAgentCertPin(ctx context.Context, agentID, certPEM strin
 	}
 	block, _ := pem.Decode([]byte(certPEM))
 	if block == nil {
-		s.logger.Warn("persist agent cert pin: issued cert is not PEM", "agent_id", agentID)
+		s.logger.WarnContext(ctx, "persist agent cert pin: issued cert is not PEM", "agent_id", agentID)
 		return
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		s.logger.Warn("persist agent cert pin: parse issued cert failed", "agent_id", agentID, "error", err)
+		s.logger.WarnContext(ctx, "persist agent cert pin: parse issued cert failed", "agent_id", agentID, "error", err)
 		return
 	}
 	pin := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 	if err := s.store.UpdateAgentCertPin(ctx, agentID, pin[:]); err != nil {
 		s.obs.ObserveAgentCertPinPersistFailure()
-		s.logger.Warn("persist agent cert pin failed", "agent_id", agentID, "error", err,
+		s.logger.WarnContext(ctx, "persist agent cert pin failed", "agent_id", agentID, "error", err,
 			"alert", "agent_cert_pin_persist_failed")
 	}
 }

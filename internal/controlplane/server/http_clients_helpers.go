@@ -34,7 +34,7 @@ func validateRequestedFleetGroupScope(w http.ResponseWriter, scope FleetScopeAcc
 // the given client. Returns false (and writes the HTTP error) when the
 // client is missing, the lookup fails, or the client sits outside the
 // operator's scope. Global scope short-circuits the lookup.
-func (s *Server) ensureClientMutationScope(w http.ResponseWriter, clientID string, scope FleetScopeAccess) bool {
+func (s *Server) ensureClientMutationScope(ctx context.Context, w http.ResponseWriter, clientID string, scope FleetScopeAccess) bool {
 	if scope.Global {
 		return true
 	}
@@ -44,7 +44,7 @@ func (s *Server) ensureClientMutationScope(w http.ResponseWriter, clientID strin
 			writeError(w, http.StatusNotFound, msgClientNotFound)
 			return false
 		}
-		s.logger.Error(msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
+		s.logger.ErrorContext(ctx, msgClientScopeCheckFailed, "client_id", clientID, "error", lookupErr)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 		return false
 	}
@@ -116,7 +116,7 @@ func (s *Server) bulkUniqueIPCountsForClients(ctx context.Context, clients []man
 	}
 	counts, err := s.store.CountUniqueClientIPsForClients(ctx, clientIDs)
 	if err != nil {
-		s.logger.Warn("bulk unique-ip count failed", "error", err)
+		s.logger.WarnContext(ctx, "bulk unique-ip count failed", "error", err)
 		return uniqueIPCounts
 	}
 	return counts

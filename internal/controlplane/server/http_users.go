@@ -61,7 +61,7 @@ func (s *Server) handleUsers() http.HandlerFunc {
 
 		users, err := s.listUsersWithContext(r.Context())
 		if err != nil {
-			s.logger.Error("list users failed", "error", err)
+			s.logger.ErrorContext(r.Context(), "list users failed", "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -120,7 +120,7 @@ func (s *Server) handleCreateUser() http.HandlerFunc {
 			case errors.Is(err, auth.ErrPasswordTooWeak):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				s.logger.Error("create user failed", "username_hash", s.logUsername(request.Username), "error", err)
+				s.logger.ErrorContext(r.Context(), "create user failed", "username_hash", s.logUsername(request.Username), "error", err)
 				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
@@ -205,7 +205,7 @@ func (s *Server) handleUpdateUser() http.HandlerFunc {
 			case errors.Is(err, auth.ErrCurrentPasswordIncorrect):
 				writeError(w, http.StatusUnauthorized, err.Error())
 			default:
-				s.logger.Error("update user failed", "user_id", targetUserID, "error", err)
+				s.logger.ErrorContext(r.Context(), "update user failed", "user_id", targetUserID, "error", err)
 				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
@@ -255,7 +255,7 @@ func (s *Server) handleDeleteUser() http.HandlerFunc {
 			case errors.Is(err, auth.ErrLastAdminRequired):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				s.logger.Error("delete user failed", "user_id", targetUserID, "error", err)
+				s.logger.ErrorContext(r.Context(), "delete user failed", "user_id", targetUserID, "error", err)
 				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
@@ -295,7 +295,7 @@ func (s *Server) handleResetUserTotp() http.HandlerFunc {
 				writeError(w, http.StatusNotFound, "user not found")
 				return
 			}
-			s.logger.Error("reset user totp failed", "user_id", targetUserID, "error", err)
+			s.logger.ErrorContext(r.Context(), "reset user totp failed", "user_id", targetUserID, "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}

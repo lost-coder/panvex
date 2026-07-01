@@ -231,7 +231,7 @@ func (s *Server) resolveEnrollmentFleetGroupID(w http.ResponseWriter, r *http.Re
 	if fleetGroupID == "" {
 		defaultGroup, err := s.fleetSvc.EnsureDefault(r.Context())
 		if err != nil {
-			s.logger.Error("ensure default fleet group failed", "error", err)
+			s.logger.ErrorContext(r.Context(), "ensure default fleet group failed", "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return "", false
 		}
@@ -246,7 +246,7 @@ func (s *Server) resolveEnrollmentFleetGroupID(w http.ResponseWriter, r *http.Re
 			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "fleet group not found", err)
 			return "", false
 		}
-		s.logger.Error("lookup fleet group for enrollment failed", "fleet_group_id", fleetGroupID, "error", err)
+		s.logger.ErrorContext(r.Context(), "lookup fleet group for enrollment failed", "fleet_group_id", fleetGroupID, "error", err)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 		return "", false
 	}
@@ -286,7 +286,7 @@ func (s *Server) handleCreateEnrollmentToken() http.HandlerFunc {
 				writeErrorLogged(r.Context(), w, http.StatusBadRequest, err.Error(), err)
 				return
 			}
-			s.logger.Error("create enrollment token failed", "error", err)
+			s.logger.ErrorContext(r.Context(), "create enrollment token failed", "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -348,7 +348,7 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 		if s.enrollmentRec != nil {
 			id, err := s.enrollmentRec.Begin(ctx, enrollment.ModeInbound, "", r.RemoteAddr)
 			if err != nil {
-				s.logger.Error("begin enrollment attempt", "error", err)
+				s.logger.ErrorContext(ctx, "begin enrollment attempt", "error", err)
 				// Begin failure must not block the handler; carry on
 				// without timeline recording so production traffic still
 				// flows even if the enrollment_attempts table is unhappy.
@@ -412,7 +412,7 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 				errors.Is(err, errEnrollmentTokenRevoked):
 				writeError(w, http.StatusForbidden, err.Error())
 			default:
-				s.logger.Error("agent bootstrap failed", "node_name", request.NodeName, "error", err)
+				s.logger.ErrorContext(ctx, "agent bootstrap failed", "node_name", request.NodeName, "error", err)
 				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
@@ -420,11 +420,11 @@ func (s *Server) handleAgentBootstrap() http.HandlerFunc {
 
 		if s.enrollmentRec != nil && attemptID != "" {
 			if attachErr := s.enrollmentRec.AttachAgent(ctx, attemptID, response.AgentID); attachErr != nil {
-				s.logger.Warn("attach agent to enrollment attempt", "attempt_id", attemptID, "agent_id", response.AgentID, "error", attachErr)
+				s.logger.WarnContext(ctx, "attach agent to enrollment attempt", "attempt_id", attemptID, "agent_id", response.AgentID, "error", attachErr)
 			}
 			s.enrollmentRec.Event(ctx, attemptID, enrollment.StepCertReturned, enrollment.LevelInfo, "cert returned", nil)
 			if completeErr := s.enrollmentRec.Complete(ctx, attemptID); completeErr != nil {
-				s.logger.Warn("complete enrollment attempt", "attempt_id", attemptID, "error", completeErr)
+				s.logger.WarnContext(ctx, "complete enrollment attempt", "attempt_id", attemptID, "error", completeErr)
 			}
 		}
 
@@ -450,7 +450,7 @@ func (s *Server) handleListEnrollmentTokens() http.HandlerFunc {
 
 		tokens, err := s.listEnrollmentTokensWithContext(r.Context(), s.now(), r.URL, s.trustedForwardedProto(r), r.Host)
 		if err != nil {
-			s.logger.Error("list enrollment tokens failed", "error", err)
+			s.logger.ErrorContext(r.Context(), "list enrollment tokens failed", "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -514,7 +514,7 @@ func (s *Server) executeEnrollmentTokenRevoke(w http.ResponseWriter, r *http.Req
 			writeErrorLogged(r.Context(), w, http.StatusNotFound, msgEnrollmentTokenNotFound, err)
 			return
 		}
-		s.logger.Error("revoke enrollment token failed", "error", err)
+		s.logger.ErrorContext(r.Context(), "revoke enrollment token failed", "error", err)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 		return
 	}
@@ -556,7 +556,7 @@ func (s *Server) authorizeEnrollmentTokenRevoke(w http.ResponseWriter, r *http.R
 			writeErrorLogged(r.Context(), w, http.StatusNotFound, msgEnrollmentTokenNotFound, lookupErr)
 			return false
 		}
-		s.logger.Error("lookup enrollment token failed", "error", lookupErr)
+		s.logger.ErrorContext(r.Context(), "lookup enrollment token failed", "error", lookupErr)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 		return false
 	}

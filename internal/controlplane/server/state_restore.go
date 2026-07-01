@@ -142,7 +142,7 @@ func (s *Server) restoreMetricSeq(ctx context.Context) error {
 func (s *Server) restoreFallbackState(ctx context.Context) error {
 	records, err := s.store.ListAgentFallbackState(ctx)
 	if err != nil {
-		s.logger.Error("hydrate fallback state failed",
+		s.logger.ErrorContext(ctx, "hydrate fallback state failed",
 			"err", err,
 			"alert", streamAlerts["fallback_state"],
 		)

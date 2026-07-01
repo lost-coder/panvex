@@ -111,7 +111,7 @@ func (s *Server) persistAgentNodeName(w http.ResponseWriter, r *http.Request, ag
 		return true
 	}
 	if err := s.store.UpdateAgentNodeName(r.Context(), agentID, nodeName); err != nil {
-		s.logger.Error("update agent node_name in store failed", "error", err)
+		s.logger.ErrorContext(r.Context(), "update agent node_name in store failed", "error", err)
 		writeError(w, http.StatusInternalServerError, msgStorageError)
 		return false
 	}
@@ -170,15 +170,15 @@ func (s *Server) persistAgentDeregister(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 	if _, err := s.store.RevokeAgentCertificateRecoveryGrant(r.Context(), agentID, s.now()); err != nil && !errors.Is(err, storage.ErrNotFound) {
-		s.logger.Error("revoke cert recovery grant failed", "agent_id", agentID, "error", err)
+		s.logger.ErrorContext(r.Context(), "revoke cert recovery grant failed", "agent_id", agentID, "error", err)
 	}
 	if err := s.store.DeleteInstancesByAgent(r.Context(), agentID); err != nil {
-		s.logger.Error("delete instances by agent failed", "agent_id", agentID, "error", err)
+		s.logger.ErrorContext(r.Context(), "delete instances by agent failed", "agent_id", agentID, "error", err)
 		writeError(w, http.StatusInternalServerError, msgStorageError)
 		return false
 	}
 	if err := s.store.DeleteAgent(r.Context(), agentID); err != nil && !errors.Is(err, storage.ErrNotFound) {
-		s.logger.Error("delete agent from store failed", "agent_id", agentID, "error", err)
+		s.logger.ErrorContext(r.Context(), "delete agent from store failed", "agent_id", agentID, "error", err)
 		writeError(w, http.StatusInternalServerError, msgStorageError)
 		return false
 	}
@@ -193,7 +193,7 @@ func (s *Server) persistAgentDeregister(w http.ResponseWriter, r *http.Request, 
 		RevokedAt:     s.now().UTC(),
 		CertExpiresAt: certExpires.UTC(),
 	}); err != nil {
-		s.logger.Error("persist agent revocation failed", "agent_id", agentID, "error", err)
+		s.logger.ErrorContext(r.Context(), "persist agent revocation failed", "agent_id", agentID, "error", err)
 		// Non-fatal: in-memory revocation below still blocks the
 		// current process. Restart recovery will see this as a gap.
 	}
@@ -337,7 +337,7 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 					writeErrorLogged(r.Context(), w, http.StatusNotFound, "fleet group not found", err)
 					return
 				}
-				s.logger.Error("get fleet group for reassign failed", "error", err)
+				s.logger.ErrorContext(r.Context(), "get fleet group for reassign failed", "error", err)
 				writeError(w, http.StatusInternalServerError, msgStorageError)
 				return
 			}
@@ -346,7 +346,7 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 					writeErrorLogged(r.Context(), w, http.StatusNotFound, msgAgentNotFound, err)
 					return
 				}
-				s.logger.Error("update agent fleet group in store failed", "error", err)
+				s.logger.ErrorContext(r.Context(), "update agent fleet group in store failed", "error", err)
 				writeError(w, http.StatusInternalServerError, msgStorageError)
 				return
 			}

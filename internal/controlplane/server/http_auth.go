@@ -107,7 +107,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		// generic 401 message matches the username-locked branch below.
 		clientIP := s.requestClientRateLimitKey(r)
 		if s.ipLockout.IsLockedWithContext(r.Context(), clientIP, s.now()) {
-			s.logger.Info("login attempt from locked ip", "ip_hash", logIPHash(clientIP))
+			s.logger.InfoContext(r.Context(), "login attempt from locked ip", "ip_hash", logIPHash(clientIP))
 			ensureFloor()
 			writeError(w, http.StatusTooManyRequests, "too many attempts; try again later")
 			return
@@ -129,7 +129,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		defer releaseTotpAttempt()
 
 		if s.loginLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
-			s.logger.Info("login attempt on locked account", "username_hash", s.logUsername(request.Username))
+			s.logger.InfoContext(r.Context(), "login attempt on locked account", "username_hash", s.logUsername(request.Username))
 			ensureFloor()
 			writeError(w, http.StatusUnauthorized, msgAccountLocked)
 			return
@@ -140,7 +140,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		// password lockout so an attacker cannot tell which counter
 		// tripped (and therefore cannot infer that the password is right).
 		if s.totpLockout.IsLockedWithContext(r.Context(), request.Username, s.now()) {
-			s.logger.Info("login attempt on totp-locked account", "username_hash", s.logUsername(request.Username))
+			s.logger.InfoContext(r.Context(), "login attempt on totp-locked account", "username_hash", s.logUsername(request.Username))
 			ensureFloor()
 			writeError(w, http.StatusUnauthorized, msgAccountLocked)
 			return
@@ -173,7 +173,7 @@ func (s *Server) handleLogin() http.HandlerFunc {
 		// clear the TOTP failure counter too. Symmetric with the password
 		// reset above.
 		s.totpLockout.RecordSuccessWithContext(r.Context(), request.Username)
-		s.logger.Info("user logged in", "username_hash", s.logUsername(request.Username), "user_id", session.UserID, "session_hash", s.logSessionID(session.ID))
+		s.logger.InfoContext(r.Context(), "user logged in", "username_hash", s.logUsername(request.Username), "user_id", session.UserID, "session_hash", s.logSessionID(session.ID))
 
 		if !s.persistLoginAudit(w, r, session, request.Username, ensureFloor) {
 			return
@@ -253,7 +253,7 @@ func (s *Server) handleLoginAuthError(w http.ResponseWriter, r *http.Request, us
 			// IP was already locked at decision time. Same generic
 			// 429 the pre-username gate returns so an attacker
 			// cannot tell which counter tripped.
-			s.logger.Info("login failure from locked ip", "ip_hash", logIPHash(clientIP))
+			s.logger.InfoContext(r.Context(), "login failure from locked ip", "ip_hash", logIPHash(clientIP))
 			ensureFloor()
 			writeError(w, http.StatusTooManyRequests, "too many attempts; try again later")
 			return
@@ -263,14 +263,14 @@ func (s *Server) handleLoginAuthError(w http.ResponseWriter, r *http.Request, us
 	switch {
 	case errors.Is(err, auth.ErrInvalidCredentials):
 		if s.loginLockout.CheckAndRecordFailureWithContext(r.Context(), username, s.now()) {
-			s.logger.Info("account locked out", "username_hash", s.logUsername(username))
+			s.logger.InfoContext(r.Context(), "account locked out", "username_hash", s.logUsername(username))
 			ensureFloor()
 			writeError(w, http.StatusUnauthorized, msgAccountLocked)
 			return
 		}
 	case errors.Is(err, auth.ErrInvalidTotpCode):
 		if s.totpLockout.CheckAndRecordFailureWithContext(r.Context(), username, s.now()) {
-			s.logger.Info("account totp locked out", "username_hash", s.logUsername(username))
+			s.logger.InfoContext(r.Context(), "account totp locked out", "username_hash", s.logUsername(username))
 			ensureFloor()
 			writeError(w, http.StatusUnauthorized, msgAccountLocked)
 			return
@@ -289,10 +289,10 @@ func (s *Server) handleLoginAuthError(w http.ResponseWriter, r *http.Request, us
 		// created. Tell the client to retry rather than masking
 		// the failure behind an in-memory-only session that would
 		// silently disappear on the next control-plane restart.
-		s.logger.Error("session store unavailable during login", "username_hash", s.logUsername(username), "error", err)
+		s.logger.ErrorContext(r.Context(), "session store unavailable during login", "username_hash", s.logUsername(username), "error", err)
 		writeErrorWithCode(w, http.StatusServiceUnavailable, "session store unavailable", "session_store_unavailable")
 	default:
-		s.logger.Error("auth login failed", "error", err)
+		s.logger.ErrorContext(r.Context(), "auth login failed", "error", err)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 	}
 }
@@ -315,7 +315,7 @@ func (s *Server) persistLoginAudit(w http.ResponseWriter, r *http.Request, sessi
 		return true
 	}
 	if logoutErr := s.auth.Logout(r.Context(), session.ID); logoutErr != nil {
-		s.logger.Error("failed to revoke session after audit persist failure",
+		s.logger.ErrorContext(r.Context(), "failed to revoke session after audit persist failure",
 			"session_hash", s.logSessionID(session.ID), "error", logoutErr)
 	}
 	ensureFloor()
@@ -340,7 +340,7 @@ func (s *Server) handleLogout() http.HandlerFunc {
 			return
 		}
 
-		s.logger.Info("user logged out", "user_id", session.UserID, "session_hash", s.logSessionID(session.ID))
+		s.logger.InfoContext(r.Context(), "user logged out", "user_id", session.UserID, "session_hash", s.logSessionID(session.ID))
 		secure := s.sessionCookieSecure(r)
 		// Expire BOTH cookie names so a deployment that toggles Secure (or a
 		// browser that still holds a stale variant) cannot retain a logged-out
@@ -396,7 +396,7 @@ func (s *Server) handleTotpSetup() http.HandlerFunc {
 
 		secret, err := s.auth.StartTotpSetup(r.Context(), user.ID, s.now())
 		if err != nil {
-			s.logger.Error("start totp setup failed", "user_id", user.ID, "error", err)
+			s.logger.ErrorContext(r.Context(), "start totp setup failed", "user_id", user.ID, "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -431,7 +431,7 @@ func (s *Server) handleTotpEnable() http.HandlerFunc {
 			case errors.Is(err, auth.ErrTotpSetupNotFound):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
-				s.logger.Error("enable totp failed", "user_id", user.ID, "error", err)
+				s.logger.ErrorContext(r.Context(), "enable totp failed", "user_id", user.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return
@@ -464,7 +464,7 @@ func (s *Server) handleTotpDisable() http.HandlerFunc {
 			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
 				writeError(w, http.StatusUnauthorized, err.Error())
 			default:
-				s.logger.Error("disable totp failed", "user_id", user.ID, "error", err)
+				s.logger.ErrorContext(r.Context(), "disable totp failed", "user_id", user.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 			return

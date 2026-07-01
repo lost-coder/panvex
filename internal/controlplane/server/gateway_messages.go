@@ -104,7 +104,7 @@ func (s *Server) processRegularAgentMessage(
 	message *gatewayrpc.ConnectClientMessage,
 ) error {
 	if hb := message.GetHeartbeat(); hb != nil {
-		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "heartbeat")
+		s.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "heartbeat")
 		// P2-LOG-11 / L-11: heartbeat-specific Debug log with the
 		// agent-supplied observed_at so silent-agent troubleshooting can
 		// confirm the panel actually received the heartbeat (vs the
@@ -131,7 +131,7 @@ func (s *Server) processRegularAgentMessage(
 	}
 
 	if resp := message.GetClientDataResponse(); resp != nil {
-		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "client_data_response")
+		s.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "client_data_response")
 		// Run synchronously within the regular message processor goroutine
 		// to prevent unbounded goroutine accumulation from repeated responses.
 		s.reconcileDiscoveredClients(connectionCtx, agentID, resp.GetClients(), resp.GetTelemtUnreachable(), s.now())
@@ -139,13 +139,13 @@ func (s *Server) processRegularAgentMessage(
 	}
 
 	if req := message.GetRenewalRequest(); req != nil {
-		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "renewal_request")
+		s.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "renewal_request")
 		s.handleInStreamRenewalRequest(connectionCtx, agentID, sess, req)
 		return nil
 	}
 
 	if batch := message.GetRuntimeEvents(); batch != nil {
-		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "runtime_events")
+		s.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "runtime_events")
 		s.handleRuntimeEventsBatch(agentID, batch)
 		return nil
 	}
@@ -238,7 +238,7 @@ func (s *Server) processPriorityAgentMessageAsync(
 	}
 
 	if jr := message.GetJobResult(); jr != nil {
-		s.logger.Debug(logMessageReceived, "agent_id", agentID, "type", "job_result", "job_id", jr.JobId, "success", jr.Success)
+		s.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "job_result", "job_id", jr.JobId, "success", jr.Success)
 		observedAt := time.Unix(jr.ObservedAtUnix, 0).UTC()
 		s.recordJobResultState(
 			connectionCtx,
@@ -298,7 +298,7 @@ func (s *Server) processPriorityAgentMessageAsync(
 // errors are reported via RenewalResponse.error so the stream stays open.
 func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID string, sess agenttransport.AgentSession, req *gatewayrpc.RenewalRequest) {
 	if req.GetAgentId() != agentID {
-		s.logger.Warn("renewal request agent_id mismatch", "stream_agent_id", agentID, "request_agent_id", req.GetAgentId())
+		s.logger.WarnContext(ctx, "renewal request agent_id mismatch", "stream_agent_id", agentID, "request_agent_id", req.GetAgentId())
 		_ = sess.Send(&gatewayrpc.ConnectServerMessage{
 			Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{
 				RenewalResponse: &gatewayrpc.RenewalResponse{
@@ -318,7 +318,7 @@ func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID strin
 	_, revoked := s.revokedAgentIDs[agentID]
 	s.mu.RUnlock()
 	if revoked {
-		s.logger.Warn("in-stream cert renewal: agent revoked", "agent_id", agentID)
+		s.logger.WarnContext(ctx, "in-stream cert renewal: agent revoked", "agent_id", agentID)
 		_ = sess.Send(&gatewayrpc.ConnectServerMessage{
 			Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{
 				RenewalResponse: &gatewayrpc.RenewalResponse{
@@ -332,7 +332,7 @@ func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID strin
 	csrPEM := req.GetCsrPem()
 	certPEM, caPEM, expiresAt, err := s.authority.SignCSR(csrPEM, agentID, agentCertificateLifetime)
 	if err != nil {
-		s.logger.Warn("in-stream cert renewal: sign CSR failed", "agent_id", agentID, "error", err)
+		s.logger.WarnContext(ctx, "in-stream cert renewal: sign CSR failed", "agent_id", agentID, "error", err)
 		_ = sess.Send(&gatewayrpc.ConnectServerMessage{
 			Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{
 				RenewalResponse: &gatewayrpc.RenewalResponse{
@@ -369,7 +369,7 @@ func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID strin
 	// Persist the new serial so future connects and revocation checks use it.
 	if s.store != nil && newSerial != "" {
 		if err := s.store.UpdateAgentCertSerial(ctx, agentID, newSerial); err != nil {
-			s.logger.Warn("in-stream cert renewal: persist cert serial failed", "agent_id", agentID, "error", err)
+			s.logger.WarnContext(ctx, "in-stream cert renewal: persist cert serial failed", "agent_id", agentID, "error", err)
 		}
 	}
 	// In-stream renewal rotates the agent key — must persist the new SPKI pin
@@ -387,11 +387,11 @@ func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID strin
 		},
 	})
 	if sendErr != nil {
-		s.logger.Warn("in-stream cert renewal: send response failed", "agent_id", agentID, "error", sendErr)
+		s.logger.WarnContext(ctx, "in-stream cert renewal: send response failed", "agent_id", agentID, "error", sendErr)
 		return
 	}
 
-	s.logger.Info("in-stream cert renewal completed", "agent_id", agentID, "expires_at", expiresAt.UTC())
+	s.logger.InfoContext(ctx, "in-stream cert renewal completed", "agent_id", agentID, "expires_at", expiresAt.UTC())
 	s.appendAuditWithContext(ctx, agentID, auditAgentsCertRenewed, agentID, map[string]any{
 		"expires_at": expiresAt.UTC().Format(time.RFC3339),
 	})

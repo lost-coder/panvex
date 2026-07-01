@@ -183,7 +183,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 			return
 		}
 
-		s.logger.Info("client created", "client_id", client.ID, "name", client.Name, "user_id", session.UserID)
+		s.logger.InfoContext(r.Context(), "client created", "client_id", client.ID, "name", client.Name, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.create", string(client.ID), map[string]any{
 			"name":             client.Name,
 			"enabled":          client.Enabled,
@@ -214,7 +214,7 @@ func (s *Server) handleClient() http.HandlerFunc {
 				writeErrorLogged(r.Context(), w, http.StatusNotFound, err.Error(), err)
 				return
 			}
-			s.logger.Error("load client failed", "client_id", clientID, "error", err)
+			s.logger.ErrorContext(r.Context(), "load client failed", "client_id", clientID, "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
 		}
@@ -244,7 +244,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 
 		// R-S-14: scope-check both the existing client and any new
 		// fleet groups the update wants to introduce.
-		if !s.ensureClientMutationScope(w, clientID, scope) {
+		if !s.ensureClientMutationScope(r.Context(), w, clientID, scope) {
 			return
 		}
 
@@ -263,7 +263,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			return
 		}
 
-		s.logger.Info("client updated", "client_id", client.ID, "name", client.Name, "user_id", session.UserID)
+		s.logger.InfoContext(r.Context(), "client updated", "client_id", client.ID, "name", client.Name, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.update", string(client.ID), map[string]any{
 			"name":            client.Name,
 			"fleet_group_ids": assignmentFleetGroupIDs(assignments),
@@ -287,7 +287,7 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 		}
 
 		// R-S-14: scope-check before delete.
-		if !s.ensureClientMutationScope(w, clientID, scope) {
+		if !s.ensureClientMutationScope(r.Context(), w, clientID, scope) {
 			return
 		}
 
@@ -296,7 +296,7 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 			return
 		}
 
-		s.logger.Info("client deleted", "client_id", clientID, "user_id", session.UserID)
+		s.logger.InfoContext(r.Context(), "client deleted", "client_id", clientID, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.delete", clientID, nil)
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -399,7 +399,7 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 			return
 		}
 
-		if !s.ensureClientMutationScope(w, clientID, scope) {
+		if !s.ensureClientMutationScope(r.Context(), w, clientID, scope) {
 			return
 		}
 
@@ -408,7 +408,7 @@ func (s *Server) handleRotateClientSecret() http.HandlerFunc {
 			return
 		}
 
-		s.logger.Info("client secret rotated", "client_id", client.ID, "user_id", session.UserID)
+		s.logger.InfoContext(r.Context(), "client secret rotated", "client_id", client.ID, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.rotate_secret", string(client.ID), nil)
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, true))
 	}
@@ -432,7 +432,7 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 			return
 		}
 
-		if !s.ensureClientMutationScope(w, clientID, scope) {
+		if !s.ensureClientMutationScope(r.Context(), w, clientID, scope) {
 			return
 		}
 
@@ -441,7 +441,7 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 			return
 		}
 
-		s.logger.Info("client redeployed", "client_id", client.ID, "user_id", session.UserID)
+		s.logger.InfoContext(r.Context(), "client redeployed", "client_id", client.ID, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.redeploy", string(client.ID), map[string]any{
 			"target_agent_ids": deploymentAgentIDsFromResponses(deployments),
 		})
@@ -478,7 +478,7 @@ func (s *Server) handleResetClientQuota() http.HandlerFunc {
 			return
 		}
 
-		if !s.ensureClientMutationScope(w, clientID, scope) {
+		if !s.ensureClientMutationScope(r.Context(), w, clientID, scope) {
 			return
 		}
 
@@ -487,7 +487,7 @@ func (s *Server) handleResetClientQuota() http.HandlerFunc {
 			return
 		}
 
-		s.logger.Info("client quota reset", "client_id", client.ID, "user_id", session.UserID, "target_agents", job.TargetAgentIDs)
+		s.logger.InfoContext(r.Context(), "client quota reset", "client_id", client.ID, "user_id", session.UserID, "target_agents", job.TargetAgentIDs)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.reset_quota", string(client.ID), map[string]any{
 			"target_agent_ids": job.TargetAgentIDs,
 			"job_id":           job.ID,
@@ -521,7 +521,7 @@ func (s *Server) handleResetClientQuotaOnAgent() http.HandlerFunc {
 			return
 		}
 
-		if !s.ensureClientMutationScope(w, clientID, scope) {
+		if !s.ensureClientMutationScope(r.Context(), w, clientID, scope) {
 			return
 		}
 
@@ -530,7 +530,7 @@ func (s *Server) handleResetClientQuotaOnAgent() http.HandlerFunc {
 			return
 		}
 
-		s.logger.Info("client quota reset", "client_id", client.ID, "user_id", session.UserID, "agent_id", agentID)
+		s.logger.InfoContext(r.Context(), "client quota reset", "client_id", client.ID, "user_id", session.UserID, "agent_id", agentID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.reset_quota", string(client.ID), map[string]any{
 			"agent_id": agentID,
 			"job_id":   job.ID,

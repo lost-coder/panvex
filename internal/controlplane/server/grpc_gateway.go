@@ -75,7 +75,7 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 	// reconnect that follows) only accept the freshly-issued cert.
 	if s.store != nil {
 		if err := s.store.UpdateAgentCertSerial(ctx, agentID, issued.Serial); err != nil {
-			s.logger.Warn("persist renewed agent cert serial failed", "agent_id", agentID, "error", err)
+			s.logger.WarnContext(ctx, "persist renewed agent cert serial failed", "agent_id", agentID, "error", err)
 		}
 	}
 	s.persistAgentCertPin(ctx, agentID, issued.CertificatePEM)
@@ -167,13 +167,13 @@ func (s *Server) authorizeAgentConnect(ctx context.Context, sess agenttransport.
 	if s.store != nil {
 		expected, err := s.store.GetAgentCertSerial(ctx, agentID)
 		if err != nil {
-			s.logger.Error("agent cert serial lookup failed — rejecting connect",
+			s.logger.ErrorContext(ctx, "agent cert serial lookup failed — rejecting connect",
 				"agent_id", agentID,
 				"error", err)
 			return "", "", status.Error(codes.Unavailable, "agent cert pin check unavailable")
 		}
 		if expected != "" && expected != presentedSerial {
-			s.logger.Warn("agent cert serial mismatch — rejecting connect",
+			s.logger.WarnContext(ctx, "agent cert serial mismatch — rejecting connect",
 				"agent_id", agentID,
 				"expected_serial", expected,
 				"presented_serial", presentedSerial)
@@ -223,7 +223,7 @@ func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentS
 	// MarkConnected and the connectedAt timestamp moves forward.
 	s.presence.MarkConnected(agentID, s.now())
 	s.markTransportSwitchResolved(agentID)
-	s.logger.Info("accepted agent stream", "agent_id", agentID)
+	s.logger.InfoContext(connectionCtx, "accepted agent stream", "agent_id", agentID)
 
 	channels := newAgentStreamChannels()
 	processErrorAndCancel := func(err error) {
@@ -240,7 +240,7 @@ func (s *Server) runAgentSession(ctx context.Context, sess agenttransport.AgentS
 	s.startRegularInboundLoop(connectionCtx, cancelConnection, agentID, sess, channels, processErrorAndCancel)
 	s.startJobDispatchLoop(connectionCtx, cancelConnection, agentID, sess, session, channels)
 
-	return s.awaitAgentStreamShutdown(cancelConnection, agentID, channels)
+	return s.awaitAgentStreamShutdown(connectionCtx, cancelConnection, agentID, channels)
 }
 
 func (s *Server) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {

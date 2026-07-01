@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -187,7 +188,7 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "missing client id")
 			return
 		}
-		if !s.clientVisibleInScope(w, scope, clientID) {
+		if !s.clientVisibleInScope(r.Context(), w, scope, clientID) {
 			return
 		}
 
@@ -204,7 +205,7 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 		}
 		totalUnique, err := s.store.CountUniqueClientIPs(r.Context(), clientID)
 		if err != nil {
-			s.logger.Warn("count unique client ips failed", "client_id", clientID, "error", err)
+			s.logger.WarnContext(r.Context(), "count unique client ips failed", "client_id", clientID, "error", err)
 			totalUnique = len(ips)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -221,7 +222,7 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 // it may not. Global scopes always pass; otherwise the client's assignments
 // are loaded and checked. A missing client is reported as not-found so the
 // endpoint never discloses a client's existence to an out-of-scope operator.
-func (s *Server) clientVisibleInScope(w http.ResponseWriter, scope FleetScopeAccess, clientID string) bool {
+func (s *Server) clientVisibleInScope(ctx context.Context, w http.ResponseWriter, scope FleetScopeAccess, clientID string) bool {
 	if scope.Global {
 		return true
 	}
@@ -231,7 +232,7 @@ func (s *Server) clientVisibleInScope(w http.ResponseWriter, scope FleetScopeAcc
 			writeError(w, http.StatusNotFound, msgClientNotFound)
 			return false
 		}
-		s.logger.Error("client ip history scope lookup failed", "client_id", clientID, "error", lookupErr)
+		s.logger.ErrorContext(ctx, "client ip history scope lookup failed", "client_id", clientID, "error", lookupErr)
 		writeError(w, http.StatusInternalServerError, msgInternalError)
 		return false
 	}

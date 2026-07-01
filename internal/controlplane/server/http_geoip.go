@@ -52,7 +52,7 @@ func (s *Server) handlePutGeoIPSettings() http.HandlerFunc {
 		s.geoipSettings = req
 		if err := s.persistGeoIPSettings(r.Context(), who); err != nil {
 			s.settingsMu.Unlock()
-			s.logger.Error("persist geoip settings", "error", err)
+			s.logger.ErrorContext(r.Context(), "persist geoip settings", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -64,7 +64,7 @@ func (s *Server) handlePutGeoIPSettings() http.HandlerFunc {
 			s.geoipState = geoip.State{}
 			s.persistGeoIPState(r.Context())
 		case geoip.ModeLocal:
-			s.reloadGeoIPManager()
+			s.reloadGeoIPManager(r.Context())
 		}
 		s.settingsMu.Unlock()
 
@@ -120,7 +120,7 @@ func (s *Server) handleRefreshGeoIP() http.HandlerFunc {
 		}
 
 		s.settingsMu.Lock()
-		s.reloadGeoIPManager()
+		s.reloadGeoIPManager(ctx)
 		s.persistGeoIPState(ctx)
 		resp := geoipResponse{Settings: s.geoipSettings, State: s.geoipState}
 		s.settingsMu.Unlock()

@@ -94,13 +94,13 @@ func (s *Server) mapAndFailEnrollment(ctx context.Context, attemptID string, err
 	var ee *enrollmentError
 	if errors.As(err, &ee) {
 		if failErr := s.enrollmentRec.Fail(ctx, attemptID, ee.code, ee.cause, ee.fields); failErr != nil {
-			s.logger.Warn("enrollment.recorder fail", "attempt_id", attemptID, "error", failErr)
+			s.logger.WarnContext(ctx, "enrollment.recorder fail", "attempt_id", attemptID, "error", failErr)
 		}
 		return
 	}
 	code := classifyEnrollmentError(err)
 	if failErr := s.enrollmentRec.Fail(ctx, attemptID, code, err, nil); failErr != nil {
-		s.logger.Warn("enrollment.recorder fail", "attempt_id", attemptID, "error", failErr)
+		s.logger.WarnContext(ctx, "enrollment.recorder fail", "attempt_id", attemptID, "error", failErr)
 	}
 }
 
@@ -294,7 +294,7 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 }
 
 func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, clients []clientUsageSnapshot) {
-	applyTrafficDelta := s.shouldApplyClientUsageDelta(agentID, clients)
+	applyTrafficDelta := s.shouldApplyClientUsageDelta(ctx, agentID, clients)
 
 	seen, toPersist := s.mergeClientUsageBatch(agentID, clients, applyTrafficDelta)
 	// Phase 3 (reset-quota drift): when Telemt's reported quota_last_reset_unix
@@ -355,7 +355,7 @@ func (s *Server) persistDeploymentsAfterReset(ctx context.Context, deployments [
 	}
 	for _, d := range deployments {
 		if err := s.clientsSvc.PersistDeployment(ctx, d); err != nil {
-			s.logger.Error("client deployment last-reset persistence failed",
+			s.logger.ErrorContext(ctx, "client deployment last-reset persistence failed",
 				"client_id", string(d.ClientID), "agent_id", d.AgentID,
 				"last_reset_epoch_secs", d.LastResetEpochSecs, "error", err)
 		}
@@ -374,7 +374,7 @@ func (s *Server) persistDeploymentsAfterReset(ctx context.Context, deployments [
 //   - lastSeen > 0 && seq == 1: agent restarted with zero-ed counters — treat
 //     as baseline, skip deltas, just record new seq.
 //   - otherwise: accept and accumulate.
-func (s *Server) shouldApplyClientUsageDelta(agentID string, clients []clientUsageSnapshot) bool {
+func (s *Server) shouldApplyClientUsageDelta(ctx context.Context, agentID string, clients []clientUsageSnapshot) bool {
 	batchSeq := firstNonZeroSeq(clients)
 	if batchSeq == 0 {
 		return true
@@ -399,7 +399,7 @@ func (s *Server) shouldApplyClientUsageDelta(agentID string, clients []clientUsa
 		// genuine reconnect reorder); surface it on a stable alert key so any
 		// residual traffic undercount is observable rather than silent.
 		if lastSeen > 0 && batchSeq > lastSeen+1 {
-			s.logger.Warn("client usage seq gap — usage delta(s) may have been lost",
+			s.logger.WarnContext(ctx, "client usage seq gap — usage delta(s) may have been lost",
 				"agent_id", agentID,
 				"last_seen", lastSeen,
 				"received", batchSeq,
@@ -520,7 +520,7 @@ func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []stor
 		case <-time.After(time.Duration(attempt) * 25 * time.Millisecond):
 		}
 	}
-	s.logger.Error("persist client_usage (bulk) failed",
+	s.logger.ErrorContext(ctx, "persist client_usage (bulk) failed",
 		"rows", len(toPersist),
 		"error", err,
 		"alert", "client_usage_persist_failed",

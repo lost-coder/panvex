@@ -39,7 +39,7 @@ func (s *Server) shouldTerminateForRevocation(ctx context.Context, agentID, pres
 	_, isRevoked := s.revokedAgentIDs[agentID]
 	s.mu.RUnlock()
 	if isRevoked {
-		s.logger.Info("mid-stream revocation triggered, terminating agent stream", "agent_id", agentID)
+		s.logger.InfoContext(ctx, "mid-stream revocation triggered, terminating agent stream", "agent_id", agentID)
 		return true
 	}
 	if s.store == nil {
@@ -56,12 +56,12 @@ func (s *Server) shouldTerminateForRevocation(ctx context.Context, agentID, pres
 		if ctx.Err() != nil {
 			return false
 		}
-		s.logger.Warn("mid-stream cert pin lookup failed, terminating",
+		s.logger.WarnContext(ctx, "mid-stream cert pin lookup failed, terminating",
 			"agent_id", agentID, "error", err)
 		return true
 	}
 	if expected != "" && expected != presentedSerial {
-		s.logger.Info("mid-stream cert pin mismatch, terminating", "agent_id", agentID)
+		s.logger.InfoContext(ctx, "mid-stream cert pin mismatch, terminating", "agent_id", agentID)
 		return true
 	}
 	return false

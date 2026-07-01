@@ -111,7 +111,7 @@ func (s *Server) handleUpdateAgentTransportMode() http.HandlerFunc {
 					writeError(w, http.StatusNotFound, msgAgentNotFound)
 					return
 				}
-				s.logger.Error("update agent transport mode in store failed", "error", err)
+				s.logger.ErrorContext(r.Context(), "update agent transport mode in store failed", "error", err)
 				writeError(w, http.StatusInternalServerError, msgStorageError)
 				return
 			}
@@ -145,7 +145,7 @@ func (s *Server) handleUpdateAgentTransportMode() http.HandlerFunc {
 			TTL:            transportSwitchJobTTL,
 		}, s.now())
 		if err != nil {
-			s.logger.Error("enqueue switch_transport_mode job failed", "agent_id", agentID, "error", err)
+			s.logger.ErrorContext(r.Context(), "enqueue switch_transport_mode job failed", "agent_id", agentID, "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to enqueue transport mode switch job")
 			return
 		}

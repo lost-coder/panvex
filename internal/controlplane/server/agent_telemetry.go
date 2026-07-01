@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
@@ -412,7 +413,7 @@ func (s *Server) enqueueRuntimeBatchWrites(agent Agent, snapshot agentSnapshot) 
 
 // enqueueClientIPHistory pushes one ClientIPHistoryRecord per active IP in
 // the snapshot.
-func (s *Server) enqueueClientIPHistory(snapshot agentSnapshot) {
+func (s *Server) enqueueClientIPHistory(ctx context.Context, snapshot agentSnapshot) {
 	if !snapshot.HasClientIPs {
 		return
 	}
@@ -431,13 +432,13 @@ func (s *Server) enqueueClientIPHistory(snapshot agentSnapshot) {
 		}
 	}
 	if ipRecords > 0 {
-		s.logger.Info("client ip records enqueued", "agent_id", snapshot.AgentID, "clients", len(snapshot.ClientIPs), "ip_records", ipRecords)
+		s.logger.InfoContext(ctx, "client ip records enqueued", "agent_id", snapshot.AgentID, "clients", len(snapshot.ClientIPs), "ip_records", ipRecords)
 	}
 }
 
 // enqueueAgentSnapshotBatchWrites runs the asynchronous DB-write side of one
 // agent snapshot. No-op when the batch writer is disabled.
-func (s *Server) enqueueAgentSnapshotBatchWrites(agent Agent, instances []Instance, metric *MetricSnapshot, snapshot agentSnapshot) {
+func (s *Server) enqueueAgentSnapshotBatchWrites(ctx context.Context, agent Agent, instances []Instance, metric *MetricSnapshot, snapshot agentSnapshot) {
 	if s.batchWriter == nil {
 		return
 	}
@@ -449,5 +450,5 @@ func (s *Server) enqueueAgentSnapshotBatchWrites(agent Agent, instances []Instan
 		s.batchWriter.metricsBuf.Enqueue(metricSnapshotToRecord(*metric))
 	}
 	s.enqueueRuntimeBatchWrites(agent, snapshot)
-	s.enqueueClientIPHistory(snapshot)
+	s.enqueueClientIPHistory(ctx, snapshot)
 }

@@ -219,7 +219,7 @@ func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.Cancel
 		sendDiscovery := func(reason string) {
 			reqID := fmt.Sprintf("discovery-%s-%s-%d", reason, agentID, s.now().UnixNano())
 			if err := sendClientDataRequest(sess, reqID); err != nil {
-				s.logger.Error("client discovery request failed", "agent_id", agentID, "reason", reason, "error", err)
+				s.logger.ErrorContext(ctx, "client discovery request failed", "agent_id", agentID, "reason", reason, "error", err)
 			}
 		}
 
@@ -257,23 +257,23 @@ func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.Cancel
 // awaitAgentStreamShutdown blocks until one of the dispatch / process /
 // receive error channels delivers, then cancels the connection ctx and
 // returns the operator-visible error code.
-func (s *Server) awaitAgentStreamShutdown(cancel context.CancelFunc, agentID string, ch *agentStreamChannels) error {
+func (s *Server) awaitAgentStreamShutdown(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels) error {
 	select {
 	case err := <-ch.dispatchErrors:
 		cancel()
-		s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "dispatch_error", "error", err)
+		s.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "dispatch_error", "error", err)
 		return err
 	case err := <-ch.processErrors:
 		cancel()
-		s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "process_error", "error", err)
+		s.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "process_error", "error", err)
 		return status.Error(codes.Internal, err.Error())
 	case err := <-ch.receiveErrors:
 		cancel()
 		if errors.Is(err, io.EOF) {
-			s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "eof")
+			s.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "eof")
 			return nil
 		}
-		s.logger.Info(logAgentStreamClosed, "agent_id", agentID, "reason", "receive_error", "error", err)
+		s.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "receive_error", "error", err)
 		return err
 	}
 }

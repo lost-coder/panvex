@@ -43,7 +43,7 @@ func (s *Server) dbQueryCountMiddleware(next http.Handler) http.Handler {
 		if s.logger == nil {
 			return
 		}
-		s.logger.Warn("high DB query count for single panel request",
+		s.logger.WarnContext(ctx, "high DB query count for single panel request",
 			"path", r.URL.Path,
 			"method", r.Method,
 			"query_count", count,

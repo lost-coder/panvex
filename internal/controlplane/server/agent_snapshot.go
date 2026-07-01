@@ -196,9 +196,9 @@ func (s *Server) applyFallbackStateTransition(agent Agent) {
 // Called OUTSIDE s.mu (the agent value is a committed copy by then) so waking
 // the writer goroutine never happens while the snapshot critical section is
 // held.
-func (s *Server) applyTelemtReachabilityTransition(agent Agent) {
+func (s *Server) applyTelemtReachabilityTransition(ctx context.Context, agent Agent) {
 	if s.telemtReach.Observe(agent.ID, agent.Runtime.TelemtUnreachable) {
-		s.logger.Info("telemt reachable again; requesting client re-discovery", "agent_id", agent.ID)
+		s.logger.InfoContext(ctx, "telemt reachable again; requesting client re-discovery", "agent_id", agent.ID)
 		s.sessions.RequestRediscovery(agent.ID)
 	}
 }
@@ -243,7 +243,7 @@ func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnaps
 }
 
 func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot) error {
-	s.logger.Debug("agent heartbeat applied", "agent_id", snapshot.AgentID, "node", snapshot.NodeName)
+	s.logger.DebugContext(ctx, "agent heartbeat applied", "agent_id", snapshot.AgentID, "node", snapshot.NodeName)
 
 	// Lock section: build all state objects AND commit to in-memory maps
 	// atomically. No DB I/O happens under the locks.
@@ -262,7 +262,7 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	// caught up.
 	if _, revoked := s.revokedAgentIDs[snapshot.AgentID]; revoked {
 		s.mu.Unlock()
-		s.logger.Info("dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
+		s.logger.InfoContext(ctx, "dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
 		return nil
 	}
 	agent := s.updateAgentRecordFromSnapshot(snapshot)
@@ -295,11 +295,11 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	s.mu.Unlock()
 
 	// Outside s.mu: detect Telemt recovery and nudge re-discovery for this agent.
-	s.applyTelemtReachabilityTransition(agent)
+	s.applyTelemtReachabilityTransition(ctx, agent)
 
 	// Enqueue all DB writes asynchronously via the batch writer. No DB I/O
 	// blocks the caller — the background flush goroutine handles persistence.
-	s.enqueueAgentSnapshotBatchWrites(agent, instances, metricSnapshot, snapshot)
+	s.enqueueAgentSnapshotBatchWrites(ctx, agent, instances, metricSnapshot, snapshot)
 
 	// P2-LOG-12 / L-05: only Heartbeat on every snapshot. MarkConnected is
 	// called exactly once per gRPC stream open (see Connect in

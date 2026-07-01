@@ -20,7 +20,7 @@ func (s *Server) publishWebhookEvent(ctx context.Context, action string, payload
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		s.logger.Warn("webhook publish: marshal payload",
+		s.logger.WarnContext(ctx, "webhook publish: marshal payload",
 			"action", action,
 			"error", err,
 		)
@@ -30,7 +30,7 @@ func (s *Server) publishWebhookEvent(ctx context.Context, action string, payload
 		Action:  action,
 		Payload: body,
 	}); err != nil {
-		s.logger.Warn("webhook publish: enqueue",
+		s.logger.WarnContext(ctx, "webhook publish: enqueue",
 			"action", action,
 			"error", err,
 		)

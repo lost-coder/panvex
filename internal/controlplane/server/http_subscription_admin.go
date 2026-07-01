@@ -19,7 +19,7 @@ func (s *Server) handleRotateSubscriptionToken() http.HandlerFunc {
 			return
 		}
 
-		if !s.ensureClientMutationScope(w, clientID, scope) {
+		if !s.ensureClientMutationScope(r.Context(), w, clientID, scope) {
 			return
 		}
 
@@ -28,7 +28,7 @@ func (s *Server) handleRotateSubscriptionToken() http.HandlerFunc {
 			return
 		}
 
-		s.logger.Info("client subscription token rotated", "client_id", client.ID, "user_id", session.UserID)
+		s.logger.InfoContext(r.Context(), "client subscription token rotated", "client_id", client.ID, "user_id", session.UserID)
 		s.appendAuditWithContext(r.Context(), session.UserID, "clients.rotate_subscription", string(client.ID), nil)
 		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, false))
 	}

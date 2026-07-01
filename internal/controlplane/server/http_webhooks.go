@@ -72,7 +72,7 @@ func (s *Server) handleListWebhookEndpoints() http.HandlerFunc {
 		}
 		eps, err := s.webhookStorage.ListEndpointMeta(r.Context())
 		if err != nil {
-			s.logger.Error("webhook endpoints list", "error", err)
+			s.logger.ErrorContext(r.Context(), "webhook endpoints list", "error", err)
 			writeErrorWithCode(w, http.StatusInternalServerError, "failed to list endpoints", "internal_error")
 			return
 		}
@@ -97,7 +97,7 @@ func (s *Server) handleGetWebhookEndpoint() http.HandlerFunc {
 				writeErrorWithCode(w, http.StatusNotFound, msgWebhookEndpointNotFound, "not_found")
 				return
 			}
-			s.logger.Error("webhook endpoint get", "id", id, "error", err)
+			s.logger.ErrorContext(r.Context(), "webhook endpoint get", "id", id, "error", err)
 			writeErrorWithCode(w, http.StatusInternalServerError, "failed to load endpoint", "internal_error")
 			return
 		}
@@ -122,7 +122,7 @@ func (s *Server) handleCreateWebhookEndpoint() http.HandlerFunc {
 		}
 		ciphertext, err := s.encryptWebhookSecret(req.Secret)
 		if err != nil {
-			s.logger.Error("webhook secret encrypt", "error", err)
+			s.logger.ErrorContext(r.Context(), "webhook secret encrypt", "error", err)
 			writeErrorWithCode(w, http.StatusInternalServerError, "failed to encrypt secret", "internal_error")
 			return
 		}
@@ -137,7 +137,7 @@ func (s *Server) handleCreateWebhookEndpoint() http.HandlerFunc {
 			AllowPrivate:     req.AllowPrivate,
 			Enabled:          req.Enabled,
 		}, now); err != nil {
-			s.logger.Error("webhook endpoint create", "name", req.Name, "error", err)
+			s.logger.ErrorContext(r.Context(), "webhook endpoint create", "name", req.Name, "error", err)
 			writeErrorWithCode(w, http.StatusInternalServerError, "failed to create endpoint", "internal_error")
 			return
 		}
@@ -172,7 +172,7 @@ func (s *Server) handleUpdateWebhookEndpoint() http.HandlerFunc {
 		if req.Secret != "" {
 			ct, err := s.encryptWebhookSecret(req.Secret)
 			if err != nil {
-				s.logger.Error("webhook secret encrypt", "error", err)
+				s.logger.ErrorContext(r.Context(), "webhook secret encrypt", "error", err)
 				writeErrorWithCode(w, http.StatusInternalServerError, "failed to encrypt secret", "internal_error")
 				return
 			}
@@ -193,7 +193,7 @@ func (s *Server) handleUpdateWebhookEndpoint() http.HandlerFunc {
 				writeErrorWithCode(w, http.StatusNotFound, msgWebhookEndpointNotFound, "not_found")
 				return
 			}
-			s.logger.Error("webhook endpoint update", "id", id, "error", err)
+			s.logger.ErrorContext(r.Context(), "webhook endpoint update", "id", id, "error", err)
 			writeErrorWithCode(w, http.StatusInternalServerError, "failed to update endpoint", "internal_error")
 			return
 		}
@@ -221,7 +221,7 @@ func (s *Server) handleDeleteWebhookEndpoint() http.HandlerFunc {
 				writeErrorWithCode(w, http.StatusNotFound, msgWebhookEndpointNotFound, "not_found")
 				return
 			}
-			s.logger.Error("webhook endpoint delete", "id", id, "error", err)
+			s.logger.ErrorContext(r.Context(), "webhook endpoint delete", "id", id, "error", err)
 			writeErrorWithCode(w, http.StatusInternalServerError, "failed to delete endpoint", "internal_error")
 			return
 		}

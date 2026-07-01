@@ -22,7 +22,7 @@ func (s *Server) dispatchPendingJobs(ctx context.Context, sess agenttransport.Ag
 	}
 
 	for _, job := range pendingJobs {
-		s.logger.Debug("job dispatched to agent", "agent_id", agentID, "job_id", job.ID, "action", string(job.Action))
+		s.logger.DebugContext(ctx, "job dispatched to agent", "agent_id", agentID, "job_id", job.ID, "action", string(job.Action))
 		if err := sess.Send(&gatewayrpc.ConnectServerMessage{
 			Body: &gatewayrpc.ConnectServerMessage_Job{
 				Job: &gatewayrpc.JobCommand{

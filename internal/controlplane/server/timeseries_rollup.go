@@ -177,9 +177,9 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	// in-memory revokedAgentIDs set keeps its entries until restart,
 	// which is safe (it only over-rejects, never under-rejects).
 	if pruned, err := s.store.DeleteExpiredAgentRevocations(ctx, now); err != nil {
-		s.logger.Error("retention prune failed", "table", "agent_revocations", "error", err)
+		s.logger.ErrorContext(ctx, "retention prune failed", "table", "agent_revocations", "error", err)
 	} else if pruned > 0 {
-		s.logger.Info("pruned rows by retention", "table", "agent_revocations", "count", pruned)
+		s.logger.InfoContext(ctx, "pruned rows by retention", "table", "agent_revocations", "count", pruned)
 		if s.obs != nil {
 			s.obs.retentionPrunedRowsTotal.WithLabelValues("agent_revocations").Add(float64(pruned))
 		}
@@ -197,7 +197,7 @@ func (s *Server) rollupRecentHours(ctx context.Context, now time.Time) {
 	for hoursAgo := 2; hoursAgo >= 1; hoursAgo-- {
 		bucketHour := now.Add(-time.Duration(hoursAgo) * time.Hour).Truncate(time.Hour)
 		if err := s.store.RollupServerLoadHourly(ctx, bucketHour); err != nil {
-			s.logger.Error("timeseries rollup failed", "bucket_hour", bucketHour.Format(time.RFC3339), "error", err)
+			s.logger.ErrorContext(ctx, "timeseries rollup failed", "bucket_hour", bucketHour.Format(time.RFC3339), "error", err)
 		}
 	}
 }
@@ -218,11 +218,11 @@ func (s *Server) runInlineRetentionPrune(
 	cutoff := now.Add(-time.Duration(ttlSeconds) * time.Second)
 	pruned, err := pruneFn(ctx, cutoff)
 	if err != nil {
-		s.logger.Error("prune "+table+" failed", "error", err)
+		s.logger.ErrorContext(ctx, "prune "+table+" failed", "error", err)
 		return
 	}
 	if pruned > 0 {
-		s.logger.Info("pruned "+label, "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
+		s.logger.InfoContext(ctx, "pruned "+label, "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
 	}
 }
 
@@ -245,11 +245,11 @@ func (s *Server) runRetentionPrune(
 	cutoff := now.Add(-time.Duration(ttlSeconds) * time.Second)
 	pruned, err := pruneFn(ctx, cutoff)
 	if err != nil {
-		s.logger.Error("retention prune failed", "table", table, "error", err)
+		s.logger.ErrorContext(ctx, "retention prune failed", "table", table, "error", err)
 		return
 	}
 	if pruned > 0 {
-		s.logger.Info("pruned rows by retention", "table", table, "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
+		s.logger.InfoContext(ctx, "pruned rows by retention", "table", table, "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
 	}
 	if s.obs != nil {
 		s.obs.retentionPrunedRowsTotal.WithLabelValues(table).Add(float64(pruned))

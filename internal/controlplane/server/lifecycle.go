@@ -394,7 +394,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 				ConfigPath: s.panelRuntime.ConfigPath,
 				Env:        os.Environ(),
 			}); err != nil {
-				s.logger.Error("settings seed to DB failed; env/config values are live this boot but will NOT persist (they revert to defaults once the env var is removed) — investigate the settings store",
+				s.logger.ErrorContext(s.serverCtx, "settings seed to DB failed; env/config values are live this boot but will NOT persist (they revert to defaults once the env var is removed) — investigate the settings store",
 					"error", err, "alert", "settings_seed_persist_failed")
 			}
 			s.trySetStartupErr(func() error {
@@ -716,7 +716,7 @@ func (s *Server) Close() {
 		// queued audit row could be flushed. Plan 3 / BP-01.
 		drainParent := context.WithoutCancel(s.serverCtx)
 		if err := s.batchWriter.StopWithTimeout(drainParent, 10*time.Second); err != nil {
-			s.logger.Error("batch writer drain timed out on shutdown",
+			s.logger.ErrorContext(drainParent, "batch writer drain timed out on shutdown",
 				"error", err,
 				"alert", "audit_persist_failed",
 			)
