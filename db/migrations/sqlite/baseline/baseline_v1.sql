@@ -56,14 +56,16 @@ CREATE TABLE "agents" (
     FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id)
 );
 
-CREATE TABLE audit_events (
+CREATE TABLE "audit_events" (
     id TEXT PRIMARY KEY,
     actor_id TEXT NOT NULL,
     action TEXT NOT NULL,
     target_id TEXT NOT NULL,
     created_at_unix INTEGER NOT NULL,
-    details TEXT NOT NULL DEFAULT '{}'
-, prev_hash  TEXT NOT NULL DEFAULT '', event_hash TEXT NOT NULL DEFAULT '');
+    details TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(details)),
+    prev_hash TEXT NOT NULL DEFAULT '',
+    event_hash TEXT NOT NULL DEFAULT ''
+);
 
 CREATE TABLE certificate_authority (
     scope TEXT PRIMARY KEY,
@@ -91,7 +93,10 @@ CREATE TABLE "client_deployments" (
     status TEXT NOT NULL,
     last_error TEXT NOT NULL DEFAULT '',
     last_applied_at_unix INTEGER,
-    updated_at_unix INTEGER NOT NULL, connection_links TEXT NOT NULL DEFAULT '[]', last_reset_epoch_secs INTEGER NOT NULL DEFAULT 0, link_diagnostic TEXT NOT NULL DEFAULT '',
+    updated_at_unix INTEGER NOT NULL,
+    connection_links TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(connection_links)),
+    last_reset_epoch_secs INTEGER NOT NULL DEFAULT 0,
+    link_diagnostic TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (client_id, agent_id),
     FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE,
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
@@ -162,7 +167,8 @@ CREATE TABLE "discovered_clients" (
     data_quota_bytes INTEGER NOT NULL DEFAULT 0,
     expiration TEXT NOT NULL DEFAULT '',
     discovered_at_unix INTEGER NOT NULL,
-    updated_at_unix INTEGER NOT NULL, connection_links TEXT NOT NULL DEFAULT '[]',
+    updated_at_unix INTEGER NOT NULL,
+    connection_links TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(connection_links)),
     UNIQUE (agent_id, client_name),
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
@@ -201,12 +207,12 @@ CREATE TABLE "enrollment_tokens" (
     FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id) ON DELETE SET NULL
 );
 
-CREATE TABLE fleet_group_integrations (
+CREATE TABLE "fleet_group_integrations" (
     id              TEXT PRIMARY KEY,
     fleet_group_id  TEXT NOT NULL,
     kind            TEXT NOT NULL,
     provider_id     TEXT,
-    config          TEXT NOT NULL DEFAULT '{}',
+    config          TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(config)),
     enabled         INTEGER NOT NULL DEFAULT 0,
     created_at_unix INTEGER NOT NULL,
     updated_at_unix INTEGER NOT NULL,
@@ -228,11 +234,14 @@ CREATE TABLE goose_db_version (
 		tstamp TIMESTAMP DEFAULT (datetime('now'))
 	);
 
-CREATE TABLE integration_providers (
+CREATE TABLE "integration_providers" (
     id              TEXT PRIMARY KEY,
     kind            TEXT NOT NULL,
     label           TEXT NOT NULL DEFAULT '',
-    config          TEXT NOT NULL DEFAULT '{}',
+    -- Permissive: config is either plain JSON or a vault-sealed
+    -- "PVS1:"/"PVS2:"/"PVS3:" ciphertext string (see file header note).
+    config          TEXT NOT NULL DEFAULT '{}'
+        CHECK (json_valid(config) OR config LIKE 'PVS_:%'),
     created_at_unix INTEGER NOT NULL,
     updated_at_unix INTEGER NOT NULL
 );
@@ -257,6 +266,7 @@ CREATE TABLE "jobs" (
     ttl_nanos INTEGER NOT NULL,
     idempotency_key TEXT NOT NULL UNIQUE,
     payload_json TEXT NOT NULL DEFAULT ''
+        CHECK (payload_json = '' OR json_valid(payload_json))
 );
 
 CREATE TABLE login_lockouts (
@@ -271,7 +281,7 @@ CREATE TABLE "metric_snapshots" (
     agent_id TEXT NOT NULL,
     instance_id TEXT NOT NULL DEFAULT '',
     captured_at_unix INTEGER NOT NULL,
-    "values" TEXT NOT NULL,
+    "values" TEXT NOT NULL CHECK (json_valid("values")),
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
@@ -553,8 +563,7 @@ CREATE INDEX idx_agents_last_seen_at ON agents (last_seen_at_unix);
 
 CREATE INDEX idx_agents_transport_mode ON agents(transport_mode);
 
-CREATE INDEX idx_audit_events_chain_walk
-    ON audit_events (created_at_unix, id);
+CREATE INDEX idx_audit_events_chain_walk ON audit_events (created_at_unix, id);
 
 CREATE INDEX idx_audit_events_created_at ON audit_events (created_at_unix);
 
@@ -589,14 +598,11 @@ CREATE INDEX idx_enrollment_events_attempt ON enrollment_events(attempt_id, ts);
 
 CREATE INDEX idx_enrollment_tokens_fleet_group_id ON enrollment_tokens (fleet_group_id);
 
-CREATE INDEX idx_fleet_group_integrations_fleet_group_id
-    ON fleet_group_integrations (fleet_group_id);
+CREATE INDEX idx_fleet_group_integrations_fleet_group_id ON fleet_group_integrations (fleet_group_id);
 
-CREATE INDEX idx_fleet_group_integrations_kind
-    ON fleet_group_integrations (kind);
+CREATE INDEX idx_fleet_group_integrations_kind ON fleet_group_integrations (kind);
 
-CREATE INDEX idx_integration_providers_kind
-    ON integration_providers (kind);
+CREATE INDEX idx_integration_providers_kind ON integration_providers (kind);
 
 CREATE INDEX idx_job_targets_agent_id ON job_targets (agent_id);
 
@@ -686,4 +692,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (48, 1),
   (49, 1),
   (50, 1),
-  (51, 1);
+  (51, 1),
+  (52, 1);

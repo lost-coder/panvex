@@ -39,6 +39,35 @@ func TestStoreContract(t *testing.T) {
 	})
 }
 
+// TestJSONValidationContract (M3) asserts PostgreSQL's native JSONB
+// validation rejects malformed JSON on the `config` columns — the parity
+// baseline the SQLite json_valid CHECK constraints
+// (0052_json_valid_checks.sql) bring SQLite up to. jobs.payload_json is
+// intentionally excluded: it is plain TEXT on PostgreSQL too, so this
+// backend does not reject malformed JSON there (see
+// RunSQLiteOnlyJSONValidationContract's doc comment).
+func TestJSONValidationContract(t *testing.T) {
+	dsn := os.Getenv("PANVEX_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("PANVEX_POSTGRES_TEST_DSN is not set")
+	}
+
+	storagetest.RunJSONValidationContract(t, func(t *testing.T) storage.MigrationStore {
+		t.Helper()
+
+		store, err := Open(dsn)
+		if err != nil {
+			t.Fatalf("Open() error = %v", err)
+		}
+
+		if err := resetForTest(t.Context(), store); err != nil {
+			t.Fatalf("resetForTest() error = %v", err)
+		}
+
+		return store
+	})
+}
+
 func resetForTest(ctx context.Context, store *Store) error {
 	_, err := store.sqlDB.ExecContext(ctx, `
 		TRUNCATE TABLE
@@ -56,6 +85,7 @@ func resetForTest(ctx context.Context, store *Store) error {
 			telemt_instances,
 			agents,
 			fleet_groups,
+			integration_providers,
 			users,
 			audit_events,
 			metric_snapshots,
