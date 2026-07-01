@@ -669,16 +669,30 @@ func New(options Options) (*Server, error) {
 	// whitelist) all collapse onto the reverse proxy's own address,
 	// silently disabling brute-force protection fleet-wide. Mirrors the
 	// ErrInsecureDBDSNProd fail-loud pattern in controlplane/config.
-	if err := checkTrustedProxyMisconfigured(effectiveHTTPAddr, server.trustedProxyCIDRs, config.IsProductionEnv()); err != nil {
-		server.logger.Error(
+	//
+	// Review fix: the hard-fail cannot tell "reverse proxy present but
+	// CIDRs forgotten" (real misconfig) apart from "no reverse proxy at
+	// all, panel is directly internet-facing" (a legitimate topology
+	// where empty CIDRs is architecturally correct). The operator opts
+	// into the latter with PANVEX_ALLOW_DIRECT_EXPOSURE=1.
+	allowDirectExposure := directExposureAllowed()
+	if err := checkTrustedProxyMisconfigured(effectiveHTTPAddr, server.trustedProxyCIDRs, config.IsProductionEnv(), allowDirectExposure); err != nil {
+		server.logger.ErrorContext(bootCtx,
 			"refusing to start: trusted_proxy_cidrs is empty on a public bind in production",
 			slog.String("bind_addr", effectiveHTTPAddr),
 			slog.String("alert", "trusted_proxy_misconfigured_prod"),
-			slog.String("remediation", "set PANVEX_TRUSTED_PROXY_CIDRS to your reverse-proxy/CNI subnets, or bind to loopback"),
+			slog.String("remediation", "set PANVEX_TRUSTED_PROXY_CIDRS to your reverse-proxy/CNI subnets (if behind a reverse proxy), or PANVEX_ALLOW_DIRECT_EXPOSURE=1 (if the panel is directly internet-facing with no reverse proxy), or bind to loopback"),
 			slog.Any("error", err),
 		)
 		bootCancel()
 		return nil, err
+	}
+	if allowDirectExposure && config.IsProductionEnv() && len(server.trustedProxyCIDRs) == 0 && bindAddrIsPublic(effectiveHTTPAddr) {
+		server.logger.InfoContext(bootCtx,
+			"direct-exposure mode acknowledged: panel is bound to a public address with no trusted_proxy_cidrs and no reverse proxy; RemoteAddr is treated as the real client IP",
+			slog.String("bind_addr", effectiveHTTPAddr),
+			slog.String("alert", "trusted_proxy_direct_exposure_ack"),
+		)
 	}
 	warnIfTrustedProxyMisconfigured(server.logger, effectiveHTTPAddr, server.trustedProxyCIDRs)
 

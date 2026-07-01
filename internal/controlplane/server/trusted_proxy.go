@@ -5,8 +5,25 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 )
+
+// EnvAllowDirectExposure opts a production boot out of the trusted-proxy
+// hard-fail (ErrTrustedProxyMisconfiguredProd) for a deployment topology
+// that has no reverse proxy at all: the panel is bound directly to a public
+// address and every TCP peer IS the real client. In that topology an empty
+// TrustedProxyCIDRs is architecturally correct — resolveTrustedClientIP
+// falls back to RemoteAddr and no collapse bug occurs — so the hard-fail
+// added for the "proxy present, CIDRs forgotten" misconfiguration would
+// wrongly refuse to boot a legitimate direct-exposure deployment. Setting
+// PANVEX_ALLOW_DIRECT_EXPOSURE=1 (or "true") is the operator's explicit
+// declaration of that topology. Mirrors the PANVEX_ALLOW_INSECURE_DB
+// escape-hatch idiom in controlplane/config/storage.go, including that it
+// is read directly (no plumbing through Options) since it is an
+// environment-level operator declaration, not per-instance configuration.
+const EnvAllowDirectExposure = "PANVEX_ALLOW_DIRECT_EXPOSURE"
 
 // ErrTrustedProxyMisconfiguredProd reports that the panel is bound to a
 // public (non-loopback) HTTP address with no TrustedProxyCIDRs configured
@@ -19,7 +36,13 @@ import (
 // attacker's own requests average in with everyone else's). Mirrors the
 // ErrInsecure*Prod fail-loud pattern in controlplane/config/storage.go —
 // production must not silently start with a broken security boundary.
-var ErrTrustedProxyMisconfiguredProd = errors.New("panel is bound to a public address with no trusted_proxy_cidrs configured; PANVEX_ENV=production requires PANVEX_TRUSTED_PROXY_CIDRS to be set (or bind to loopback)")
+//
+// This only fires for the "reverse proxy present but CIDRs never
+// configured" misconfiguration. A deployment with no reverse proxy at all
+// (the panel is directly internet-facing) should set
+// PANVEX_ALLOW_DIRECT_EXPOSURE=1 instead of trusted-proxy CIDRs — see
+// checkTrustedProxyMisconfigured and EnvAllowDirectExposure.
+var ErrTrustedProxyMisconfiguredProd = errors.New("panel is bound to a public address with no trusted_proxy_cidrs configured; PANVEX_ENV=production requires either PANVEX_TRUSTED_PROXY_CIDRS to be set (if behind a reverse proxy) or PANVEX_ALLOW_DIRECT_EXPOSURE=1 (if the panel is directly internet-facing with no reverse proxy)")
 
 // resolveTrustedClientIP determines the real client IP for r given a set of
 // trusted-proxy CIDRs. It is used by both the IP whitelist middleware and the
@@ -178,7 +201,16 @@ func bindAddrIsPublic(bindAddr string) bool {
 // warnIfTrustedProxyMisconfigured is the only signal there, matching the
 // ErrInsecureDBDSN (warn+opt-in) vs ErrInsecureDBDSNProd (hard fail, no
 // opt-in) split in controlplane/config/storage.go.
-func checkTrustedProxyMisconfigured(bindAddr string, trustedCIDRs []*net.IPNet, prod bool) error {
+//
+// The hard-fail cannot distinguish, from bind topology alone, "a reverse
+// proxy is in front but CIDRs were never configured" (a real misconfig)
+// from "there is no reverse proxy; the panel is directly internet-facing
+// and RemoteAddr already is the real client" (a legitimate topology where
+// empty CIDRs is correct — resolveTrustedClientIP falls back to
+// RemoteAddr and no collapse bug occurs). allowDirectExposure is the
+// operator's explicit declaration of the latter (PANVEX_ALLOW_DIRECT_EXPOSURE,
+// see EnvAllowDirectExposure) and suppresses the hard-fail when set.
+func checkTrustedProxyMisconfigured(bindAddr string, trustedCIDRs []*net.IPNet, prod bool, allowDirectExposure bool) error {
 	if !prod {
 		return nil
 	}
@@ -188,7 +220,30 @@ func checkTrustedProxyMisconfigured(bindAddr string, trustedCIDRs []*net.IPNet, 
 	if !bindAddrIsPublic(bindAddr) {
 		return nil
 	}
+	if allowDirectExposure {
+		return nil
+	}
 	return ErrTrustedProxyMisconfiguredProd
+}
+
+// directExposureAllowed reports whether the operator has set
+// PANVEX_ALLOW_DIRECT_EXPOSURE to opt a public bind with empty
+// TrustedProxyCIDRs out of the production hard-fail, declaring that the
+// panel has no reverse proxy in front of it and RemoteAddr is the real
+// client IP. Read directly via os.Getenv, mirroring the
+// PANVEX_ALLOW_INSECURE_DB env-var idiom in
+// controlplane/config/storage.go (ValidateStorageSecurity), except this
+// flag is an explicit boolean (accepts "1"/"true", case-insensitive, via
+// strconv.ParseBool) rather than INSECURE_DB's bare-presence check, since
+// "PANVEX_ALLOW_DIRECT_EXPOSURE=0" being set by a deploy templating tool
+// should not silently enable direct-exposure mode.
+func directExposureAllowed() bool {
+	v := strings.TrimSpace(os.Getenv(EnvAllowDirectExposure))
+	if v == "" {
+		return false
+	}
+	allowed, err := strconv.ParseBool(v)
+	return err == nil && allowed
 }
 
 // warnIfTrustedProxyMisconfigured emits a single WARN at startup when the

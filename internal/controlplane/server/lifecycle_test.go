@@ -269,6 +269,32 @@ func TestNew_ProductionSucceedsWithTrustedProxyCIDRsConfigured(t *testing.T) {
 	srv.Close()
 }
 
+// TestNew_ProductionSucceedsWithDirectExposureAllowed is the review-fix
+// regression test for the escape hatch: a legitimate direct-exposure
+// deployment (no reverse proxy at all, panel bound directly to a public
+// address) must still boot in production when the operator declares that
+// topology via PANVEX_ALLOW_DIRECT_EXPOSURE=1, even though
+// TrustedProxyCIDRs is empty. Unlike the reverse-proxy-forgotten-CIDRs
+// misconfiguration this guards against, an empty CIDR list here is
+// architecturally correct — resolveTrustedClientIP falls back to
+// RemoteAddr and no collapse bug occurs.
+func TestNew_ProductionSucceedsWithDirectExposureAllowed(t *testing.T) {
+	t.Setenv("PANVEX_ENV", "production")
+	t.Setenv(EnvAllowDirectExposure, "1")
+	now := time.Date(2026, time.May, 2, 10, 0, 0, 0, time.UTC)
+	srv, err := New(Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v, want nil with PANVEX_ALLOW_DIRECT_EXPOSURE=1", err)
+	}
+	if srv == nil {
+		t.Fatalf("New() returned nil server with nil error")
+	}
+	srv.Close()
+}
+
 // TestNew_DevWarnsButSucceedsWithPublicBindAndEmptyTrustedProxyCIDRs pins
 // the dev-mode side of the split: outside of PANVEX_ENV=production the same
 // misconfiguration must NOT block startup (warnIfTrustedProxyMisconfigured

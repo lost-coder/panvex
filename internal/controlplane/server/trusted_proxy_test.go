@@ -153,30 +153,66 @@ func TestWarnIfTrustedProxyMisconfigured(t *testing.T) {
 // fail-loud idiom in controlplane/config/storage.go), while the identical
 // configuration in dev only warns (handled separately by
 // warnIfTrustedProxyMisconfigured) and must NOT fail here.
+//
+// Review fix: the hard-fail must not block a legitimate direct-exposure
+// deployment (no reverse proxy at all) that opts in via
+// PANVEX_ALLOW_DIRECT_EXPOSURE=1 — see the "prod, public bind, empty CIDR,
+// direct exposure allowed" row.
 func TestCheckTrustedProxyMisconfigured(t *testing.T) {
 	tests := []struct {
-		name    string
-		bind    string
-		cidrs   []*net.IPNet
-		prod    bool
-		wantErr bool
+		name                string
+		bind                string
+		cidrs               []*net.IPNet
+		prod                bool
+		allowDirectExposure bool
+		wantErr             bool
 	}{
-		{"prod, public bind, empty CIDR", "0.0.0.0:8080", nil, true, true},
-		{"prod, unspecified bind, empty CIDR", ":8080", nil, true, true},
-		{"prod, public bind, configured CIDR", "0.0.0.0:8080", []*net.IPNet{mustCIDR(t, "10.0.0.0/8")}, true, false},
-		{"prod, loopback bind, empty CIDR", "127.0.0.1:8080", nil, true, false},
-		{"prod, ipv6 loopback bind, empty CIDR", "[::1]:8080", nil, true, false},
-		{"dev, public bind, empty CIDR", "0.0.0.0:8080", nil, false, false},
+		{"prod, public bind, empty CIDR", "0.0.0.0:8080", nil, true, false, true},
+		{"prod, unspecified bind, empty CIDR", ":8080", nil, true, false, true},
+		{"prod, public bind, configured CIDR", "0.0.0.0:8080", []*net.IPNet{mustCIDR(t, "10.0.0.0/8")}, true, false, false},
+		{"prod, loopback bind, empty CIDR", "127.0.0.1:8080", nil, true, false, false},
+		{"prod, ipv6 loopback bind, empty CIDR", "[::1]:8080", nil, true, false, false},
+		{"dev, public bind, empty CIDR", "0.0.0.0:8080", nil, false, false, false},
+		{"prod, public bind, empty CIDR, direct exposure allowed", "0.0.0.0:8080", nil, true, true, false},
 	}
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			err := checkTrustedProxyMisconfigured(tt.bind, tt.cidrs, tt.prod)
+			err := checkTrustedProxyMisconfigured(tt.bind, tt.cidrs, tt.prod, tt.allowDirectExposure)
 			if tt.wantErr && !errors.Is(err, ErrTrustedProxyMisconfiguredProd) {
 				t.Fatalf("checkTrustedProxyMisconfigured() error = %v, want ErrTrustedProxyMisconfiguredProd", err)
 			}
 			if !tt.wantErr && err != nil {
 				t.Fatalf("checkTrustedProxyMisconfigured() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+// TestDirectExposureAllowed pins the PANVEX_ALLOW_DIRECT_EXPOSURE parsing
+// idiom: accepts "1"/"true" (and other strconv.ParseBool truthy forms),
+// case-insensitively, and treats unset/empty/invalid/false values as "not
+// allowed" rather than erroring.
+func TestDirectExposureAllowed(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"unset/empty string", "", false},
+		{"1", "1", true},
+		{"true", "true", true},
+		{"TRUE", "TRUE", true},
+		{"0", "0", false},
+		{"false", "false", false},
+		{"garbage", "not-a-bool", false},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvAllowDirectExposure, tt.value)
+			if got := directExposureAllowed(); got != tt.want {
+				t.Fatalf("directExposureAllowed() = %v, want %v (value=%q)", got, tt.want, tt.value)
 			}
 		})
 	}
