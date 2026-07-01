@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/api";
+import { runtimeEventsBusFrameSchema } from "@/shared/api/schemas/runtime-events";
 import type { RuntimeEvent } from "@/shared/api/types-runtime-events";
 import {
   buildEventsURL,
@@ -21,31 +22,11 @@ const MAX_EVENTS = 500;
 const LIVE_DECAY_MS = 2_000;
 const LIVE_DECAY_TICK_MS = 500;
 
-interface BusRuntimeEventRecord {
-  ts?: string;
-  level?: string;
-  message?: string;
-  fields?: Record<string, string>;
-}
-
-interface BusMessage {
-  type: string;
-  data?: {
-    agent_id?: string;
-    events?: BusRuntimeEventRecord[];
-  };
-}
-
 interface UseAgentRuntimeEventsResult {
   events: RuntimeEvent[];
   isLoading: boolean;
   /** True while runtime events have arrived within LIVE_DECAY_MS. */
   isLive: boolean;
-}
-
-function normaliseLevel(level: string | undefined): RuntimeEvent["level"] {
-  if (level === "warn" || level === "error") return level;
-  return "info";
 }
 
 /**
@@ -101,21 +82,36 @@ export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsRes
     }
 
     socket.onmessage = (msg) => {
-      let parsed: BusMessage;
+      // M13 (audit): the frame used to be coerced via
+      // `JSON.parse(...) as BusMessage` with only an `Array.isArray`
+      // guard on `events` — a malformed element (e.g. `events: [null]`)
+      // flowed straight into `.map(record => record.ts ...)` and threw
+      // a TypeError inside this synchronous handler, crashing the
+      // server-detail live-events section. Mirror EventsSynchronizer's
+      // `eventEnvelopeSchema.safeParse` pattern: parse defensively, drop
+      // the whole frame on any shape mismatch, never throw.
+      let raw: unknown;
       try {
-        parsed = JSON.parse(msg.data as string) as BusMessage;
+        raw = JSON.parse(msg.data as string);
       } catch {
         return;
       }
-      if (parsed.type !== "runtime.events") return;
-      const data = parsed.data;
-      if (!data || data.agent_id !== agentId || !Array.isArray(data.events)) return;
-      const incoming: RuntimeEvent[] = data.events.map((record) => ({
-        ts: record.ts ?? new Date().toISOString(),
-        level: normaliseLevel(record.level),
-        message: record.message ?? "",
-        fields: record.fields,
-      }));
+      const result = runtimeEventsBusFrameSchema.safeParse(raw);
+      if (!result.success) {
+        if (
+          import.meta !== undefined &&
+          (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV
+        ) {
+          console.debug("runtime-events: malformed bus frame, dropping", result.error);
+        }
+        return;
+      }
+      const data = result.data.data;
+      if (data.agent_id !== agentId) return;
+      // Schema already validated ts/level/message/fields — the zod parse
+      // above guarantees `record` matches RuntimeEvent's shape exactly,
+      // so no defaulting/normalisation is needed here anymore.
+      const incoming: RuntimeEvent[] = data.events;
       if (incoming.length === 0) return;
       setEvents((prev) => {
         // Server batches are oldest-first; the list is newest-first.
