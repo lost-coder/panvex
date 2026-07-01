@@ -1,6 +1,6 @@
 # Each FROM line is digest-pinned (Phase-3 §3.3): the `tag@sha256:...`
 # form locks the image to an immutable manifest, so a registry
-# republish of `node:22-alpine` cannot silently change what we build.
+# republish of `node:26-alpine` cannot silently change what we build.
 # The Dependabot docker rule (.github/dependabot.yml) bumps both the
 # tag and the digest on a weekly cadence — operators rebase their
 # release branch onto the dependabot PR before tagging.
