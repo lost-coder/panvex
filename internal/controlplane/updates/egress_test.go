@@ -17,13 +17,14 @@ func TestIsBlockedIP(t *testing.T) {
 		"0.0.0.0", "::",   // unspecified
 		"224.0.0.1", "ff02::1", // multicast
 		"::ffff:169.254.169.254", "::ffff:10.0.0.1", // IPv4-mapped IPv6
+		"100.64.0.1", "100.127.255.255", // CGNAT / RFC6598 shared address space
 	}
 	for _, s := range blocked {
 		if !isBlockedIP(netip.MustParseAddr(s)) {
 			t.Errorf("isBlockedIP(%s) = false, want true", s)
 		}
 	}
-	public := []string{"8.8.8.8", "1.1.1.1", "140.82.112.3", "2606:4700:4700::1111"}
+	public := []string{"8.8.8.8", "1.1.1.1", "140.82.112.3", "2606:4700:4700::1111", "100.128.0.1"}
 	for _, s := range public {
 		if isBlockedIP(netip.MustParseAddr(s)) {
 			t.Errorf("isBlockedIP(%s) = true, want false (public)", s)

@@ -30,22 +30,36 @@ func CheckGeoIPURL(raw string) error {
 	return nil
 }
 
+// extraBlockedPrefixes covers internal ranges the netip predicates miss:
+// CGNAT shared address space (RFC6598), commonly carrier/cloud-internal.
+var extraBlockedPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),
+}
+
 // isBlockedIP reports whether addr is an internal/non-public destination that
 // GeoIP downloads must never reach: loopback, RFC1918/RFC4193 private,
-// link-local (incl. 169.254.169.254 cloud metadata), multicast, or
-// unspecified. Public global unicast is allowed.
+// link-local (incl. 169.254.169.254 cloud metadata), multicast, unspecified,
+// or CGNAT shared address space (RFC6598). Public global unicast is allowed.
 func isBlockedIP(addr netip.Addr) bool {
 	if !addr.IsValid() {
 		return true
 	}
 	addr = addr.Unmap()
-	return addr.IsLoopback() ||
+	if addr.IsLoopback() ||
 		addr.IsPrivate() ||
 		addr.IsLinkLocalUnicast() ||
 		addr.IsLinkLocalMulticast() ||
 		addr.IsMulticast() ||
 		addr.IsUnspecified() ||
-		addr.IsInterfaceLocalMulticast()
+		addr.IsInterfaceLocalMulticast() {
+		return true
+	}
+	for _, p := range extraBlockedPrefixes {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkDialAddress rejects a resolved "ip:port" targeting a non-public
