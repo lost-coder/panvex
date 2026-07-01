@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -1007,8 +1008,24 @@ func (s *memoryStore) AppendMetricSnapshotsBulk(ctx context.Context, snapshots [
 	return nil
 }
 
+// metricSnapshotCap mirrors the 512-row cap enforced by the SQLite and
+// Postgres ListMetricSnapshots queries (M4) so the shared contract test
+// (store_contract_metrics.go) exercises identical semantics on every
+// backend, including this in-memory fixture.
+const metricSnapshotCap = 512
+
 func (s *memoryStore) ListMetricSnapshots(_ context.Context) ([]storage.MetricSnapshotRecord, error) {
-	return append([]storage.MetricSnapshotRecord(nil), s.metricSnapshots...), nil
+	all := append([]storage.MetricSnapshotRecord(nil), s.metricSnapshots...)
+	sort.Slice(all, func(i, j int) bool {
+		if !all[i].CapturedAt.Equal(all[j].CapturedAt) {
+			return all[i].CapturedAt.Before(all[j].CapturedAt)
+		}
+		return all[i].ID < all[j].ID
+	})
+	if len(all) > metricSnapshotCap {
+		all = all[len(all)-metricSnapshotCap:]
+	}
+	return all, nil
 }
 
 func (s *memoryStore) PruneMetricSnapshots(_ context.Context, before time.Time) (int64, error) {
