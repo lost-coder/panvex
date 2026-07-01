@@ -1,6 +1,7 @@
 package updates
 
 import (
+	"net/http"
 	"net/netip"
 	"strings"
 	"testing"
@@ -65,8 +66,13 @@ func TestGeoIPDownloadClientBlocksInternalDial(t *testing.T) {
 	client := GeoIPDownloadClient()
 	// Literal internal IP: the Control hook rejects before any network I/O,
 	// so this is deterministic and never actually connects.
-	_, err := client.Get("https://10.255.255.1/GeoLite2-City.mmdb")
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://10.255.255.1/GeoLite2-City.mmdb", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	resp, err := client.Do(req)
 	if err == nil {
+		_ = resp.Body.Close()
 		t.Fatal("GeoIPDownloadClient dialed an internal address; egress guard not wired to the client")
 	}
 	if !strings.Contains(err.Error(), "non-public address") {
