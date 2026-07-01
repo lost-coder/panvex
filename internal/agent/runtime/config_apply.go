@@ -51,6 +51,23 @@ func rollbackConfig(ctx context.Context, d configApplyDeps, backup string) error
 	return nil
 }
 
+// hotRollbackConfig restores the backup over the live config and waits for
+// Telemt's file watcher to pick it up and report healthy again — unlike
+// rollbackConfig, it never restarts the process, mirroring the hot-reload
+// forward path it is undoing. H1: a hot patch (RestartRequired=false) that
+// leaves Telemt unhealthy must be reverted, not reported as a false success.
+func hotRollbackConfig(ctx context.Context, d configApplyDeps, backup string) error {
+	rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), configApplyRollbackTimeout)
+	defer cancel()
+	if err := restoreConfigFile(backup, d.configPath); err != nil {
+		return fmt.Errorf("rollback write failed: %w", err)
+	}
+	if ok, reason := waitHealthy(rollbackCtx, d); !ok {
+		return fmt.Errorf("still unhealthy after restoring backup: %s", reason)
+	}
+	return nil
+}
+
 // restoreConfigFile atomically copies backup back over path.
 func restoreConfigFile(backup, path string) error {
 	data, err := os.ReadFile(backup) //nolint:gosec // G304: backup of the agent-configured Telemt config, not untrusted input
@@ -137,6 +154,11 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 	if err != nil {
 		return configApplyResult{message: fmt.Sprintf("config.apply: backup failed: %v", err)}
 	}
+	// .panvex.bak must never leak, on any return path below: success (hot or
+	// restart), or after a rollback has restored it onto the live config.
+	// Safe to defer unconditionally — every restore reads the backup's bytes
+	// into memory before this fires, so removing it after is never a race.
+	defer func() { _ = os.Remove(backup) }()
 
 	res, err := d.telemt.PatchConfig(ctx, p.Patch, p.ExpectedRevision)
 	if err != nil {
@@ -144,7 +166,14 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 	}
 
 	if !res.RestartRequired {
-		return configApplyResult{success: true, revision: res.Revision, message: "config applied (hot reload, no restart)"}
+		hotOK, hotReason := waitHealthy(ctx, d)
+		if hotOK {
+			return configApplyResult{success: true, revision: res.Revision, message: "config applied (hot reload, no restart)"}
+		}
+		if rbErr := hotRollbackConfig(ctx, d, backup); rbErr != nil {
+			return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after hot reload (%s); rollback failed: %v", hotReason, rbErr)}
+		}
+		return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after hot reload (%s); rolled back to previous config", hotReason)}
 	}
 
 	if d.restarter == nil {
@@ -159,29 +188,39 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 		return configApplyResult{message: fmt.Sprintf("config.apply: restart failed: %v; rolled back to previous config", err)}
 	}
 
-	if waitHealthy(ctx, d) {
+	ok, reason := waitHealthy(ctx, d)
+	if ok {
 		return configApplyResult{success: true, revision: res.Revision, message: "config applied with restart"}
 	}
 
 	if rbErr := rollbackConfig(ctx, d, backup); rbErr != nil {
-		return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after restart; %v", rbErr)}
+		return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after restart (%s); %v", reason, rbErr)}
 	}
-	return configApplyResult{message: "config.apply: unhealthy after restart; rolled back to previous config"}
+	return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after restart (%s); rolled back to previous config", reason)}
 }
 
-// waitHealthy polls HealthReady until ready or attempts are exhausted.
-func waitHealthy(ctx context.Context, d configApplyDeps) bool {
+// waitHealthy polls HealthReady until ready or attempts are exhausted. It
+// returns the last observed reason/error string alongside the bool so
+// callers can fold it into a failure message instead of discarding it (D1).
+func waitHealthy(ctx context.Context, d configApplyDeps) (bool, string) {
+	var lastReason string
 	for i := 0; i < d.healthAttempts; i++ {
-		if ready, _, err := d.telemt.HealthReady(ctx); err == nil && ready {
-			return true
+		ready, reason, err := d.telemt.HealthReady(ctx)
+		if err == nil && ready {
+			return true, ""
+		}
+		if err != nil {
+			lastReason = err.Error()
+		} else {
+			lastReason = reason
 		}
 		select {
 		case <-ctx.Done():
-			return false
+			return false, lastReason
 		case <-time.After(d.healthInterval):
 		}
 	}
-	return false
+	return false, lastReason
 }
 
 // handleConfigApplyJob runs a config.apply job against the local Telemt instance.
