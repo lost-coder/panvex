@@ -1,10 +1,18 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // TestEnrichIPRowsPopulatesGeoIPFields covers Task 16 of the GeoIP
@@ -38,8 +46,8 @@ func TestEnrichIPRowsPopulatesGeoIPFields(t *testing.T) {
 
 	rows := []clientIPRow{
 		{IPAddress: "81.2.69.142", FirstSeen: now, LastSeen: now},
-		{IPAddress: "10.0.0.1", FirstSeen: now, LastSeen: now},     // private — ShouldLookup skips
-		{IPAddress: "not-an-ip", FirstSeen: now, LastSeen: now},    // unparseable — guarded
+		{IPAddress: "10.0.0.1", FirstSeen: now, LastSeen: now},  // private — ShouldLookup skips
+		{IPAddress: "not-an-ip", FirstSeen: now, LastSeen: now}, // unparseable — guarded
 	}
 	server.enrichIPRows(rows)
 
@@ -101,5 +109,247 @@ func TestEnrichIPRowsNoOpWhenGeoIPNil(t *testing.T) {
 
 	if rows[0].CountryCode != "" || rows[0].CountryName != "" || rows[0].City != "" || rows[0].ASN != "" {
 		t.Errorf("rows[0] enriched despite nil manager: %+v, want all-empty", rows[0])
+	}
+}
+
+// --- M6/M7 (audit remediation phase 2, task 2.7) ---
+//
+// M6: parseTimeRangeAt silently ignored unparseable from/to query params
+// and never rejected an inverted range (from > to) — both cases used to
+// flow straight into storage and come back with an empty/misleading
+// result set instead of a 400. M7: when CountUniqueClientIPs errors, the
+// handler used to report total_unique = len(ips), which is the
+// page-limited count, not the true total — a plausible-looking but wrong
+// number.
+//
+// The three endpoints below all share s.parseTimeRange -> parseTimeRangeAt.
+// Admin role resolves to FleetScopeAccess{Global: true} (see
+// requireFleetScope), so agentVisibleInScope/clientVisibleInScope pass
+// without needing a real agent/client fixture, keeping these tests
+// focused on the time-range/count-fallback behaviour.
+
+// countErrStore wraps a real Store and forces CountUniqueClientIPs to
+// fail, so the M7 fallback branch in handleClientIPHistory can be
+// exercised without needing a storage-layer failure to occur naturally.
+type countErrStore struct {
+	storage.Store
+	err error
+}
+
+func (s *countErrStore) CountUniqueClientIPs(_ context.Context, _ string) (int, error) {
+	return 0, s.err
+}
+
+func historyTestServer(t *testing.T, now time.Time) (*Server, []*http.Cookie) {
+	t.Helper()
+	server := testServerWithSQLite(t, now)
+	cookies := loginAs(t, server, now, "admin", "Admin1password", auth.RoleAdmin)
+	return server, cookies
+}
+
+// historyEndpoints enumerates the 3 call sites that route through
+// parseTimeRangeAt, per the task brief (http_history.go:59/111/194).
+func historyEndpoints() []struct {
+	name string
+	path string
+} {
+	return []struct {
+		name string
+		path string
+	}{
+		{"server-load", "/api/telemetry/servers/srv-1/history/load"},
+		{"dc-health", "/api/telemetry/servers/srv-1/history/dc"},
+		{"client-ip", "/api/clients/client-1/history/ips"},
+	}
+}
+
+// TestParseTimeRangeAtRejectsUnparseableParams covers M6: an
+// unparseable from/to must be reported as an error, not silently
+// dropped in favour of the default window.
+func TestParseTimeRangeAtRejectsUnparseableParams(t *testing.T) {
+	now := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{"garbage from", "from=garbage"},
+		{"garbage to", "to=not-a-time"},
+		{"garbage from and to", "from=nope&to=nope"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x?"+tc.query, nil)
+			_, _, err := parseTimeRangeAt(r, defaultHistoryRangeHours, now)
+			if err == nil {
+				t.Fatalf("parseTimeRangeAt(%q) error = nil, want non-nil", tc.query)
+			}
+		})
+	}
+}
+
+// TestParseTimeRangeAtRejectsInvertedRange covers M6: from > to must be
+// rejected rather than silently flowing to storage (which used to
+// return an empty/misleading result set that looked like "no data").
+func TestParseTimeRangeAtRejectsInvertedRange(t *testing.T) {
+	now := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	later := now.Format(time.RFC3339)
+	earlier := now.Add(-time.Hour).Format(time.RFC3339)
+
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x?from="+later+"&to="+earlier, nil)
+	_, _, err := parseTimeRangeAt(r, defaultHistoryRangeHours, now)
+	if err == nil {
+		t.Fatal("parseTimeRangeAt(from>to) error = nil, want non-nil (inverted range)")
+	}
+}
+
+// TestParseTimeRangeAtValidRangeStillWorks is the control case: a
+// well-formed, non-inverted range must still parse cleanly and the
+// existing max-span clamp must still apply.
+func TestParseTimeRangeAtValidRangeStillWorks(t *testing.T) {
+	now := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	from := now.Add(-2 * time.Hour).Format(time.RFC3339)
+	to := now.Format(time.RFC3339)
+
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x?from="+from+"&to="+to, nil)
+	gotFrom, gotTo, err := parseTimeRangeAt(r, defaultHistoryRangeHours, now)
+	if err != nil {
+		t.Fatalf("parseTimeRangeAt() error = %v, want nil", err)
+	}
+	if !gotTo.Equal(now) {
+		t.Errorf("to = %v, want %v", gotTo, now)
+	}
+	if wantFrom := now.Add(-2 * time.Hour); !gotFrom.Equal(wantFrom) {
+		t.Errorf("from = %v, want %v", gotFrom, wantFrom)
+	}
+
+	// Max-span clamp still applies to valid (non-inverted) ranges.
+	farFrom := now.Add(-time.Duration(maxHistoryRangeHours+24) * time.Hour).Format(time.RFC3339)
+	r2 := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x?from="+farFrom+"&to="+to, nil)
+	clampedFrom, clampedTo, err := parseTimeRangeAt(r2, defaultHistoryRangeHours, now)
+	if err != nil {
+		t.Fatalf("parseTimeRangeAt(oversized span) error = %v, want nil", err)
+	}
+	if wantClamped := now.Add(-time.Duration(maxHistoryRangeHours) * time.Hour); !clampedFrom.Equal(wantClamped) {
+		t.Errorf("clamped from = %v, want %v", clampedFrom, wantClamped)
+	}
+	if !clampedTo.Equal(now) {
+		t.Errorf("clamped to = %v, want %v", clampedTo, now)
+	}
+}
+
+// TestHistoryEndpointsReject400OnUnparseableFrom covers M6 end-to-end:
+// all 3 handlers that call s.parseTimeRange must answer 400 (not 200
+// with an empty/misleading body) when ?from= is garbage.
+func TestHistoryEndpointsReject400OnUnparseableFrom(t *testing.T) {
+	now := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	server, cookies := historyTestServer(t, now)
+
+	for _, ep := range historyEndpoints() {
+		t.Run(ep.name, func(t *testing.T) {
+			resp := performJSONRequest(t, server, http.MethodGet, ep.path+"?from=garbage", nil, cookies)
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("GET %s?from=garbage status = %d, want %d; body=%s", ep.path, resp.Code, http.StatusBadRequest, resp.Body.String())
+			}
+		})
+	}
+}
+
+// TestHistoryEndpointsReject400OnInvertedRange covers M6 end-to-end:
+// all 3 handlers must answer 400 when from > to, instead of silently
+// swapping or returning an empty result set.
+func TestHistoryEndpointsReject400OnInvertedRange(t *testing.T) {
+	now := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	server, cookies := historyTestServer(t, now)
+
+	later := now.Format(time.RFC3339)
+	earlier := now.Add(-time.Hour).Format(time.RFC3339)
+
+	for _, ep := range historyEndpoints() {
+		t.Run(ep.name, func(t *testing.T) {
+			query := "?from=" + later + "&to=" + earlier
+			resp := performJSONRequest(t, server, http.MethodGet, ep.path+query, nil, cookies)
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("GET %s%s status = %d, want %d; body=%s", ep.path, query, resp.Code, http.StatusBadRequest, resp.Body.String())
+			}
+		})
+	}
+}
+
+// TestHistoryEndpointsAcceptValidRange is the control case for the
+// end-to-end 400 tests above: a well-formed range must still succeed.
+func TestHistoryEndpointsAcceptValidRange(t *testing.T) {
+	now := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	server, cookies := historyTestServer(t, now)
+
+	from := now.Add(-time.Hour).Format(time.RFC3339)
+	to := now.Format(time.RFC3339)
+
+	for _, ep := range historyEndpoints() {
+		t.Run(ep.name, func(t *testing.T) {
+			query := "?from=" + from + "&to=" + to
+			resp := performJSONRequest(t, server, http.MethodGet, ep.path+query, nil, cookies)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("GET %s%s status = %d, want %d; body=%s", ep.path, query, resp.Code, http.StatusOK, resp.Body.String())
+			}
+		})
+	}
+}
+
+// TestClientIPHistoryCountErrorDoesNotReportPageSizeAsTotal covers M7:
+// when CountUniqueClientIPs fails, the handler must not fall back to
+// len(ips) (the page-limited count) as if it were the authoritative
+// total_unique. Chosen representation (see task report): total_unique
+// stays a plain non-negative integer (0) so the existing strict
+// `total_unique: z.number()` frontend schema keeps decoding
+// successfully — sending `null` would fail that schema and trip the
+// UI's schema-mismatch error boundary, trading a wrong-number bug for
+// a broken-panel bug. A sibling total_unique_available=false flag
+// carries the "this number is not real" signal for callers that want
+// it. The key invariant under test: total_unique must never equal the
+// page size (len(ips)) when the count query failed, and
+// total_unique_available must be false.
+func TestClientIPHistoryCountErrorDoesNotReportPageSizeAsTotal(t *testing.T) {
+	now := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	server, cookies := historyTestServer(t, now)
+
+	// Seed a non-empty page of IP rows so len(ips) > 0 — otherwise the
+	// old buggy fallback (total_unique = len(ips)) would coincidentally
+	// read 0 too, and the test would pass for the wrong reason.
+	for _, ip := range []string{"203.0.113.1", "203.0.113.2", "203.0.113.3"} {
+		if err := server.store.UpsertClientIPHistory(context.Background(), storage.ClientIPHistoryRecord{
+			AgentID:   "agent-1",
+			ClientID:  "client-1",
+			IPAddress: ip,
+			FirstSeen: now.Add(-time.Hour),
+			LastSeen:  now,
+		}); err != nil {
+			t.Fatalf("UpsertClientIPHistory(%s) error = %v", ip, err)
+		}
+	}
+
+	server.store = &countErrStore{Store: server.store, err: errors.New("count query failed")}
+
+	resp := performJSONRequest(t, server, http.MethodGet, "/api/clients/client-1/history/ips", nil, cookies)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET client ip history status = %d, want %d; body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var payload struct {
+		IPs                  []clientIPRow `json:"ips"`
+		TotalUnique          int           `json:"total_unique"`
+		TotalUniqueAvailable bool          `json:"total_unique_available"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal error = %v; body=%s", err, resp.Body.String())
+	}
+	if len(payload.IPs) == 0 {
+		t.Fatalf("page came back empty; the seeded rows should have been aggregated into ips")
+	}
+	if payload.TotalUniqueAvailable {
+		t.Fatalf("total_unique_available = true, want false (CountUniqueClientIPs errored)")
+	}
+	if payload.TotalUnique == len(payload.IPs) {
+		t.Fatalf("total_unique = %d equals len(ips) = %d; the page-limited count is leaking back out as the total", payload.TotalUnique, len(payload.IPs))
 	}
 }
