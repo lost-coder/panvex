@@ -58,6 +58,19 @@ const (
 	outboundMaxMessageSize   = 16 * 1024 * 1024
 )
 
+// outboundConnectTimeout bounds how long connectAndServe waits for
+// client.Connect to return a stream (M2). Without it a half-open / black-hole
+// agent (TCP connects but never completes the TLS handshake or the gRPC
+// stream setup) was only reaped by the gRPC keepalive timeout (~40s: the
+// 30s ping interval plus the 10s pong deadline). 15s matches the agent's own
+// forward-dial budget (gatewayStreamConnectTimeout in cmd/agent/main.go) so
+// both directions fail a stuck dial at the same threshold. This bounds ONLY
+// the dial-setup phase — see the AfterFunc/Stop pattern in connectAndServe,
+// mirrored from internal/agent/transport/dial.go, which stops the timer the
+// instant Connect returns so a successful connect is never cancelled out
+// from under a live session.
+const outboundConnectTimeout = 15 * time.Second
+
 // outboundSupervisor maintains a single agent's outbound (panel-dials-agent)
 // gRPC connection with exponential backoff + jitter on disconnects.
 type outboundSupervisor struct {
@@ -94,6 +107,20 @@ type outboundSupervisor struct {
 	// Recorder are logged and silently dropped — observability must never
 	// abort an outbound reconnect.
 	rec *enrollment.Recorder
+
+	// connectTimeoutFn, when non-nil, overrides outboundConnectTimeout for
+	// the AfterFunc that bounds client.Connect (M2). Tests use this to
+	// exercise the black-hole-dial timeout path without waiting the full
+	// production timeout; production code leaves this nil so
+	// effectiveConnectTimeout falls back to the package constant.
+	connectTimeoutFn func() time.Duration
+}
+
+func (s *outboundSupervisor) effectiveConnectTimeout() time.Duration {
+	if s.connectTimeoutFn != nil {
+		return s.connectTimeoutFn()
+	}
+	return outboundConnectTimeout
 }
 
 func (s *outboundSupervisor) effectiveBackoffInitial() time.Duration {
@@ -334,7 +361,20 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 	}
 	defer conn.Close()
 	client := gatewayrpc.NewAgentGatewayClient(conn)
-	stream, err := client.Connect(ctx)
+
+	// connectCtx inherits ctx so a supervisor shutdown (panel restart, agent
+	// removal, transport-mode switch) still cancels an in-flight Connect
+	// promptly. The AfterFunc enforces the dial-setup deadline (M2) on top of
+	// that: if the black-hole/half-open agent hasn't produced a stream within
+	// outboundConnectTimeout, cancel connectCtx to abort the RPC. The timer is
+	// stopped IMMEDIATELY after Connect returns — critical, because the
+	// returned stream is bound to connectCtx too: leaving the timer armed
+	// would let it fire mid-session and kill an otherwise-healthy connection.
+	connectCtx, cancelConnect := context.WithCancel(ctx)
+	defer cancelConnect()
+	connectTimer := time.AfterFunc(s.effectiveConnectTimeout(), cancelConnect)
+	stream, err := client.Connect(connectCtx)
+	connectTimer.Stop()
 	if err != nil {
 		if s.rec != nil && attemptID != "" {
 			_ = s.rec.Fail(ctx, attemptID, classifyDialError(err), err,

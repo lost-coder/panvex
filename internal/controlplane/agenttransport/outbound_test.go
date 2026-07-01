@@ -389,6 +389,145 @@ func TestOutboundDialVerifiesAgentServerName(t *testing.T) {
 	}
 }
 
+// TestOutboundConnectAndServeTimesOutAgainstBlackHole guards M2: dialing a
+// listener that accepts the TCP connection but never completes the TLS
+// handshake / gRPC stream setup (a "black hole" or half-open agent) must be
+// bounded by the connect-timeout AfterFunc, not by the ~40s gRPC keepalive
+// (30s ping + 10s pong deadline). Before the fix, connectAndServe called
+// client.Connect(ctx) with the raw supervisor ctx and no deadline of its own,
+// so a black-hole peer would hang until keepalive intervened.
+//
+// The test uses a short connectTimeoutFn override (not the 15s production
+// value) so it runs quickly in CI while still exercising the exact same
+// AfterFunc+cancel code path connectAndServe uses in production.
+func TestOutboundConnectAndServeTimesOutAgainstBlackHole(t *testing.T) {
+	var lc net.ListenConfig
+	listener, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	// Accept and hold the connection open without ever speaking TLS, so the
+	// client's handshake blocks indefinitely — a stand-in for a half-open /
+	// black-hole agent.
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			// Hold the raw TCP conn open; never write/negotiate TLS.
+			go func() { <-t.Context().Done(); conn.Close() }()
+		}
+	}()
+
+	caCert, _ := mustGenerateCA(t)
+	tlsCfg := &tls.Config{RootCAs: rootPool(caCert)}
+
+	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		t.Fatal("handler must not be invoked: Connect should never succeed against a black hole")
+		return nil
+	})
+
+	sup := newOutboundSupervisor(
+		NodeMeta{NodeID: "n-blackhole", AgentID: "agent-blackhole", DialAddress: listener.Addr().String()},
+		tlsCfg,
+		handler,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	const testTimeout = 200 * time.Millisecond
+	sup.connectTimeoutFn = func() time.Duration { return testTimeout }
+
+	start := time.Now()
+	errCh := make(chan error, 1)
+	go func() { errCh <- sup.connectAndServe(t.Context()) }()
+
+	select {
+	case err := <-errCh:
+		elapsed := time.Since(start)
+		if err == nil {
+			t.Fatal("connectAndServe returned nil error against a black-hole peer")
+		}
+		// Generous upper bound: well under the ~40s keepalive floor this
+		// regression test guards against, but tolerant of CI scheduling
+		// jitter around the 200ms connectTimeoutFn.
+		if elapsed > 5*time.Second {
+			t.Fatalf("connectAndServe took %v, want well under the 40s keepalive floor (connectTimeoutFn=%v)", elapsed, testTimeout)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("connectAndServe did not return within 10s against a black-hole peer (M2 regression: keepalive-only reaping)")
+	}
+}
+
+// TestOutboundConnectTimeoutDoesNotCancelLiveSession guards the other half of
+// M2: once client.Connect succeeds, the AfterFunc timer MUST be stopped so it
+// cannot later cancel connectCtx (and therefore the live stream, which
+// inherits connectCtx) mid-session. This mirrors
+// TestDialTransportConnectTimeoutDoesNotCancelLiveStream in
+// internal/agent/transport/transport_test.go.
+//
+// Setup: a real agent stub server accepts the stream, a short
+// connectTimeoutFn, and a handler that blocks (simulating a long-lived
+// session) past the connect-timeout window. If the timer were left armed
+// (the bug this guards against), the handler's ctx would be cancelled at
+// ~connectTimeoutFn and the handler would observe ctx.Err() != nil before
+// the test releases it.
+func TestOutboundConnectTimeoutDoesNotCancelLiveSession(t *testing.T) {
+	stub := newAgentStubServer(t, "agent-live")
+	defer stub.Close()
+
+	handlerEntered := make(chan struct{})
+	release := make(chan struct{})
+	var sawCancelDuringWait atomic.Bool
+
+	handler := SessionHandler(func(ctx context.Context, _ AgentSession, _ NodeMeta) error {
+		close(handlerEntered)
+		select {
+		case <-ctx.Done():
+			// Fired before we were released — the AfterFunc leaked past
+			// Connect returning and killed the live session. Record it and
+			// return promptly; the assertion below fails the test.
+			sawCancelDuringWait.Store(true)
+		case <-release:
+		}
+		return ctx.Err()
+	})
+
+	sup := newOutboundSupervisor(
+		NodeMeta{NodeID: "n-live", AgentID: "agent-live", DialAddress: stub.address},
+		stub.clientTLS,
+		handler,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	const testTimeout = 50 * time.Millisecond
+	sup.connectTimeoutFn = func() time.Duration { return testTimeout }
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- sup.connectAndServe(t.Context()) }()
+
+	select {
+	case <-handlerEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not start within 2s")
+	}
+
+	// Hold well past connectTimeoutFn to prove the timer was stopped after
+	// Connect returned.
+	time.Sleep(5 * testTimeout)
+	close(release)
+
+	select {
+	case <-errCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("connectAndServe did not return after release")
+	}
+
+	if sawCancelDuringWait.Load() {
+		t.Fatal("live session ctx was cancelled by the connect-timeout AfterFunc — timer was not stopped after Connect succeeded")
+	}
+}
+
 // ----------------- helpers -----------------
 
 type agentStubServer struct {

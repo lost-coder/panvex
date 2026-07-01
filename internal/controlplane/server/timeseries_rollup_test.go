@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -219,5 +220,104 @@ func TestRunTimeseriesRollupPrunesExpiredAgentRevocations(t *testing.T) {
 	}
 	if len(remaining) != 0 {
 		t.Fatalf("revocations after rollup = %d, want 0", len(remaining))
+	}
+}
+
+// TestRunRetentionPruneWarnsOnceWhenDisabled verifies that a ttlSeconds<=0
+// ("keep forever") setting logs a loud WARN the first time runRetentionPrune
+// sees it, does NOT error, still no-ops the prune, and does not repeat the
+// warning on subsequent ticks while the series stays disabled (avoids log
+// spam on every rollup interval).
+func TestRunRetentionPruneWarnsOnceWhenDisabled(t *testing.T) {
+	now := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	server := testServerWithSQLiteLogger(t, now, logger)
+	ctx := context.Background()
+
+	pruneCalls := 0
+	pruneFn := func(_ context.Context, _ time.Time) (int64, error) {
+		pruneCalls++
+		return 0, nil
+	}
+
+	// First tick: ttlSeconds<=0 must warn exactly once and must not call
+	// pruneFn (the whole point of "disabled" is skip-the-prune).
+	server.runRetentionPrune(ctx, "metric_snapshots", now, 0, pruneFn)
+	if pruneCalls != 0 {
+		t.Fatalf("pruneFn called %d times with ttlSeconds<=0, want 0", pruneCalls)
+	}
+	out := logBuf.String()
+	if !strings.Contains(out, "retention disabled for series") || !strings.Contains(out, "metric_snapshots") {
+		t.Fatalf("expected loud disabled-retention warning for metric_snapshots, got log:\n%s", out)
+	}
+	if got := strings.Count(out, "retention disabled for series"); got != 1 {
+		t.Fatalf("expected exactly 1 warning line after first tick, got %d in:\n%s", got, out)
+	}
+
+	// Second tick with a negative ttl (still "disabled"): must NOT warn
+	// again — this is the log-spam guard.
+	server.runRetentionPrune(ctx, "metric_snapshots", now, -1, pruneFn)
+	if pruneCalls != 0 {
+		t.Fatalf("pruneFn called %d times with ttlSeconds<0, want 0", pruneCalls)
+	}
+	if got := strings.Count(logBuf.String(), "retention disabled for series"); got != 1 {
+		t.Fatalf("expected warning to stay at 1 occurrence across repeated disabled ticks, got %d in:\n%s", got, logBuf.String())
+	}
+}
+
+// TestRunRetentionPruneNonZeroTTLStillPrunesAndDoesNotWarn is the control
+// case: a positive ttlSeconds must still invoke pruneFn and must never log
+// the disabled-retention warning.
+func TestRunRetentionPruneNonZeroTTLStillPrunesAndDoesNotWarn(t *testing.T) {
+	now := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	server := testServerWithSQLiteLogger(t, now, logger)
+	ctx := context.Background()
+
+	pruneCalls := 0
+	var gotCutoff time.Time
+	pruneFn := func(_ context.Context, before time.Time) (int64, error) {
+		pruneCalls++
+		gotCutoff = before
+		return 3, nil
+	}
+
+	server.runRetentionPrune(ctx, "metric_snapshots", now, 86400, pruneFn)
+
+	if pruneCalls != 1 {
+		t.Fatalf("pruneFn called %d times with ttlSeconds=86400, want 1", pruneCalls)
+	}
+	wantCutoff := now.Add(-86400 * time.Second)
+	if !gotCutoff.Equal(wantCutoff) {
+		t.Fatalf("cutoff = %v, want %v", gotCutoff, wantCutoff)
+	}
+	if strings.Contains(logBuf.String(), "retention disabled for series") {
+		t.Fatalf("non-zero TTL must not log the disabled-retention warning, got:\n%s", logBuf.String())
+	}
+}
+
+// TestRunRetentionPruneWarnsAgainAfterReenable verifies that once a series
+// transitions disabled -> enabled -> disabled again, the warning fires again
+// on the second disable instead of staying silent forever (an operator who
+// re-disables retention after a period of pruning should still be warned).
+func TestRunRetentionPruneWarnsAgainAfterReenable(t *testing.T) {
+	now := time.Date(2026, time.April, 1, 12, 0, 0, 0, time.UTC)
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	server := testServerWithSQLiteLogger(t, now, logger)
+	ctx := context.Background()
+	pruneFn := func(_ context.Context, _ time.Time) (int64, error) { return 0, nil }
+
+	server.runRetentionPrune(ctx, "jobs", now, 0, pruneFn)    // disable #1: warns
+	server.runRetentionPrune(ctx, "jobs", now, 3600, pruneFn) // re-enable: prunes
+	server.runRetentionPrune(ctx, "jobs", now, 0, pruneFn)    // disable #2: should warn again
+
+	if got := strings.Count(logBuf.String(), "retention disabled for series"); got != 2 {
+		t.Fatalf("expected 2 warnings across disable/enable/disable cycle, got %d in:\n%s", got, logBuf.String())
 	}
 }
