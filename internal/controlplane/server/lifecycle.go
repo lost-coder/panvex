@@ -472,6 +472,14 @@ func (s *Server) startBackgroundWorkers() {
 	s.startTimeseriesRollupWorker(rollupCtx, rollupInterval)
 	s.startUpdateCheckerWorker(rollupCtx)
 
+	// Config-apply batch orchestrator: polls persisted running batches and
+	// finalizes them once every target's job reaches a terminal state (see
+	// config_apply_batches.go). Lives on rollupCtx like the other pollers so
+	// Close()'s rollupCancel + rollupWg.Wait() reap it cleanly, and its
+	// startup poll naturally resumes any batch left running by a prior
+	// process (panel restart resilience).
+	s.startConfigApplyBatchWorker(rollupCtx, configApplyPollInterval)
+
 	// Evict idempotency keys for terminal jobs on an hourly tick to keep
 	// jobs.Service.keys bounded. See P2-PERF-03. TTL of 24h matches the
 	// operational expectation that clients will not retry the same
