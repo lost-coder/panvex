@@ -433,7 +433,15 @@
       "confirm": "Apply",
       "cancel": "Cancel",
       "applied": "Applied to {{count}} node(s)",
-      "failed": "Failed on {{agent}}: {{error}}"
+      "failed": "Failed on {{agent}}: {{error}}",
+      "inFlight": "Applying to {{count}} node(s)…",
+      "done": "Applied to all {{count}} node(s)",
+      "partial": "Applied to {{applied}} of {{total}} node(s), {{failed}} failed",
+      "progressTitle": "Rollout progress",
+      "statusPending": "Pending",
+      "statusRunning": "Applying",
+      "statusSucceeded": "Done",
+      "statusFailed": "Failed"
     },
     "nodesTitle": "Nodes",
     "noNodes": "No nodes in this group yet"

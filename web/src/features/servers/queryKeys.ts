@@ -56,4 +56,8 @@ export const configKeys = {
 
   /** Per-fleet-group baseline config + member node statuses. */
   group: (groupId: string) => ["config", "group", groupId] as const,
+
+  /** In-flight async group-apply status, keyed by the batch id. */
+  groupApplyStatus: (groupId: string, batchId: string) =>
+    ["config", "group", groupId, "apply-status", batchId] as const,
 };

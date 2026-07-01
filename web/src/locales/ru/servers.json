@@ -444,7 +444,15 @@
       "confirm": "Применить",
       "cancel": "Отмена",
       "applied": "Применено к {{count}} ноде(ам)",
-      "failed": "Ошибка на {{agent}}: {{error}}"
+      "failed": "Ошибка на {{agent}}: {{error}}",
+      "inFlight": "Применение к {{count}} узлам…",
+      "done": "Применено ко всем {{count}} узлам",
+      "partial": "Применено к {{applied}} из {{total}} узлов, {{failed}} с ошибкой",
+      "progressTitle": "Ход развёртывания",
+      "statusPending": "Ожидание",
+      "statusRunning": "Применение",
+      "statusSucceeded": "Готово",
+      "statusFailed": "Ошибка"
     },
     "nodesTitle": "Ноды",
     "noNodes": "В этой группе пока нет нод"

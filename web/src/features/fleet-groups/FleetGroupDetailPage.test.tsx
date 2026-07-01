@@ -36,6 +36,7 @@ vi.mock("@/features/servers/config/configHooks", () => ({
   }),
   usePutGroupConfig: () => ({ mutate: vi.fn(), isPending: false }),
   useApplyGroupConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useGroupConfigApplyStatus: () => ({ data: undefined, isFetching: false }),
 }));
 
 import { FleetGroupDetailPage } from "./FleetGroupDetailPage";

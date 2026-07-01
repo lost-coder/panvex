@@ -4,9 +4,15 @@
 // to a restart-only field (requiresRestart), clicking opens a confirm
 // dialog warning that Telemt will restart and briefly drop connections;
 // the apply only proceeds on confirm. Hot-only changes apply
-// immediately. The ApplyResult is surfaced through the global toast:
-// a non-empty error/failed → toast.error, otherwise toast.success with
-// the applied count. The button is disabled while a request is in flight.
+// immediately.
+//
+// onApply may resolve with an ApplyResult (the SYNCHRONOUS single-agent
+// path) — in which case a non-empty error/failed toasts an error and a
+// clean result toasts success with the applied count. Or it may resolve
+// with void (the ASYNC group-apply path, which returns 202 and reports
+// per-agent progress elsewhere) — in which case this button only gates the
+// restart-confirm + kickoff and leaves outcome surfacing to the caller.
+// The button is disabled while the kickoff request is in flight.
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -19,7 +25,7 @@ import { requiresRestart } from "./fieldRegistry";
 
 export interface ApplyConfigButtonProps {
   changedPaths: string[];
-  onApply: () => Promise<ApplyResult>;
+  onApply: () => Promise<ApplyResult | void>;
   labelKey?: string;
   disabled?: boolean;
 }
@@ -41,6 +47,11 @@ export function ApplyConfigButton({
     setInFlight(true);
     try {
       const result = await onApply();
+      // Async kickoff (group apply) resolves with void — the caller owns
+      // progress/outcome surfacing, so there is nothing to toast here.
+      if (!result) {
+        return;
+      }
       if (result.error !== "" || result.failed !== "") {
         toast.error(
           t("config.apply.failed", { agent: result.failed, error: result.error }),
