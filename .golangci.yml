@@ -64,6 +64,13 @@ linters:
       # openapi/ holds oapi-codegen generated stubs; same exclusion
       # rationale as the two above. Source of truth: openapi/panvex.yaml.
       - "openapi"
+      # H7: web/node_modules is gitignored and CI never runs `npm ci`
+      # before Go steps, so this only matters for local runs where web/
+      # has been installed — some npm packages (e.g. flatted) ship a
+      # nested Go module that `go list ./...`/golangci-lint would
+      # otherwise pick up. Defensive: keeps local lint runs identical to
+      # CI even if this directory exists on disk.
+      - "web/node_modules"
     rules:
       # H2: scope the s.logger.* forbidigo rule (above) to
       # internal/controlplane/server/http_*.go only — that's where

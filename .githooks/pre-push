@@ -48,6 +48,13 @@ echo "=== Pre-push: Mirror install-agent.sh into server package ==="
 go generate ./internal/controlplane/server/...
 
 echo "=== Pre-push: Go lint ==="
+# H7: golangci-lint resolves `./...` (and web/node_modules exclusion) via
+# its own module-aware directory walk — it does NOT want a `go list`-
+# expanded argument list of fully-qualified import paths (that breaks its
+# path resolution entirely). It already skips web/node_modules on its own
+# (gitignored dir), and .golangci.yml now excludes it defensively too.
+# Contrast with the go test / govulncheck invocations below, which do
+# take `go list` output directly as their package set.
 ~/go/bin/golangci-lint run ./...
 
 echo "=== Pre-push: Settings codegen drift ==="
@@ -63,17 +70,21 @@ echo "=== Pre-push: Go tests (race, loadtest excluded) ==="
 # past 22 GB RSS, which OOM-kills the test on memory-constrained dev hosts
 # (e.g. WSL2 with default RAM cap). CI splits the same way — see
 # .github/workflows/ci.yml jobs `test-go-race` vs `test-go-loadtest`.
-RACE_PKGS=$(go list ./... | grep -v '^github.com/lost-coder/panvex/internal/loadtest$')
+# H7: also filter web/node_modules (see lint step above) so a local
+# `npm ci`'d web/ doesn't drag a vendored npm-package Go module into the
+# race suite; CI is unaffected since it never runs npm before Go steps.
+RACE_PKGS=$(go list ./... | grep -vE 'node_modules|^github.com/lost-coder/panvex/internal/loadtest$')
 go test -race -count=1 $RACE_PKGS
 
 echo "=== Pre-push: Go tests (loadtest, no -race) ==="
 go test -count=1 ./internal/loadtest/...
 
 echo "=== Pre-push: Go vulnerability scan ==="
+VULN_PKGS=$(go list ./... | grep -vE 'node_modules')
 if command -v govulncheck >/dev/null 2>&1; then
-    govulncheck ./...
+    govulncheck $VULN_PKGS
 elif [ -x "$HOME/go/bin/govulncheck" ]; then
-    "$HOME/go/bin/govulncheck" ./...
+    "$HOME/go/bin/govulncheck" $VULN_PKGS
 else
     echo "!!! govulncheck not installed. Run: make install-tools"
     exit 1
