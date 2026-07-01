@@ -21,6 +21,18 @@ import (
 // XFF-spoofed IPs does not pin memory indefinitely (3.7).
 const ipBucketIdleTTL = 10 * time.Minute
 
+// sweepInterval bounds how often the full-map idle sweep may run. The sweep
+// is O(n) in the number of distinct buckets and runs under the shared mutex,
+// so running it on every request lets an attacker sending distinct
+// (spoofed-XFF) IPs grow the map and then force every request — including
+// legitimate ones — to pay an O(n) scan while holding the global lock: a
+// latency-cliff / lock-contention DoS (Important finding, follow-up to 3.7).
+// Amortizing the sweep to at most once per sweepInterval bounds scan
+// FREQUENCY to O(1) per request regardless of request rate, while still
+// bounding memory: idle entries are reclaimed within roughly
+// sweepInterval + ipBucketIdleTTL of going idle.
+const sweepInterval = time.Minute
+
 // SetSubscriptionListener configures the public /sub listener. addr is the
 // bind address (e.g. ":8081"); baseURL is the public origin used to build
 // shareable links in the admin UI (e.g. "https://sub.example.com").
@@ -80,17 +92,23 @@ func newIPRateLimiter(every rate.Limit, burst int, trustedCIDRs []*net.IPNet) fu
 // ipBucketIdleTTL.
 //
 // The buckets map grows with the number of distinct clients seen; idle
-// entries (no request for longer than ipBucketIdleTTL) are evicted
-// opportunistically on every access — every call to limiterFor first sweeps
-// the map for stale entries — so the map cannot grow unbounded even under
-// sustained XFF-spoofed scanning (3.7). No background goroutine is needed:
-// as long as *some* traffic keeps arriving (which is the only scenario where
-// unbounded growth is a risk in the first place), the opportunistic sweep on
-// each request keeps the map bounded to roughly "distinct clients active
-// within the last ipBucketIdleTTL".
+// entries (no request for longer than ipBucketIdleTTL) are evicted so the
+// map cannot grow unbounded even under sustained XFF-spoofed scanning (3.7).
+// The sweep that finds those idle entries is O(n) in the number of distinct
+// buckets and runs under the shared mutex, so it is amortized to run at most
+// once per sweepInterval rather than on every request — otherwise an
+// attacker who has grown the map with distinct spoofed IPs would force every
+// subsequent request (including legitimate ones) to pay an O(n) scan while
+// holding the global lock, trading the earlier unbounded-memory bug for an
+// unbounded-latency / lock-contention one. No background goroutine is
+// needed: as long as *some* traffic keeps arriving (the only scenario where
+// unbounded growth is a risk in the first place), the amortized sweep on
+// access keeps the map bounded to roughly "distinct clients active within
+// the last sweepInterval + ipBucketIdleTTL".
 func newIPRateLimiterWithClock(every rate.Limit, burst int, trustedCIDRs []*net.IPNet, nowFn func() time.Time) func(http.Handler) http.Handler {
 	var mu sync.Mutex
 	buckets := make(map[string]*ipRateLimiterBucket)
+	var lastSweep time.Time
 
 	evictIdleLocked := func(now time.Time) {
 		for ip, bucket := range buckets {
@@ -104,7 +122,10 @@ func newIPRateLimiterWithClock(every rate.Limit, burst int, trustedCIDRs []*net.
 		now := nowFn()
 		mu.Lock()
 		defer mu.Unlock()
-		evictIdleLocked(now)
+		if now.Sub(lastSweep) >= sweepInterval {
+			evictIdleLocked(now)
+			lastSweep = now
+		}
 		bucket, ok := buckets[ip]
 		if !ok {
 			bucket = &ipRateLimiterBucket{limiter: rate.NewLimiter(every, burst)}
