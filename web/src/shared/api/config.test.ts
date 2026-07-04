@@ -43,17 +43,6 @@ function makeGroupConfigShape(
   };
 }
 
-function makeApplyResultShape(
-  overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    applied: 2,
-    failed: "",
-    error: "",
-    ...overrides,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // GET /api/agents/{id}/config
 // ---------------------------------------------------------------------------
@@ -169,38 +158,69 @@ describe("configApi.applyAgentConfig", () => {
     vi.restoreAllMocks();
   });
 
-  it("POSTs to /api/agents/{id}/config/apply and parses the response", async () => {
+  it("POSTs to /api/agents/{id}/config/apply and parses the 202 batch id", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify(makeApplyResultShape()), {
-        status: 200,
+      new Response(JSON.stringify({ batch_id: "cfgapply-single-1" }), {
+        status: 202,
         headers: { "Content-Type": "application/json" },
       }),
     );
 
     const result = await configApi.applyAgentConfig("a-1");
 
-    expect(result.applied).toBe(2);
-    expect(result.failed).toBe("");
-    expect(result.error).toBe("");
+    // P3-3.4: single apply is now a persistent batch-of-one — 202 + batch_id.
+    expect(result.batch_id).toBe("cfgapply-single-1");
 
     const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(call[0]).toBe("/api/agents/a-1/config/apply");
     expect(call[1]).toMatchObject({ method: "POST" });
   });
+});
 
-  it("applies defaults for missing applied/failed/error fields", async () => {
+// ---------------------------------------------------------------------------
+// GET /api/agents/{id}/config/apply/batches/{batchId}
+// ---------------------------------------------------------------------------
+
+describe("configApi.getAgentConfigApplyBatch", () => {
+  const originalFetch = globalThis.fetch;
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+    __seedCSRFTokenForTesting("test-csrf-token");
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("GETs the single-apply batch aggregate and parses the response", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify({}), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({
+          batch_id: "batch-1",
+          mode: "all_at_once",
+          status: "succeeded",
+          done: true,
+          total: 1,
+          applied: 1,
+          failed: 0,
+          pending: 0,
+          skipped: 0,
+          agents: [
+            { agent_id: "a-1", job_id: "job-1", status: "succeeded", message: "" },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
     );
 
-    const result = await configApi.applyAgentConfig("a-2");
+    const result = await configApi.getAgentConfigApplyBatch("a-1", "batch-1");
 
-    expect(result.applied).toBe(0);
-    expect(result.failed).toBe("");
-    expect(result.error).toBe("");
+    expect(result.batch_id).toBe("batch-1");
+    expect(result.status).toBe("succeeded");
+    expect(result.applied).toBe(1);
+
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(call[0]).toBe("/api/agents/a-1/config/apply/batches/batch-1");
   });
 });
 
@@ -305,83 +325,21 @@ describe("configApi.applyGroupConfig", () => {
 
   it("POSTs to /api/fleet-groups/{id}/config/apply and parses the 202 batch", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          batch_id: "cfgapply-42",
-          jobs: [
-            { agent_id: "a-1", job_id: "job-1" },
-            { agent_id: "a-2", job_id: "" },
-          ],
-        }),
-        {
-          status: 202,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
+      new Response(JSON.stringify({ batch_id: "cfgapply-42" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
 
     const result = await configApi.applyGroupConfig("fg-1");
 
+    // P3-3.4: the 202 body now carries only the batch id (per-job handles
+    // were removed with the legacy job-id poller).
     expect(result.batch_id).toBe("cfgapply-42");
-    expect(result.jobs).toHaveLength(2);
-    // No-op agent carries an empty job id.
-    expect(result.jobs[1]?.job_id).toBe("");
 
     const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(call[0]).toBe("/api/fleet-groups/fg-1/config/apply");
     expect(call[1]).toMatchObject({ method: "POST" });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/fleet-groups/{id}/config/apply/status
-// ---------------------------------------------------------------------------
-
-describe("configApi.groupConfigApplyStatus", () => {
-  const originalFetch = globalThis.fetch;
-  beforeEach(() => {
-    globalThis.fetch = vi.fn();
-    __seedCSRFTokenForTesting("test-csrf-token");
-  });
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-    vi.restoreAllMocks();
-  });
-
-  it("builds paired agent/job query params and parses the aggregate", async () => {
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          done: true,
-          total: 2,
-          applied: 1,
-          failed: 1,
-          pending: 0,
-          agents: [
-            { agent_id: "a-1", job_id: "job-1", status: "succeeded", message: "" },
-            { agent_id: "a-2", job_id: "job-2", status: "failed", message: "boom" },
-          ],
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
-
-    const result = await configApi.groupConfigApplyStatus("fg-1", [
-      { agent_id: "a-1", job_id: "job-1" },
-      { agent_id: "a-2", job_id: "job-2" },
-    ]);
-
-    expect(result.done).toBe(true);
-    expect(result.applied).toBe(1);
-    expect(result.failed).toBe(1);
-
-    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
-    const url = String(call[0]);
-    expect(url).toContain("/api/fleet-groups/fg-1/config/apply/status?");
-    expect(url).toContain("agent=a-1");
-    expect(url).toContain("job=job-1");
-    expect(url).toContain("agent=a-2");
-    expect(url).toContain("job=job-2");
   });
 });
 

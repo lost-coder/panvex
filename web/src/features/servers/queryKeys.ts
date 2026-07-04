@@ -54,12 +54,12 @@ export const configKeys = {
   /** Per-agent override/effective/observed config + drift. */
   agent: (agentId: string) => ["config", "agent", agentId] as const,
 
+  /** Poll the single-apply persistent batch-of-one (P3-3.4). */
+  agentApplyBatch: (agentId: string, batchId: string) =>
+    ["config", "agent", agentId, "apply-batch", batchId] as const,
+
   /** Per-fleet-group baseline config + member node statuses. */
   group: (groupId: string) => ["config", "group", groupId] as const,
-
-  /** In-flight async group-apply status, keyed by the batch id. */
-  groupApplyStatus: (groupId: string, batchId: string) =>
-    ["config", "group", groupId, "apply-status", batchId] as const,
 
   /** Persistent-batch aggregate (resumable rollout view), keyed by batch id. */
   groupApplyBatch: (groupId: string, batchId: string) =>

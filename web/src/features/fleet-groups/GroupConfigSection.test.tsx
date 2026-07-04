@@ -33,16 +33,10 @@ vi.mock("@/app/providers/ToastProvider", () => ({
 // Mock the config hooks so the section can be exercised without a
 // QueryClient or network — the same isolation strategy ConfigTab.test uses.
 const putMutate = vi.fn();
-// Async group apply: the mutation resolves with the 202 batch (batch id +
-// per-agent job handles), and the polling hook reports aggregate/per-agent
-// status. Tests override applyStatus to simulate in-flight / done rollouts.
-const applyMutateAsync = vi.fn().mockResolvedValue({
-  batch_id: "cfgapply-1",
-  jobs: [
-    { agent_id: "agent-1", job_id: "job-1" },
-    { agent_id: "agent-2", job_id: "job-2" },
-  ],
-});
+// Async group apply: the mutation resolves with the 202 batch id, and the
+// polling hook reports aggregate/per-agent status. Tests override applyStatus
+// to simulate in-flight / done rollouts.
+const applyMutateAsync = vi.fn().mockResolvedValue({ batch_id: "cfgapply-1" });
 const useGroupConfig = vi.fn();
 const useGroupConfigApplyBatch = vi.fn();
 const useActiveGroupConfigApplyBatch = vi.fn();
