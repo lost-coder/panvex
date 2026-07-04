@@ -2,10 +2,30 @@ package telemt
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"sync/atomic"
 
 	"golang.org/x/sync/errgroup"
 )
+
+// ErrTelemtCoreUnreachable reports that EVERY core sub-fetch (runtime
+// gates, stats summary, connections summary) failed within one
+// FetchRuntimeState cycle — Telemt did not answer anything the agent
+// could build a meaningful snapshot from. cmd/agent's runtime poll loop
+// matches it with errors.Is to drive the unreachable-snapshot path
+// (threshold, backoff, BuildRuntimeUnreachableSnapshot). Partial
+// degradation (some endpoints up) still returns a nil error with
+// Partial=true. Audit 2026-07-02 #4.
+var ErrTelemtCoreUnreachable = errors.New("telemt core endpoints unreachable")
+
+// runtimeCorePaths are the sub-fetches whose COLLECTIVE failure means
+// "Telemt is down" rather than "snapshot is partial".
+var runtimeCorePaths = map[string]bool{
+	pathRuntimeGates:              true,
+	pathStatsSummary:              true,
+	pathRuntimeConnectionsSummary: true,
+}
 
 // runtimeFetchConcurrency bounds the number of in-flight Telemt sub-fetches
 // during a single FetchRuntimeState cycle. Telemt is a local loopback
@@ -26,6 +46,11 @@ const runtimeFetchConcurrency = 8
 // a nil error. Missing sub-fields fall back to zero values. This lets the
 // agent keep heartbeating degraded state to the control-plane instead of
 // dropping whole cycles whenever one endpoint is slow.
+//
+// Exception: when ALL core sub-fetches (see runtimeCorePaths) fail,
+// FetchRuntimeState returns ErrTelemtCoreUnreachable instead of a
+// zero-valued partial state, so the poll loop can drive its
+// unreachable-snapshot path.
 func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -38,8 +63,15 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 	// atomic.Bool keeps the markPartial/setPartial closures race-free
 	// without an extra mutex.
 	var partial atomic.Bool
+	var coreMu sync.Mutex
+	coreFailed := make(map[string]bool, len(runtimeCorePaths))
 	markPartial := func(path string, err error) {
 		partial.Store(true)
+		if runtimeCorePaths[path] {
+			coreMu.Lock()
+			coreFailed[path] = true
+			coreMu.Unlock()
+		}
 		c.logger.Warn("telemt runtime sub-fetch failed",
 			"path", path,
 			"err", err,
@@ -50,6 +82,12 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 
 	raw := c.collectRuntimeStateRaw(ctx, markPartial, setPartial)
 
+	coreMu.Lock()
+	coreDown := len(coreFailed) == len(runtimeCorePaths)
+	coreMu.Unlock()
+	if coreDown {
+		return RuntimeState{}, ErrTelemtCoreUnreachable
+	}
 	return c.assembleRuntimeState(raw, partial.Load()), nil
 }
 
@@ -207,8 +245,8 @@ func (c *Client) fetchConnectionSummary(ctx context.Context, raw *fetchRuntimeSt
 }
 
 func (c *Client) fetchSummary(ctx context.Context, raw *fetchRuntimeStateRaw, markPartial func(string, error)) {
-	if err := c.getJSON(ctx, "/v1/stats/summary", &raw.summary); err != nil {
-		markPartial("/v1/stats/summary", err)
+	if err := c.getJSON(ctx, pathStatsSummary, &raw.summary); err != nil {
+		markPartial(pathStatsSummary, err)
 	}
 }
 

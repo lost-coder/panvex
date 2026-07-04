@@ -22,6 +22,7 @@ const (
 	pathRuntimeConnectionsSummary = "/v1/runtime/connections/summary"
 	pathStatsDcs                  = "/v1/stats/dcs"
 	pathStatsUpstreams            = "/v1/stats/upstreams"
+	pathStatsSummary              = "/v1/stats/summary"
 
 	logTelemtAPICall = "telemt api call"
 )

@@ -805,14 +805,16 @@ func TestClientFetchRuntimeStateHonorsOuterDeadline(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	state, err := client.FetchRuntimeState(ctx)
+	_, err = client.FetchRuntimeState(ctx)
 	elapsed := time.Since(start)
 
-	if err != nil {
-		t.Fatalf("FetchRuntimeState() error = %v, want nil (partial snapshot)", err)
-	}
-	if !state.Partial {
-		t.Fatal("state.Partial = false, want true when outer ctx expires")
+	// Audit #4: a fully-stalled Telemt fails every core sub-fetch, so
+	// FetchRuntimeState now surfaces ErrTelemtCoreUnreachable rather than a
+	// zero-valued partial. The behavior under test is the deadline bound —
+	// the outer ctx must still cut the call off well below the ~150s
+	// cumulative http budget.
+	if !errors.Is(err, ErrTelemtCoreUnreachable) {
+		t.Fatalf("FetchRuntimeState() error = %v, want ErrTelemtCoreUnreachable", err)
 	}
 	// Budget for scheduler + httptest overhead while still well below 150s.
 	if elapsed > 3*time.Second {
@@ -846,14 +848,14 @@ func TestClientFetchRuntimeStateUsesDefaultDeadline(t *testing.T) {
 	}
 
 	start := time.Now()
-	state, err := client.FetchRuntimeState(context.Background())
+	_, err = client.FetchRuntimeState(context.Background())
 	elapsed := time.Since(start)
 
-	if err != nil {
-		t.Fatalf("FetchRuntimeState() error = %v, want nil (partial snapshot)", err)
-	}
-	if !state.Partial {
-		t.Fatal("state.Partial = false, want true when all sub-fetches time out")
+	// Audit #4: every sub-fetch times out here, so all core fetches fail and
+	// FetchRuntimeState surfaces ErrTelemtCoreUnreachable. The behavior under
+	// test is the bounded deadline, not the partial shape.
+	if !errors.Is(err, ErrTelemtCoreUnreachable) {
+		t.Fatalf("FetchRuntimeState() error = %v, want ErrTelemtCoreUnreachable", err)
 	}
 	// With the 200ms per-request timeout, 10 sequential fetches bound the
 	// wall-clock at ~2s; this is strictly less than the old ~150s budget and

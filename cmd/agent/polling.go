@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/runtime"
+	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -236,7 +238,15 @@ func performRuntimePoll(
 			tracker.firstFailureAt = observedAt.UTC()
 		}
 		if *consecutiveFailures <= 3 || *consecutiveFailures%10 == 0 {
-			slog.Error("runtime poll failed", "attempt", *consecutiveFailures, "error", err)
+			// Audit #4: FetchRuntimeState now surfaces a sentinel when every
+			// core endpoint is down. That is the expected shape of a Telemt
+			// outage/restart — log it distinctly so operators can tell it
+			// apart from an unexpected snapshot-build failure.
+			if errors.Is(err, telemt.ErrTelemtCoreUnreachable) {
+				slog.Warn("telemt core unreachable", "attempt", *consecutiveFailures)
+			} else {
+				slog.Error("runtime poll failed", "attempt", *consecutiveFailures, "error", err)
+			}
 		}
 		if observedAt.UTC().Sub(tracker.firstFailureAt) >= telemtUnreachableThreshold {
 			unreachable := agent.BuildRuntimeUnreachableSnapshot(observedAt.UTC(), tracker.firstFailureAt)
