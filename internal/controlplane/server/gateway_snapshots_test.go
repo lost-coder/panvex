@@ -25,11 +25,10 @@ func TestConvertClientUsageSnapshotsCarriesQuotaState(t *testing.T) {
 
 	wire := []*gatewayrpc.ClientUsageSnapshot{{
 		ClientId:           clientID,
-		TrafficDeltaBytes:  2048,
+		TrafficTotalBytes:  2048,
 		UniqueIpsUsed:      3,
 		ActiveTcpConns:     4,
 		ActiveUniqueIps:    5,
-		Seq:                7,
 		QuotaUsedBytes:     1_234_567,
 		QuotaLastResetUnix: 1_715_000_000,
 	}}
@@ -64,26 +63,24 @@ func TestMergeClientUsageBatchRetainsQuotaState(t *testing.T) {
 	const clientID = "client-merge-quota"
 	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
-	first := []clientUsageSnapshot{{
+	first := []clients.UsageReport{{
 		ClientID:           clientID,
-		TrafficUsedBytes:   100,
+		TotalBytes:         100,
 		QuotaUsedBytes:     500,
 		QuotaLastResetUnix: 1_715_000_000,
 		ObservedAt:         now,
-		Seq:                1,
 	}}
-	second := []clientUsageSnapshot{{
+	second := []clients.UsageReport{{
 		ClientID:           clientID,
-		TrafficUsedBytes:   200,
+		TotalBytes:         200,
 		QuotaUsedBytes:     750,
 		QuotaLastResetUnix: 1_715_000_100,
 		ObservedAt:         now.Add(time.Minute),
-		Seq:                2,
 	}}
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(t.Context(), agentID, first)
-	server.applyClientUsageSnapshot(t.Context(), agentID, second)
+	server.applyClientUsageSnapshot(t.Context(), agentID, "boot-1", first)
+	server.applyClientUsageSnapshot(t.Context(), agentID, "boot-1", second)
 	got := mirrorUsage(server, clientID, agentID)
 	server.mu.Unlock()
 
@@ -108,7 +105,6 @@ func TestUsageSnapshotJSONShapeHasQuotaFields(t *testing.T) {
 		ActiveUniqueIPs:    3,
 		QuotaUsedBytes:     1024,
 		QuotaLastResetUnix: 1_715_000_000,
-		Seq:                9,
 	}
 
 	raw, err := json.Marshal(snap)

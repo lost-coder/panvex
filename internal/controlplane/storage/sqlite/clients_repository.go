@@ -365,7 +365,7 @@ func (r *clientsRepository) ListUsage(ctx context.Context) ([]clients.Usage, err
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
 			active_tcp_conns, active_unique_ips, quota_used_bytes,
-			quota_last_reset_unix, last_seq, observed_at_unix,
+			quota_last_reset_unix, observed_at_unix,
 			agent_boot_id, last_total_bytes
 		FROM client_usage
 	`)
@@ -482,10 +482,10 @@ func (r *clientsRepository) upsertUsageRow(ctx context.Context, exec dbtx, u cli
 		INSERT INTO client_usage (
 			client_id, agent_id, traffic_used_bytes, unique_ips_used,
 			active_tcp_conns, active_unique_ips, quota_used_bytes,
-			quota_last_reset_unix, last_seq, observed_at_unix,
+			quota_last_reset_unix, observed_at_unix,
 			agent_boot_id, last_total_bytes
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(client_id, agent_id) DO UPDATE SET
 			traffic_used_bytes    = excluded.traffic_used_bytes,
 			unique_ips_used       = excluded.unique_ips_used,
@@ -493,29 +493,26 @@ func (r *clientsRepository) upsertUsageRow(ctx context.Context, exec dbtx, u cli
 			active_unique_ips     = excluded.active_unique_ips,
 			quota_used_bytes      = excluded.quota_used_bytes,
 			quota_last_reset_unix = excluded.quota_last_reset_unix,
-			last_seq              = excluded.last_seq,
 			observed_at_unix      = excluded.observed_at_unix,
 			agent_boot_id         = excluded.agent_boot_id,
 			last_total_bytes      = excluded.last_total_bytes
-		WHERE excluded.last_seq > client_usage.last_seq
 	`,
 		string(u.ClientID), u.AgentID,
 		int64(u.TrafficUsedBytes), u.UniqueIPsUsed, //nolint:gosec
 		u.ActiveTCPConns, u.ActiveUniqueIPs,
 		int64(u.QuotaUsedBytes), int64(u.QuotaLastResetUnix), //nolint:gosec
-		int64(u.LastSeq), toUnix(u.ObservedAt), //nolint:gosec
+		toUnix(u.ObservedAt),
 		u.AgentBootID, int64(u.LastTotalBytes), //nolint:gosec
 	)
 	return err
 }
 
 // bulkUpsertUsage runs chunked INSERT for the usage batch inside a single
-// BEGIN IMMEDIATE transaction. Reuses rowPlaceholders from bulk.go. Same
-// last_seq monotonicity guard as upsertUsageRow: a conflicting row only
-// applies when its last_seq is strictly newer than the stored one. SQLite
-// applies each VALUES row in the statement in order, so within-batch
-// duplicates for the same (client, agent) still collapse to last-write-wins
-// as long as last_seq is non-decreasing within the batch.
+// BEGIN IMMEDIATE transaction. Reuses rowPlaceholders from bulk.go.
+// Unconditional last-write-wins upsert (P4): ordering/duplicate protection
+// lives upstream in the panel's watermark derivation. SQLite applies each
+// VALUES row in the statement in order, so within-batch duplicates for the
+// same (client, agent) collapse to the trailing entry.
 func (r *clientsRepository) bulkUpsertUsage(ctx context.Context, batch []clients.Usage) error {
 	conn, err := r.raw.Conn(ctx)
 	if err != nil {
@@ -533,7 +530,7 @@ func (r *clientsRepository) bulkUpsertUsage(ctx context.Context, batch []clients
 		}
 	}()
 
-	const cols = 12
+	const cols = 11
 	exec := connExecutor{conn: conn}
 	for start := 0; start < len(batch); start += bulkChunkSize {
 		end := start + bulkChunkSize
@@ -548,7 +545,7 @@ func (r *clientsRepository) bulkUpsertUsage(ctx context.Context, batch []clients
 				int64(u.TrafficUsedBytes), u.UniqueIPsUsed, //nolint:gosec
 				u.ActiveTCPConns, u.ActiveUniqueIPs,
 				int64(u.QuotaUsedBytes), int64(u.QuotaLastResetUnix), //nolint:gosec
-				int64(u.LastSeq), toUnix(u.ObservedAt), //nolint:gosec
+				toUnix(u.ObservedAt),
 				u.AgentBootID, int64(u.LastTotalBytes), //nolint:gosec
 			)
 		}
@@ -556,7 +553,7 @@ func (r *clientsRepository) bulkUpsertUsage(ctx context.Context, batch []clients
 			INSERT INTO client_usage (
 				client_id, agent_id, traffic_used_bytes, unique_ips_used,
 				active_tcp_conns, active_unique_ips, quota_used_bytes,
-				quota_last_reset_unix, last_seq, observed_at_unix,
+				quota_last_reset_unix, observed_at_unix,
 				agent_boot_id, last_total_bytes
 			) VALUES %s
 			ON CONFLICT(client_id, agent_id) DO UPDATE SET
@@ -566,11 +563,9 @@ func (r *clientsRepository) bulkUpsertUsage(ctx context.Context, batch []clients
 				active_unique_ips     = excluded.active_unique_ips,
 				quota_used_bytes      = excluded.quota_used_bytes,
 				quota_last_reset_unix = excluded.quota_last_reset_unix,
-				last_seq              = excluded.last_seq,
 				observed_at_unix      = excluded.observed_at_unix,
 				agent_boot_id         = excluded.agent_boot_id,
-				last_total_bytes      = excluded.last_total_bytes
-			WHERE excluded.last_seq > client_usage.last_seq`,
+				last_total_bytes      = excluded.last_total_bytes`,
 			rowPlaceholders(len(chunk), cols))
 		if _, err := exec.ExecContext(ctx, query, args...); err != nil {
 			return err
@@ -694,14 +689,13 @@ func scanUsage(s usageScanner) (clients.Usage, error) {
 		traffic        int64
 		quotaUsed      int64
 		quotaLastReset int64
-		lastSeq        int64
 		observedAt     int64
 		lastTotal      int64
 	)
 	if err := s.Scan(
 		&clientID, &u.AgentID, &traffic, &u.UniqueIPsUsed,
 		&u.ActiveTCPConns, &u.ActiveUniqueIPs, &quotaUsed, &quotaLastReset,
-		&lastSeq, &observedAt, &u.AgentBootID, &lastTotal,
+		&observedAt, &u.AgentBootID, &lastTotal,
 	); err != nil {
 		return clients.Usage{}, err
 	}
@@ -709,7 +703,6 @@ func scanUsage(s usageScanner) (clients.Usage, error) {
 	u.TrafficUsedBytes = uint64(traffic)          //nolint:gosec
 	u.QuotaUsedBytes = uint64(quotaUsed)          //nolint:gosec
 	u.QuotaLastResetUnix = uint64(quotaLastReset) //nolint:gosec
-	u.LastSeq = uint64(lastSeq)                   //nolint:gosec
 	u.LastTotalBytes = uint64(lastTotal)          //nolint:gosec
 	u.ObservedAt = fromUnix(observedAt)
 	return u, nil

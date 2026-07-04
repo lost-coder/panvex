@@ -740,9 +740,12 @@ func (s *Server) mergeAdoptIntoExistingClient(
 // seedClientUsage initializes the in-memory usage for a client on a specific
 // agent with the values reported by Telemt at discovery time.
 func (s *Server) seedClientUsage(ctx context.Context, clientID, agentID string, trafficBytes uint64, connections, uniqueIPs int, observedAt time.Time) {
-	lastSeq := s.clientsSvc.MirrorLastUsageSeq(agentID)
-
 	if s.clientsSvc != nil && s.clientsSvc.HasRepo() {
+		// Watermark is seeded empty (AgentBootID: "", LastTotalBytes: 0):
+		// this row is an adoption baseline from Telemt's own cumulative
+		// counter, so the first cumulative report for the pair must
+		// baseline (delta 0) rather than accumulate on top — P4
+		// mergeClientUsageBatch AgentBootID=="" branch.
 		if err := s.clientsSvc.UpsertUsage(ctx, clients.Usage{
 			ClientID:         clients.ClientID(clientID),
 			AgentID:          agentID,
@@ -750,7 +753,6 @@ func (s *Server) seedClientUsage(ctx context.Context, clientID, agentID string, 
 			UniqueIPsUsed:    uniqueIPs,
 			ActiveTCPConns:   connections,
 			ActiveUniqueIPs:  uniqueIPs,
-			LastSeq:          lastSeq,
 			ObservedAt:       observedAt,
 		}); err != nil {
 			s.logger.WarnContext(ctx, "persist client_usage (seed)",

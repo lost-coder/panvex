@@ -1128,53 +1128,54 @@ func TestEnrollAgentCertIssuanceFailureLeavesNoPartialState(t *testing.T) {
 	}
 }
 
-// TestTrafficDedupViaSnapshotSeq guards P2-LOG-06 / L-07: two client-usage
-// snapshots carrying the same monotonic seq (e.g. the agent resent an
-// in-flight batch after a stream reconnect) must only contribute traffic
-// once — live gauges may still update.
-func TestTrafficDedupViaSnapshotSeq(t *testing.T) {
+// TestUsageAccumulatesDeltasFromCumulativeTotals: the panel derives the
+// accumulation delta as total - last_total within one agent boot epoch;
+// a replayed/duplicate total contributes exactly zero (P4).
+func TestUsageAccumulatesDeltasFromCumulativeTotals(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 8, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
 	defer server.Close()
 
-	const agentID = "agent-dedup"
-	const clientID = "client-dedup"
+	const agentID = "agent-cumulative"
+	const clientID = "client-cumulative"
+	const bootID = "boot-a"
 	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
-	first := []clientUsageSnapshot{{
-		ClientID:         clientID,
-		TrafficUsedBytes: 1000,
-		ActiveTCPConns:   2,
-		ObservedAt:       now,
-		Seq:              5,
+	first := []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 1000, ActiveTCPConns: 2, ObservedAt: now,
 	}}
-	duplicate := []clientUsageSnapshot{{
-		ClientID:         clientID,
-		TrafficUsedBytes: 1000,
-		ActiveTCPConns:   3, // live gauge changed — still accept
-		ObservedAt:       now.Add(time.Second),
-		Seq:              5, // same seq -> duplicate
+	second := []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 1600, ActiveTCPConns: 2, ObservedAt: now.Add(time.Minute),
+	}}
+	duplicate := []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 1600, ActiveTCPConns: 3, // live gauge changed — still refreshes
+		ObservedAt: now.Add(2 * time.Minute),
 	}}
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(context.Background(), agentID, first)
-	server.applyClientUsageSnapshot(context.Background(), agentID, duplicate)
+	server.applyClientUsageSnapshot(context.Background(), agentID, bootID, first)
+	server.applyClientUsageSnapshot(context.Background(), agentID, bootID, second)
+	server.applyClientUsageSnapshot(context.Background(), agentID, bootID, duplicate)
 	got := mirrorUsage(server, clientID, agentID)
 	server.mu.Unlock()
 
-	if got.TrafficUsedBytes != 1000 {
-		t.Fatalf("TrafficUsedBytes = %d, want %d (dedup failed — delta double-counted)", got.TrafficUsedBytes, 1000)
+	// 1000 (first report of the pair = whole boot epoch) + 600 + 0 (dup).
+	if got.TrafficUsedBytes != 1600 {
+		t.Fatalf("TrafficUsedBytes = %d, want 1600 (replay must contribute 0)", got.TrafficUsedBytes)
 	}
 	if got.ActiveTCPConns != 3 {
 		t.Fatalf("ActiveTCPConns = %d, want 3 (live gauge must still refresh)", got.ActiveTCPConns)
 	}
+	if got.AgentBootID != bootID || got.LastTotalBytes != 1600 {
+		t.Fatalf("watermark = (%q, %d), want (%q, 1600)", got.AgentBootID, got.LastTotalBytes, bootID)
+	}
 }
 
-// TestUsageSeqResetOnAgentRestart guards P2-LOG-06 / L-07: when seq rewinds
-// from a higher value back to 1 (agent restart, counters back to zero), the
-// incoming "delta" is actually an absolute baseline and must not be added to
-// accumulated traffic. Subsequent in-order snapshots resume accumulation.
-func TestUsageSeqResetOnAgentRestart(t *testing.T) {
+// TestUsageAgentRestartCountsFreshEpochInFull: a new agent_boot_id means
+// the agent's counter restarted from zero — the whole reported total is
+// new traffic (the old protocol DROPPED the first post-restart batch;
+// this is the audit-#8 fix).
+func TestUsageAgentRestartCountsFreshEpochInFull(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
 	defer server.Close()
@@ -1183,95 +1184,114 @@ func TestUsageSeqResetOnAgentRestart(t *testing.T) {
 	const clientID = "client-restart"
 	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
-	prior := []clientUsageSnapshot{{
-		ClientID:         clientID,
-		TrafficUsedBytes: 4096,
-		ObservedAt:       now,
-		Seq:              10,
-	}}
-	restart := []clientUsageSnapshot{{
-		ClientID:         clientID,
-		TrafficUsedBytes: 512, // fresh baseline after restart, not a delta
-		ObservedAt:       now.Add(time.Minute),
-		Seq:              1,
-	}}
-	afterRestart := []clientUsageSnapshot{{
-		ClientID:         clientID,
-		TrafficUsedBytes: 200,
-		ObservedAt:       now.Add(2 * time.Minute),
-		Seq:              2,
-	}}
-
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(context.Background(), agentID, prior)
-	server.applyClientUsageSnapshot(context.Background(), agentID, restart)
-	afterReset := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
-	server.applyClientUsageSnapshot(context.Background(), agentID, afterRestart)
-	final := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
-	storedSeq := mirrorLastUsageSeq(server, agentID)
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 4096, ObservedAt: now,
+	}})
+	// Agent restarted: fresh epoch, counter began at zero, first report 512.
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-2", []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 512, ObservedAt: now.Add(time.Minute),
+	}})
+	afterRestart := mirrorUsage(server, clientID, agentID)
+	// Next tick within boot-2.
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-2", []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 712, ObservedAt: now.Add(2 * time.Minute),
+	}})
+	final := mirrorUsage(server, clientID, agentID)
 	server.mu.Unlock()
 
-	if afterReset != 4096 {
-		t.Fatalf("after restart baseline: TrafficUsedBytes = %d, want 4096 (restart delta must not accumulate)", afterReset)
+	if afterRestart.TrafficUsedBytes != 4096+512 {
+		t.Fatalf("post-restart total = %d, want %d (fresh epoch counts in full, not dropped)",
+			afterRestart.TrafficUsedBytes, 4096+512)
 	}
-	if final != 4096+200 {
-		t.Fatalf("final TrafficUsedBytes = %d, want %d (post-restart deltas should accumulate)", final, 4096+200)
+	if final.TrafficUsedBytes != 4096+712 {
+		t.Fatalf("final total = %d, want %d", final.TrafficUsedBytes, 4096+712)
 	}
-	if storedSeq != 2 {
-		t.Fatalf("lastUsageSeq = %d, want 2", storedSeq)
+	if final.AgentBootID != "boot-2" || final.LastTotalBytes != 712 {
+		t.Fatalf("watermark = (%q, %d), want (boot-2, 712)", final.AgentBootID, final.LastTotalBytes)
 	}
 }
 
-// TestUsageDedupIgnoresOutOfOrderStaleSnapshots guards against older seq
-// values arriving after a newer one (e.g. race between in-flight snapshots
-// after reconnect). Stale seqs must not contribute traffic.
-func TestUsageDedupIgnoresOutOfOrderStaleSnapshots(t *testing.T) {
+// TestUsageTotalRewindClampsToZeroAndRebaselines: within one boot epoch a
+// cumulative counter must never decrease. If it does (agent bug, counter
+// corruption), the panel must not accumulate garbage: delta clamps to 0,
+// the watermark adopts the new total so counting resumes, and the alert
+// key client_usage_total_rewind is logged.
+func TestUsageTotalRewindClampsToZeroAndRebaselines(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 11, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
 	defer server.Close()
 
-	const agentID = "agent-stale"
-	const clientID = "client-stale"
+	const agentID = "agent-rewind"
+	const clientID = "client-rewind"
+	const bootID = "boot-x"
 	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(context.Background(), agentID, []clientUsageSnapshot{{
-		ClientID: clientID, TrafficUsedBytes: 100, Seq: 7, ObservedAt: now,
+	server.applyClientUsageSnapshot(context.Background(), agentID, bootID, []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 100, ObservedAt: now,
 	}})
-	server.applyClientUsageSnapshot(context.Background(), agentID, []clientUsageSnapshot{{
-		ClientID: clientID, TrafficUsedBytes: 999, Seq: 3, ObservedAt: now, // stale
+	server.applyClientUsageSnapshot(context.Background(), agentID, bootID, []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 40, ObservedAt: now.Add(time.Minute), // rewind!
 	}})
-	got := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
+	afterRewind := mirrorUsage(server, clientID, agentID)
+	server.applyClientUsageSnapshot(context.Background(), agentID, bootID, []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 90, ObservedAt: now.Add(2 * time.Minute), // resumes from 40
+	}})
+	final := mirrorUsage(server, clientID, agentID)
 	server.mu.Unlock()
 
-	if got != 100 {
-		t.Fatalf("TrafficUsedBytes = %d, want 100 (stale seq must be ignored)", got)
+	if afterRewind.TrafficUsedBytes != 100 {
+		t.Fatalf("after rewind total = %d, want 100 (clamped, no garbage delta)", afterRewind.TrafficUsedBytes)
+	}
+	if afterRewind.LastTotalBytes != 40 {
+		t.Fatalf("after rewind watermark = %d, want 40 (rebaseline so counting resumes)", afterRewind.LastTotalBytes)
+	}
+	if final.TrafficUsedBytes != 150 {
+		t.Fatalf("final total = %d, want 150 (100 + (90-40))", final.TrafficUsedBytes)
 	}
 }
 
-// TestUsageLegacySeqZeroFallsBackToUnconditionalAccumulation preserves the
-// pre-P2-LOG-06 behavior for agents that have not yet been upgraded: when
-// seq == 0 on the wire, the CP accumulates every delta it sees. Dev-stage
-// cutover still keeps this safety net so partial upgrades don't silently
-// drop traffic.
-func TestUsageLegacySeqZeroFallsBackToUnconditionalAccumulation(t *testing.T) {
+// TestUsageAdoptionSeededRowBaselinesFirstReport: discovery adoption seeds
+// the client_usage row from Telemt's OWN cumulative counter
+// (seedClientUsage), which already contains the current agent-boot
+// window. The first cumulative report for such a row (empty AgentBootID
+// watermark) must baseline, not accumulate — otherwise that window is
+// double-counted.
+func TestUsageAdoptionSeededRowBaselinesFirstReport(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 12, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
 	defer server.Close()
 
-	const agentID = "agent-legacy"
-	const clientID = "client-legacy"
+	const agentID = "agent-adopt"
+	const clientID = "client-adopt"
 	seedClientAndAgentRows(t, server, clientID, agentID, now)
-	legacy := []clientUsageSnapshot{{ClientID: clientID, TrafficUsedBytes: 500, ObservedAt: now}} // Seq = 0
+
+	// Discovery adoption seeded 5000 bytes from Telemt's counter.
+	server.seedClientUsage(context.Background(), clientID, agentID, 5000, 1, 1, now)
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(context.Background(), agentID, legacy)
-	server.applyClientUsageSnapshot(context.Background(), agentID, legacy)
-	got := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
+	// First cumulative report: the agent counted 300 bytes since ITS boot —
+	// a subset of the 5000 already seeded. Must not add.
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 300, ObservedAt: now.Add(time.Minute),
+	}})
+	afterBaseline := mirrorUsage(server, clientID, agentID)
+	// Second report: +200 new bytes — accumulates normally.
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", []clients.UsageReport{{
+		ClientID: clientID, TotalBytes: 500, ObservedAt: now.Add(2 * time.Minute),
+	}})
+	final := mirrorUsage(server, clientID, agentID)
 	server.mu.Unlock()
 
-	if got != 1000 {
-		t.Fatalf("legacy accumulation: TrafficUsedBytes = %d, want 1000", got)
+	if afterBaseline.TrafficUsedBytes != 5000 {
+		t.Fatalf("after first report total = %d, want 5000 (baseline adopt, no double count)", afterBaseline.TrafficUsedBytes)
+	}
+	if afterBaseline.AgentBootID != "boot-1" || afterBaseline.LastTotalBytes != 300 {
+		t.Fatalf("watermark = (%q, %d), want (boot-1, 300)", afterBaseline.AgentBootID, afterBaseline.LastTotalBytes)
+	}
+	if final.TrafficUsedBytes != 5200 {
+		t.Fatalf("final total = %d, want 5200 (5000 + (500-300))", final.TrafficUsedBytes)
 	}
 }
 
@@ -1325,7 +1345,7 @@ func TestZeroLiveGaugesForUntouchedClientsTouchedSubset(t *testing.T) {
 
 	const agentID = "agent-p11-touched"
 
-	batch := []clientUsageSnapshot{
+	batch := []clients.UsageReport{
 		{ClientID: "client-1", ActiveTCPConns: 7, ActiveUniqueIPs: 3, ObservedAt: now},
 		{ClientID: "client-2", ActiveTCPConns: 5, ActiveUniqueIPs: 2, ObservedAt: now},
 		{ClientID: "client-3", ActiveTCPConns: 1, ActiveUniqueIPs: 1, ObservedAt: now},
@@ -1337,8 +1357,8 @@ func TestZeroLiveGaugesForUntouchedClientsTouchedSubset(t *testing.T) {
 	// Seed 3 clients via a snapshot, then re-publish the same set — none
 	// should be zeroed because every clientID is "touched" again.
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(context.Background(), agentID, batch)
-	server.applyClientUsageSnapshot(context.Background(), agentID, batch)
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", batch)
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", batch)
 	server.mu.Unlock()
 
 	for _, c := range batch {
@@ -1363,20 +1383,21 @@ func TestZeroLiveGaugesForUntouchedClientsZerosUntouched(t *testing.T) {
 		seedClientAndAgentRows(t, server, id, agentID, now)
 	}
 
-	full := []clientUsageSnapshot{
-		{ClientID: "client-A", ActiveTCPConns: 9, ActiveUniqueIPs: 3, TrafficUsedBytes: 1024, ObservedAt: now},
-		{ClientID: "client-B", ActiveTCPConns: 4, ActiveUniqueIPs: 2, TrafficUsedBytes: 512, ObservedAt: now},
-		{ClientID: "client-C", ActiveTCPConns: 1, ActiveUniqueIPs: 1, TrafficUsedBytes: 256, ObservedAt: now},
+	// Cumulative totals (first report of each pair counts in full).
+	full := []clients.UsageReport{
+		{ClientID: "client-A", ActiveTCPConns: 9, ActiveUniqueIPs: 3, TotalBytes: 1024, ObservedAt: now},
+		{ClientID: "client-B", ActiveTCPConns: 4, ActiveUniqueIPs: 2, TotalBytes: 512, ObservedAt: now},
+		{ClientID: "client-C", ActiveTCPConns: 1, ActiveUniqueIPs: 1, TotalBytes: 256, ObservedAt: now},
 	}
-	// Second snapshot drops client-B.
-	partial := []clientUsageSnapshot{
-		{ClientID: "client-A", ActiveTCPConns: 11, ActiveUniqueIPs: 4, TrafficUsedBytes: 100, ObservedAt: now.Add(time.Second)},
-		{ClientID: "client-C", ActiveTCPConns: 2, ActiveUniqueIPs: 1, TrafficUsedBytes: 50, ObservedAt: now.Add(time.Second)},
+	// Second snapshot drops client-B; A and C advance their cumulative totals.
+	partial := []clients.UsageReport{
+		{ClientID: "client-A", ActiveTCPConns: 11, ActiveUniqueIPs: 4, TotalBytes: 1124, ObservedAt: now.Add(time.Second)},
+		{ClientID: "client-C", ActiveTCPConns: 2, ActiveUniqueIPs: 1, TotalBytes: 306, ObservedAt: now.Add(time.Second)},
 	}
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(context.Background(), agentID, full)
-	server.applyClientUsageSnapshot(context.Background(), agentID, partial)
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", full)
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", partial)
 	server.mu.Unlock()
 
 	gotB := mirrorUsage(server, "client-B", agentID)
@@ -1411,7 +1432,7 @@ func TestClientUsageMirrorTracksWrites(t *testing.T) {
 	seedClientAndAgentRows(t, server, "c2", agentID, now)
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(context.Background(), agentID, []clientUsageSnapshot{
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", []clients.UsageReport{
 		{ClientID: "c1", ObservedAt: now},
 		{ClientID: "c2", ObservedAt: now},
 	})
@@ -1440,10 +1461,10 @@ func TestZeroLiveGaugesForUntouchedClientsScalesWithAgentNotPanel(t *testing.T) 
 	const agentA = "agent-A"
 	const agentB = "agent-B"
 
-	mkBatch := func(prefix string, count int) []clientUsageSnapshot {
-		out := make([]clientUsageSnapshot, 0, count)
+	mkBatch := func(prefix string, count int) []clients.UsageReport {
+		out := make([]clients.UsageReport, 0, count)
 		for i := 0; i < count; i++ {
-			out = append(out, clientUsageSnapshot{
+			out = append(out, clients.UsageReport{
 				ClientID:        clients.ClientID(fmt.Sprintf("%s-c%03d", prefix, i)),
 				ActiveTCPConns:  3,
 				ActiveUniqueIPs: 2,
@@ -1459,12 +1480,12 @@ func TestZeroLiveGaugesForUntouchedClientsScalesWithAgentNotPanel(t *testing.T) 
 	}
 
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(context.Background(), agentA, mkBatch("A", 100))
-	server.applyClientUsageSnapshot(context.Background(), agentB, mkBatch("B", 100))
+	server.applyClientUsageSnapshot(context.Background(), agentA, "boot-a", mkBatch("A", 100))
+	server.applyClientUsageSnapshot(context.Background(), agentB, "boot-b", mkBatch("B", 100))
 
 	// Agent A reports a snapshot containing only its very first client; the
 	// other 99 must be zeroed for agent A. Agent B's gauges must NOT change.
-	server.applyClientUsageSnapshot(context.Background(), agentA, []clientUsageSnapshot{
+	server.applyClientUsageSnapshot(context.Background(), agentA, "boot-a", []clients.UsageReport{
 		{ClientID: "A-c000", ActiveTCPConns: 3, ActiveUniqueIPs: 2, ObservedAt: now.Add(time.Second)},
 	})
 	server.mu.Unlock()

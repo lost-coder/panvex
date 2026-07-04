@@ -376,17 +376,18 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	}
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:    "agent-000001",
-		NodeName:   "node-a",
-		Version:    "dev",
-		HasClients: true,
-		Clients: []clientUsageSnapshot{
+		AgentID:     "agent-000001",
+		AgentBootID: "boot-1",
+		NodeName:    "node-a",
+		Version:     "dev",
+		HasClients:  true,
+		Clients: []clients.UsageReport{
 			{
-				ClientID:         clients.ClientID(created.ID),
-				TrafficUsedBytes: 1024,
-				UniqueIPsUsed:    2,
-				ActiveTCPConns:   3,
-				ObservedAt:       now.Add(time.Minute),
+				ClientID:       clients.ClientID(created.ID),
+				TotalBytes:     1024,
+				UniqueIPsUsed:  2,
+				ActiveTCPConns: 3,
+				ObservedAt:     now.Add(time.Minute),
 			},
 		},
 		ObservedAt: now.Add(time.Minute),
@@ -394,17 +395,18 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		t.Fatalf("applyAgentSnapshot(agent-000001) error = %v", err)
 	}
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:    "agent-000002",
-		NodeName:   "node-b",
-		Version:    "dev",
-		HasClients: true,
-		Clients: []clientUsageSnapshot{
+		AgentID:     "agent-000002",
+		AgentBootID: "boot-1",
+		NodeName:    "node-b",
+		Version:     "dev",
+		HasClients:  true,
+		Clients: []clients.UsageReport{
 			{
-				ClientID:         clients.ClientID(created.ID),
-				TrafficUsedBytes: 512,
-				UniqueIPsUsed:    1,
-				ActiveTCPConns:   4,
-				ObservedAt:       now.Add(2 * time.Minute),
+				ClientID:       clients.ClientID(created.ID),
+				TotalBytes:     512,
+				UniqueIPsUsed:  1,
+				ActiveTCPConns: 4,
+				ObservedAt:     now.Add(2 * time.Minute),
 			},
 		},
 		ObservedAt: now.Add(2 * time.Minute),
@@ -493,17 +495,18 @@ func TestHTTPClientsListingReflectsDeploymentAndUsage(t *testing.T) {
 	server.recordJobResult(context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:    "agent-000001",
-		NodeName:   "node-a",
-		Version:    "dev",
-		HasClients: true,
-		Clients: []clientUsageSnapshot{
+		AgentID:     "agent-000001",
+		AgentBootID: "boot-1",
+		NodeName:    "node-a",
+		Version:     "dev",
+		HasClients:  true,
+		Clients: []clients.UsageReport{
 			{
-				ClientID:         clients.ClientID(created.ID),
-				TrafficUsedBytes: 1024,
-				UniqueIPsUsed:    2,
-				ActiveTCPConns:   3,
-				ObservedAt:       now.Add(time.Minute),
+				ClientID:       clients.ClientID(created.ID),
+				TotalBytes:     1024,
+				UniqueIPsUsed:  2,
+				ActiveTCPConns: 3,
+				ObservedAt:     now.Add(time.Minute),
 			},
 		},
 		ObservedAt: now.Add(time.Minute),
@@ -607,17 +610,18 @@ func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
 
 	// (2) Usage-snapshot write-path: apply a live usage tick.
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:    "agent-000001",
-		NodeName:   "node-a",
-		Version:    "dev",
-		HasClients: true,
-		Clients: []clientUsageSnapshot{
+		AgentID:     "agent-000001",
+		AgentBootID: "boot-1",
+		NodeName:    "node-a",
+		Version:     "dev",
+		HasClients:  true,
+		Clients: []clients.UsageReport{
 			{
-				ClientID:         clients.ClientID(created.ID),
-				TrafficUsedBytes: 2048,
-				UniqueIPsUsed:    4,
-				ActiveTCPConns:   5,
-				ObservedAt:       now.Add(time.Minute),
+				ClientID:       clients.ClientID(created.ID),
+				TotalBytes:     2048,
+				UniqueIPsUsed:  4,
+				ActiveTCPConns: 5,
+				ObservedAt:     now.Add(time.Minute),
 			},
 		},
 		ObservedAt: now.Add(time.Minute),

@@ -124,13 +124,17 @@ type instanceSnapshot struct {
 }
 
 type agentSnapshot struct {
-	AgentID                  string
+	AgentID string
+	// AgentBootID scopes the cumulative usage totals in Clients to one
+	// agent process incarnation (P4). Empty only in unit tests that do
+	// not exercise the usage path.
+	AgentBootID              string
 	NodeName                 string
 	FleetGroupID             string
 	Version                  string
 	ReadOnly                 bool
 	Instances                []instanceSnapshot
-	Clients                  []clientUsageSnapshot
+	Clients                  []clients.UsageReport
 	HasClients               bool
 	ClientIPs                []clientIPSnapshot
 	HasClientIPs             bool
@@ -294,10 +298,8 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	}, nil
 }
 
-func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, clients []clientUsageSnapshot) {
-	applyTrafficDelta := s.shouldApplyClientUsageDelta(ctx, agentID, clients)
-
-	seen, toPersist := s.mergeClientUsageBatch(agentID, clients, applyTrafficDelta)
+func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID, agentBootID string, reports []clients.UsageReport) {
+	seen, toPersist := s.mergeClientUsageBatch(ctx, agentID, agentBootID, reports)
 	// Phase 3 (reset-quota drift): when Telemt's reported quota_last_reset_unix
 	// is ahead of the panel's recorded last_reset_epoch_secs for this
 	// (client, agent), the operator reset out-of-band (e.g. raw
@@ -306,7 +308,7 @@ func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, c
 	// case (panel newer than Telemt) means a reset job we ran did not
 	// stick on Telemt — surfaced at API-response time as a drift flag,
 	// not persisted here.
-	deploymentsToPersist := s.advanceDeploymentsFromTelemtReset(agentID, clients)
+	deploymentsToPersist := s.advanceDeploymentsFromTelemtReset(agentID, reports)
 	s.persistClientUsageRecords(ctx, toPersist)
 	s.persistDeploymentsAfterReset(ctx, deploymentsToPersist)
 	// Zero the live connection/IP gauges of any client this agent did not
@@ -322,12 +324,12 @@ func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID string, c
 // for write-through. The changed deployments are written back to the
 // clients.Service mirror (and DB) by persistDeploymentsAfterReset via
 // PersistDeployment, so this function only reads the current value.
-func (s *Server) advanceDeploymentsFromTelemtReset(agentID string, clients []clientUsageSnapshot) []managedClientDeployment {
-	if len(clients) == 0 {
+func (s *Server) advanceDeploymentsFromTelemtReset(agentID string, reports []clients.UsageReport) []managedClientDeployment {
+	if len(reports) == 0 {
 		return nil
 	}
 	var changed []managedClientDeployment
-	for _, usage := range clients {
+	for _, usage := range reports {
 		if usage.QuotaLastResetUnix == 0 {
 			continue
 		}
@@ -363,106 +365,67 @@ func (s *Server) persistDeploymentsAfterReset(ctx context.Context, deployments [
 	}
 }
 
-// shouldApplyClientUsageDelta evaluates the seq-dedup rules (P2-LOG-06 / L-07)
-// and returns whether traffic deltas in the batch should be accumulated.
-// As a side effect it advances or rewinds the agent's mirror usage-seq cursor.
+// mergeClientUsageBatch derives the accumulation delta of every report
+// against the per-(client, agent) watermark (agent_boot_id,
+// last_total_bytes) held in the usage mirror, and returns the seen-set
+// plus the records to persist write-through (new absolute + advanced
+// watermark). Replaces the seq-dedup protocol (P2-LOG-06 / L-07): with
+// cumulative totals, lost snapshots and replays converge by
+// construction (P4, audit 2026-07-02 #8).
 //
-// Dedup rules:
-//   - seq == 0 on the wire: legacy agent, fall back to unconditional
-//     accumulation (old behavior).
-//   - seq <= lastSeen: duplicate / replay after stream reconnect — skip
-//     deltas, but still refresh live gauges.
-//   - lastSeen > 0 && seq == 1: agent restarted with zero-ed counters — treat
-//     as baseline, skip deltas, just record new seq.
-//   - otherwise: accept and accumulate.
-func (s *Server) shouldApplyClientUsageDelta(ctx context.Context, agentID string, clients []clientUsageSnapshot) bool {
-	batchSeq := firstNonZeroSeq(clients)
-	if batchSeq == 0 {
-		return true
-	}
-	lastSeen := s.clientsSvc.MirrorLastUsageSeq(agentID)
-	switch {
-	case lastSeen > 0 && batchSeq == 1:
-		// Agent restart: counters reset to zero on the agent side, so the
-		// incoming "delta" is actually an absolute baseline. Skip addition to
-		// avoid double-counting and rewind the CP-side cursor so subsequent
-		// in-order deltas (seq 2, 3, ...) are accepted.
-		s.clientsSvc.MirrorSetLastUsageSeq(agentID, 1)
-		return false
-	case batchSeq <= lastSeen:
-		// Duplicate or stale (in-flight retry, out-of-order reconnect). Live
-		// gauges may still be refreshed below, but do not re-accumulate.
-		return false
-	default:
-		// IN-C1: a jump of more than one means at least one usage snapshot
-		// (and its one-shot delta) was lost in transit. With the non-drop
-		// enqueue fix this should be rare (agent-side outbound drop or a
-		// genuine reconnect reorder); surface it on a stable alert key so any
-		// residual traffic undercount is observable rather than silent.
-		if lastSeen > 0 && batchSeq > lastSeen+1 {
-			s.logger.WarnContext(ctx, "client usage seq gap — usage delta(s) may have been lost",
+// Delta rules for an incoming (bootID, total):
+//   - no mirror row yet             → delta = total: first report of the
+//     pair, everything counted since the agent booted is new traffic;
+//   - row exists, AgentBootID == "" → delta = 0, adopt total as baseline.
+//     Such rows were seeded by discovery adoption from Telemt's own
+//     cumulative counter (seedClientUsage), which already contains the
+//     agent-boot window — accumulating on top would double-count it;
+//   - AgentBootID != bootID         → delta = total: the agent restarted,
+//     its counter began again at zero, everything in it is new;
+//   - same boot, total >= last      → delta = total - last: normal tick;
+//     a duplicated/replayed snapshot yields exactly 0;
+//   - same boot, total < last       → delta = 0 + alert: a cumulative
+//     counter must never rewind within one epoch; clamp instead of
+//     accumulating garbage and adopt the new total so counting resumes.
+func (s *Server) mergeClientUsageBatch(ctx context.Context, agentID, agentBootID string, reports []clients.UsageReport) (map[string]struct{}, []storage.ClientUsageRecord) {
+	seen := make(map[string]struct{}, len(reports))
+	toPersist := make([]storage.ClientUsageRecord, 0, len(reports))
+	for _, report := range reports {
+		seen[string(report.ClientID)] = struct{}{}
+		current, exists := s.clientsSvc.MirrorUsageEntryFor(string(report.ClientID), agentID)
+		var delta uint64
+		switch {
+		case !exists:
+			delta = report.TotalBytes
+		case current.AgentBootID == "":
+			delta = 0
+		case current.AgentBootID != agentBootID:
+			delta = report.TotalBytes
+		case report.TotalBytes >= current.LastTotalBytes:
+			delta = report.TotalBytes - current.LastTotalBytes
+		default:
+			delta = 0
+			s.logger.WarnContext(ctx, "client usage cumulative total rewound within one agent boot — delta clamped to zero",
 				"agent_id", agentID,
-				"last_seen", lastSeen,
-				"received", batchSeq,
-				"alert", "client_usage_seq_gap",
+				"client_id", string(report.ClientID),
+				"agent_boot_id", agentBootID,
+				"last_total_bytes", current.LastTotalBytes,
+				"reported_total_bytes", report.TotalBytes,
+				"alert", "client_usage_total_rewind",
 			)
 		}
-		s.clientsSvc.MirrorSetLastUsageSeq(agentID, batchSeq)
-		return true
-	}
-}
-
-// firstNonZeroSeq returns the first usage.Seq encountered across the batch,
-// or zero if every entry omits the field (legacy wire format).
-func firstNonZeroSeq(clients []clientUsageSnapshot) uint64 {
-	for _, usage := range clients {
-		if usage.Seq != 0 {
-			return usage.Seq
-		}
-	}
-	return 0
-}
-
-// mergeClientUsageBatch computes the new absolute usage counters for every
-// entry in the batch (reading the current totals from the clients.Service
-// mirror) and returns the seen-set plus the list of records to persist
-// write-through.
-//
-// Persisted backing lets usage survive a panel restart — otherwise each
-// adopted client would snap to zero bytes and wait for the next agent tick,
-// which only carries a single polling interval worth of delta.
-func (s *Server) mergeClientUsageBatch(agentID string, clients []clientUsageSnapshot, applyTrafficDelta bool) (map[string]struct{}, []storage.ClientUsageRecord) {
-	seen := make(map[string]struct{}, len(clients))
-	toPersist := make([]storage.ClientUsageRecord, 0, len(clients))
-	lastSeq := s.clientsSvc.MirrorLastUsageSeq(agentID)
-	for _, usage := range clients {
-		seen[string(usage.ClientID)] = struct{}{}
-		// Read the current absolute counters from the mirror so the traffic
-		// delta accumulates onto the persisted total (mirror is the single
-		// owner of usage state; the persist below — UpsertUsageBulk — writes
-		// the new absolute value back).
-		current, _ := s.clientsSvc.MirrorUsageEntryFor(string(usage.ClientID), agentID)
-		current.ClientID = usage.ClientID
-		if applyTrafficDelta {
-			current.TrafficUsedBytes += usage.TrafficUsedBytes
-		}
-		current.UniqueIPsUsed = usage.UniqueIPsUsed
-		current.ActiveTCPConns = usage.ActiveTCPConns
-		current.ActiveUniqueIPs = usage.ActiveUniqueIPs
-		current.QuotaUsedBytes = usage.QuotaUsedBytes
-		current.QuotaLastResetUnix = usage.QuotaLastResetUnix
-		current.ObservedAt = usage.ObservedAt
 		toPersist = append(toPersist, storage.ClientUsageRecord{
-			ClientID:           string(usage.ClientID),
+			ClientID:           string(report.ClientID),
 			AgentID:            agentID,
-			TrafficUsedBytes:   current.TrafficUsedBytes,
-			UniqueIPsUsed:      current.UniqueIPsUsed,
-			ActiveTCPConns:     current.ActiveTCPConns,
-			ActiveUniqueIPs:    current.ActiveUniqueIPs,
-			QuotaUsedBytes:     current.QuotaUsedBytes,
-			QuotaLastResetUnix: current.QuotaLastResetUnix,
-			LastSeq:            lastSeq,
-			ObservedAt:         current.ObservedAt,
+			TrafficUsedBytes:   current.TrafficUsedBytes + delta,
+			UniqueIPsUsed:      report.UniqueIPsUsed,
+			ActiveTCPConns:     report.ActiveTCPConns,
+			ActiveUniqueIPs:    report.ActiveUniqueIPs,
+			QuotaUsedBytes:     report.QuotaUsedBytes,
+			QuotaLastResetUnix: report.QuotaLastResetUnix,
+			AgentBootID:        agentBootID,
+			LastTotalBytes:     report.TotalBytes,
+			ObservedAt:         report.ObservedAt,
 		})
 	}
 	return seen, toPersist
@@ -496,17 +459,17 @@ func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []stor
 			ActiveUniqueIPs:    r.ActiveUniqueIPs,
 			QuotaUsedBytes:     r.QuotaUsedBytes,
 			QuotaLastResetUnix: r.QuotaLastResetUnix,
-			LastSeq:            r.LastSeq,
+			AgentBootID:        r.AgentBootID,
+			LastTotalBytes:     r.LastTotalBytes,
 			ObservedAt:         r.ObservedAt,
 		}
 	}
-	// IN-H1: bounded retry + loud alert. The previous bare Warn made a
-	// persistence failure both invisible and lossy: client-usage deltas are
-	// one-shot (the agent never resends them), so a write dropped under a
-	// transient DB hiccup permanently undercounts traffic. Retry transient
-	// errors a few times with short backoff (this runs on the snapshot-drain
-	// goroutine, not the gRPC receive loop), and escalate to Error with a
-	// stable alert key so operators can page on the loss.
+	// P4: usage rows are pure write-through of mirror-owned cumulative
+	// state — a failed persist self-heals on the next tick, because the
+	// next absolute total carries everything. The bounded retry + loud
+	// alert are kept from IN-H1: a panel restart BETWEEN failed persists
+	// would still lose the un-persisted accumulation, so operators must
+	// see persistent DB failures.
 	const maxUsagePersistAttempts = 3
 	var err error
 	for attempt := 1; ; attempt++ {

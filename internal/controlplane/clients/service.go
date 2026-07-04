@@ -27,7 +27,6 @@ type usageMirror struct {
 	QuotaUsedBytes     uint64
 	QuotaLastResetUnix uint64
 	ObservedAt         time.Time
-	LastSeq            uint64
 	// AgentBootID + LastTotalBytes: P4 watermark of the reporting agent's
 	// cumulative counter. Empty boot id = row seeded before any
 	// cumulative report (discovery adoption) — the first report for the
@@ -37,7 +36,7 @@ type usageMirror struct {
 }
 
 // snapshot projects the in-memory usageMirror row onto the handler-facing
-// UsageSnapshot value type. Seq carries the mirror's LastSeq.
+// UsageSnapshot value type.
 func (u usageMirror) snapshot() UsageSnapshot {
 	return UsageSnapshot{
 		ClientID:           u.ClientID,
@@ -48,7 +47,6 @@ func (u usageMirror) snapshot() UsageSnapshot {
 		QuotaUsedBytes:     u.QuotaUsedBytes,
 		QuotaLastResetUnix: u.QuotaLastResetUnix,
 		ObservedAt:         u.ObservedAt,
-		Seq:                u.LastSeq,
 	}
 }
 
@@ -90,7 +88,7 @@ type ServiceUoW interface {
 // # Lock discipline
 //
 // Service.mu protects the in-memory mirror maps (mirrorClients,
-// mirrorAssignments, mirrorDeployments, mirrorUsage, mirrorLastUsageSeq)
+// mirrorAssignments, mirrorDeployments, mirrorUsage)
 // and the client/assignment/discovered sequence counters. The
 // caller-supplied agent-topology snapshot (AgentTopology) is produced
 // by the server under its own mu lock, so Service never holds mu while
@@ -110,11 +108,10 @@ type Service struct {
 	discoveredRepo discovered.Repository
 	uow            ServiceUoW
 
-	mirrorClients      map[ClientID]Client
-	mirrorAssignments  map[ClientID][]Assignment
-	mirrorDeployments  map[ClientID]map[string]Deployment // outer=ClientID, inner=AgentID
-	mirrorUsage        map[ClientID]map[string]usageMirror
-	mirrorLastUsageSeq map[string]uint64 // per-agent
+	mirrorClients     map[ClientID]Client
+	mirrorAssignments map[ClientID][]Assignment
+	mirrorDeployments map[ClientID]map[string]Deployment // outer=ClientID, inner=AgentID
+	mirrorUsage       map[ClientID]map[string]usageMirror
 }
 
 // ServiceConfig carries the dependencies for NewService: a
@@ -144,11 +141,10 @@ func NewService(cfg ServiceConfig) *Service {
 		discoveredRepo: cfg.DiscoveredRepo,
 		uow:            cfg.UoW,
 
-		mirrorClients:      make(map[ClientID]Client),
-		mirrorAssignments:  make(map[ClientID][]Assignment),
-		mirrorDeployments:  make(map[ClientID]map[string]Deployment),
-		mirrorUsage:        make(map[ClientID]map[string]usageMirror),
-		mirrorLastUsageSeq: make(map[string]uint64),
+		mirrorClients:     make(map[ClientID]Client),
+		mirrorAssignments: make(map[ClientID][]Assignment),
+		mirrorDeployments: make(map[ClientID]map[string]Deployment),
+		mirrorUsage:       make(map[ClientID]map[string]usageMirror),
 	}
 }
 
@@ -264,7 +260,6 @@ func (s *Service) Restore(ctx context.Context) error {
 	s.mirrorAssignments = make(map[ClientID][]Assignment, len(list))
 	s.mirrorDeployments = make(map[ClientID]map[string]Deployment, len(list))
 	s.mirrorUsage = make(map[ClientID]map[string]usageMirror)
-	s.mirrorLastUsageSeq = make(map[string]uint64)
 
 	for _, c := range list {
 		// The Repository always stores the secret encrypted
@@ -317,12 +312,8 @@ func (s *Service) Restore(ctx context.Context) error {
 			QuotaUsedBytes:     u.QuotaUsedBytes,
 			QuotaLastResetUnix: u.QuotaLastResetUnix,
 			ObservedAt:         u.ObservedAt,
-			LastSeq:            u.LastSeq,
 			AgentBootID:        u.AgentBootID,
 			LastTotalBytes:     u.LastTotalBytes,
-		}
-		if u.LastSeq > s.mirrorLastUsageSeq[u.AgentID] {
-			s.mirrorLastUsageSeq[u.AgentID] = u.LastSeq
 		}
 	}
 
@@ -587,15 +578,11 @@ func (s *Service) Delete(ctx context.Context, id ClientID) error {
 // part of any cross-domain transaction.
 func (s *Service) UpsertUsage(ctx context.Context, u Usage) error {
 	// Update the in-memory mirror (the live accumulator) unconditionally,
-	// BEFORE attempting the persist. Client usage totals are cumulative
-	// absolutes and the seq cursor advances unconditionally upstream
-	// (server.shouldApplyClientUsageDelta -> MirrorSetLastUsageSeq). If the
-	// mirror total were gated on DB success, a failed persist would leave the
-	// cursor advanced but the total stale, permanently dropping this delta's
-	// bytes from the running total (the cumulative DB self-heal relies on the
-	// in-memory total being correct). The DB error is still propagated below
-	// so callers can alert (client_usage_persist_failed); the next successful
-	// in-order snapshot carries the new absolute and self-heals the DB row.
+	// BEFORE attempting the persist. The mirror is the single owner of
+	// usage state; the DB row is pure write-through. If the persist
+	// fails, the mirror keeps the correct absolute and watermark, and the
+	// next snapshot's write self-heals the row. The DB error is still
+	// propagated so callers can alert (client_usage_persist_failed).
 	s.applyUsageMirror(u)
 	return s.repo.UpsertUsage(ctx, u)
 }
@@ -608,12 +595,11 @@ func (s *Service) UpsertUsageBulk(ctx context.Context, batch []Usage) error {
 		return nil
 	}
 	// Update the in-memory mirror (the live accumulator) unconditionally,
-	// BEFORE attempting the persist. See UpsertUsage for the rationale: usage
-	// totals are cumulative absolutes and the seq cursor advances upstream
-	// regardless of DB success, so gating the mirror total on persist success
-	// would permanently drop a failed delta's bytes. The DB error is still
-	// propagated so callers can alert (client_usage_persist_failed); the next
-	// successful snapshot's absolute self-heals the DB row.
+	// BEFORE attempting the persist. The mirror is the single owner of
+	// usage state; the DB row is pure write-through. If the persist
+	// fails, the mirror keeps the correct absolute and watermark, and the
+	// next snapshot's write self-heals the row. The DB error is still
+	// propagated so callers can alert (client_usage_persist_failed).
 	s.mu.Lock()
 	for _, u := range batch {
 		s.applyUsageMirrorLocked(u)
@@ -659,7 +645,6 @@ type MirrorUsageEntry struct {
 	QuotaUsedBytes     uint64
 	QuotaLastResetUnix uint64
 	ObservedAt         time.Time
-	LastSeq            uint64
 	// AgentBootID + LastTotalBytes: P4 watermark of the reporting agent's
 	// cumulative counter. Empty boot id = row seeded before any
 	// cumulative report (discovery adoption) — the first report for the
@@ -671,11 +656,10 @@ type MirrorUsageEntry struct {
 // MirrorState is the full snapshot of the in-memory mirror, returned by
 // MirrorSnapshot. Callers must treat the maps as read-only; they are copies.
 type MirrorState struct {
-	Clients      map[ClientID]Client
-	Assignments  map[ClientID][]Assignment
-	Deployments  map[ClientID]map[string]Deployment
-	Usage        map[ClientID]map[string]MirrorUsageEntry
-	LastUsageSeq map[string]uint64 // per-agent
+	Clients     map[ClientID]Client
+	Assignments map[ClientID][]Assignment
+	Deployments map[ClientID]map[string]Deployment
+	Usage       map[ClientID]map[string]MirrorUsageEntry
 }
 
 // MirrorSnapshot returns a deep copy of the current mirror state for the
@@ -719,7 +703,6 @@ func (s *Service) MirrorSnapshot() MirrorState {
 				QuotaUsedBytes:     u.QuotaUsedBytes,
 				QuotaLastResetUnix: u.QuotaLastResetUnix,
 				ObservedAt:         u.ObservedAt,
-				LastSeq:            u.LastSeq,
 				AgentBootID:        u.AgentBootID,
 				LastTotalBytes:     u.LastTotalBytes,
 			}
@@ -727,17 +710,11 @@ func (s *Service) MirrorSnapshot() MirrorState {
 		usage[k] = cp
 	}
 
-	lastUsageSeq := make(map[string]uint64, len(s.mirrorLastUsageSeq))
-	for agentID, seq := range s.mirrorLastUsageSeq {
-		lastUsageSeq[agentID] = seq
-	}
-
 	return MirrorState{
-		Clients:      clients,
-		Assignments:  assignments,
-		Deployments:  deployments,
-		Usage:        usage,
-		LastUsageSeq: lastUsageSeq,
+		Clients:     clients,
+		Assignments: assignments,
+		Deployments: deployments,
+		Usage:       usage,
 	}
 }
 
@@ -780,8 +757,8 @@ func (s *Service) ZeroLiveGaugesForAgent(agentID string, seen map[string]struct{
 }
 
 // DropAgentUsageMirror removes every (client, agent) usage row owned by
-// the given agent from the mirror, prunes any inner maps left empty, and
-// clears the agent's per-agent seq cursor. Mirror-side counterpart of the
+// the given agent from the mirror and prunes any inner maps left empty.
+// Mirror-side counterpart of the
 // server's purgeAgentInMemory usage cleanup (used when an agent is
 // deregistered / forgotten).
 //
@@ -808,7 +785,6 @@ func (s *Service) DropAgentUsageMirror(agentID string) {
 			delete(s.mirrorUsage, clientID)
 		}
 	}
-	delete(s.mirrorLastUsageSeq, agentID)
 }
 
 // SeedUsageMirror writes a usage row into the mirror for the given
@@ -857,12 +833,8 @@ func (s *Service) applyUsageMirrorLocked(u Usage) {
 		QuotaUsedBytes:     u.QuotaUsedBytes,
 		QuotaLastResetUnix: u.QuotaLastResetUnix,
 		ObservedAt:         u.ObservedAt,
-		LastSeq:            u.LastSeq,
 		AgentBootID:        u.AgentBootID,
 		LastTotalBytes:     u.LastTotalBytes,
-	}
-	if u.LastSeq > s.mirrorLastUsageSeq[u.AgentID] {
-		s.mirrorLastUsageSeq[u.AgentID] = u.LastSeq
 	}
 }
 
@@ -999,24 +971,6 @@ func (s *Service) MirrorAssignmentsAndDeployments(clientID string) ([]Assignment
 	return assignments, deployments
 }
 
-// MirrorLastUsageSeq returns the highest usage seq recorded for an agent in
-// the mirror. Zero when the agent has no usage rows.
-func (s *Service) MirrorLastUsageSeq(agentID string) uint64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.mirrorLastUsageSeq[agentID]
-}
-
-// MirrorSetLastUsageSeq records the per-agent usage seq cursor in the mirror.
-// Used by the seq-dedup path (shouldApplyClientUsageDelta) when an agent
-// restart rewinds the cursor or a duplicate batch is skipped without a
-// usage-row write that would otherwise advance it via UpsertUsageBulk.
-func (s *Service) MirrorSetLastUsageSeq(agentID string, seq uint64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.mirrorLastUsageSeq[agentID] = seq
-}
-
 // MirrorReplaceInMemory updates the mirror's client + assignments +
 // deployments for one client without touching the Repository. Callers that
 // drive persistence through a UnitOfWork (e.g. server.persistAdoptedClient)
@@ -1058,7 +1012,6 @@ func (s *Service) MirrorUsageEntryFor(clientID, agentID string) (MirrorUsageEntr
 		QuotaUsedBytes:     u.QuotaUsedBytes,
 		QuotaLastResetUnix: u.QuotaLastResetUnix,
 		ObservedAt:         u.ObservedAt,
-		LastSeq:            u.LastSeq,
 		AgentBootID:        u.AgentBootID,
 		LastTotalBytes:     u.LastTotalBytes,
 	}, true

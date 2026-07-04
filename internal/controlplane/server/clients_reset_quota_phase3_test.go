@@ -93,7 +93,7 @@ func TestAdvanceDeploymentsFromTelemtResetThreeBranches(t *testing.T) {
 				LastResetEpochSecs: tc.panelTimestamp,
 			}})
 
-			snapshot := []clientUsageSnapshot{{
+			snapshot := []clients.UsageReport{{
 				ClientID:           clients.ClientID(clientID),
 				QuotaLastResetUnix: tc.telemtUnix,
 				ObservedAt:         now,
