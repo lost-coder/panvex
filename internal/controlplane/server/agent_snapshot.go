@@ -41,17 +41,25 @@ func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
 		agent.Version = snapshot.Version
 		agent.ReadOnly = snapshot.ReadOnly
 	}
-	agent.LastSeenAt = snapshot.ObservedAt.UTC()
+	// P3-3.2 (аудит #25b): все три "last seen"-величины — панельные часы.
+	// presence.Heartbeat уже штампуется s.now() (M-5, см. applyAgentSnapshot);
+	// LastSeenAt и Runtime.UpdatedAt обязаны использовать ТЕ ЖЕ часы, иначе
+	// при skew агент одновременно "online" (presence), "stale" (freshness)
+	// и "last seen 10 min ago" (LastSeenAt). Агентский ObservedAt остаётся
+	// в Runtime.ReportedObservedAt для диагностики.
+	receivedAt := s.now().UTC()
+	agent.LastSeenAt = receivedAt
 	if snapshot.HasRuntime && snapshot.Runtime != nil {
 		previousRuntime := agent.Runtime
-		next := agentRuntimeFromSnapshot(snapshot.Runtime, snapshot.ObservedAt)
+		next := agentRuntimeFromSnapshot(snapshot.Runtime, receivedAt)
+		next.ReportedObservedAt = snapshot.ObservedAt.UTC()
 		if snapshot.Partial && next.UptimeSeconds == 0 {
 			// uptime comes from the slow /v1/system/info fetch; preserve the
 			// last-known value rather than reporting a regressed 0.
 			next.UptimeSeconds = previousRuntime.UptimeSeconds
 		}
 		agent.Runtime = next
-		s.refreshInitializationWatchCooldown(snapshot, agent.Runtime, previousRuntime)
+		s.refreshInitializationWatchCooldown(snapshot, agent.Runtime, previousRuntime, receivedAt)
 	}
 	return agent
 }
@@ -78,18 +86,19 @@ func (s *Server) updateAgentIdentity(id string, mutate func(*Agent)) (Agent, boo
 
 // refreshInitializationWatchCooldown maintains the per-agent cooldown so the
 // "initialization watch" UI signal does not flap on every heartbeat once the
-// agent has finished initializing. Caller must hold s.mu.
-func (s *Server) refreshInitializationWatchCooldown(snapshot agentSnapshot, current, previous AgentRuntime) {
+// agent has finished initializing. Caller must hold s.mu. `now` — панельные
+// часы приёма снапшота (P3-3.2): cooldown сравнивается с ними же.
+func (s *Server) refreshInitializationWatchCooldown(snapshot agentSnapshot, current, previous AgentRuntime, now time.Time) {
 	currentNeedsWatch := runtimeNeedsInitializationWatch(current)
 	previousNeedsWatch := runtimeNeedsInitializationWatch(previous)
 	switch {
 	case currentNeedsWatch:
 		delete(s.initializationWatchCooldowns, snapshot.AgentID)
 	case previousNeedsWatch:
-		s.initializationWatchCooldowns[snapshot.AgentID] = snapshot.ObservedAt.UTC().Add(telemetryInitializationWatchCooldown)
+		s.initializationWatchCooldowns[snapshot.AgentID] = now.Add(telemetryInitializationWatchCooldown)
 	default:
 		expiresAt := s.initializationWatchCooldowns[snapshot.AgentID]
-		if !expiresAt.IsZero() && !expiresAt.After(snapshot.ObservedAt.UTC()) {
+		if !expiresAt.IsZero() && !expiresAt.After(now) {
 			delete(s.initializationWatchCooldowns, snapshot.AgentID)
 		}
 	}

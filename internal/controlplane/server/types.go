@@ -140,7 +140,13 @@ type AgentRuntime struct {
 	MeWritersSummary           *RuntimeMeWritersSummary `json:"me_writers_summary,omitempty"`
 	TelemtUnreachable          bool                     `json:"telemt_unreachable"`
 	TelemtUnreachableSinceUnix int64                    `json:"telemt_unreachable_since_unix"`
-	UpdatedAt                  time.Time                `json:"updated_at"`
+	// ReportedObservedAt — агентский снапшот-таймстемп, сохраняется ТОЛЬКО
+	// для диагностики clock-skew (P3-3.2, аудит #25b). Все решения о
+	// liveness/freshness принимаются по панельным часам: LastSeenAt,
+	// Runtime.UpdatedAt и presence.Heartbeat штампуются s.now() в момент
+	// приёма снапшота. UI не использует это поле для статусов.
+	ReportedObservedAt time.Time `json:"reported_observed_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // FailRatePct5mPtr returns the 5-minute upstream connect fail-rate as a

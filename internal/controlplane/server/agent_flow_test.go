@@ -535,7 +535,9 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 		t.Fatalf("applyAgentSnapshot(ready) error = %v", err)
 	}
 
-	expectedExpiresAt := readyObservedAt.UTC().Add(telemetryInitializationWatchCooldown)
+	// P3-3.2: the cooldown is stamped with the panel clock (s.now()), not the
+	// agent-reported ObservedAt. The fixed test clock returns `now`.
+	expectedExpiresAt := now.UTC().Add(telemetryInitializationWatchCooldown)
 	if expiresAt := server.initializationWatchCooldowns[identity.AgentID]; !expiresAt.Equal(expectedExpiresAt) {
 		t.Fatalf("initialization watch cooldown = %v, want %v", expiresAt, expectedExpiresAt)
 	}
