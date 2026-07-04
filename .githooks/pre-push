@@ -80,11 +80,15 @@ echo "=== Pre-push: Go tests (loadtest, no -race) ==="
 go test -count=1 ./internal/loadtest/...
 
 echo "=== Pre-push: Go vulnerability scan ==="
-VULN_PKGS=$(go list ./... | grep -vE 'node_modules')
+# H7: match the Makefile `vuln` target — invoke govulncheck with the `./...`
+# pattern, not a `go list`-expanded import-path list. govulncheck expects
+# relative patterns and does its own gitignore-aware walk (it already skips
+# web/node_modules), so a go-list arg list breaks its path resolution and
+# diverges from `make vuln`.
 if command -v govulncheck >/dev/null 2>&1; then
-    govulncheck $VULN_PKGS
+    govulncheck ./...
 elif [ -x "$HOME/go/bin/govulncheck" ]; then
-    "$HOME/go/bin/govulncheck" $VULN_PKGS
+    "$HOME/go/bin/govulncheck" ./...
 else
     echo "!!! govulncheck not installed. Run: make install-tools"
     exit 1
