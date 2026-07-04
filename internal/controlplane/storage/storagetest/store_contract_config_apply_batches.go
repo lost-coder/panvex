@@ -249,6 +249,51 @@ func runConfigApplyBatchContract(t *testing.T, open OpenStore) {
 			t.Fatalf("GetConfigApplyBatch(missing) error = %v, want ErrNotFound", err)
 		}
 	})
+
+	t.Run("agent-scoped batch with empty fleet group id", func(t *testing.T) {
+		st := open(t)
+		defer st.Close()
+		ctx := context.Background()
+
+		now := time.Date(2026, time.July, 2, 12, 0, 0, 0, time.UTC)
+		batch := storage.ConfigApplyBatchRecord{
+			ID:           "batch-solo-1",
+			FleetGroupID: "", // agent-scoped batch-of-one (P3-3.4)
+			Mode:         storage.ConfigApplyBatchModeAllAtOnce,
+			WaveSize:     1,
+			Status:       storage.ConfigApplyBatchStatusRunning,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		}
+		targets := []storage.ConfigApplyBatchTargetRecord{{
+			BatchID:   "batch-solo-1",
+			AgentID:   "agent-solo",
+			WaveIndex: 0,
+			Status:    storage.ConfigApplyTargetStatusPending,
+		}}
+		if err := st.CreateConfigApplyBatch(ctx, batch, targets); err != nil {
+			t.Fatalf("CreateConfigApplyBatch(empty group) error = %v", err)
+		}
+
+		got, gotTargets, err := st.GetConfigApplyBatch(ctx, "batch-solo-1")
+		if err != nil {
+			t.Fatalf("GetConfigApplyBatch() error = %v", err)
+		}
+		if got.FleetGroupID != "" {
+			t.Fatalf("FleetGroupID = %q, want empty", got.FleetGroupID)
+		}
+		if len(gotTargets) != 1 || gotTargets[0].AgentID != "agent-solo" {
+			t.Fatalf("targets = %+v, want single agent-solo", gotTargets)
+		}
+
+		// Agent-scoped батч НЕ должен всплывать как активный батч какой-либо
+		// группы.
+		if _, ok, err := st.ActiveConfigApplyBatchForGroup(ctx, testFleetGroupID); err != nil {
+			t.Fatalf("ActiveConfigApplyBatchForGroup() error = %v", err)
+		} else if ok {
+			t.Fatal("agent-scoped batch leaked into group-active lookup")
+		}
+	})
 }
 
 // assertBatchEqual compares every field of a ConfigApplyBatchRecord,

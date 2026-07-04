@@ -27,7 +27,7 @@ func (q *Queries) DeleteTerminalConfigApplyBatches(ctx context.Context, updatedA
 }
 
 const getActiveConfigApplyBatchForGroup = `-- name: GetActiveConfigApplyBatchForGroup :one
-SELECT id, fleet_group_id::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
+SELECT id, COALESCE(fleet_group_id::text, '')::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
 FROM config_apply_batches
 WHERE fleet_group_id = $1 AND status = 'running'
 ORDER BY created_at ASC, id ASC
@@ -45,7 +45,7 @@ type GetActiveConfigApplyBatchForGroupRow struct {
 	UpdatedAt        time.Time
 }
 
-func (q *Queries) GetActiveConfigApplyBatchForGroup(ctx context.Context, fleetGroupID uuid.UUID) (GetActiveConfigApplyBatchForGroupRow, error) {
+func (q *Queries) GetActiveConfigApplyBatchForGroup(ctx context.Context, fleetGroupID uuid.NullUUID) (GetActiveConfigApplyBatchForGroupRow, error) {
 	row := q.db.QueryRowContext(ctx, getActiveConfigApplyBatchForGroup, fleetGroupID)
 	var i GetActiveConfigApplyBatchForGroupRow
 	err := row.Scan(
@@ -62,7 +62,7 @@ func (q *Queries) GetActiveConfigApplyBatchForGroup(ctx context.Context, fleetGr
 }
 
 const getConfigApplyBatch = `-- name: GetConfigApplyBatch :one
-SELECT id, fleet_group_id::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
+SELECT id, COALESCE(fleet_group_id::text, '')::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
 FROM config_apply_batches
 WHERE id = $1
 `
@@ -103,7 +103,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 
 type InsertConfigApplyBatchParams struct {
 	ID               string
-	FleetGroupID     uuid.UUID
+	FleetGroupID     uuid.NullUUID
 	Mode             string
 	WaveSize         int32
 	ExpectedRevision string
@@ -195,7 +195,7 @@ func (q *Queries) ListConfigApplyBatchTargets(ctx context.Context, batchID strin
 }
 
 const listRunningConfigApplyBatches = `-- name: ListRunningConfigApplyBatches :many
-SELECT id, fleet_group_id::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
+SELECT id, COALESCE(fleet_group_id::text, '')::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
 FROM config_apply_batches
 WHERE status = 'running'
 ORDER BY created_at ASC, id ASC
