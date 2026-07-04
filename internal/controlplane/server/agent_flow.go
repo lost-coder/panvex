@@ -150,12 +150,6 @@ type agentSnapshot struct {
 	Partial bool
 }
 
-// clientUsageSnapshot now lives in controlplane/clients as
-// UsageSnapshot. Kept as a server-local alias so the usage-aggregator
-// hot path (applyClientUsageSnapshot, grpc_gateway.Connect,
-// chaos_test.go) keeps compiling until the rename lands.
-type clientUsageSnapshot = clients.UsageSnapshot
-
 type clientIPSnapshot struct {
 	ClientID  string
 	ActiveIPs []string
