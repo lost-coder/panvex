@@ -69,7 +69,7 @@ func TestExtractSkipsLeadingEntriesAndFindsBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract: %v", err)
 	}
-	defer os.Remove(got)
+	defer func() { _ = os.Remove(got) }()
 	data, err := os.ReadFile(got)
 	if err != nil {
 		t.Fatalf("read extracted: %v", err)

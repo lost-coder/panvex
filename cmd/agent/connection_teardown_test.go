@@ -93,7 +93,7 @@ func TestAgentSideTeardownClosesConnectionWithoutServer(t *testing.T) {
 	pool := x509.NewCertPool()
 	require.True(t, pool.AppendCertsFromPEM(ca.certPEM))
 
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	gw := &holdingGateway{connected: make(chan struct{}), release: make(chan struct{})}
 	srv := grpc.NewServer(grpc.Creds(credentials.NewTLS(&tls.Config{
