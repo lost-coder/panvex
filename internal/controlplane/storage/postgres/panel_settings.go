@@ -14,10 +14,7 @@ const panelSettingsScope = "panel"
 // R-Q-03: routed through dbsqlc.
 
 func (s *Store) PutPanelSettings(ctx context.Context, settings storage.PanelSettingsRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertPanelSettings(ctx, dbsqlc.UpsertPanelSettingsParams{
+	return dbsqlc.New(s.db).UpsertPanelSettings(ctx, dbsqlc.UpsertPanelSettingsParams{
 		Scope:              panelSettingsScope,
 		HttpPublicUrl:      settings.HTTPPublicURL,
 		GrpcPublicEndpoint: settings.GRPCPublicEndpoint,
@@ -27,10 +24,7 @@ func (s *Store) PutPanelSettings(ctx context.Context, settings storage.PanelSett
 }
 
 func (s *Store) GetPanelSettings(ctx context.Context) (storage.PanelSettingsRecord, error) {
-	if s.sqlDB == nil {
-		return storage.PanelSettingsRecord{}, errTxBoundStore
-	}
-	row, err := dbsqlc.New(s.sqlDB).GetPanelSettings(ctx, panelSettingsScope)
+	row, err := dbsqlc.New(s.db).GetPanelSettings(ctx, panelSettingsScope)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.PanelSettingsRecord{}, storage.ErrNotFound

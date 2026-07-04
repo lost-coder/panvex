@@ -10,10 +10,7 @@ import (
 // R-Q-03: routed through dbsqlc.
 
 func (s *Store) PutInstance(ctx context.Context, instance storage.InstanceRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertInstance(ctx, dbsqlc.UpsertInstanceParams{
+	return dbsqlc.New(s.db).UpsertInstance(ctx, dbsqlc.UpsertInstanceParams{
 		ID:                instance.ID,
 		AgentID:           instance.AgentID,
 		Name:              instance.Name,
@@ -26,10 +23,7 @@ func (s *Store) PutInstance(ctx context.Context, instance storage.InstanceRecord
 }
 
 func (s *Store) ListInstances(ctx context.Context) ([]storage.InstanceRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListInstances(ctx)
+	rows, err := dbsqlc.New(s.db).ListInstances(ctx)
 	if err != nil {
 		return nil, err
 	}

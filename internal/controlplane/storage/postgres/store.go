@@ -35,9 +35,12 @@ type dbExecutor interface {
 //
 // Store methods reference s.db via the dbExecutor interface so the same
 // method bodies can run against a *sql.DB (outside Transact) or a
-// *sql.Tx (inside Transact). s.sqlDB is the pool handle used for
-// lifecycle (Ping, Close, BeginTx); it is nil on transaction-bound
-// Stores to prevent accidental escape from the transaction boundary.
+// *sql.Tx (inside Transact). Every domain method MUST go through s.db —
+// the storagetest Transact contract exercises one representative per
+// domain on the tx-bound store. s.sqlDB is the pool handle reserved for
+// lifecycle and pool-only concerns (Ping, Close, PoolStats, Queries, DB,
+// BeginTx in Transact/execInTx); it is nil on transaction-bound Stores
+// to prevent accidental escape from the transaction boundary.
 type Store struct {
 	db    dbExecutor
 	sqlDB *sql.DB

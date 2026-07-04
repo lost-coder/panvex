@@ -64,6 +64,7 @@ type memoryStore struct {
 	agentConfigTargets             map[string]storage.AgentConfigTargetRecord
 	configApplyBatches             map[string]storage.ConfigApplyBatchRecord
 	configApplyBatchTargets        map[string][]storage.ConfigApplyBatchTargetRecord
+	cpSecrets                      map[string][]byte
 }
 
 func newMemoryStore() *memoryStore {
@@ -100,6 +101,7 @@ func newMemoryStore() *memoryStore {
 		agentConfigTargets:             make(map[string]storage.AgentConfigTargetRecord),
 		configApplyBatches:             make(map[string]storage.ConfigApplyBatchRecord),
 		configApplyBatchTargets:        make(map[string][]storage.ConfigApplyBatchTargetRecord),
+		cpSecrets:                      make(map[string][]byte),
 	}
 }
 
@@ -1621,16 +1623,28 @@ func (s *memoryStore) PruneTerminalJobs(_ context.Context, _ time.Time) (int64, 
 	return 0, nil
 }
 
-func (s *memoryStore) GetCPSecret(_ context.Context, _ string) ([]byte, error) {
-	return nil, storage.ErrNotFound
+func (s *memoryStore) GetCPSecret(_ context.Context, key string) ([]byte, error) {
+	val, ok := s.cpSecrets[key]
+	if !ok {
+		return nil, storage.ErrNotFound
+	}
+	return append([]byte(nil), val...), nil
 }
 
-func (s *memoryStore) PutCPSecret(_ context.Context, _ string, _ []byte) error {
+func (s *memoryStore) PutCPSecret(_ context.Context, key string, value []byte) error {
+	s.cpSecrets[key] = append([]byte(nil), value...)
 	return nil
 }
 
 func (s *memoryStore) ListCPSecrets(_ context.Context) ([]storage.CPSecretRecord, error) {
-	return nil, nil
+	if len(s.cpSecrets) == 0 {
+		return nil, nil
+	}
+	out := make([]storage.CPSecretRecord, 0, len(s.cpSecrets))
+	for k, v := range s.cpSecrets {
+		out = append(out, storage.CPSecretRecord{Key: k, Value: append([]byte(nil), v...)})
+	}
+	return out, nil
 }
 
 func (s *memoryStore) UpsertConsumedTotp(_ context.Context, _ storage.ConsumedTotpRecord) error {
@@ -1725,6 +1739,7 @@ type memoryStoreSnapshot struct {
 	geoipSettings                  json.RawMessage
 	geoipState                     json.RawMessage
 	certificateAuthority           *storage.CertificateAuthorityRecord
+	cpSecrets                      map[string][]byte
 }
 
 func copyMap[K comparable, V any](in map[K]V) map[K]V {
@@ -1781,6 +1796,7 @@ func (s *memoryStore) snapshot() memoryStoreSnapshot {
 		updateState:                    append(json.RawMessage(nil), s.updateState...),
 		geoipSettings:                  append(json.RawMessage(nil), s.geoipSettings...),
 		geoipState:                     append(json.RawMessage(nil), s.geoipState...),
+		cpSecrets:                      copySliceMap(s.cpSecrets),
 	}
 	if s.panelSettings != nil {
 		ps := *s.panelSettings
@@ -1831,4 +1847,5 @@ func (s *memoryStore) restore(snap memoryStoreSnapshot) {
 	s.geoipSettings = snap.geoipSettings
 	s.geoipState = snap.geoipState
 	s.certificateAuthority = snap.certificateAuthority
+	s.cpSecrets = snap.cpSecrets
 }

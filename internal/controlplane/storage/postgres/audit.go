@@ -16,14 +16,11 @@ import (
 // untyped `map[string]any` shape — sqlc owns the column-level types
 // for everything else.
 func (s *Store) AppendAuditEvent(ctx context.Context, event storage.AuditEventRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
 	detailsJSON, err := encodeJSON(event.Details)
 	if err != nil {
 		return err
 	}
-	return dbsqlc.New(s.sqlDB).AppendAuditEvent(ctx, dbsqlc.AppendAuditEventParams{
+	return dbsqlc.New(s.db).AppendAuditEvent(ctx, dbsqlc.AppendAuditEventParams{
 		ID:        event.ID,
 		ActorID:   event.ActorID,
 		Action:    event.Action,
@@ -41,20 +38,14 @@ func (s *Store) AppendAuditEvent(ctx context.Context, event storage.AuditEventRe
 // Producers read this once per batch flush so each row is chained
 // onto the tail of the existing chain. See AuditStore.LatestAuditChainHash.
 func (s *Store) LatestAuditChainHash(ctx context.Context) (string, error) {
-	if s.sqlDB == nil {
-		return "", errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).LatestAuditChainHash(ctx)
+	return dbsqlc.New(s.db).LatestAuditChainHash(ctx)
 }
 
 func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.AuditEventRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
 	if limit <= 0 {
 		limit = 1024
 	}
-	rows, err := dbsqlc.New(s.sqlDB).ListAuditEvents(ctx, int32(limit))
+	rows, err := dbsqlc.New(s.db).ListAuditEvents(ctx, int32(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -82,22 +73,19 @@ func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.Audit
 // tuple-comparison form ports cleanly across drivers without regenerating
 // the entire dbsqlc tree. See storage.AuditStore for the contract.
 func (s *Store) ListAuditEventsCursor(ctx context.Context, params storage.ListAuditEventsCursorParams) ([]storage.AuditEventRecord, storage.ListAuditEventsCursorParams, error) {
-	if s.sqlDB == nil {
-		return nil, storage.ListAuditEventsCursorParams{}, errTxBoundStore
-	}
 	limit := storage.NormalizeCursorLimit(params.Limit)
 
 	var rows *sql.Rows
 	var err error
 	if params.AfterID == "" && params.AfterCreatedAt.IsZero() {
-		rows, err = s.sqlDB.QueryContext(ctx, `
+		rows, err = s.db.QueryContext(ctx, `
 			SELECT id, actor_id, action, target_id, details, created_at, prev_hash, event_hash
 			FROM audit_events
 			ORDER BY created_at DESC, id DESC
 			LIMIT $1
 		`, limit+1)
 	} else {
-		rows, err = s.sqlDB.QueryContext(ctx, `
+		rows, err = s.db.QueryContext(ctx, `
 			SELECT id, actor_id, action, target_id, details, created_at, prev_hash, event_hash
 			FROM audit_events
 			WHERE (created_at, id) < ($1, $2)
@@ -146,8 +134,5 @@ func (s *Store) ListAuditEventsCursor(ctx context.Context, params storage.ListAu
 //
 // R-Q-03: routed through dbsqlc.PruneAuditEvents.
 func (s *Store) PruneAuditEvents(ctx context.Context, before time.Time) (int64, error) {
-	if s.sqlDB == nil {
-		return 0, errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).PruneAuditEvents(ctx, before.UTC())
+	return dbsqlc.New(s.db).PruneAuditEvents(ctx, before.UTC())
 }

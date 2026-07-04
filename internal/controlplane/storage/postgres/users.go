@@ -19,10 +19,7 @@ import (
 // dropping it from the SET keeps the existing semantic for every
 // observed callsite.
 func (s *Store) PutUser(ctx context.Context, user storage.UserRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertUser(ctx, dbsqlc.UpsertUserParams{
+	return dbsqlc.New(s.db).UpsertUser(ctx, dbsqlc.UpsertUserParams{
 		ID:           user.ID,
 		Username:     user.Username,
 		PasswordHash: user.PasswordHash,
@@ -46,10 +43,7 @@ func userRecordFromRow(row dbsqlc.User) storage.UserRecord {
 }
 
 func (s *Store) GetUserByID(ctx context.Context, userID string) (storage.UserRecord, error) {
-	if s.sqlDB == nil {
-		return storage.UserRecord{}, errTxBoundStore
-	}
-	row, err := dbsqlc.New(s.sqlDB).GetUser(ctx, userID)
+	row, err := dbsqlc.New(s.db).GetUser(ctx, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.UserRecord{}, storage.ErrNotFound
@@ -60,10 +54,7 @@ func (s *Store) GetUserByID(ctx context.Context, userID string) (storage.UserRec
 }
 
 func (s *Store) GetUserByUsername(ctx context.Context, username string) (storage.UserRecord, error) {
-	if s.sqlDB == nil {
-		return storage.UserRecord{}, errTxBoundStore
-	}
-	row, err := dbsqlc.New(s.sqlDB).GetUserByUsername(ctx, username)
+	row, err := dbsqlc.New(s.db).GetUserByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.UserRecord{}, storage.ErrNotFound
@@ -74,10 +65,7 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (storage
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]storage.UserRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListUsers(ctx)
+	rows, err := dbsqlc.New(s.db).ListUsers(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -14,10 +14,7 @@ import (
 // compile-time-checked.
 
 func (s *Store) GetCPSecret(ctx context.Context, key string) ([]byte, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	value, err := dbsqlc.New(s.sqlDB).GetCPSecret(ctx, key)
+	value, err := dbsqlc.New(s.db).GetCPSecret(ctx, key)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, storage.ErrNotFound
@@ -32,10 +29,7 @@ func (s *Store) GetCPSecret(ctx context.Context, key string) ([]byte, error) {
 // rather than dbsqlc because the migrate-complete listing has no other
 // caller and adding a sqlc query would force a baseline regen.
 func (s *Store) ListCPSecrets(ctx context.Context) ([]storage.CPSecretRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := s.sqlDB.QueryContext(ctx, `SELECT key, value, updated_at FROM cp_secrets ORDER BY key`)
+	rows, err := s.db.QueryContext(ctx, `SELECT key, value, updated_at FROM cp_secrets ORDER BY key`)
 	if err != nil {
 		return nil, err
 	}
@@ -54,10 +48,7 @@ func (s *Store) ListCPSecrets(ctx context.Context) ([]storage.CPSecretRecord, er
 }
 
 func (s *Store) PutCPSecret(ctx context.Context, key string, value []byte) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertCPSecret(ctx, dbsqlc.UpsertCPSecretParams{
+	return dbsqlc.New(s.db).UpsertCPSecret(ctx, dbsqlc.UpsertCPSecretParams{
 		Key:       key,
 		Value:     value,
 		UpdatedAt: time.Now().UTC(),

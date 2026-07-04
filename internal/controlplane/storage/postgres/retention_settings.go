@@ -24,10 +24,7 @@ import (
 // R-Q-03: routed through dbsqlc.
 
 func (s *Store) GetRetentionSettings(ctx context.Context) (storage.RetentionSettings, error) {
-	if s.sqlDB == nil {
-		return storage.RetentionSettings{}, errTxBoundStore
-	}
-	raw, err := dbsqlc.New(s.sqlDB).GetRetentionJSON(ctx, panelSettingsScope)
+	raw, err := dbsqlc.New(s.db).GetRetentionJSON(ctx, panelSettingsScope)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.RetentionSettings{}, storage.ErrNotFound
@@ -45,14 +42,11 @@ func (s *Store) GetRetentionSettings(ctx context.Context) (storage.RetentionSett
 }
 
 func (s *Store) PutRetentionSettings(ctx context.Context, settings storage.RetentionSettings) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
 	payload, err := json.Marshal(settings)
 	if err != nil {
 		return err
 	}
-	return dbsqlc.New(s.sqlDB).UpsertRetentionJSON(ctx, dbsqlc.UpsertRetentionJSONParams{
+	return dbsqlc.New(s.db).UpsertRetentionJSON(ctx, dbsqlc.UpsertRetentionJSONParams{
 		Scope:         panelSettingsScope,
 		RetentionJson: string(payload),
 		UpdatedAt:     time.Now().UTC(),

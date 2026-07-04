@@ -17,10 +17,7 @@ import (
 // idempotent and cert_expires_at is kept fresh if the caller knows a newer
 // cert existed.
 func (s *Store) PutAgentRevocation(ctx context.Context, r storage.AgentRevocationRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	if err := dbsqlc.New(s.sqlDB).UpsertAgentRevocation(ctx, dbsqlc.UpsertAgentRevocationParams{
+	if err := dbsqlc.New(s.db).UpsertAgentRevocation(ctx, dbsqlc.UpsertAgentRevocationParams{
 		AgentID:       r.AgentID,
 		RevokedAt:     r.RevokedAt.UTC(),
 		CertExpiresAt: r.CertExpiresAt.UTC(),
@@ -31,10 +28,7 @@ func (s *Store) PutAgentRevocation(ctx context.Context, r storage.AgentRevocatio
 }
 
 func (s *Store) ListAgentRevocations(ctx context.Context) ([]storage.AgentRevocationRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListAgentRevocations(ctx)
+	rows, err := dbsqlc.New(s.db).ListAgentRevocations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list agent revocations: %w", err)
 	}
@@ -53,10 +47,7 @@ func (s *Store) ListAgentRevocations(ctx context.Context) ([]storage.AgentRevoca
 // expired — once the cert can no longer authenticate, the revocation
 // entry is no longer useful and can shrink the table.
 func (s *Store) DeleteExpiredAgentRevocations(ctx context.Context, before time.Time) (int64, error) {
-	if s.sqlDB == nil {
-		return 0, errTxBoundStore
-	}
-	n, err := dbsqlc.New(s.sqlDB).DeleteExpiredAgentRevocations(ctx, before.UTC())
+	n, err := dbsqlc.New(s.db).DeleteExpiredAgentRevocations(ctx, before.UTC())
 	if err != nil {
 		return 0, fmt.Errorf("delete expired agent revocations: %w", err)
 	}
