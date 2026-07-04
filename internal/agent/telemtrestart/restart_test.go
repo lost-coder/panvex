@@ -20,15 +20,12 @@ func (r *recordingRunner) Run(_ context.Context, name string, args ...string) er
 func TestParseStrategies(t *testing.T) {
 	cases := map[string]struct {
 		restartCmd []string
-		verifyCmd  []string
 	}{
 		"systemd:telemt.service": {
 			restartCmd: []string{"systemctl", "restart", "telemt.service"},
-			verifyCmd:  []string{"systemctl", "status", "telemt.service"},
 		},
 		"docker:telemt": {
 			restartCmd: []string{"docker", "restart", "telemt"},
-			verifyCmd:  []string{"docker", "inspect", "telemt"},
 		},
 	}
 	for spec, want := range cases {
@@ -42,13 +39,6 @@ func TestParseStrategies(t *testing.T) {
 		}
 		if !reflect.DeepEqual(runner.calls[len(runner.calls)-1], want.restartCmd) {
 			t.Fatalf("restart cmd = %v, want %v", runner.calls[len(runner.calls)-1], want.restartCmd)
-		}
-		runner.calls = nil
-		if err := r.Verify(context.Background()); err != nil {
-			t.Fatalf("Verify: %v", err)
-		}
-		if !reflect.DeepEqual(runner.calls[len(runner.calls)-1], want.verifyCmd) {
-			t.Fatalf("verify cmd = %v, want %v", runner.calls[len(runner.calls)-1], want.verifyCmd)
 		}
 	}
 }
@@ -65,14 +55,6 @@ func TestParseCommandStrategy(t *testing.T) {
 	want := []string{"/usr/local/bin/restart-telemt", "--now"}
 	if !reflect.DeepEqual(runner.calls[0], want) {
 		t.Fatalf("cmd = %v, want %v", runner.calls[0], want)
-	}
-	// command strategy has no safe probe -> Verify is a no-op (no calls, no error)
-	runner.calls = nil
-	if err := r.Verify(context.Background()); err != nil {
-		t.Fatalf("Verify: %v", err)
-	}
-	if len(runner.calls) != 0 {
-		t.Fatalf("command Verify should not run anything, got %v", runner.calls)
 	}
 }
 

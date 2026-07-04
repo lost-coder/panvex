@@ -34,7 +34,6 @@ const jobActionResetQuota = "client.reset_quota"
 // *telemtrestart.Restarter; nil when no (valid) strategy is configured, in which
 // case restart-required config changes are refused.
 type configRestarter interface {
-	Verify(ctx context.Context) error
 	Restart(ctx context.Context) error
 }
 
@@ -122,7 +121,6 @@ type Agent struct {
 	lastOctets                         map[string]uint64
 	lastConnections                    map[string]int
 	lastMetricsUptime                  float64
-	lastRuntimeUptime                  float64
 	lastLifecycle                      runtimeLifecycleState
 	runtimeInitializationActive        bool
 	runtimeInitializationCooldownUntil time.Time
@@ -492,7 +490,6 @@ func (a *Agent) updateLifecycleState(state telemt.RuntimeState, observedAt time.
 		}
 	}
 	a.lastLifecycle = lifecycle
-	a.lastRuntimeUptime = state.UptimeSeconds
 	return wasRestarting
 }
 

@@ -21,10 +21,10 @@ const (
 
 // DialConfig holds the inputs needed to dial the panel's AgentGateway over mTLS.
 type DialConfig struct {
-	GatewayAddr    string
-	ServerName     string
-	CAPEM          string
-	Cert           tls.Certificate
+	GatewayAddr string
+	ServerName  string
+	CAPEM       string
+	Cert        tls.Certificate
 	// ConnectTimeout is the maximum time to wait for client.Connect to return
 	// a stream. Zero means no timeout.
 	ConnectTimeout time.Duration
@@ -116,8 +116,5 @@ func dialGateway(ctx context.Context, gatewayAddr, serverName, caPEM string, cer
 			grpc.MaxCallRecvMsgSize(dialMaxMessageSize),
 			grpc.MaxCallSendMsgSize(dialMaxMessageSize),
 		),
-		// RequestIDUnaryInterceptor is retained for future use (no-op currently).
-		grpc.WithChainUnaryInterceptor(RequestIDUnaryInterceptor()),
-		grpc.WithChainStreamInterceptor(RequestIDStreamInterceptor()),
 	)
 }

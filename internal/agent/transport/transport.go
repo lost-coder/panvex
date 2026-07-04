@@ -6,16 +6,6 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
-// Mode identifies the direction of the transport connection.
-type Mode string
-
-const (
-	// ModeDial is the standard dial-out mode where the agent connects to the panel.
-	ModeDial Mode = "dial"
-	// ModeListen is the reverse-connection mode where the agent accepts incoming connections.
-	ModeListen Mode = "listen"
-)
-
 // BidiStream is the agent's view of an established Connect stream.
 // Send is agent → panel (ConnectClientMessage); Recv is panel → agent (ConnectServerMessage).
 type BidiStream interface {

@@ -90,7 +90,6 @@ type fakeRestarter struct {
 	restartCtxErrs []error // ctx.Err() observed at each Restart call
 }
 
-func (f *fakeRestarter) Verify(context.Context) error { return nil }
 func (f *fakeRestarter) Restart(ctx context.Context) error {
 	f.restarts++
 	f.restartCtxErrs = append(f.restartCtxErrs, ctx.Err())
