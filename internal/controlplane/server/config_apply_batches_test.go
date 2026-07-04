@@ -172,3 +172,67 @@ func TestConfigApplyBatchAdvanceNonTerminalStaysRunning(t *testing.T) {
 		t.Fatalf("target status = %+v, want running (non-terminal)", gotTargets)
 	}
 }
+
+// TestConfigApplyBatchAdvanceJobEvictedBeforePersistFinalizesFailed is the
+// regression test for audit 2026-07-02 #2: a config.apply job that failed
+// and was then evicted from the in-memory jobs store (terminal-key TTL,
+// jobs.Service.PruneKeys) BEFORE the batch poll-worker persisted the
+// terminal status used to be resolved as succeeded by
+// configApplyJobStatus's missing-job default — finalizing a failed rollout
+// as a successful batch. A lost job for a non-terminal target must resolve
+// to failed with an explicit reason instead.
+func TestConfigApplyBatchAdvanceJobEvictedBeforePersistFinalizesFailed(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "advance-evicted-group", time.Time{})
+	const agentID = "agent-advance-evicted"
+	srv.seedLiveAgent(Agent{ID: agentID, FleetGroupID: groupID})
+	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+
+	ctx := context.Background()
+	batchID, err := srv.createGroupApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{agentID})
+	if err != nil {
+		t.Fatalf("createGroupApplyBatch() error = %v", err)
+	}
+	batch, targets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
+	if err != nil {
+		t.Fatalf("GetConfigApplyBatch(%s): %v", batchID, err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("targets len = %d, want 1", len(targets))
+	}
+
+	// The job FAILS on the agent (terminal in the jobs store)...
+	if !srv.jobs.RecordResult(ctx, agentID, targets[0].JobID, false, "health check failed", "", time.Now()) {
+		t.Fatalf("RecordResult(failure) returned false")
+	}
+	// ...and is evicted before the batch worker ever ticked: advance the
+	// jobs clock past the terminal-key TTL and prune. The persisted batch
+	// target still says "running".
+	srv.jobs.SetNow(func() time.Time { return time.Now().Add(2 * time.Hour) })
+	if evicted := srv.jobs.PruneKeys(time.Hour); evicted == 0 {
+		t.Fatalf("PruneKeys() evicted 0 jobs, want >= 1")
+	}
+	if _, ok := srv.jobs.Get(targets[0].JobID); ok {
+		t.Fatalf("job %s still resident after prune — eviction setup broken", targets[0].JobID)
+	}
+
+	if err := srv.advanceConfigApplyBatch(ctx, batch); err != nil {
+		t.Fatalf("advanceConfigApplyBatch() error = %v", err)
+	}
+
+	gotBatch, gotTargets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
+	if err != nil {
+		t.Fatalf("GetConfigApplyBatch(%s) after advance: %v", batchID, err)
+	}
+	if gotBatch.Status != storage.ConfigApplyBatchStatusFailed {
+		t.Fatalf("batch status = %q, want %q (lost job must not read as success)", gotBatch.Status, storage.ConfigApplyBatchStatusFailed)
+	}
+	if len(gotTargets) != 1 || gotTargets[0].Status != storage.ConfigApplyTargetStatusFailed {
+		t.Fatalf("target = %+v, want status %q", gotTargets, storage.ConfigApplyTargetStatusFailed)
+	}
+	if gotTargets[0].Message != configApplyMsgJobLost {
+		t.Fatalf("target message = %q, want %q", gotTargets[0].Message, configApplyMsgJobLost)
+	}
+}
