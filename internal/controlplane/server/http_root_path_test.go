@@ -15,10 +15,10 @@ func TestHTTPRootPathPrefixesAPIRoutesAndEmbeddedUI(t *testing.T) {
 	now := time.Date(2026, time.March, 16, 22, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		UIFiles: fstest.MapFS{
-			"index.html": &fstest.MapFile{Data: []byte(`<!doctype html><html><head><script type="module" src="/assets/app.js"></script><link rel="stylesheet" href="/assets/app.css"></head><body><div id="root"></div></body></html>`)},
-			"assets/app.js": &fstest.MapFile{Data: []byte("console.log('panvex')")},
+			"index.html":     &fstest.MapFile{Data: []byte(`<!doctype html><html><head><script type="module" src="/assets/app.js"></script><link rel="stylesheet" href="/assets/app.css"></head><body><div id="root"></div></body></html>`)},
+			"assets/app.js":  &fstest.MapFile{Data: []byte("console.log('panvex')")},
 			"assets/app.css": &fstest.MapFile{Data: []byte("body { color: black; }")},
 		},
 		PanelRuntime: PanelRuntime{

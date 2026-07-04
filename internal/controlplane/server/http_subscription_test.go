@@ -92,7 +92,7 @@ func TestHandleSubscriptionPage_OK(t *testing.T) {
 	ts := mountSubRouter(server)
 	defer ts.Close()
 
-	resp, err := ctxGet(t,ts.URL + "/sub/" + token)
+	resp, err := ctxGet(t, ts.URL+"/sub/"+token)
 	if err != nil {
 		t.Fatalf("GET /sub/{token}: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestHandleSubscriptionPage_MissingToken(t *testing.T) {
 	ts := mountSubRouter(server)
 	defer ts.Close()
 
-	resp, err := ctxGet(t,ts.URL + "/sub/tok-missing-xxxxxxxxxxx")
+	resp, err := ctxGet(t, ts.URL+"/sub/tok-missing-xxxxxxxxxxx")
 	if err != nil {
 		t.Fatalf("GET /sub/tok-missing: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestHandleSubscriptionPage_Disabled(t *testing.T) {
 	ts := mountSubRouter(server)
 	defer ts.Close()
 
-	resp, err := ctxGet(t,ts.URL + "/sub/" + token)
+	resp, err := ctxGet(t, ts.URL+"/sub/"+token)
 	if err != nil {
 		t.Fatalf("GET /sub/{token}: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestHandleSubscriptionPage_Expired(t *testing.T) {
 	ts := mountSubRouter(server)
 	defer ts.Close()
 
-	resp, err := ctxGet(t,ts.URL + "/sub/" + token)
+	resp, err := ctxGet(t, ts.URL+"/sub/"+token)
 	if err != nil {
 		t.Fatalf("GET /sub/{token}: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestHandleSubscriptionPage_XRobotsTag(t *testing.T) {
 	defer ts.Close()
 
 	// Even a missing-token response must carry X-Robots-Tag.
-	resp, err := ctxGet(t,ts.URL + "/sub/tok-robots-check")
+	resp, err := ctxGet(t, ts.URL+"/sub/tok-robots-check")
 	if err != nil {
 		t.Fatalf("GET /sub/tok-robots-check: %v", err)
 	}

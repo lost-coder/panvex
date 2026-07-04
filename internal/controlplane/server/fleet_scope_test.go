@@ -50,7 +50,7 @@ func TestResolveFleetScopeAdminAlwaysGlobal(t *testing.T) {
 	// rows in the table, the admin role wins.
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return time.Unix(0, 0) },
+		Now:              func() time.Time { return time.Unix(0, 0) },
 	})
 	defer srv.Close()
 
@@ -92,7 +92,7 @@ func TestResolveFleetScopeOperatorEmptyMeansGlobal(t *testing.T) {
 	// integration tests once the multi-tenant rollout lands.
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return time.Unix(0, 0) },
+		Now:              func() time.Time { return time.Unix(0, 0) },
 	})
 	defer srv.Close()
 

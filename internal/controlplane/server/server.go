@@ -74,11 +74,11 @@ const (
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
 type Server struct {
 	gatewayrpc.UnimplementedAgentGatewayServer
-	auth      *auth.Service
-	store     storage.Store
-	uiFiles   fs.FS
-	jobs      *jobs.Service
-	presence  *presence.Tracker
+	auth          *auth.Service
+	store         storage.Store
+	uiFiles       fs.FS
+	jobs          *jobs.Service
+	presence      *presence.Tracker
 	events        *eventbus.Hub
 	agentsUpdated *agentsUpdatedCoalescer
 	authority     *certificateAuthority

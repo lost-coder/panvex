@@ -24,7 +24,7 @@ func TestIPWhitelistAllowsMatchingIP(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.RemoteAddr = "10.1.2.3:12345"
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -40,7 +40,7 @@ func TestIPWhitelistBlocksNonMatchingIP(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.RemoteAddr = "203.0.113.5:12345"
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -55,7 +55,7 @@ func TestIPWhitelistEmptyListAllowsAll(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.RemoteAddr = "203.0.113.5:12345"
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -74,7 +74,7 @@ func TestIPWhitelistRespectsXForwardedFor_LoopbackPeer(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("X-Forwarded-For", "192.168.1.50")
 	rec := httptest.NewRecorder()
@@ -94,7 +94,7 @@ func TestIPWhitelistRejectsSpoofedXFF(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.RemoteAddr = "203.0.113.5:12345" // untrusted, not in 192.168.1.0/24
 	req.Header.Set("X-Forwarded-For", "192.168.1.50")
 	rec := httptest.NewRecorder()
@@ -114,7 +114,7 @@ func TestIPWhitelistTrustedProxyChain(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.RemoteAddr = "10.0.0.1:80"
 	req.Header.Set("X-Forwarded-For", "192.168.1.50, 10.0.0.2")
 	rec := httptest.NewRecorder()
@@ -131,7 +131,7 @@ func TestIPWhitelistMultipleCIDRs(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	req.RemoteAddr = "172.16.5.10:12345"
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

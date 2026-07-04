@@ -22,8 +22,8 @@ func TestHTTPUsersCreateUpdateDeleteRoundTrip(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
@@ -137,8 +137,8 @@ func TestHTTPUsersRejectSelfDeleteAndLastAdminDemotion(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
 	adminUser, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{

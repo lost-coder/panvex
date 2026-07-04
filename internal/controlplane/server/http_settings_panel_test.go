@@ -24,8 +24,8 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",
@@ -77,7 +77,7 @@ func TestHTTPPanelSettingsRequiresAdminAndPersistsSharedEndpointChanges(t *testi
 	}
 
 	var initialPayload struct {
-		HTTPRootPath       string `json:"http_root_path"`
+		HTTPRootPath      string `json:"http_root_path"`
 		HTTPListenAddress string `json:"http_listen_address"`
 		GRPCListenAddress string `json:"grpc_listen_address"`
 		TLSMode           string `json:"tls_mode"`
@@ -180,7 +180,7 @@ func TestHTTPPanelSettingsMarksRestartUnavailableWhenRuntimeCannotSelfRestart(t 
 	now := time.Date(2026, time.March, 16, 19, 30, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",
@@ -234,7 +234,7 @@ func TestHTTPPanelSettingsIgnoresRuntimeFieldsInLegacyMode(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 10, 40, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",
@@ -275,7 +275,7 @@ func TestHTTPPanelSettingsRejectsOversizedPayload(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 11, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",
@@ -325,8 +325,8 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 		PanelRuntime: PanelRuntime{
 			HTTPRootPath:     "/runtime",
 			TLSMode:          "direct",
@@ -364,15 +364,15 @@ func TestHTTPPanelSettingsExposesConfigManagedRuntimeAsReadOnly(t *testing.T) {
 	}
 
 	var payload struct {
-		HTTPRootPath       string `json:"http_root_path"`
-		HTTPListenAddress  string `json:"http_listen_address"`
-		GRPCListenAddress  string `json:"grpc_listen_address"`
-		TLSMode            string `json:"tls_mode"`
-		TLSCertFile        string `json:"tls_cert_file"`
-		TLSKeyFile         string `json:"tls_key_file"`
-		RuntimeSource      string `json:"runtime_source"`
-		RuntimeConfigPath  string `json:"runtime_config_path"`
-		Restart            struct {
+		HTTPRootPath      string `json:"http_root_path"`
+		HTTPListenAddress string `json:"http_listen_address"`
+		GRPCListenAddress string `json:"grpc_listen_address"`
+		TLSMode           string `json:"tls_mode"`
+		TLSCertFile       string `json:"tls_cert_file"`
+		TLSKeyFile        string `json:"tls_key_file"`
+		RuntimeSource     string `json:"runtime_source"`
+		RuntimeConfigPath string `json:"runtime_config_path"`
+		Restart           struct {
 			Pending bool   `json:"pending"`
 			State   string `json:"state"`
 		} `json:"restart"`
@@ -417,7 +417,7 @@ func TestHTTPPanelSettingsIgnoresRuntimeFieldsWhenConfigManagesRuntime(t *testin
 	now := time.Date(2026, time.March, 20, 20, 30, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":18080",
 			HTTPRootPath:      "/runtime",
@@ -467,7 +467,7 @@ func TestHTTPPanelRestartRequiresAdminAndInvokesRuntimeHook(t *testing.T) {
 	restartRequests := make(chan struct{}, 1)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",
@@ -531,7 +531,7 @@ func TestHTTPPanelRestartRejectsUnsupportedRuntime(t *testing.T) {
 	now := time.Date(2026, time.March, 17, 1, 30, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",
@@ -565,7 +565,7 @@ func TestHTTPPanelRestartReturnsInternalErrorWhenRuntimeHookFails(t *testing.T) 
 	now := time.Date(2026, time.March, 18, 13, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",
@@ -609,8 +609,8 @@ func TestPutPanelSettings_PersistsPasswordPolicy(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",
@@ -671,8 +671,8 @@ func TestGetPanelSettings_ReportsUpdatedAtAfterWrite(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",
@@ -729,7 +729,7 @@ func TestPutPanelSettings_RejectsBelowFloor(t *testing.T) {
 	now := time.Date(2026, time.May, 1, 12, 1, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",
@@ -769,7 +769,7 @@ func TestPutPanelSettings_RejectsAboveCeiling(t *testing.T) {
 	now := time.Date(2026, time.May, 1, 12, 2, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			GRPCListenAddress: ":8443",

@@ -32,8 +32,8 @@ const (
 // new key, drop a counter that hit zero) only. The hot path is a read +
 // atomic.AddInt32 on the existing pointer.
 type wsConnLimiter struct {
-	mu      sync.Mutex
-	counts  map[string]*int32
+	mu     sync.Mutex
+	counts map[string]*int32
 }
 
 func newWSConnLimiter() *wsConnLimiter {

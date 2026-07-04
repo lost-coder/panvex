@@ -20,7 +20,7 @@ func newMetricsTestServer(t *testing.T, scrapeToken string) *Server {
 	t.Helper()
 	fixed := time.Date(2026, time.April, 17, 12, 0, 0, 0, time.UTC)
 	srv := mustNew(t, Options{
-		LoginTimingFloor: -1,
+		LoginTimingFloor:   -1,
 		Now:                func() time.Time { return fixed },
 		MetricsScrapeToken: scrapeToken,
 	})
@@ -33,7 +33,7 @@ func newMetricsTestServer(t *testing.T, scrapeToken string) *Server {
 // no Authorization header at all.
 func scrapeMetricsText(t *testing.T, srv *Server, tokenHeader string) (int, string) {
 	t.Helper()
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/metrics", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/metrics", nil)
 	if tokenHeader != "" {
 		req.Header.Set("Authorization", "Bearer "+tokenHeader)
 	}
@@ -60,7 +60,7 @@ func TestNewRegistersMetricsCollectorsWithoutPanic(t *testing.T) {
 func TestMetricsMiddlewareObservesHealthzRequest(t *testing.T) {
 	srv := newMetricsTestServer(t, "devtoken")
 
-	req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
@@ -114,7 +114,7 @@ func TestMetricsEndpointAcceptsCorrectToken(t *testing.T) {
 	// Make one HTTP request so that the HTTP *Vec collectors have at least
 	// one child series — Prometheus does not expose HELP/TYPE lines for a
 	// *Vec that has never seen a label set.
-	warmupReq := httptest.NewRequestWithContext(t.Context(),http.MethodGet, "/healthz", nil)
+	warmupReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
 	srv.Handler().ServeHTTP(httptest.NewRecorder(), warmupReq)
 
 	status, body := scrapeMetricsText(t, srv, "super-secret")
@@ -149,7 +149,7 @@ func TestMetricsPathLabelUsesRoutePattern(t *testing.T) {
 	// runs for every response, and chi resolves the route pattern even when
 	// subsequent middleware short-circuits with a 401.
 	for _, raw := range []string{"/api/clients/abc", "/api/clients/def"} {
-		req := httptest.NewRequestWithContext(t.Context(),http.MethodGet, raw, nil)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, raw, nil)
 		rec := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(rec, req)
 	}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,12 +12,12 @@ import (
 	"github.com/lost-coder/panvex/internal/security"
 )
 
-// TestRestoreStoredTelemetry_BulkRehydrationMatchesPerAgent locks in the A2
-// bulk cold-start rehydration: it seeds two agents' runtime (one with more
-// than the per-agent event cap of 10), restarts the panel over the same
-// store, and asserts each agent's restored runtime — DCs, upstreams, and
-// the 10 most-recent events PER agent — is exactly what the per-agent path
-// produced. No behaviour change, just fewer queries.
+// TestRestoreStoredTelemetry_BulkRehydrationMatchesPerAgent locks in the
+// P3-3.1 cold-start rehydration: runtime (DCs, upstreams, and every recent
+// event) is persisted as one runtime_json blob, so a panel restart restores
+// each agent's runtime BYTE-FOR-BYTE — no per-projection tables, no 10-event
+// cap. It seeds two agents (one with 15 recent events), restarts the panel
+// over the same store, and asserts each restored runtime equals the live one.
 func TestRestoreStoredTelemetry_BulkRehydrationMatchesPerAgent(t *testing.T) {
 	now := time.Date(2026, time.April, 2, 8, 0, 0, 0, time.UTC)
 	dbPath := filepath.Join(t.TempDir(), "panvex.db")
@@ -98,43 +99,30 @@ func TestRestoreStoredTelemetry_BulkRehydrationMatchesPerAgent(t *testing.T) {
 	gotA := server2.liveAgent(agentA).Runtime
 	gotB := server2.liveAgent(agentB).Runtime
 
-	// Agent A: the persisted runtime caps at the 10 most-recent events.
-	// The live write path keeps the full set in memory, so compare the
-	// restored events against the newest 10 of the originally-applied set.
-	if len(gotA.RecentEvents) != 10 {
-		t.Fatalf("restored agent A events = %d, want 10 (per-agent cap)", len(gotA.RecentEvents))
+	// Blob round-trip: the restored runtime must equal the live one for
+	// each agent. Agent A keeps all 15 events (no cap), agent B keeps its
+	// one — and neither leaks into the other. Compare via canonical JSON
+	// (time.Time internal representation differs between wall/ext, so
+	// reflect.DeepEqual would false-positive).
+	assertRuntimeJSONEqual(t, "agent A", gotA, wantA)
+	assertRuntimeJSONEqual(t, "agent B", gotB, wantB)
+	if len(gotA.RecentEvents) != 15 {
+		t.Fatalf("restored agent A events = %d, want 15 (blob keeps the full set)", len(gotA.RecentEvents))
 	}
-	// Newest 10 are sequences 6..15, returned newest-first.
-	for i, ev := range gotA.RecentEvents {
-		wantSeq := uint64(15 - i)
-		if ev.Sequence != wantSeq {
-			t.Fatalf("restored agent A events[%d].Sequence = %d, want %d", i, ev.Sequence, wantSeq)
-		}
-	}
+}
 
-	if len(gotA.DCs) != len(wantA.DCs) {
-		t.Fatalf("restored agent A DCs = %d, want %d", len(gotA.DCs), len(wantA.DCs))
+func assertRuntimeJSONEqual(t *testing.T, label string, got, want AgentRuntime) {
+	t.Helper()
+	gotJSON, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("%s: marshal got: %v", label, err)
 	}
-	if len(gotA.Upstreams) != len(wantA.Upstreams) {
-		t.Fatalf("restored agent A upstreams = %d, want %d", len(gotA.Upstreams), len(wantA.Upstreams))
+	wantJSON, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("%s: marshal want: %v", label, err)
 	}
-	if gotA.LifecycleState != wantA.LifecycleState {
-		t.Fatalf("restored agent A lifecycle_state = %q, want %q", gotA.LifecycleState, wantA.LifecycleState)
-	}
-	if gotA.CurrentConnections != wantA.CurrentConnections {
-		t.Fatalf("restored agent A current_connections = %d, want %d", gotA.CurrentConnections, wantA.CurrentConnections)
-	}
-
-	// Agent B had a single event; the restore must keep it and not leak
-	// agent A's events into agent B's window.
-	if len(gotB.RecentEvents) != len(wantB.RecentEvents) {
-		t.Fatalf("restored agent B events = %d, want %d", len(gotB.RecentEvents), len(wantB.RecentEvents))
-	}
-	if len(gotB.DCs) != len(wantB.DCs) {
-		t.Fatalf("restored agent B DCs = %d, want %d", len(gotB.DCs), len(wantB.DCs))
-	}
-	if len(gotB.Upstreams) != len(wantB.Upstreams) {
-		t.Fatalf("restored agent B upstreams = %d, want %d", len(gotB.Upstreams), len(wantB.Upstreams))
+	if string(gotJSON) != string(wantJSON) {
+		t.Fatalf("%s: restored runtime != live runtime\n got: %s\nwant: %s", label, gotJSON, wantJSON)
 	}
 }
 

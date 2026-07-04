@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"time"
@@ -138,38 +139,19 @@ type telemetrySecurityInventoryResponse struct {
 }
 
 func runtimeCurrentRecordFromAgent(agent Agent) storage.TelemetryRuntimeCurrentRecord {
+	blob, err := json.Marshal(agent.Runtime)
+	if err != nil {
+		// AgentRuntime состоит только из JSON-кодируемых типов; Marshal
+		// может упасть лишь на программной ошибке (например, NaN во float
+		// из будущего поля). Пустой blob вместо паники снапшот-пути:
+		// runtimeFromCurrentRecord вернёт zero-runtime, что эквивалентно
+		// "нет персистентного состояния".
+		blob = []byte("{}")
+	}
 	return storage.TelemetryRuntimeCurrentRecord{
-		AgentID:                    agent.ID,
-		ObservedAt:                 agent.Runtime.UpdatedAt,
-		State:                      "fresh",
-		StateReason:                "",
-		ReadOnly:                   agent.ReadOnly,
-		AcceptingNewConnections:    agent.Runtime.AcceptingNewConnections,
-		MERuntimeReady:             agent.Runtime.MERuntimeReady,
-		ME2DCFallbackEnabled:       agent.Runtime.ME2DCFallbackEnabled,
-		UseMiddleProxy:             agent.Runtime.UseMiddleProxy,
-		StartupStatus:              agent.Runtime.StartupStatus,
-		StartupStage:               agent.Runtime.StartupStage,
-		StartupProgressPct:         agent.Runtime.StartupProgressPct,
-		InitializationStatus:       agent.Runtime.InitializationStatus,
-		Degraded:                   agent.Runtime.Degraded,
-		InitializationStage:        agent.Runtime.InitializationStage,
-		InitializationProgressPct:  agent.Runtime.InitializationProgressPct,
-		TransportMode:              agent.Runtime.TransportMode,
-		CurrentConnections:         agent.Runtime.CurrentConnections,
-		CurrentConnectionsME:       agent.Runtime.CurrentConnectionsME,
-		CurrentConnectionsDirect:   agent.Runtime.CurrentConnectionsDirect,
-		ActiveUsers:                agent.Runtime.ActiveUsers,
-		UptimeSeconds:              agent.Runtime.UptimeSeconds,
-		ConnectionsTotal:           agent.Runtime.ConnectionsTotal,
-		ConnectionsBadTotal:        agent.Runtime.ConnectionsBadTotal,
-		HandshakeTimeoutsTotal:     agent.Runtime.HandshakeTimeoutsTotal,
-		ConfiguredUsers:            agent.Runtime.ConfiguredUsers,
-		DCCoveragePct:              agent.Runtime.DCCoveragePct,
-		HealthyUpstreams:           agent.Runtime.HealthyUpstreams,
-		TotalUpstreams:             agent.Runtime.TotalUpstreams,
-		TelemtUnreachable:          agent.Runtime.TelemtUnreachable,
-		TelemtUnreachableSinceUnix: agent.Runtime.TelemtUnreachableSinceUnix,
+		AgentID:     agent.ID,
+		ObservedAt:  agent.Runtime.UpdatedAt,
+		RuntimeJSON: string(blob),
 	}
 }
 
@@ -240,117 +222,25 @@ func runtimeEventSeverity(event RuntimeEvent) string {
 	}
 }
 
-func runtimeFromCurrentRecord(runtime storage.TelemetryRuntimeCurrentRecord) AgentRuntime {
-	return AgentRuntime{
-		AcceptingNewConnections:    runtime.AcceptingNewConnections,
-		MERuntimeReady:             runtime.MERuntimeReady,
-		ME2DCFallbackEnabled:       runtime.ME2DCFallbackEnabled,
-		UseMiddleProxy:             runtime.UseMiddleProxy,
-		StartupStatus:              runtime.StartupStatus,
-		StartupStage:               runtime.StartupStage,
-		StartupProgressPct:         runtime.StartupProgressPct,
-		InitializationStatus:       runtime.InitializationStatus,
-		Degraded:                   runtime.Degraded,
-		LifecycleState:             runtimeLifecycleStateFromCurrent(runtime),
-		InitializationStage:        runtime.InitializationStage,
-		InitializationProgressPct:  runtime.InitializationProgressPct,
-		TransportMode:              runtime.TransportMode,
-		CurrentConnections:         runtime.CurrentConnections,
-		CurrentConnectionsME:       runtime.CurrentConnectionsME,
-		CurrentConnectionsDirect:   runtime.CurrentConnectionsDirect,
-		ActiveUsers:                runtime.ActiveUsers,
-		UptimeSeconds:              runtime.UptimeSeconds,
-		ConnectionsTotal:           runtime.ConnectionsTotal,
-		ConnectionsBadTotal:        runtime.ConnectionsBadTotal,
-		HandshakeTimeoutsTotal:     runtime.HandshakeTimeoutsTotal,
-		ConfiguredUsers:            runtime.ConfiguredUsers,
-		DCCoveragePct:              runtime.DCCoveragePct,
-		HealthyUpstreams:           runtime.HealthyUpstreams,
-		TotalUpstreams:             runtime.TotalUpstreams,
-		TelemtUnreachable:          runtime.TelemtUnreachable,
-		TelemtUnreachableSinceUnix: runtime.TelemtUnreachableSinceUnix,
-		UpdatedAt:                  runtime.ObservedAt.UTC(),
+func runtimeFromCurrentRecord(record storage.TelemetryRuntimeCurrentRecord) AgentRuntime {
+	var runtime AgentRuntime
+	if record.RuntimeJSON != "" {
+		if err := json.Unmarshal([]byte(record.RuntimeJSON), &runtime); err != nil {
+			// Повреждённый blob = отсутствие персистентного состояния;
+			// следующий снапшот агента перезапишет строку целиком.
+			runtime = AgentRuntime{}
+		}
 	}
+	// Колонка — источник истины для часов наблюдения (по ней ORDER BY);
+	// updated_at из blob'а перезаписывается на неё.
+	runtime.UpdatedAt = record.ObservedAt.UTC()
+	return runtime
 }
 
-func runtimeDCsFromRecords(dcs []storage.TelemetryRuntimeDCRecord) []RuntimeDC {
-	out := make([]RuntimeDC, 0, len(dcs))
-	for _, dc := range dcs {
-		out = append(out, RuntimeDC{
-			DC:                 dc.DC,
-			AvailableEndpoints: dc.AvailableEndpoints,
-			AvailablePct:       dc.AvailablePct,
-			RequiredWriters:    dc.RequiredWriters,
-			AliveWriters:       dc.AliveWriters,
-			CoveragePct:        dc.CoveragePct,
-			RTTMs:              dc.RTTMs,
-			Load:               int(dc.Load),
-		})
-	}
-	return out
-}
-
-func runtimeUpstreamsFromRecords(upstreams []storage.TelemetryRuntimeUpstreamRecord) []RuntimeUpstream {
-	out := make([]RuntimeUpstream, 0, len(upstreams))
-	for _, upstream := range upstreams {
-		out = append(out, RuntimeUpstream{
-			UpstreamID:         upstream.UpstreamID,
-			RouteKind:          upstream.RouteKind,
-			Address:            upstream.Address,
-			Healthy:            upstream.Healthy,
-			Fails:              upstream.Fails,
-			EffectiveLatencyMs: upstream.EffectiveLatencyMs,
-		})
-	}
-	return out
-}
-
-func runtimeEventsFromRecords(events []storage.TelemetryRuntimeEventRecord) []RuntimeEvent {
-	out := make([]RuntimeEvent, 0, len(events))
-	for _, event := range events {
-		out = append(out, RuntimeEvent{
-			Sequence:      uint64(event.Sequence),
-			TimestampUnix: event.Timestamp.UTC().Unix(),
-			EventType:     event.EventType,
-			Context:       event.Context,
-		})
-	}
-	return out
-}
-
-func restoreAgentRuntimeFromStorage(agent Agent, runtime storage.TelemetryRuntimeCurrentRecord, dcs []storage.TelemetryRuntimeDCRecord, upstreams []storage.TelemetryRuntimeUpstreamRecord, events []storage.TelemetryRuntimeEventRecord) Agent {
+func restoreAgentRuntimeFromStorage(agent Agent, runtime storage.TelemetryRuntimeCurrentRecord) Agent {
 	agent.Runtime = runtimeFromCurrentRecord(runtime)
-	agent.Runtime.DCs = runtimeDCsFromRecords(dcs)
-	agent.Runtime.Upstreams = runtimeUpstreamsFromRecords(upstreams)
-	agent.Runtime.RecentEvents = runtimeEventsFromRecords(events)
 	return agent
 }
-
-func runtimeLifecycleStateFromCurrent(runtime storage.TelemetryRuntimeCurrentRecord) string {
-	// Direct-mode nodes never have a ME pool; Telemt's Degraded /
-	// MERuntimeReady signals describe ME-pool init and must not
-	// classify a Direct node as "degraded" or "starting".
-	directMode := !runtime.UseMiddleProxy
-	switch {
-	case !directMode && runtime.Degraded:
-		return "degraded"
-	case runtime.InitializationStatus != "" && runtime.InitializationStatus != "ready":
-		return runtime.InitializationStatus
-	case runtime.StartupStatus != "" && runtime.StartupStatus != "ready":
-		return runtime.StartupStatus
-	case !runtime.AcceptingNewConnections:
-		return "starting"
-	case !directMode && !runtime.MERuntimeReady:
-		return "starting"
-	default:
-		return "ready"
-	}
-}
-
-// telemetryRuntimeEventsPerAgentLimit is the per-agent cap on restored
-// runtime events. Kept identical to the historic per-agent path
-// (ListTelemetryRuntimeEvents(..., 10)) so restored state is unchanged.
-const telemetryRuntimeEventsPerAgentLimit = 10
 
 func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 	if s.store == nil {
@@ -360,23 +250,11 @@ func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 	// Detail boosts (F4) are ephemeral in-memory-only state and are not
 	// restored on boot — a panel restart simply clears any active boost.
 
-	// A2: fetch all four runtime projections for the whole fleet in a
-	// bounded number of bulk queries instead of O(N×4) per-agent
-	// round-trips, then group by agent_id in memory. The reconstructed
-	// per-agent runtime is identical to the old per-agent path.
+	// P3-3.1: the full AgentRuntime (including DCs/Upstreams/RecentEvents)
+	// lives in each row's runtime_json blob, so a single bulk read of
+	// telemt_runtime_current rehydrates every agent — no per-projection
+	// bulk queries anymore.
 	currents, err := s.store.ListTelemetryRuntimeCurrent(ctx)
-	if err != nil {
-		return err
-	}
-	dcs, err := s.store.ListAllTelemetryRuntimeDCs(ctx)
-	if err != nil {
-		return err
-	}
-	upstreams, err := s.store.ListAllTelemetryRuntimeUpstreams(ctx)
-	if err != nil {
-		return err
-	}
-	events, err := s.store.ListAllTelemetryRuntimeEventsPerAgent(ctx, telemetryRuntimeEventsPerAgentLimit)
 	if err != nil {
 		return err
 	}
@@ -384,18 +262,6 @@ func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 	currentByAgent := make(map[string]storage.TelemetryRuntimeCurrentRecord, len(currents))
 	for _, current := range currents {
 		currentByAgent[current.AgentID] = current
-	}
-	dcsByAgent := make(map[string][]storage.TelemetryRuntimeDCRecord)
-	for _, dc := range dcs {
-		dcsByAgent[dc.AgentID] = append(dcsByAgent[dc.AgentID], dc)
-	}
-	upstreamsByAgent := make(map[string][]storage.TelemetryRuntimeUpstreamRecord)
-	for _, upstream := range upstreams {
-		upstreamsByAgent[upstream.AgentID] = append(upstreamsByAgent[upstream.AgentID], upstream)
-	}
-	eventsByAgent := make(map[string][]storage.TelemetryRuntimeEventRecord)
-	for _, event := range events {
-		eventsByAgent[event.AgentID] = append(eventsByAgent[event.AgentID], event)
 	}
 
 	for _, agent := range s.live.List() {
@@ -408,7 +274,7 @@ func (s *Server) restoreStoredTelemetry(ctx context.Context) error {
 		// Merge the restored runtime into the agent value and re-commit
 		// through the live store, preserving the agent's instances
 		// (restored separately in restoreInstances).
-		merged := restoreAgentRuntimeFromStorage(agent, current, dcsByAgent[agent.ID], upstreamsByAgent[agent.ID], eventsByAgent[agent.ID])
+		merged := restoreAgentRuntimeFromStorage(agent, current)
 		s.live.ApplySnapshot(agent.ID, merged, s.live.InstancesForAgent(agent.ID))
 	}
 
