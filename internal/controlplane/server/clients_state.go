@@ -168,7 +168,6 @@ func (s *Server) listClientsListingSnapshot() clientListingSnapshot {
 					QuotaUsedBytes:     value.QuotaUsedBytes,
 					QuotaLastResetUnix: value.QuotaLastResetUnix,
 					ObservedAt:         value.ObservedAt,
-					Seq:                value.LastSeq,
 				}
 			}
 			usage[id] = s.clientsSvc.AggregateUsage(snapshot)

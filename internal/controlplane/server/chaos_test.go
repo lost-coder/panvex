@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
@@ -265,20 +266,16 @@ func TestChaosShutdownMidAudit(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// 3. TestChaosAgentReconnectSeqReset
+// 3. TestChaosAgentReconnectCumulativeTotals
 //
-// Agent pushes snapshots with seq=1,2,3 (initial baseline plus deltas),
-// then restarts and begins at seq=1 again. Per P2-LOG-06 the CP must
-// treat the second seq=1 as a baseline (not a delta on top of the 1+2+3
-// accumulation) so the agent's zero-ed counters do not roll back the CP
-// gauge, and seq=2 after the restart must accumulate normally.
-//
-// Unlike TestUsageSeqResetOnAgentRestart which only validates the final
-// traffic number, this test captures the chaos shape: an in-flight burst
-// of snapshots racing against a stream reconnect.
+// Chaos shape for the P4 cumulative protocol: an in-flight burst of
+// usage snapshots races a stream reconnect (replays, a lost snapshot),
+// then the agent restarts into a fresh boot epoch. The accumulated
+// total must converge to the exact sum of what each epoch last
+// reported — nothing lost, nothing double-counted.
 // -----------------------------------------------------------------------
 
-func TestChaosAgentReconnectSeqReset(t *testing.T) {
+func TestChaosAgentReconnectCumulativeTotals(t *testing.T) {
 	now := time.Date(2026, time.April, 18, 13, 0, 0, 0, time.UTC)
 	server := testServerWithSQLite(t, now)
 	defer server.Close()
@@ -287,67 +284,40 @@ func TestChaosAgentReconnectSeqReset(t *testing.T) {
 	const clientID = "chaos-client"
 	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
-	// Pre-restart burst: seq 1 (baseline), 2 (+1024), 3 (+512).
-	// The first non-zero seq with lastSeen == 0 is the "legacy" path in
-	// applyClientUsageSnapshot — it accumulates unconditionally, which is
-	// the correct baseline behavior for the first snapshot in a fresh CP.
-	preBurst := [][]clientUsageSnapshot{
-		{{ClientID: clientID, TrafficUsedBytes: 2048, ObservedAt: now, Seq: 1}},
-		{{ClientID: clientID, TrafficUsedBytes: 1024, ObservedAt: now.Add(time.Second), Seq: 2}},
-		{{ClientID: clientID, TrafficUsedBytes: 512, ObservedAt: now.Add(2 * time.Second), Seq: 3}},
+	report := func(total uint64, at time.Time) []clients.UsageReport {
+		return []clients.UsageReport{{ClientID: clientID, TotalBytes: total, ObservedAt: at}}
 	}
 
 	server.mu.Lock()
-	for _, snapshot := range preBurst {
-		server.applyClientUsageSnapshot(context.Background(), agentID, snapshot)
-	}
+	// Boot-1 burst: totals 2048 → (3072 LOST in transit) → 3584, then the
+	// stream reconnect replays 3584 twice.
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", report(2048, now))
+	// total 3072 lost — never delivered.
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", report(3584, now.Add(2*time.Second)))
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", report(3584, now.Add(3*time.Second)))
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-1", report(3584, now.Add(4*time.Second)))
 	preRestartTotal := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
-	preRestartSeq := mirrorLastUsageSeq(server, agentID)
 	server.mu.Unlock()
 
-	// Pre-restart sanity: the three deltas accumulated.
-	if want := uint64(2048 + 1024 + 512); preRestartTotal != want {
-		t.Fatalf("pre-restart total = %d, want %d", preRestartTotal, want)
-	}
-	if preRestartSeq != 3 {
-		t.Fatalf("pre-restart seq cursor = %d, want 3", preRestartSeq)
+	// The lost intermediate snapshot cost nothing: the next total caught up.
+	if preRestartTotal != 3584 {
+		t.Fatalf("pre-restart total = %d, want 3584 (lost snapshot must be absorbed, replays must add 0)", preRestartTotal)
 	}
 
-	// Agent restart: new stream, counters reset to zero. The first
-	// post-restart snapshot arrives as seq=1 with a small fresh value. The
-	// CP must NOT accumulate it as a delta.
-	restartBaseline := []clientUsageSnapshot{
-		{ClientID: clientID, TrafficUsedBytes: 256, ObservedAt: now.Add(10 * time.Second), Seq: 1},
-	}
-	// Followed immediately by seq=2 (an honest delta post-restart).
-	postRestartDelta := []clientUsageSnapshot{
-		{ClientID: clientID, TrafficUsedBytes: 128, ObservedAt: now.Add(11 * time.Second), Seq: 2},
-	}
-
+	// Agent restart: fresh epoch, counter restarts at zero; first report
+	// 256, then a replay of the SAME report after another reconnect.
 	server.mu.Lock()
-	server.applyClientUsageSnapshot(context.Background(), agentID, restartBaseline)
-	afterBaseline := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
-	afterBaselineSeq := mirrorLastUsageSeq(server, agentID)
-	server.applyClientUsageSnapshot(context.Background(), agentID, postRestartDelta)
-	final := mirrorUsage(server, clientID, agentID).TrafficUsedBytes
-	finalSeq := mirrorLastUsageSeq(server, agentID)
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-2", report(256, now.Add(10*time.Second)))
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-2", report(256, now.Add(11*time.Second)))
+	server.applyClientUsageSnapshot(context.Background(), agentID, "boot-2", report(384, now.Add(12*time.Second)))
+	final := mirrorUsage(server, clientID, agentID)
 	server.mu.Unlock()
 
-	// Invariant 1: the seq=1 restart baseline did NOT add its 256 bytes to
-	// the accumulator. If it had, we would see preRestartTotal + 256.
-	if afterBaseline != preRestartTotal {
-		t.Fatalf("post-restart baseline total = %d, want %d (agent restart must not accumulate)", afterBaseline, preRestartTotal)
+	if want := uint64(3584 + 384); final.TrafficUsedBytes != want {
+		t.Fatalf("final total = %d, want %d (fresh epoch in full + in-epoch delta, replays add 0)", final.TrafficUsedBytes, want)
 	}
-	if afterBaselineSeq != 1 {
-		t.Fatalf("post-restart seq cursor after baseline = %d, want 1 (CP must reset to new agent seq)", afterBaselineSeq)
-	}
-
-	// Invariant 2: the post-restart seq=2 delta DID accumulate normally.
-	if want := preRestartTotal + 128; final != want {
-		t.Fatalf("post-restart delta total = %d, want %d", final, want)
-	}
-	if finalSeq != 2 {
-		t.Fatalf("final seq cursor = %d, want 2", finalSeq)
+	if final.AgentBootID != "boot-2" || final.LastTotalBytes != 384 {
+		t.Fatalf("watermark = (%q, %d), want (boot-2, 384)", final.AgentBootID, final.LastTotalBytes)
 	}
 }
 

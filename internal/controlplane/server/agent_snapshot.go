@@ -226,7 +226,7 @@ func (s *Server) applyTelemtReachabilityTransition(ctx context.Context, agent Ag
 // enqueueClientIPHistory elsewhere in the snapshot pipeline.
 func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agentSnapshot) {
 	if snapshot.HasClients {
-		s.applyClientUsageSnapshot(ctx, snapshot.AgentID, snapshot.Clients)
+		s.applyClientUsageSnapshot(ctx, snapshot.AgentID, snapshot.AgentBootID, snapshot.Clients)
 	}
 }
 

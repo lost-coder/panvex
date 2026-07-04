@@ -84,7 +84,6 @@ func seedMirrorUsage(t *testing.T, s *Server, clientID, agentID string, usage cl
 		ActiveUniqueIPs:    usage.ActiveUniqueIPs,
 		QuotaUsedBytes:     usage.QuotaUsedBytes,
 		QuotaLastResetUnix: usage.QuotaLastResetUnix,
-		LastSeq:            usage.Seq,
 		ObservedAt:         tsOrNow(usage.ObservedAt),
 	}); err != nil {
 		t.Fatalf("seedMirrorUsage: %v", err)
@@ -109,9 +108,4 @@ func mirrorUsage(s *Server, clientID, agentID string) clients.MirrorUsageEntry {
 func mirrorDeployment(s *Server, clientID, agentID string) managedClientDeployment {
 	d, _ := s.clientsSvc.MirrorDeployment(clientID, agentID)
 	return d
-}
-
-// mirrorLastUsageSeq reads the per-agent usage seq cursor from the mirror.
-func mirrorLastUsageSeq(s *Server, agentID string) uint64 {
-	return s.clientsSvc.MirrorLastUsageSeq(agentID)
 }

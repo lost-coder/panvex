@@ -265,7 +265,8 @@ func TestService_Restore_PopulatesMirror(t *testing.T) {
 			ClientID:         "c-1",
 			AgentID:          "agent-1",
 			TrafficUsedBytes: 1024,
-			LastSeq:          5,
+			AgentBootID:      "boot-5",
+			LastTotalBytes:   900,
 			ObservedAt:       time.Now(),
 		},
 	}
@@ -296,8 +297,8 @@ func TestService_Restore_PopulatesMirror(t *testing.T) {
 	if um.TrafficUsedBytes != 1024 {
 		t.Fatalf("usageMirror.TrafficUsedBytes = %d, want 1024", um.TrafficUsedBytes)
 	}
-	if svc.mirrorLastUsageSeq["agent-1"] != 5 {
-		t.Fatalf("mirrorLastUsageSeq[agent-1] = %d, want 5", svc.mirrorLastUsageSeq["agent-1"])
+	if um.AgentBootID != "boot-5" || um.LastTotalBytes != 900 {
+		t.Fatalf("usageMirror watermark = (%q, %d), want (boot-5, 900)", um.AgentBootID, um.LastTotalBytes)
 	}
 }
 
@@ -563,8 +564,8 @@ func TestService_UpsertUsageBulk_PersistsAndUpdatesMirror(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(ServiceConfig{Repo: repo})
 	batch := []Usage{
-		{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, LastSeq: 5},
-		{ClientID: ClientID("c-2"), AgentID: "a-1", TrafficUsedBytes: 200, LastSeq: 6},
+		{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, AgentBootID: "boot-1", LastTotalBytes: 100},
+		{ClientID: ClientID("c-2"), AgentID: "a-1", TrafficUsedBytes: 200, AgentBootID: "boot-1", LastTotalBytes: 200},
 	}
 	if err := svc.UpsertUsageBulk(context.Background(), batch); err != nil {
 		t.Fatalf("UpsertUsageBulk: %v", err)
@@ -574,11 +575,12 @@ func TestService_UpsertUsageBulk_PersistsAndUpdatesMirror(t *testing.T) {
 	}
 	svc.mu.RLock()
 	defer svc.mu.RUnlock()
-	if svc.mirrorUsage[ClientID("c-1")]["a-1"].TrafficUsedBytes != 100 {
+	c1 := svc.mirrorUsage[ClientID("c-1")]["a-1"]
+	if c1.TrafficUsedBytes != 100 {
 		t.Fatal("mirror usage c-1/a-1 not updated")
 	}
-	if svc.mirrorLastUsageSeq["a-1"] != 6 {
-		t.Fatalf("lastUsageSeq[a-1] = %d, want 6", svc.mirrorLastUsageSeq["a-1"])
+	if c1.AgentBootID != "boot-1" || c1.LastTotalBytes != 100 {
+		t.Fatalf("mirror c-1/a-1 watermark = (%q, %d), want (boot-1, 100)", c1.AgentBootID, c1.LastTotalBytes)
 	}
 }
 
@@ -600,7 +602,7 @@ func TestService_UpsertUsage_Single(t *testing.T) {
 
 	repo := newFakeRepo()
 	svc := NewService(ServiceConfig{Repo: repo})
-	u := Usage{ClientID: ClientID("c-x"), AgentID: "a-x", TrafficUsedBytes: 42, LastSeq: 1}
+	u := Usage{ClientID: ClientID("c-x"), AgentID: "a-x", TrafficUsedBytes: 42, AgentBootID: "boot-1", LastTotalBytes: 42}
 	if err := svc.UpsertUsage(context.Background(), u); err != nil {
 		t.Fatalf("UpsertUsage: %v", err)
 	}
@@ -611,13 +613,11 @@ func TestService_UpsertUsage_Single(t *testing.T) {
 
 // --- C1 follow-up: mirror must update unconditionally on DB-persist failure ---
 //
-// Client usage totals are cumulative absolutes and the seq cursor advances
-// unconditionally (server.shouldApplyClientUsageDelta -> MirrorSetLastUsageSeq)
-// before the persist call. If the mirror total is gated on DB success, a
-// failed persist leaves the cursor advanced but the total stale, permanently
-// dropping the failed delta's bytes from the running total. The mirror (live
-// accumulator) must therefore be updated whether or not the DB write succeeds,
-// while the DB error is still propagated to the caller (which alerts on
+// The mirror is the single owner of usage state; the DB row is pure
+// write-through. If the mirror total is gated on DB success, a failed
+// persist leaves the mirror stale. The mirror (live accumulator) must
+// therefore be updated whether or not the DB write succeeds, while the DB
+// error is still propagated to the caller (which alerts on
 // client_usage_persist_failed).
 
 func TestService_UpsertUsageBulk_PersistFailure_StillUpdatesMirror(t *testing.T) {
@@ -627,7 +627,7 @@ func TestService_UpsertUsageBulk_PersistFailure_StillUpdatesMirror(t *testing.T)
 	repo.failOn = "UpsertUsageBulk"
 	svc := NewService(ServiceConfig{Repo: repo})
 	batch := []Usage{
-		{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, LastSeq: 5},
+		{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, AgentBootID: "boot-1", LastTotalBytes: 100},
 	}
 
 	err := svc.UpsertUsageBulk(context.Background(), batch)
@@ -643,8 +643,8 @@ func TestService_UpsertUsageBulk_PersistFailure_StillUpdatesMirror(t *testing.T)
 	if got.TrafficUsedBytes != 100 {
 		t.Fatalf("mirror TrafficUsedBytes = %d, want 100 despite DB error", got.TrafficUsedBytes)
 	}
-	if snap.LastUsageSeq["a-1"] != 5 {
-		t.Fatalf("mirror LastUsageSeq[a-1] = %d, want 5", snap.LastUsageSeq["a-1"])
+	if got.AgentBootID != "boot-1" || got.LastTotalBytes != 100 {
+		t.Fatalf("mirror watermark = (%q, %d), want (boot-1, 100)", got.AgentBootID, got.LastTotalBytes)
 	}
 }
 
@@ -654,7 +654,7 @@ func TestService_UpsertUsage_PersistFailure_StillUpdatesMirror(t *testing.T) {
 	repo := newFakeRepo()
 	repo.failOn = "UpsertUsage"
 	svc := NewService(ServiceConfig{Repo: repo})
-	u := Usage{ClientID: ClientID("c-x"), AgentID: "a-x", TrafficUsedBytes: 42, LastSeq: 3}
+	u := Usage{ClientID: ClientID("c-x"), AgentID: "a-x", TrafficUsedBytes: 42, AgentBootID: "boot-1", LastTotalBytes: 42}
 
 	if err := svc.UpsertUsage(context.Background(), u); err == nil {
 		t.Fatal("expected DB persist error to be propagated, got nil")
@@ -668,15 +668,16 @@ func TestService_UpsertUsage_PersistFailure_StillUpdatesMirror(t *testing.T) {
 	if got.TrafficUsedBytes != 42 {
 		t.Fatalf("mirror TrafficUsedBytes = %d, want 42 despite DB error", got.TrafficUsedBytes)
 	}
-	if snap.LastUsageSeq["a-x"] != 3 {
-		t.Fatalf("mirror LastUsageSeq[a-x] = %d, want 3", snap.LastUsageSeq["a-x"])
+	if got.AgentBootID != "boot-1" || got.LastTotalBytes != 42 {
+		t.Fatalf("mirror watermark = (%q, %d), want (boot-1, 42)", got.AgentBootID, got.LastTotalBytes)
 	}
 }
 
-// A failed delta followed by a successful in-order delta must leave the mirror
-// total reflecting BOTH deltas (cumulative absolutes), proving no permanent
-// byte drop. delta2 carries the new running total (300) — the same absolute
-// the agent would send next regardless of the earlier persist outcome.
+// A failed write followed by a successful later write must leave the mirror
+// total reflecting the latest absolute (write-through of mirror-owned
+// cumulative state), proving no permanent byte drop. write2 carries the new
+// running total (300) — the same absolute the panel would derive next
+// regardless of the earlier persist outcome.
 func TestService_UpsertUsageBulk_FailThenOK_NoPermanentDrop(t *testing.T) {
 	t.Parallel()
 
@@ -685,13 +686,13 @@ func TestService_UpsertUsageBulk_FailThenOK_NoPermanentDrop(t *testing.T) {
 	ctx := context.Background()
 
 	repo.failOn = "UpsertUsageBulk"
-	delta1 := []Usage{{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, LastSeq: 1}}
+	delta1 := []Usage{{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 100, AgentBootID: "boot-1", LastTotalBytes: 100}}
 	if err := svc.UpsertUsageBulk(ctx, delta1); err == nil {
 		t.Fatal("expected DB error on delta1, got nil")
 	}
 
 	repo.failOn = ""
-	delta2 := []Usage{{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 300, LastSeq: 2}}
+	delta2 := []Usage{{ClientID: ClientID("c-1"), AgentID: "a-1", TrafficUsedBytes: 300, AgentBootID: "boot-1", LastTotalBytes: 300}}
 	if err := svc.UpsertUsageBulk(ctx, delta2); err != nil {
 		t.Fatalf("delta2 persist: %v", err)
 	}
@@ -843,15 +844,15 @@ func TestService_ZeroLiveGaugesMirror(t *testing.T) {
 }
 
 // TestService_DropAgentUsageMirror verifies that DropAgentUsageMirror
-// removes every (client, agent) usage row owned by the agent plus its
-// per-agent seq cursor, while leaving other agents' rows intact.
+// removes every (client, agent) usage row owned by the agent, while
+// leaving other agents' rows intact.
 func TestService_DropAgentUsageMirror(t *testing.T) {
 	t.Parallel()
 
 	svc := NewService(ServiceConfig{Repo: newFakeRepo()})
-	svc.applyUsageMirror(Usage{ClientID: "c-1", AgentID: "agent-1", TrafficUsedBytes: 10, LastSeq: 4})
-	svc.applyUsageMirror(Usage{ClientID: "c-1", AgentID: "agent-2", TrafficUsedBytes: 20, LastSeq: 9})
-	svc.applyUsageMirror(Usage{ClientID: "c-2", AgentID: "agent-1", TrafficUsedBytes: 30, LastSeq: 4})
+	svc.applyUsageMirror(Usage{ClientID: "c-1", AgentID: "agent-1", TrafficUsedBytes: 10, AgentBootID: "boot-1", LastTotalBytes: 10})
+	svc.applyUsageMirror(Usage{ClientID: "c-1", AgentID: "agent-2", TrafficUsedBytes: 20, AgentBootID: "boot-2", LastTotalBytes: 20})
+	svc.applyUsageMirror(Usage{ClientID: "c-2", AgentID: "agent-1", TrafficUsedBytes: 30, AgentBootID: "boot-1", LastTotalBytes: 30})
 
 	svc.DropAgentUsageMirror("agent-1")
 
@@ -867,12 +868,6 @@ func TestService_DropAgentUsageMirror(t *testing.T) {
 	// c-2 had only agent-1 — the now-empty inner map should be removed.
 	if _, ok := svc.mirrorUsage["c-2"]; ok {
 		t.Fatal("c-2 inner map not pruned after dropping its only agent")
-	}
-	if _, ok := svc.mirrorLastUsageSeq["agent-1"]; ok {
-		t.Fatal("mirrorLastUsageSeq[agent-1] not dropped")
-	}
-	if svc.mirrorLastUsageSeq["agent-2"] != 9 {
-		t.Fatalf("mirrorLastUsageSeq[agent-2] = %d, want 9", svc.mirrorLastUsageSeq["agent-2"])
 	}
 }
 

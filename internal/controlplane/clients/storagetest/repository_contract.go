@@ -28,7 +28,7 @@ func RunContract(t *testing.T, open OpenRepo) {
 	t.Run("DeleteCascadesAssignments", func(t *testing.T) { runDeleteCascadesAssignments(t, open(t)) })
 	t.Run("GetSoftDeletedReturnsNotFound", func(t *testing.T) { runGetSoftDeletedReturnsNotFound(t, open(t)) })
 	t.Run("UsageBulkRoundtrip", func(t *testing.T) { runUsageBulk(t, open(t)) })
-	t.Run("UsageMonotonicity", func(t *testing.T) { runUsageMonotonicity(t, open(t)) })
+	t.Run("UsageLastWriteWins", func(t *testing.T) { runUsageLastWriteWins(t, open(t)) })
 	t.Run("UsageWatermarkRoundtrip", func(t *testing.T) { runUsageWatermarkRoundtrip(t, open(t)) })
 	t.Run("GetBySubscriptionToken", func(t *testing.T) { runGetBySubscriptionToken(t, open(t)) })
 	// More subtests added as Repository surface grows.
@@ -255,17 +255,17 @@ func runUsageBulk(t *testing.T, repo clients.Repository) {
 	}
 }
 
-// runUsageMonotonicity is the storagetest case for task 2.10 (audit finding:
-// client_usage upsert had no monotonicity guard on last_seq, so an
-// out-of-order or duplicate/older agent report could regress the stored
-// counters to a stale sequence). A report only applies when its last_seq is
-// strictly newer than what's stored; an older or equal last_seq must be a
-// silent no-op, not a regression and not an error.
-func runUsageMonotonicity(t *testing.T, repo clients.Repository) {
+// runUsageLastWriteWins is the P4 storagetest case: the usage upsert is
+// unconditional last-write-wins — ordering and duplicate protection moved
+// upstream into the panel's watermark derivation
+// (server.mergeClientUsageBatch), so ANY later write must apply, including
+// one carrying a smaller absolute (e.g. an operator usage reset). The old
+// last_seq monotonicity guard is gone.
+func runUsageLastWriteWins(t *testing.T, repo clients.Repository) {
 	t.Helper()
 	ctx := context.Background()
 	const (
-		clientID = clients.ClientID("c-mono-1")
+		clientID = clients.ClientID("c-lww-1")
 		// a-1 is the agent seeded by both backends' contract fixtures
 		// (seedContractFixtures in sqlite, inline seed in postgres) to
 		// satisfy the client_usage.agent_id FK.
@@ -291,49 +291,24 @@ func runUsageMonotonicity(t *testing.T, repo clients.Repository) {
 		return clients.Usage{}
 	}
 
-	// Establish the row at last_seq=5 ("counters A").
-	seq5 := clients.Usage{
+	if err := repo.UpsertUsage(ctx, clients.Usage{
 		ClientID: clientID, AgentID: agentID,
-		TrafficUsedBytes: 500, UniqueIPsUsed: 5,
-		ActiveTCPConns: 5, ActiveUniqueIPs: 5,
-		LastSeq: 5, ObservedAt: base,
+		TrafficUsedBytes: 500, AgentBootID: "boot-1", LastTotalBytes: 500,
+		ObservedAt: base,
+	}); err != nil {
+		t.Fatalf("UpsertUsage(first): %v", err)
 	}
-	if err := repo.UpsertUsage(ctx, seq5); err != nil {
-		t.Fatalf("UpsertUsage(seq=5): %v", err)
-	}
-	if got := findUsage(); got.LastSeq != 5 || got.TrafficUsedBytes != 500 {
-		t.Fatalf("after seq=5: last_seq=%d traffic=%d, want 5/500", got.LastSeq, got.TrafficUsedBytes)
-	}
-
-	// Out-of-order older report (last_seq=3, "counters B") must NOT regress
-	// the stored row — it stays at seq=5/counters A.
-	seq3 := clients.Usage{
+	if err := repo.UpsertUsage(ctx, clients.Usage{
 		ClientID: clientID, AgentID: agentID,
-		TrafficUsedBytes: 3, UniqueIPsUsed: 3,
-		ActiveTCPConns: 3, ActiveUniqueIPs: 3,
-		LastSeq: 3, ObservedAt: base.Add(time.Minute),
+		TrafficUsedBytes: 300, AgentBootID: "boot-2", LastTotalBytes: 40,
+		ObservedAt: base.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("UpsertUsage(second): %v", err)
 	}
-	if err := repo.UpsertUsage(ctx, seq3); err != nil {
-		t.Fatalf("UpsertUsage(seq=3, stale): %v", err)
-	}
-	if got := findUsage(); got.LastSeq != 5 || got.TrafficUsedBytes != 500 {
-		t.Fatalf("after stale seq=3: last_seq=%d traffic=%d, want unchanged 5/500 (no regression)",
-			got.LastSeq, got.TrafficUsedBytes)
-	}
-
-	// A newer report (last_seq=7) must apply normally.
-	seq7 := clients.Usage{
-		ClientID: clientID, AgentID: agentID,
-		TrafficUsedBytes: 700, UniqueIPsUsed: 7,
-		ActiveTCPConns: 7, ActiveUniqueIPs: 7,
-		LastSeq: 7, ObservedAt: base.Add(2 * time.Minute),
-	}
-	if err := repo.UpsertUsage(ctx, seq7); err != nil {
-		t.Fatalf("UpsertUsage(seq=7): %v", err)
-	}
-	if got := findUsage(); got.LastSeq != 7 || got.TrafficUsedBytes != 700 {
-		t.Fatalf("after seq=7: last_seq=%d traffic=%d, want 7/700 (newer report applies)",
-			got.LastSeq, got.TrafficUsedBytes)
+	got := findUsage()
+	if got.TrafficUsedBytes != 300 || got.AgentBootID != "boot-2" || got.LastTotalBytes != 40 {
+		t.Fatalf("after second write: traffic=%d boot=%q total=%d, want 300/boot-2/40 (last write wins)",
+			got.TrafficUsedBytes, got.AgentBootID, got.LastTotalBytes)
 	}
 }
 
@@ -372,7 +347,6 @@ func runUsageWatermarkRoundtrip(t *testing.T, repo clients.Repository) {
 		TrafficUsedBytes: 700,
 		AgentBootID:      "boot-7f3a",
 		LastTotalBytes:   12345,
-		LastSeq:          99, // seq protocol still alive in this task
 		ObservedAt:       base.Add(3 * time.Minute),
 	}); err != nil {
 		t.Fatalf("UpsertUsage(watermark): %v", err)

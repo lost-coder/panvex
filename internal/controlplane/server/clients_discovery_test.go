@@ -707,7 +707,8 @@ func TestRestoreStoredClients_PrefersPersistedUsage(t *testing.T) {
 		UniqueIPsUsed:    12,
 		ActiveTCPConns:   5,
 		ActiveUniqueIPs:  7,
-		LastSeq:          42,
+		AgentBootID:      "boot-persisted",
+		LastTotalBytes:   700_000,
 		ObservedAt:       now,
 	}); err != nil {
 		t.Fatalf("UpsertClientUsage() error = %v", err)
@@ -739,13 +740,13 @@ func TestRestoreStoredClients_PrefersPersistedUsage(t *testing.T) {
 	}
 
 	got := mirrorUsage(server, clientID, agentID)
-	seq := mirrorLastUsageSeq(server, agentID)
 
 	if got.TrafficUsedBytes != 777_777 {
 		t.Fatalf("TrafficUsedBytes after restore = %d, want 777777 (from client_usage, not discovered)", got.TrafficUsedBytes)
 	}
-	if seq != 42 {
-		t.Fatalf("lastUsageSeq[%q] = %d, want 42 (carried over from persisted row)", agentID, seq)
+	if got.AgentBootID != "boot-persisted" || got.LastTotalBytes != 700_000 {
+		t.Fatalf("watermark after restore = (%q, %d), want (boot-persisted, 700000) (carried over from persisted row)",
+			got.AgentBootID, got.LastTotalBytes)
 	}
 }
 

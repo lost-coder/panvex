@@ -111,12 +111,6 @@ type DiscoveredRecord struct {
 // clientUsageSnapshot struct on controlplane/server.Server but is
 // exposed here for consumers that want to reason about client usage
 // without depending on server internals.
-//
-// Seq is the monotonic per-agent snapshot sequence number (proto field
-// 7). Zero means the field was absent on the wire (legacy agent or
-// internal synthetic entry); the dedup path treats zero as "unknown"
-// and accumulates unconditionally, preserving pre-P2-LOG-06 behavior.
-// See Service.ApplyUsageSnapshot for the dedup semantics.
 type UsageSnapshot struct {
 	ClientID           ClientID  `json:"client_id"`
 	TrafficUsedBytes   uint64    `json:"traffic_used_bytes"`
@@ -126,7 +120,27 @@ type UsageSnapshot struct {
 	QuotaUsedBytes     uint64    `json:"quota_used_bytes"`
 	QuotaLastResetUnix uint64    `json:"quota_last_reset_unix"`
 	ObservedAt         time.Time `json:"observed_at"`
-	Seq                uint64    `json:"seq"`
+}
+
+// UsageReport is one inbound per-(client, agent) usage row decoded from
+// the agent wire snapshot (P4, cumulative counters). TotalBytes is the
+// agent-process-cumulative traffic counter; the batch-level agent boot
+// id (counter epoch) travels alongside on the server's agentSnapshot.
+// The panel derives the accumulation delta against its stored watermark
+// — see server.mergeClientUsageBatch.
+//
+// Distinct from UsageSnapshot (the outbound mirror projection, where
+// TrafficUsedBytes is the panel-accumulated absolute) and from Usage
+// (the persisted row type).
+type UsageReport struct {
+	ClientID           ClientID
+	TotalBytes         uint64
+	UniqueIPsUsed      int
+	ActiveTCPConns     int
+	ActiveUniqueIPs    int
+	QuotaUsedBytes     uint64
+	QuotaLastResetUnix uint64
+	ObservedAt         time.Time
 }
 
 // Usage is the domain-level row type for the (client, agent) traffic
@@ -145,7 +159,6 @@ type Usage struct {
 	ActiveUniqueIPs    int
 	QuotaUsedBytes     uint64
 	QuotaLastResetUnix uint64
-	LastSeq            uint64
 	// AgentBootID + LastTotalBytes: P4 watermark, see
 	// storage.ClientUsageRecord.
 	AgentBootID    string

@@ -28,6 +28,7 @@ func (s *Server) handleSnapshotMessage(connectionCtx context.Context, agentID st
 
 	enqueueRegularSnapshot(connectionCtx, regularSnapshots, agentSnapshot{
 		AgentID:                  agentID,
+		AgentBootID:              snap.AgentBootId,
 		NodeName:                 snap.NodeName,
 		FleetGroupID:             snap.FleetGroupId,
 		Version:                  snap.Version,
@@ -65,11 +66,11 @@ func convertInstanceSnapshots(in []*gatewayrpc.InstanceSnapshot) []instanceSnaps
 	return instances
 }
 
-// convertClientUsageSnapshots translates wire client usage rows, resolving
-// missing client_ids by name. Returns the converted slice plus resolved/skipped
-// counters for logging.
-func (s *Server) convertClientUsageSnapshots(agentID string, in []*gatewayrpc.ClientUsageSnapshot, observedAt time.Time) ([]clientUsageSnapshot, int, int) {
-	result := make([]clientUsageSnapshot, 0, len(in))
+// convertClientUsageSnapshots translates wire client usage rows into
+// inbound usage reports, resolving missing client_ids by name. Returns
+// the converted slice plus resolved/skipped counters for logging.
+func (s *Server) convertClientUsageSnapshots(agentID string, in []*gatewayrpc.ClientUsageSnapshot, observedAt time.Time) ([]clients.UsageReport, int, int) {
+	result := make([]clients.UsageReport, 0, len(in))
 	var resolved, skipped int
 	for _, client := range in {
 		clientID := client.ClientId
@@ -81,18 +82,18 @@ func (s *Server) convertClientUsageSnapshots(agentID string, in []*gatewayrpc.Cl
 			continue
 		}
 		resolved++
-		result = append(result, clientUsageSnapshot{
-			ClientID:           clients.ClientID(clientID),
-			TrafficUsedBytes:   client.TrafficDeltaBytes,
+		result = append(result, clients.UsageReport{
+			ClientID: clients.ClientID(clientID),
+			// P4: the agent-process-cumulative counter; the delta is
+			// derived panel-side against the (boot_id, last_total)
+			// watermark in mergeClientUsageBatch.
+			TotalBytes:         client.TrafficTotalBytes,
 			UniqueIPsUsed:      int(client.UniqueIpsUsed),
 			ActiveTCPConns:     int(client.ActiveTcpConns),
 			ActiveUniqueIPs:    int(client.ActiveUniqueIps),
 			QuotaUsedBytes:     client.QuotaUsedBytes,
 			QuotaLastResetUnix: client.QuotaLastResetUnix,
 			ObservedAt:         observedAt,
-			// P2-LOG-06 / L-07: carry the agent-side monotonic snapshot
-			// sequence so the CP can dedup replays/restarts.
-			Seq: client.Seq,
 		})
 	}
 	return result, resolved, skipped
