@@ -118,7 +118,6 @@ CREATE TABLE client_usage (
     unique_ips_used   INTEGER NOT NULL DEFAULT 0,
     active_tcp_conns  INTEGER NOT NULL DEFAULT 0,
     active_unique_ips INTEGER NOT NULL DEFAULT 0,
-    last_seq          INTEGER NOT NULL DEFAULT 0,
     observed_at_unix  INTEGER NOT NULL, quota_used_bytes INTEGER NOT NULL DEFAULT 0, quota_last_reset_unix INTEGER NOT NULL DEFAULT 0, agent_boot_id TEXT NOT NULL DEFAULT '', last_total_bytes INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (client_id, agent_id),
     FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE,
@@ -698,4 +697,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (54, 1),
   (55, 1),
   (56, 1),
-  (57, 1);
+  (57, 1),
+  (58, 1);

@@ -727,65 +727,6 @@ func TestServerConnectRateLimitRejectsBurstReconnects(t *testing.T) {
 	}
 }
 
-func usageSnapshotMessageForTest() *gatewayrpc.ConnectClientMessage {
-	return &gatewayrpc.ConnectClientMessage{
-		Body: &gatewayrpc.ConnectClientMessage_Snapshot{
-			Snapshot: &gatewayrpc.Snapshot{
-				AgentId:        "agent-1",
-				ObservedAtUnix: 1,
-				HasClientUsage: true,
-				Clients: []*gatewayrpc.ClientUsageSnapshot{
-					{ClientId: "client-1", TrafficDeltaBytes: 100, Seq: 5},
-				},
-			},
-		},
-	}
-}
-
-// TestEnqueueInboundAgentMessageDoesNotDropUsageSnapshot guards IN-C1: a
-// snapshot carrying one-shot client-usage deltas must NOT be dropped under
-// load (drop-oldest) — it blocks until accepted, preserving the queued
-// message instead of discarding traffic that the agent never resends.
-func TestEnqueueInboundAgentMessageDoesNotDropUsageSnapshot(t *testing.T) {
-	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
-	regularInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
-	stale := heartbeatMessageForTest("stale")
-	regularInbound <- stale // queue full
-
-	usage := usageSnapshotMessageForTest()
-	done := make(chan bool, 1)
-	go func() {
-		done <- enqueueInboundAgentMessage(context.Background(), priorityInbound, regularInbound, usage, nil)
-	}()
-
-	// The usage enqueue must block rather than drop the stale heartbeat.
-	select {
-	case got := <-regularInbound:
-		if got != stale {
-			t.Fatal("usage snapshot dropped the stale heartbeat; want blocking, not drop-oldest")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout draining stale heartbeat")
-	}
-	// After draining, the blocked enqueue completes and delivers the usage snapshot.
-	select {
-	case ok := <-done:
-		if !ok {
-			t.Fatal("enqueueInboundAgentMessage(usage) = false, want true")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("usage enqueue did not complete after space freed")
-	}
-	select {
-	case got := <-regularInbound:
-		if got != usage {
-			t.Fatal("usage snapshot not delivered to regularInbound")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("usage snapshot missing from regularInbound")
-	}
-}
-
 func heartbeatMessageForTest(nodeName string) *gatewayrpc.ConnectClientMessage {
 	return &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_Heartbeat{

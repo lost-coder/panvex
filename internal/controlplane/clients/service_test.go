@@ -22,11 +22,13 @@ func TestServiceSequenceHelpers(t *testing.T) {
 		t.Fatalf("NextDiscoveredID: got %q", got)
 	}
 
-	svc.recoverSequencesFromRecords(
+	svc.mu.Lock()
+	svc.recoverSequencesLocked(
 		[]string{"client-0000007", "bogus"},
 		[]string{"client-assignment-0000100"},
 		[]string{"discovered-0000050"},
 	)
+	svc.mu.Unlock()
 	if got := svc.NextClientID(); got != "client-0000008" {
 		t.Fatalf("after recover: NextClientID = %q want client-0000008", got)
 	}

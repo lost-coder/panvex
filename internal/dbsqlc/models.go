@@ -130,7 +130,6 @@ type ClientUsage struct {
 	UniqueIpsUsed      int32
 	ActiveTcpConns     int32
 	ActiveUniqueIps    int32
-	LastSeq            int64
 	ObservedAt         time.Time
 	QuotaUsedBytes     int64
 	QuotaLastResetUnix int64

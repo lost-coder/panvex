@@ -2,11 +2,11 @@
 -- back from agents.
 
 -- name: ListClientUsageForClient :many
--- Column order matches the physical table (quota_* were ALTER-appended by
--- 0043, watermark columns by 0057) so sqlc maps the row straight onto
--- dbsqlc.ClientUsage.
+-- Column order matches the physical table (quota_* appended by 0043,
+-- watermark by 0057, last_seq dropped by 0058) so sqlc maps the row
+-- straight onto dbsqlc.ClientUsage.
 SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
-       active_tcp_conns, active_unique_ips, last_seq, observed_at,
+       active_tcp_conns, active_unique_ips, observed_at,
        quota_used_bytes, quota_last_reset_unix, agent_boot_id,
        last_total_bytes
 FROM client_usage
@@ -14,7 +14,7 @@ WHERE client_id = $1;
 
 -- name: ListAllClientUsage :many
 SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
-       active_tcp_conns, active_unique_ips, last_seq, observed_at,
+       active_tcp_conns, active_unique_ips, observed_at,
        quota_used_bytes, quota_last_reset_unix, agent_boot_id,
        last_total_bytes
 FROM client_usage

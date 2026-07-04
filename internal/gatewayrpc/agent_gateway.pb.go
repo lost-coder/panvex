@@ -374,21 +374,14 @@ func (x *InstanceSnapshot) GetManagedConfigJson() string {
 }
 
 type ClientUsageSnapshot struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	ClientId string                 `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	// Legacy one-shot delta protocol (P2-LOG-06 / L-07). Superseded by
-	// traffic_total_bytes + Snapshot.agent_boot_id (P4, cumulative
-	// counters); both fields are removed once agent and panel run the
-	// cumulative protocol.
-	TrafficDeltaBytes uint64 `protobuf:"varint,2,opt,name=traffic_delta_bytes,json=trafficDeltaBytes,proto3" json:"traffic_delta_bytes,omitempty"`
-	UniqueIpsUsed     int32  `protobuf:"varint,3,opt,name=unique_ips_used,json=uniqueIpsUsed,proto3" json:"unique_ips_used,omitempty"`
-	ActiveTcpConns    int32  `protobuf:"varint,4,opt,name=active_tcp_conns,json=activeTcpConns,proto3" json:"active_tcp_conns,omitempty"`
-	ActiveUniqueIps   int32  `protobuf:"varint,5,opt,name=active_unique_ips,json=activeUniqueIps,proto3" json:"active_unique_ips,omitempty"`
-	ClientName        string `protobuf:"bytes,6,opt,name=client_name,json=clientName,proto3" json:"client_name,omitempty"`
-	// Legacy: see traffic_delta_bytes.
-	Seq                uint64 `protobuf:"varint,7,opt,name=seq,proto3" json:"seq,omitempty"`
-	QuotaUsedBytes     uint64 `protobuf:"varint,8,opt,name=quota_used_bytes,json=quotaUsedBytes,proto3" json:"quota_used_bytes,omitempty"`
-	QuotaLastResetUnix uint64 `protobuf:"varint,9,opt,name=quota_last_reset_unix,json=quotaLastResetUnix,proto3" json:"quota_last_reset_unix,omitempty"`
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ClientId           string                 `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	UniqueIpsUsed      int32                  `protobuf:"varint,3,opt,name=unique_ips_used,json=uniqueIpsUsed,proto3" json:"unique_ips_used,omitempty"`
+	ActiveTcpConns     int32                  `protobuf:"varint,4,opt,name=active_tcp_conns,json=activeTcpConns,proto3" json:"active_tcp_conns,omitempty"`
+	ActiveUniqueIps    int32                  `protobuf:"varint,5,opt,name=active_unique_ips,json=activeUniqueIps,proto3" json:"active_unique_ips,omitempty"`
+	ClientName         string                 `protobuf:"bytes,6,opt,name=client_name,json=clientName,proto3" json:"client_name,omitempty"`
+	QuotaUsedBytes     uint64                 `protobuf:"varint,8,opt,name=quota_used_bytes,json=quotaUsedBytes,proto3" json:"quota_used_bytes,omitempty"`
+	QuotaLastResetUnix uint64                 `protobuf:"varint,9,opt,name=quota_last_reset_unix,json=quotaLastResetUnix,proto3" json:"quota_last_reset_unix,omitempty"`
 	// Cumulative traffic counted by THIS agent process since its start —
 	// NOT Telemt's raw counter: the agent absorbs Telemt restarts locally
 	// and accumulates deltas into a per-client monotonic total. Paired
@@ -440,13 +433,6 @@ func (x *ClientUsageSnapshot) GetClientId() string {
 	return ""
 }
 
-func (x *ClientUsageSnapshot) GetTrafficDeltaBytes() uint64 {
-	if x != nil {
-		return x.TrafficDeltaBytes
-	}
-	return 0
-}
-
 func (x *ClientUsageSnapshot) GetUniqueIpsUsed() int32 {
 	if x != nil {
 		return x.UniqueIpsUsed
@@ -473,13 +459,6 @@ func (x *ClientUsageSnapshot) GetClientName() string {
 		return x.ClientName
 	}
 	return ""
-}
-
-func (x *ClientUsageSnapshot) GetSeq() uint64 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
 }
 
 func (x *ClientUsageSnapshot) GetQuotaUsedBytes() uint64 {
@@ -3905,20 +3884,18 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\vconnections\x18\x05 \x01(\x05R\vconnections\x12\x1b\n" +
 	"\tread_only\x18\x06 \x01(\bR\breadOnly\x12.\n" +
 	"\x13managed_config_hash\x18\a \x01(\tR\x11managedConfigHash\x12.\n" +
-	"\x13managed_config_json\x18\b \x01(\tR\x11managedConfigJson\"\xa0\x03\n" +
+	"\x13managed_config_json\x18\b \x01(\tR\x11managedConfigJson\"\x84\x03\n" +
 	"\x13ClientUsageSnapshot\x12\x1b\n" +
-	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +
-	"\x13traffic_delta_bytes\x18\x02 \x01(\x04R\x11trafficDeltaBytes\x12&\n" +
+	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12&\n" +
 	"\x0funique_ips_used\x18\x03 \x01(\x05R\runiqueIpsUsed\x12(\n" +
 	"\x10active_tcp_conns\x18\x04 \x01(\x05R\x0eactiveTcpConns\x12*\n" +
 	"\x11active_unique_ips\x18\x05 \x01(\x05R\x0factiveUniqueIps\x12\x1f\n" +
 	"\vclient_name\x18\x06 \x01(\tR\n" +
-	"clientName\x12\x10\n" +
-	"\x03seq\x18\a \x01(\x04R\x03seq\x12(\n" +
+	"clientName\x12(\n" +
 	"\x10quota_used_bytes\x18\b \x01(\x04R\x0equotaUsedBytes\x121\n" +
 	"\x15quota_last_reset_unix\x18\t \x01(\x04R\x12quotaLastResetUnix\x12.\n" +
 	"\x13traffic_total_bytes\x18\n" +
-	" \x01(\x04R\x11trafficTotalBytes\"o\n" +
+	" \x01(\x04R\x11trafficTotalBytesJ\x04\b\x02\x10\x03J\x04\b\a\x10\bR\x13traffic_delta_bytesR\x03seq\"o\n" +
 	"\x10ClientIPSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x1d\n" +
 	"\n" +

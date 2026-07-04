@@ -76,7 +76,9 @@ func makeUsageSnapshotTick(connectionCtx context.Context, agent *runtime.Agent, 
 			return
 		}
 		if connectionCtx.Err() == nil {
-			slog.Warn("usage snapshot dropped due to outbound backpressure")
+			// P4: benign — totals are idempotent, the next tick's snapshot
+			// carries the full cumulative counter, so nothing is lost.
+			slog.Debug("usage snapshot dropped due to outbound backpressure; totals catch up next tick")
 		}
 	}
 }

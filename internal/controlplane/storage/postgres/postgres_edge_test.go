@@ -190,7 +190,8 @@ func TestUpsertClientUsageBulkLargeBatch(t *testing.T) {
 		batch = append(batch, storage.ClientUsageRecord{
 			ClientID: client.ID, AgentID: agentID,
 			TrafficUsedBytes: uint64(i + 1),
-			LastSeq:          uint64(i + 1),
+			AgentBootID:      "boot-1",
+			LastTotalBytes:   uint64(i + 1),
 			ObservedAt:       now,
 		})
 	}
@@ -256,7 +257,8 @@ func TestConcurrentUpsertClientUsageBulkSameKey(t *testing.T) {
 				rec := storage.ClientUsageRecord{
 					ClientID: client.ID, AgentID: agent.ID,
 					TrafficUsedBytes: uint64(writer*1000 + i),
-					LastSeq:          uint64(writer*1000 + i),
+					AgentBootID:      "boot-1",
+					LastTotalBytes:   uint64(writer*1000 + i),
 					ObservedAt:       now.Add(time.Duration(writer*1000+i) * time.Millisecond),
 				}
 				if err := store.UpsertClientUsageBulk(ctx, []storage.ClientUsageRecord{rec}); err != nil {

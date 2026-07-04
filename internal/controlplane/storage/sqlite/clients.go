@@ -332,35 +332,29 @@ func (s *Store) ListClientDeployments(ctx context.Context, clientID string) ([]s
 }
 
 // UpsertClientUsage inserts or updates one (client, agent) usage row.
-// last_seq is the agent's per-connection report cursor; the ON CONFLICT
-// DO UPDATE only fires when the incoming last_seq is strictly newer than
-// the stored one, so an out-of-order or duplicate/older report is a no-op
-// rather than regressing the stored counters (audit finding: monotonicity
-// guard). A brand-new (client, agent) pair always inserts normally since
-// ON CONFLICT only triggers against an existing row.
+// Unconditional last-write-wins upsert (P4): ordering/duplicate protection
+// lives upstream in the panel's watermark derivation, not in SQL.
 func (s *Store) UpsertClientUsage(ctx context.Context, r storage.ClientUsageRecord) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO client_usage (
 			client_id, agent_id, traffic_used_bytes, unique_ips_used,
-			active_tcp_conns, active_unique_ips, last_seq, observed_at_unix,
+			active_tcp_conns, active_unique_ips, observed_at_unix,
 			agent_boot_id, last_total_bytes
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(client_id, agent_id) DO UPDATE SET
 			traffic_used_bytes = excluded.traffic_used_bytes,
 			unique_ips_used    = excluded.unique_ips_used,
 			active_tcp_conns   = excluded.active_tcp_conns,
 			active_unique_ips  = excluded.active_unique_ips,
-			last_seq           = excluded.last_seq,
 			observed_at_unix   = excluded.observed_at_unix,
 			agent_boot_id      = excluded.agent_boot_id,
 			last_total_bytes   = excluded.last_total_bytes
-		WHERE excluded.last_seq > client_usage.last_seq
 	`,
 		r.ClientID, r.AgentID,
 		int64(r.TrafficUsedBytes), r.UniqueIPsUsed,
 		r.ActiveTCPConns, r.ActiveUniqueIPs,
-		int64(r.LastSeq), toUnix(r.ObservedAt),
+		toUnix(r.ObservedAt),
 		r.AgentBootID, int64(r.LastTotalBytes))
 	return err
 }
@@ -368,7 +362,7 @@ func (s *Store) UpsertClientUsage(ctx context.Context, r storage.ClientUsageReco
 func (s *Store) ListClientUsage(ctx context.Context) ([]storage.ClientUsageRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
-			active_tcp_conns, active_unique_ips, last_seq, observed_at_unix,
+			active_tcp_conns, active_unique_ips, observed_at_unix,
 			agent_boot_id, last_total_bytes
 		FROM client_usage
 	`)
@@ -380,16 +374,15 @@ func (s *Store) ListClientUsage(ctx context.Context) ([]storage.ClientUsageRecor
 	result := make([]storage.ClientUsageRecord, 0)
 	for rows.Next() {
 		var r storage.ClientUsageRecord
-		var traffic, lastSeq int64
+		var traffic int64
 		var observedAt int64
 		var lastTotal int64
 		if err := rows.Scan(&r.ClientID, &r.AgentID, &traffic, &r.UniqueIPsUsed,
-			&r.ActiveTCPConns, &r.ActiveUniqueIPs, &lastSeq, &observedAt,
+			&r.ActiveTCPConns, &r.ActiveUniqueIPs, &observedAt,
 			&r.AgentBootID, &lastTotal); err != nil {
 			return nil, err
 		}
 		r.TrafficUsedBytes = uint64(traffic)
-		r.LastSeq = uint64(lastSeq)
 		r.LastTotalBytes = uint64(lastTotal)
 		r.ObservedAt = fromUnix(observedAt)
 		result = append(result, r)
