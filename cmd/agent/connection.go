@@ -166,7 +166,23 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 			}()
 		}
 		connectionCtx, cancelConnection := context.WithCancel(streamCtx)
-		defer cancelConnection()
+
+		// Audit #5: bridge local teardown into the transport layer. The
+		// gRPC stream is a child of dialCtx, NOT of connectionCtx, so
+		// cancelConnection alone (renewal, switch_transport_mode, send
+		// errors) leaves the inbound pump blocked in stream.Recv() until
+		// the SERVER closes the stream — and streamWG.Wait() below then
+		// deadlocks the reconnect. Cancelling dialCtx tears the stream
+		// down from our side: dial mode cancels the Connect RPC context,
+		// listen mode graceful-stops the in-agent gRPC server. The
+		// goroutine exits with dialCtx (runConnection defers cancelDial).
+		go func() {
+			select {
+			case <-connectionCtx.Done():
+				cancelDial()
+			case <-dialCtx.Done():
+			}
+		}()
 
 		// Register the cancel func so a switch_transport_mode job can drop this
 		// connection promptly, causing the reconnect loop to re-iterate and pick
@@ -175,12 +191,6 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 		tr.cancel = cancelConnection
 		tr.mu.Unlock()
 
-		// Q4.U-P-08: graceful drain. Every goroutine spawned for this
-		// connection adds 1 to streamWG and defers wg.Done(); RunOnce
-		// blocks on wg.Wait() before returning so a quick reconnect cannot
-		// outpace the previous connection's drain. The defer ordering is
-		// reverse-source: cancelConnection runs FIRST (closing connectionCtx),
-		// then wg.Wait runs and joins the spawned goroutines.
 		var streamWG sync.WaitGroup
 
 		criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 32)
@@ -190,10 +200,20 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 			jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
 			jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
 		}
+		// Q4.U-P-08: graceful drain. Every goroutine spawned for this
+		// connection adds 1 to streamWG and defers wg.Done(); RunOnce
+		// blocks on wg.Wait() before returning so a quick reconnect cannot
+		// outpace the previous connection's drain. Defer ordering (LIFO):
+		// cancelConnection is registered LAST so it runs FIRST — it closes
+		// connectionCtx and, via the bridge goroutine above, the transport
+		// stream; only then does streamWG.Wait() join the spawned
+		// goroutines, including the inbound pump that stream.Recv() has
+		// just released.
 		defer func() {
 			streamWG.Wait()
 			releaseQueuedJobs(jobInflight, jobQueues)
 		}()
+		defer cancelConnection()
 		sendErrors := make(chan error, 1)
 		sendErrorAndCancel := func(sendErr error) {
 			sendError(sendErrors, sendErr)
@@ -370,6 +390,28 @@ func runConnectionMainLoop(
 ) (agentstate.Credentials, error) {
 	for {
 		select {
+		case <-connectionCtx.Done():
+			// Teardown initiated elsewhere (switch_transport_mode job,
+			// stream close, supervisor shutdown). Return clean — the
+			// reconnect loop re-reads state from disk and decides what
+			// to do next.
+			//
+			// BUT: on a SERVER-initiated close, sendErrorAndCancel writes
+			// to sendErrors and THEN cancels connectionCtx, so both cases
+			// are ready and select picks at random. If Done() won we would
+			// return nil, and the reconnect loop (runtime.go ~441) treats
+			// nil as a clean teardown → reconnectAttempt = 0, discarding
+			// the exponential backoff + jitter (D1 herd-damping) right when
+			// the panel is restarting and every agent reconnects at once.
+			// Prefer a pending send error so a server-close still counts as
+			// a failure for backoff; only a genuine local teardown (no
+			// queued error) returns nil.
+			select {
+			case err := <-sendErrors:
+				return credentialsState, err
+			default:
+			}
+			return credentialsState, nil
 		case err := <-sendErrors:
 			cancelConnection()
 			return credentialsState, err
