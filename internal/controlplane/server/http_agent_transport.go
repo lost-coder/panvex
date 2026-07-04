@@ -162,6 +162,7 @@ func (s *Server) handleUpdateAgentTransportMode() http.HandlerFunc {
 		s.mu.Unlock()
 
 		s.notifyAgentSessions([]string{agentID})
+		s.publishJobCreated(job)
 
 		// Notify the transport manager so outbound supervisors are
 		// spawned or torn down immediately (best-effort: no error if nil).

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
-	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -281,10 +280,7 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 			"requested_role":    user.Role,
 			"requested_ttl_sec": request.TTLSeconds,
 		})
-		s.events.Publish(eventbus.Event{
-			Type: "jobs.created",
-			Data: job,
-		})
+		s.publishJobCreated(job)
 		// L-2: redact PayloadJSON before returning, consistent with the
 		// /api/jobs list endpoints. Operator-created jobs carry no secret
 		// today, but centralising the scrub keeps a future secret-bearing

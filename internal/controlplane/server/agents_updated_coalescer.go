@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
+	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
 )
 
 // agentsUpdatedFlushInterval is the latest-wins coalescing window for
@@ -49,7 +50,7 @@ func (c *agentsUpdatedCoalescer) flush(hub *eventbus.Hub) {
 	c.mu.Unlock()
 
 	for _, agent := range batch {
-		hub.Publish(eventbus.Event{Type: "agents.updated", Data: agent})
+		hub.Publish(eventbus.Event{Type: cpevents.TypeAgentsUpdated, Data: agent})
 	}
 }
 

@@ -579,6 +579,7 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 		}
 
 		s.notifyAgentSessions(job.TargetAgentIDs)
+		s.publishJobCreated(job)
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.update.dispatched", agentID, map[string]any{
 			"version": targetVersion, "node_name": agent.NodeName,
 		})
