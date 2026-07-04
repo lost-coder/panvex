@@ -115,6 +115,12 @@ func ExtractBinaryFromArchive(archivePath string) (string, error) {
 	var hdr *tar.Header
 	for {
 		hdr, err = tr.Next()
+		if errors.Is(err, io.EOF) {
+			// Archive exhausted without a regular-file entry (empty or
+			// dirs/symlinks only). Spell it out — the bare "read tar entry:
+			// EOF" wrapping is technically correct but unactionable.
+			return "", errors.New("read tar entry: archive has no regular file entries")
+		}
 		if err != nil {
 			return "", fmt.Errorf("read tar entry: %w", err)
 		}

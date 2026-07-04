@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -127,6 +128,11 @@ func TestExtractBinaryFromArchiveOnlyDirectoryRejected(t *testing.T) {
 	_, err := ExtractBinaryFromArchive(archivePath)
 	if err == nil {
 		t.Fatal("ExtractBinaryFromArchive() error = nil, want error when archive has no regular-file entry")
+	}
+	// The io.EOF path must surface an actionable message, not a bare
+	// "read tar entry: EOF".
+	if !strings.Contains(err.Error(), "no regular file entries") {
+		t.Fatalf("ExtractBinaryFromArchive() error = %q, want it to mention 'no regular file entries'", err)
 	}
 }
 

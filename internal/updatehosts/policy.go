@@ -83,10 +83,17 @@ func (p HostPolicy) CheckURL(raw string) error {
 	if u.Scheme != "https" {
 		return fmt.Errorf("url %q: only https is allowed", raw)
 	}
+	// Reject hostless URLs regardless of allow-list state: a URL with no host
+	// can never be a legitimate download target, and validating it here (not
+	// deferring to a murkier downstream dial error) keeps CheckURL consistent
+	// with the agent updater, which rejects hostless URLs unconditionally.
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return fmt.Errorf("url %q: missing host", raw)
+	}
 	if p.disabled {
 		return nil
 	}
-	host := strings.ToLower(u.Hostname())
 	if _, ok := p.allowed[host]; !ok {
 		return fmt.Errorf("url %q: host %q is not in the allow-list", raw, host)
 	}
