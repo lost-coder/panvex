@@ -30,20 +30,14 @@ func (s *Store) GetUpdateState(ctx context.Context) (json.RawMessage, error) {
 }
 
 func (s *Store) putUpdateConfig(ctx context.Context, key string, data json.RawMessage) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertUpdateConfig(ctx, dbsqlc.UpsertUpdateConfigParams{
+	return dbsqlc.New(s.db).UpsertUpdateConfig(ctx, dbsqlc.UpsertUpdateConfigParams{
 		Key:   key,
 		Value: string(data),
 	})
 }
 
 func (s *Store) getUpdateConfig(ctx context.Context, key string) (json.RawMessage, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	value, err := dbsqlc.New(s.sqlDB).GetUpdateConfig(ctx, key)
+	value, err := dbsqlc.New(s.db).GetUpdateConfig(ctx, key)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

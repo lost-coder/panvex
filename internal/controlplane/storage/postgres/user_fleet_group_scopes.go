@@ -14,10 +14,7 @@ import (
 // ListUserFleetGroupScopes returns every fleet_group_id the user is
 // scoped to. An empty slice means "global".
 func (s *Store) ListUserFleetGroupScopes(ctx context.Context, userID string) ([]string, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListUserFleetGroupScopes(ctx, userID)
+	rows, err := dbsqlc.New(s.db).ListUserFleetGroupScopes(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

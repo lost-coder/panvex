@@ -50,10 +50,7 @@ func loginLockoutFromRow(row dbsqlc.LoginLockout) storage.LoginLockoutRecord {
 }
 
 func (s *Store) UpsertLoginLockout(ctx context.Context, record storage.LoginLockoutRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertLoginLockout(ctx, dbsqlc.UpsertLoginLockoutParams{
+	return dbsqlc.New(s.db).UpsertLoginLockout(ctx, dbsqlc.UpsertLoginLockoutParams{
 		Username:  record.Username,
 		Failures:  failuresToInt32(record.Failures),
 		LockedAt:  toNullableTime(record.LockedAt),
@@ -62,10 +59,7 @@ func (s *Store) UpsertLoginLockout(ctx context.Context, record storage.LoginLock
 }
 
 func (s *Store) GetLoginLockout(ctx context.Context, username string) (storage.LoginLockoutRecord, error) {
-	if s.sqlDB == nil {
-		return storage.LoginLockoutRecord{}, errTxBoundStore
-	}
-	row, err := dbsqlc.New(s.sqlDB).GetLoginLockout(ctx, username)
+	row, err := dbsqlc.New(s.db).GetLoginLockout(ctx, username)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.LoginLockoutRecord{}, storage.ErrNotFound
@@ -76,17 +70,11 @@ func (s *Store) GetLoginLockout(ctx context.Context, username string) (storage.L
 }
 
 func (s *Store) DeleteLoginLockout(ctx context.Context, username string) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).DeleteLoginLockout(ctx, username)
+	return dbsqlc.New(s.db).DeleteLoginLockout(ctx, username)
 }
 
 func (s *Store) ListLoginLockouts(ctx context.Context) ([]storage.LoginLockoutRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListLoginLockouts(ctx)
+	rows, err := dbsqlc.New(s.db).ListLoginLockouts(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -98,8 +86,5 @@ func (s *Store) ListLoginLockouts(ctx context.Context) ([]storage.LoginLockoutRe
 }
 
 func (s *Store) DeleteExpiredLoginLockouts(ctx context.Context, before time.Time) (int64, error) {
-	if s.sqlDB == nil {
-		return 0, errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).DeleteExpiredLoginLockouts(ctx, before.UTC())
+	return dbsqlc.New(s.db).DeleteExpiredLoginLockouts(ctx, before.UTC())
 }

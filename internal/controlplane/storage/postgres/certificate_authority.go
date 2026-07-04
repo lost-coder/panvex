@@ -14,10 +14,7 @@ const certificateAuthorityScope = "control-plane-root-ca"
 // R-Q-03: routed through dbsqlc.
 
 func (s *Store) PutCertificateAuthority(ctx context.Context, authority storage.CertificateAuthorityRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertCertificateAuthority(ctx, dbsqlc.UpsertCertificateAuthorityParams{
+	return dbsqlc.New(s.db).UpsertCertificateAuthority(ctx, dbsqlc.UpsertCertificateAuthorityParams{
 		Scope:         certificateAuthorityScope,
 		CaPem:         authority.CAPEM,
 		PrivateKeyPem: authority.PrivateKeyPEM,
@@ -26,10 +23,7 @@ func (s *Store) PutCertificateAuthority(ctx context.Context, authority storage.C
 }
 
 func (s *Store) GetCertificateAuthority(ctx context.Context) (storage.CertificateAuthorityRecord, error) {
-	if s.sqlDB == nil {
-		return storage.CertificateAuthorityRecord{}, errTxBoundStore
-	}
-	row, err := dbsqlc.New(s.sqlDB).GetCertificateAuthority(ctx, certificateAuthorityScope)
+	row, err := dbsqlc.New(s.db).GetCertificateAuthority(ctx, certificateAuthorityScope)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.CertificateAuthorityRecord{}, storage.ErrNotFound

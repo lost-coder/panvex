@@ -22,10 +22,7 @@ func userAppearanceFromRow(row dbsqlc.UserAppearance) storage.UserAppearanceReco
 }
 
 func (s *Store) PutUserAppearance(ctx context.Context, appearance storage.UserAppearanceRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertUserAppearance(ctx, dbsqlc.UpsertUserAppearanceParams{
+	return dbsqlc.New(s.db).UpsertUserAppearance(ctx, dbsqlc.UpsertUserAppearanceParams{
 		UserID:    appearance.UserID,
 		Theme:     appearance.Theme,
 		Density:   appearance.Density,
@@ -35,10 +32,7 @@ func (s *Store) PutUserAppearance(ctx context.Context, appearance storage.UserAp
 }
 
 func (s *Store) GetUserAppearance(ctx context.Context, userID string) (storage.UserAppearanceRecord, error) {
-	if s.sqlDB == nil {
-		return storage.UserAppearanceRecord{}, errTxBoundStore
-	}
-	row, err := dbsqlc.New(s.sqlDB).GetUserAppearance(ctx, userID)
+	row, err := dbsqlc.New(s.db).GetUserAppearance(ctx, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return defaultUserAppearanceRecord(userID), nil
@@ -49,10 +43,7 @@ func (s *Store) GetUserAppearance(ctx context.Context, userID string) (storage.U
 }
 
 func (s *Store) ListUserAppearances(ctx context.Context) ([]storage.UserAppearanceRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListUserAppearances(ctx)
+	rows, err := dbsqlc.New(s.db).ListUserAppearances(ctx)
 	if err != nil {
 		return nil, err
 	}

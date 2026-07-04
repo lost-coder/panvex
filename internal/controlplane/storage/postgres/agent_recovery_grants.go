@@ -49,17 +49,11 @@ func grantFromRow(row dbsqlc.AgentCertificateRecoveryGrant) storage.AgentCertifi
 }
 
 func (s *Store) PutAgentCertificateRecoveryGrant(ctx context.Context, grant storage.AgentCertificateRecoveryGrantRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertAgentCertificateRecoveryGrant(ctx, grantToParams(grant))
+	return dbsqlc.New(s.db).UpsertAgentCertificateRecoveryGrant(ctx, grantToParams(grant))
 }
 
 func (s *Store) ListAgentCertificateRecoveryGrants(ctx context.Context) ([]storage.AgentCertificateRecoveryGrantRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListAgentCertificateRecoveryGrants(ctx)
+	rows, err := dbsqlc.New(s.db).ListAgentCertificateRecoveryGrants(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -71,10 +65,7 @@ func (s *Store) ListAgentCertificateRecoveryGrants(ctx context.Context) ([]stora
 }
 
 func (s *Store) GetAgentCertificateRecoveryGrant(ctx context.Context, agentID string) (storage.AgentCertificateRecoveryGrantRecord, error) {
-	if s.sqlDB == nil {
-		return storage.AgentCertificateRecoveryGrantRecord{}, errTxBoundStore
-	}
-	row, err := dbsqlc.New(s.sqlDB).GetAgentCertificateRecoveryGrant(ctx, agentID)
+	row, err := dbsqlc.New(s.db).GetAgentCertificateRecoveryGrant(ctx, agentID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.AgentCertificateRecoveryGrantRecord{}, storage.ErrNotFound

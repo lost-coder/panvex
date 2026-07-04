@@ -12,10 +12,7 @@ import (
 // GetAgentConfigTarget returns the operator-desired Telemt config for one scope.
 // Returns storage.ErrNotFound when no row exists for the given scopeType+scopeID pair.
 func (s *Store) GetAgentConfigTarget(ctx context.Context, scopeType, scopeID string) (storage.AgentConfigTargetRecord, error) {
-	if s.sqlDB == nil {
-		return storage.AgentConfigTargetRecord{}, errTxBoundStore
-	}
-	row, err := dbsqlc.New(s.sqlDB).GetAgentConfigTarget(ctx, dbsqlc.GetAgentConfigTargetParams{
+	row, err := dbsqlc.New(s.db).GetAgentConfigTarget(ctx, dbsqlc.GetAgentConfigTargetParams{
 		ScopeType: scopeType,
 		ScopeID:   scopeID,
 	})
@@ -37,10 +34,7 @@ func (s *Store) GetAgentConfigTarget(ctx context.Context, scopeType, scopeID str
 // ListAgentConfigTargets returns all operator-desired Telemt config targets,
 // ordered by scope_type ASC, scope_id ASC.
 func (s *Store) ListAgentConfigTargets(ctx context.Context) ([]storage.AgentConfigTargetRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListAgentConfigTargets(ctx)
+	rows, err := dbsqlc.New(s.db).ListAgentConfigTargets(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -61,10 +55,7 @@ func (s *Store) ListAgentConfigTargets(ctx context.Context) ([]storage.AgentConf
 // for one scope. On conflict (scope_type, scope_id) the sections_json and
 // updated_at are overwritten.
 func (s *Store) UpsertAgentConfigTarget(ctx context.Context, rec storage.AgentConfigTargetRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertAgentConfigTarget(ctx, dbsqlc.UpsertAgentConfigTargetParams{
+	return dbsqlc.New(s.db).UpsertAgentConfigTarget(ctx, dbsqlc.UpsertAgentConfigTargetParams{
 		ScopeType:    rec.ScopeType,
 		ScopeID:      rec.ScopeID,
 		SectionsJson: rec.SectionsJSON,
@@ -76,10 +67,7 @@ func (s *Store) UpsertAgentConfigTarget(ctx context.Context, rec storage.AgentCo
 // DeleteAgentConfigTarget removes the config target row for one scope.
 // Returns the number of rows deleted (0 if the row did not exist).
 func (s *Store) DeleteAgentConfigTarget(ctx context.Context, scopeType, scopeID string) (int64, error) {
-	if s.sqlDB == nil {
-		return 0, errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).DeleteAgentConfigTarget(ctx, dbsqlc.DeleteAgentConfigTargetParams{
+	return dbsqlc.New(s.db).DeleteAgentConfigTarget(ctx, dbsqlc.DeleteAgentConfigTargetParams{
 		ScopeType: scopeType,
 		ScopeID:   scopeID,
 	})

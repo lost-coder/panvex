@@ -154,17 +154,17 @@ func TestExplainAnalyze_HotQueries(t *testing.T) {
 
 // explainFixtures bundles the seeded IDs the query catalog needs.
 type explainFixtures struct {
-	AgentID         string
-	OtherAgentID    string
-	ClientID        string
-	JobID           string
-	JobCreatedAt    time.Time
-	WindowStart     time.Time
-	WindowEnd       time.Time
-	AuditAfterID    string
-	AuditAfterTime  time.Time
-	JobAfterID      string
-	JobAfterTime    time.Time
+	AgentID        string
+	OtherAgentID   string
+	ClientID       string
+	JobID          string
+	JobCreatedAt   time.Time
+	WindowStart    time.Time
+	WindowEnd      time.Time
+	AuditAfterID   string
+	AuditAfterTime time.Time
+	JobAfterID     string
+	JobAfterTime   time.Time
 }
 
 // seedExplainFixtures populates the bare minimum of rows the EXPLAIN

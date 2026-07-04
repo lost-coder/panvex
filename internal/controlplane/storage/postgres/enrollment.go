@@ -17,10 +17,7 @@ import (
 // path gains compile-time type safety on every column. The dead
 // value_hash column was dropped in migration 0044 (L-4).
 func (s *Store) PutEnrollmentToken(ctx context.Context, token storage.EnrollmentTokenRecord) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertEnrollmentToken(ctx, enrollmentTokenToUpsertParams(token))
+	return dbsqlc.New(s.db).UpsertEnrollmentToken(ctx, enrollmentTokenToUpsertParams(token))
 }
 
 // enrollmentTokenToUpsertParams is the domain-DTO → dbsqlc params bridge.
@@ -51,10 +48,7 @@ func enrollmentTokenToUpsertParams(token storage.EnrollmentTokenRecord) dbsqlc.U
 // dbsqlc.EnrollmentToken to the storage shape lives in
 // enrollmentTokenFromRow.
 func (s *Store) ListEnrollmentTokens(ctx context.Context) ([]storage.EnrollmentTokenRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListEnrollmentTokens(ctx)
+	rows, err := dbsqlc.New(s.db).ListEnrollmentTokens(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -124,10 +118,7 @@ func (s *Store) GetEnrollmentToken(ctx context.Context, value string) (storage.E
 // PruneEnrollmentTokens implements the EnrollmentStore prune contract
 // (C4). R-Q-03: routed through dbsqlc.PruneEnrollmentTokens.
 func (s *Store) PruneEnrollmentTokens(ctx context.Context, before time.Time) (int64, error) {
-	if s.sqlDB == nil {
-		return 0, errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).PruneEnrollmentTokens(ctx, sql.NullTime{Time: before.UTC(), Valid: true})
+	return dbsqlc.New(s.db).PruneEnrollmentTokens(ctx, sql.NullTime{Time: before.UTC(), Valid: true})
 }
 
 func (s *Store) ConsumeEnrollmentToken(ctx context.Context, value string, consumedAt time.Time) (storage.EnrollmentTokenRecord, error) {

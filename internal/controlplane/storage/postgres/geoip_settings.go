@@ -22,10 +22,7 @@ import (
 // fall back to defaults.
 
 func (s *Store) PutGeoIPSettings(ctx context.Context, data json.RawMessage) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertGeoIPJSON(ctx, dbsqlc.UpsertGeoIPJSONParams{
+	return dbsqlc.New(s.db).UpsertGeoIPJSON(ctx, dbsqlc.UpsertGeoIPJSONParams{
 		Scope:     panelSettingsScope,
 		GeoipJson: string(data),
 		UpdatedAt: time.Now().UTC(),
@@ -33,10 +30,7 @@ func (s *Store) PutGeoIPSettings(ctx context.Context, data json.RawMessage) erro
 }
 
 func (s *Store) GetGeoIPSettings(ctx context.Context) (json.RawMessage, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	raw, err := dbsqlc.New(s.sqlDB).GetGeoIPJSON(ctx, panelSettingsScope)
+	raw, err := dbsqlc.New(s.db).GetGeoIPJSON(ctx, panelSettingsScope)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -50,10 +44,7 @@ func (s *Store) GetGeoIPSettings(ctx context.Context) (json.RawMessage, error) {
 }
 
 func (s *Store) PutGeoIPState(ctx context.Context, data json.RawMessage) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpsertGeoIPStateJSON(ctx, dbsqlc.UpsertGeoIPStateJSONParams{
+	return dbsqlc.New(s.db).UpsertGeoIPStateJSON(ctx, dbsqlc.UpsertGeoIPStateJSONParams{
 		Scope:          panelSettingsScope,
 		GeoipStateJson: string(data),
 		UpdatedAt:      time.Now().UTC(),
@@ -61,10 +52,7 @@ func (s *Store) PutGeoIPState(ctx context.Context, data json.RawMessage) error {
 }
 
 func (s *Store) GetGeoIPState(ctx context.Context) (json.RawMessage, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	raw, err := dbsqlc.New(s.sqlDB).GetGeoIPStateJSON(ctx, panelSettingsScope)
+	raw, err := dbsqlc.New(s.db).GetGeoIPStateJSON(ctx, panelSettingsScope)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

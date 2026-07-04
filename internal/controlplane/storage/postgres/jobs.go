@@ -57,10 +57,7 @@ func (s *Store) GetJobByIdempotencyKey(ctx context.Context, idempotencyKey strin
 // millions of rows even if a caller forgets to paginate. Operator-facing
 // list APIs should call ListJobsCursor instead.
 func (s *Store) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListJobs(ctx)
+	rows, err := dbsqlc.New(s.db).ListJobs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -81,22 +78,19 @@ func (s *Store) ListJobs(ctx context.Context) ([]storage.JobRecord, error) {
 // comparisons differently across drivers — keeping this local keeps the
 // change footprint small).
 func (s *Store) ListJobsCursor(ctx context.Context, params storage.ListJobsCursorParams) ([]storage.JobRecord, storage.ListJobsCursorParams, error) {
-	if s.sqlDB == nil {
-		return nil, storage.ListJobsCursorParams{}, errTxBoundStore
-	}
 	limit := storage.NormalizeCursorLimit(params.Limit)
 
 	var rows *sql.Rows
 	var err error
 	if params.AfterID == "" && params.AfterCreatedAt.IsZero() {
-		rows, err = s.sqlDB.QueryContext(ctx, `
+		rows, err = s.db.QueryContext(ctx, `
 			SELECT id, action, idempotency_key, actor_id, status, created_at, ttl_nanos, payload_json
 			FROM jobs
 			ORDER BY created_at DESC, id DESC
 			LIMIT $1
 		`, limit+1)
 	} else {
-		rows, err = s.sqlDB.QueryContext(ctx, `
+		rows, err = s.db.QueryContext(ctx, `
 			SELECT id, action, idempotency_key, actor_id, status, created_at, ttl_nanos, payload_json
 			FROM jobs
 			WHERE (created_at, id) < ($1, $2)
@@ -169,10 +163,7 @@ func (s *Store) PutJobTarget(ctx context.Context, target storage.JobTargetRecord
 // ListJobTargets returns every delivery row for one job, ordered by
 // agent_id. Wired through dbsqlc.ListJobTargets.
 func (s *Store) ListJobTargets(ctx context.Context, jobID string) ([]storage.JobTargetRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListJobTargets(ctx, jobID)
+	rows, err := dbsqlc.New(s.db).ListJobTargets(ctx, jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -194,10 +185,7 @@ func (s *Store) ListJobTargets(ctx context.Context, jobID string) ([]storage.Job
 // the service-level restore loop can hydrate Job.Targets without per-job
 // N+1 SELECTs.
 func (s *Store) ListAllJobTargets(ctx context.Context) ([]storage.JobTargetRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := s.sqlDB.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT job_id, agent_id, status, result_text, result_json, updated_at
 		FROM job_targets
 		ORDER BY job_id, agent_id

@@ -58,10 +58,7 @@ func agentRecordToUpsertParams(agent storage.AgentRecord) dbsqlc.UpsertAgentPara
 // future query gets migrated, that helper stays the only place that
 // knows about the SQL → domain mapping.
 func (s *Store) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListAgents(ctx)
+	rows, err := dbsqlc.New(s.db).ListAgents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -95,13 +92,6 @@ func agentRecordFromRow(row dbsqlc.ListAgentsRow) storage.AgentRecord {
 	}
 	return rec
 }
-
-// errTxBoundStore reports that a method was invoked on a tx-bound
-// Store (one returned mid-Transact) that does not own a pool handle.
-// Methods that go through dbsqlc need *sql.DB, so they explicitly
-// reject the tx-bound shape until the dbsqlc DBTX bridge is wired
-// through Transact.
-var errTxBoundStore = errors.New("postgres: method requires pool handle, not tx-bound store")
 
 // UpdateAgentCertSerial pins the latest issued client cert serial
 // (Q4.U-S-04). Called after each successful issuance.

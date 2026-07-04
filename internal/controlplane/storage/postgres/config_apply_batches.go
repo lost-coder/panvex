@@ -60,10 +60,7 @@ func (s *Store) CreateConfigApplyBatch(ctx context.Context, b storage.ConfigAppl
 // wave_index then agent_id. Returns storage.ErrNotFound when no batch with
 // the given id exists.
 func (s *Store) GetConfigApplyBatch(ctx context.Context, id string) (storage.ConfigApplyBatchRecord, []storage.ConfigApplyBatchTargetRecord, error) {
-	if s.sqlDB == nil {
-		return storage.ConfigApplyBatchRecord{}, nil, errTxBoundStore
-	}
-	q := dbsqlc.New(s.sqlDB)
+	q := dbsqlc.New(s.db)
 
 	row, err := q.GetConfigApplyBatch(ctx, id)
 	if err != nil {
@@ -97,10 +94,7 @@ func (s *Store) GetConfigApplyBatch(ctx context.Context, id string) (storage.Con
 // ListRunningConfigApplyBatches returns every batch in
 // storage.ConfigApplyBatchStatusRunning, ordered by created_at then id.
 func (s *Store) ListRunningConfigApplyBatches(ctx context.Context) ([]storage.ConfigApplyBatchRecord, error) {
-	if s.sqlDB == nil {
-		return nil, errTxBoundStore
-	}
-	rows, err := dbsqlc.New(s.sqlDB).ListRunningConfigApplyBatches(ctx)
+	rows, err := dbsqlc.New(s.db).ListRunningConfigApplyBatches(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -124,14 +118,11 @@ func (s *Store) ListRunningConfigApplyBatches(ctx context.Context) ([]storage.Co
 // group, if any. The bool is false (with a zero-value record) when the
 // group has no batch in storage.ConfigApplyBatchStatusRunning.
 func (s *Store) ActiveConfigApplyBatchForGroup(ctx context.Context, fleetGroupID string) (storage.ConfigApplyBatchRecord, bool, error) {
-	if s.sqlDB == nil {
-		return storage.ConfigApplyBatchRecord{}, false, errTxBoundStore
-	}
 	parsed, err := uuid.Parse(fleetGroupID)
 	if err != nil {
 		return storage.ConfigApplyBatchRecord{}, false, err
 	}
-	row, err := dbsqlc.New(s.sqlDB).GetActiveConfigApplyBatchForGroup(ctx, parsed)
+	row, err := dbsqlc.New(s.db).GetActiveConfigApplyBatchForGroup(ctx, parsed)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.ConfigApplyBatchRecord{}, false, nil
@@ -154,10 +145,7 @@ func (s *Store) ActiveConfigApplyBatchForGroup(ctx context.Context, fleetGroupID
 // updated_at. Returns storage.ErrNotFound when no batch with the given id
 // exists.
 func (s *Store) UpdateConfigApplyBatchStatus(ctx context.Context, id, status string, now time.Time) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	rowsAffected, err := dbsqlc.New(s.sqlDB).UpdateConfigApplyBatchStatus(ctx, dbsqlc.UpdateConfigApplyBatchStatusParams{
+	rowsAffected, err := dbsqlc.New(s.db).UpdateConfigApplyBatchStatus(ctx, dbsqlc.UpdateConfigApplyBatchStatusParams{
 		Status:    status,
 		UpdatedAt: now.UTC(),
 		ID:        id,
@@ -174,10 +162,7 @@ func (s *Store) UpdateConfigApplyBatchStatus(ctx context.Context, id, status str
 // SetConfigApplyBatchTargetJob records the job enqueued for one target (wave
 // enqueue) and updates its status in the same write.
 func (s *Store) SetConfigApplyBatchTargetJob(ctx context.Context, batchID, agentID, jobID, status string) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).SetConfigApplyBatchTargetJob(ctx, dbsqlc.SetConfigApplyBatchTargetJobParams{
+	return dbsqlc.New(s.db).SetConfigApplyBatchTargetJob(ctx, dbsqlc.SetConfigApplyBatchTargetJobParams{
 		JobID:   jobID,
 		Status:  status,
 		BatchID: batchID,
@@ -188,10 +173,7 @@ func (s *Store) SetConfigApplyBatchTargetJob(ctx context.Context, batchID, agent
 // UpdateConfigApplyBatchTargetStatus updates one target's delivery status
 // and message without touching its job id.
 func (s *Store) UpdateConfigApplyBatchTargetStatus(ctx context.Context, batchID, agentID, status, message string) error {
-	if s.sqlDB == nil {
-		return errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).UpdateConfigApplyBatchTargetStatus(ctx, dbsqlc.UpdateConfigApplyBatchTargetStatusParams{
+	return dbsqlc.New(s.db).UpdateConfigApplyBatchTargetStatus(ctx, dbsqlc.UpdateConfigApplyBatchTargetStatusParams{
 		Status:  status,
 		Message: message,
 		BatchID: batchID,
@@ -203,10 +185,7 @@ func (s *Store) UpdateConfigApplyBatchTargetStatus(ctx context.Context, batchID,
 // (succeeded/failed/halted) whose updated_at predates before. Targets are
 // removed via ON DELETE CASCADE.
 func (s *Store) PruneConfigApplyBatches(ctx context.Context, before time.Time) (int64, error) {
-	if s.sqlDB == nil {
-		return 0, errTxBoundStore
-	}
-	return dbsqlc.New(s.sqlDB).DeleteTerminalConfigApplyBatches(ctx, before.UTC())
+	return dbsqlc.New(s.db).DeleteTerminalConfigApplyBatches(ctx, before.UTC())
 }
 
 // configApplyBatchTargetFromRow bridges the sqlc-emitted
