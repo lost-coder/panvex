@@ -6,10 +6,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -115,7 +117,11 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 	if base == "" {
 		return OutcomeNoop, fmt.Errorf("no release base URL provided")
 	}
-	archiveName := fmt.Sprintf("panvex-agent-linux-%s.tar.gz", runtime.GOARCH)
+	// The release tarball contains exactly one member named after the
+	// archive basename (see .github/workflows/release.yml: tar czf
+	// "${BINARY}.tar.gz" "${BINARY}").
+	binaryName := fmt.Sprintf("panvex-agent-linux-%s", runtime.GOARCH)
+	archiveName := binaryName + ".tar.gz"
 	archiveURL := base + "/" + archiveName
 	checksumURL := archiveURL + ".sha256"
 
@@ -143,7 +149,7 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 		return OutcomeNoop, fmt.Errorf("verify: %w", err)
 	}
 
-	binaryPath, err := extractBinaryFromArchive(archivePath)
+	binaryPath, err := extractBinaryFromArchive(archivePath, binaryName)
 	_ = os.Remove(archivePath)
 	if err != nil {
 		return OutcomeNoop, fmt.Errorf("extract: %w", err)
@@ -210,7 +216,14 @@ func verifyChecksum(path, expected string) error {
 	return nil
 }
 
-func extractBinaryFromArchive(archivePath string) (string, error) {
+// extractBinaryFromArchive scans the tarball for the release member
+// wantName (a regular file; leading directories in the entry name are
+// tolerated) and extracts it to an executable temp file. The archive
+// checksum was verified BEFORE extraction, so the residual risks are
+// structural: the wanted entry missing (README-first / repacked
+// archives used to be extracted blindly, audit #9c) and a silently
+// truncated copy.
+func extractBinaryFromArchive(archivePath, wantName string) (string, error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return "", fmt.Errorf("open archive: %w", err)
@@ -223,25 +236,55 @@ func extractBinaryFromArchive(archivePath string) (string, error) {
 	}
 	defer gz.Close()
 
-	tr := tar.NewReader(gz)
-	if _, err := tr.Next(); err != nil {
-		return "", fmt.Errorf("read tar entry: %w", err)
-	}
+	const maxBinarySize = 256 << 20 // 256 MB
 
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return "", fmt.Errorf("archive does not contain %q", wantName)
+		}
+		if err != nil {
+			return "", fmt.Errorf("read tar entry: %w", err)
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		if filepath.Base(hdr.Name) != wantName {
+			continue
+		}
+		if hdr.Size <= 0 || hdr.Size > maxBinarySize {
+			return "", fmt.Errorf("refusing to extract %q: declared size %d out of bounds (cap %d)", hdr.Name, hdr.Size, int64(maxBinarySize))
+		}
+		return extractTarEntry(tr, hdr)
+	}
+}
+
+// extractTarEntry copies exactly hdr.Size bytes of the current tar
+// entry into an executable temp file. Any size mismatch is fatal —
+// a truncated binary must never reach the swap (mirrors the streamed
+// size check in download.go's downloadToTemp).
+func extractTarEntry(tr *tar.Reader, hdr *tar.Header) (string, error) {
 	tmp, err := os.CreateTemp("", "panvex-agent-binary-*")
 	if err != nil {
 		return "", fmt.Errorf("create temp binary: %w", err)
 	}
-
-	const maxBinarySize = 256 << 20 // 256 MB
-	if _, err := io.Copy(tmp, io.LimitReader(tr, maxBinarySize)); err != nil {
-		tmp.Close()
+	cleanup := func() {
+		_ = tmp.Close()
 		_ = os.Remove(tmp.Name())
+	}
+
+	written, err := io.Copy(tmp, io.LimitReader(tr, hdr.Size+1))
+	if err != nil {
+		cleanup()
 		return "", fmt.Errorf("extract binary: %w", err)
 	}
+	if written != hdr.Size {
+		cleanup()
+		return "", fmt.Errorf("extract binary: wrote %d bytes, tar header declares %d", written, hdr.Size)
+	}
 	if err := os.Chmod(tmp.Name(), 0o700); err != nil { //nolint:gosec // G302: 0o700 keeps the binary owner-only but still needs +x to run
-		tmp.Close()
-		_ = os.Remove(tmp.Name())
+		cleanup()
 		return "", fmt.Errorf("chmod binary: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
@@ -262,4 +305,27 @@ func replaceSelf(currentPath, newPath string) error {
 		return fmt.Errorf("replace: %w", err)
 	}
 	return nil
+}
+
+// RemoveBackup deletes the "<executable>.bak" left behind by a previous
+// self-update swap (replaceSelf). cmd/agent calls it once the (possibly
+// just-updated) binary has proven healthy — i.e. after the first
+// successful panel sync — so an operator keeps the .bak for manual
+// rollback while the new binary has not yet demonstrated it can reach
+// the panel. Best-effort: a missing backup is the normal case.
+func RemoveBackup(logger *slog.Logger) {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	backup := exe + ".bak"
+	if err := os.Remove(backup); err != nil {
+		if !os.IsNotExist(err) && logger != nil {
+			logger.Warn("self-update: failed to remove stale backup", "path", backup, "error", err)
+		}
+		return
+	}
+	if logger != nil {
+		logger.Info("self-update: removed stale backup after healthy start", "path", backup)
+	}
 }
