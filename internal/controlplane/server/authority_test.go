@@ -136,7 +136,6 @@ func TestLoadOrCreateCertificateAuthority_RespectsContextCancellation(t *testing
 	}
 }
 
-
 func TestAuthorityIssuesPanelClientCertificate(t *testing.T) {
 	now := time.Now()
 	authority, err := newCertificateAuthority(now)

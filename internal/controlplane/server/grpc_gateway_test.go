@@ -31,7 +31,7 @@ func TestServerPendingJobsForAgentIncludesQueuedTarget(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 20, 8, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 
 	queued := enqueueJobForAgent(t, server, "agent-1", "queued-target", currentTime)
@@ -50,7 +50,7 @@ func TestServerPendingJobsForAgentSkipsRecentlySentTarget(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 20, 8, 30, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 
 	job := enqueueJobForAgent(t, server, "agent-1", "sent-recent", currentTime)
@@ -72,7 +72,7 @@ func TestServerPendingJobsForAgentRedeliversStaleSentTarget(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 20, 9, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 
 	job := enqueueJobForAgent(t, server, "agent-1", "sent-stale", currentTime)
@@ -303,7 +303,7 @@ func TestProcessRegularAgentMessageRoutesAckToPriorityHandler(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 21, 7, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 	job := enqueueJobForAgent(t, server, "agent-1", "regular-routes-ack", currentTime)
 	server.jobs.MarkDelivered(context.Background(), "agent-1", job.ID, currentTime.Add(time.Second))
@@ -337,7 +337,7 @@ func TestProcessPriorityAgentMessageRecordsAcknowledgement(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 21, 8, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 
 	job := enqueueJobForAgent(t, server, "agent-1", "priority-ack", currentTime)
@@ -368,7 +368,7 @@ func TestProcessPriorityAgentMessageRecordsResult(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 21, 8, 30, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 
 	job := enqueueJobForAgent(t, server, "agent-1", "priority-result", currentTime)
@@ -404,7 +404,7 @@ func TestProcessPriorityAgentMessageAsyncQueuesClientResultEffect(t *testing.T) 
 	currentTime := time.Date(2026, time.March, 21, 8, 45, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 
 	job := enqueueJobForAgent(t, server, "agent-1", "priority-result-async", currentTime)
@@ -598,7 +598,7 @@ func TestDispatchReconnectRedeliveryAvoidsDuplicateRuntimeMutation(t *testing.T)
 	currentTime := time.Date(2026, time.March, 22, 9, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 
 	job := enqueueJobForAgent(t, server, "agent-1", "dispatch-reconnect", currentTime)
@@ -682,7 +682,7 @@ func TestDispatchPendingJobsSendsBoundedBatchAndLeavesRemainderQueued(t *testing
 	currentTime := time.Date(2026, time.March, 22, 10, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 
 	jobCount := jobDispatchBatchSize + 3
@@ -711,7 +711,7 @@ func TestServerConnectRateLimitRejectsBurstReconnects(t *testing.T) {
 	currentTime := time.Date(2026, time.March, 23, 8, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return currentTime },
+		Now:              func() time.Time { return currentTime },
 	})
 	server.grpcConnectRateLimiter = newFixedWindowRateLimiter(1, time.Minute)
 

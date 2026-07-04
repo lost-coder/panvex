@@ -31,8 +31,8 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
@@ -110,8 +110,8 @@ func TestRetentionSettingsSurviveRestart(t *testing.T) {
 
 	restartedServer := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: restartedStore,
+		Now:              func() time.Time { return now },
+		Store:            restartedStore,
 	})
 	defer restartedServer.Close()
 

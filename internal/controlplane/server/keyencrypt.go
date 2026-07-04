@@ -142,4 +142,3 @@ func needsReEncryption(stored string) bool {
 func deriveKeyV2(passphrase string, salt []byte) []byte {
 	return argon2.IDKey([]byte(passphrase), salt, argon2Time, argon2Memory, argon2Threads, argon2KeyLen)
 }
-

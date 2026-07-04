@@ -23,8 +23,8 @@ func TestHTTPEnrollmentTokensExposeConfiguredPanelURL(t *testing.T) {
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 		PanelRuntime: PanelRuntime{
 			HTTPListenAddress: ":8080",
 			HTTPRootPath:      "/panvex",
@@ -176,8 +176,8 @@ func TestEnrollmentTokenUsesAgentRootPathInPanelURL(t *testing.T) {
 
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 		PanelRuntime: PanelRuntime{
 			HTTPRootPath:      "/secret-panel",
 			AgentHTTPRootPath: "/agent-api",

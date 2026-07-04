@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -82,21 +81,25 @@ func TestServerSeverityCriticalWhenTelemtUnreachable(t *testing.T) {
 // survive. Without this, a panel restart would silently mis-classify an
 // unreachable agent as healthy until a fresh snapshot arrived.
 func TestRuntimeFromCurrentRecordPropagatesTelemtUnreachable(t *testing.T) {
-	rec := storage.TelemetryRuntimeCurrentRecord{
-		AgentID:        "agent-1",
-		ObservedAt:     time.Unix(1700000000, 0).UTC(),
+	// P3-3.1: reachability now round-trips through the runtime_json blob.
+	// Build the record the way the snapshot path does (marshal the whole
+	// AgentRuntime) and confirm restore preserves the fields.
+	healthy := runtimeCurrentRecordFromAgent(Agent{ID: "agent-1", Runtime: AgentRuntime{
 		UseMiddleProxy: true,
 		MERuntimeReady: true,
-		// Healthy record: TelemtUnreachable left at default (false).
-	}
-	out := runtimeFromCurrentRecord(rec)
+		UpdatedAt:      time.Unix(1700000000, 0).UTC(),
+	}})
+	out := runtimeFromCurrentRecord(healthy)
 	if out.TelemtUnreachable {
 		t.Fatal("healthy record: TelemtUnreachable = true, want false")
 	}
 
-	rec.TelemtUnreachable = true
-	rec.TelemtUnreachableSinceUnix = 1699999970
-	out = runtimeFromCurrentRecord(rec)
+	unreachable := runtimeCurrentRecordFromAgent(Agent{ID: "agent-1", Runtime: AgentRuntime{
+		TelemtUnreachable:          true,
+		TelemtUnreachableSinceUnix: 1699999970,
+		UpdatedAt:                  time.Unix(1700000000, 0).UTC(),
+	}})
+	out = runtimeFromCurrentRecord(unreachable)
 	if !out.TelemtUnreachable {
 		t.Fatal("unreachable record: TelemtUnreachable = false, want true")
 	}

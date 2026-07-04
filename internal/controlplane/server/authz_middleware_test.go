@@ -16,7 +16,7 @@ func TestRequireAuthenticatedSessionRejectsUnauthenticated(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now: func() time.Time { return now },
+		Now:              func() time.Time { return now },
 	})
 
 	handler := server.requireAuthenticatedSession()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,8 +42,8 @@ func TestRequireAuthenticatedSessionAllowsValidSession(t *testing.T) {
 
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer srv.Close()
 
@@ -81,8 +81,8 @@ func TestRequireMinimumRoleAdminRejectsViewer(t *testing.T) {
 
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer srv.Close()
 
@@ -138,8 +138,8 @@ func TestRequireMinimumRoleAdminAllowsAdmin(t *testing.T) {
 
 	srv := mustNew(t, Options{
 		LoginTimingFloor: -1,
-		Now:   func() time.Time { return now },
-		Store: store,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer srv.Close()
 

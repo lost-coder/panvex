@@ -8,19 +8,19 @@ import (
 
 // Agent stores the control-plane view of a connected host agent.
 type Agent struct {
-	ID                  string                                 `json:"id"`
-	NodeName            string                                 `json:"node_name"`
-	FleetGroupID        string                                 `json:"fleet_group_id"`
-	Version             string                                 `json:"version"`
-	ReadOnly            bool                                   `json:"read_only"`
-	PresenceState       string                                 `json:"presence_state"`
+	ID            string `json:"id"`
+	NodeName      string `json:"node_name"`
+	FleetGroupID  string `json:"fleet_group_id"`
+	Version       string `json:"version"`
+	ReadOnly      bool   `json:"read_only"`
+	PresenceState string `json:"presence_state"`
 	// TransportReconnectPending is true when the operator switched this
 	// agent to outbound transport and no agent session has been accepted
 	// since (A2 "switched but never reconnected"). Request-time derived.
 	TransportReconnectPending bool                                   `json:"transport_reconnect_pending,omitempty"`
 	CertificateRecovery       *agentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
-	CertIssuedAt        *time.Time                             `json:"cert_issued_at,omitempty"`
-	CertExpiresAt       *time.Time                             `json:"cert_expires_at,omitempty"`
+	CertIssuedAt              *time.Time                             `json:"cert_issued_at,omitempty"`
+	CertExpiresAt             *time.Time                             `json:"cert_expires_at,omitempty"`
 	// CertSerial is the serial of the most recently issued client cert.
 	// Used to pin agent identity at gRPC connect time (Q4.U-S-04). Not
 	// exposed in the public JSON shape — operators don't need it and
