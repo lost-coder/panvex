@@ -58,18 +58,29 @@ message InstanceSnapshot {
 
 message ClientUsageSnapshot {
   string client_id = 1;
+  // Legacy one-shot delta protocol (P2-LOG-06 / L-07). Superseded by
+  // traffic_total_bytes + Snapshot.agent_boot_id (P4, cumulative
+  // counters); both fields are removed once agent and panel run the
+  // cumulative protocol.
   uint64 traffic_delta_bytes = 2;
   int32 unique_ips_used = 3;
   int32 active_tcp_conns = 4;
   int32 active_unique_ips = 5;
   string client_name = 6;
-  // Monotonic per-agent sequence number. Starts at 1 on agent boot and
-  // increments with every snapshot emitted by the agent. The control-plane
-  // uses it to dedup retried/duplicate deltas and to detect restarts
-  // (seq resets to 1). See P2-LOG-06 / L-07.
+  // Legacy: see traffic_delta_bytes.
   uint64 seq = 7;
   uint64 quota_used_bytes = 8;
   uint64 quota_last_reset_unix = 9;
+  // Cumulative traffic counted by THIS agent process since its start —
+  // NOT Telemt's raw counter: the agent absorbs Telemt restarts locally
+  // and accumulates deltas into a per-client monotonic total. Paired
+  // with Snapshot.agent_boot_id, which scopes the counter epoch: the
+  // control-plane keeps a per-(client, agent) watermark
+  // (agent_boot_id, last_total_bytes) and accumulates
+  // max(total - last_total, 0); a new boot id restarts the epoch, so
+  // lost snapshots and replays converge without losing or double
+  // counting bytes (P4, audit 2026-07-02 #8).
+  uint64 traffic_total_bytes = 10;
 }
 
 message ClientIPSnapshot {
@@ -331,6 +342,12 @@ message Snapshot {
   // preserve its last-known values for those fields instead of overwriting
   // them with the partial blanks (IN-H6).
   bool partial = 19;
+  // Unique id of the reporting agent process incarnation (UUID minted at
+  // process start). Scopes the cumulative traffic_total_bytes counters
+  // in `clients`: a changed agent_boot_id tells the control-plane the
+  // totals restarted from zero. Stamped on every snapshot; only the
+  // client-usage path consumes it (P4).
+  string agent_boot_id = 20;
 }
 
 message JobResult {

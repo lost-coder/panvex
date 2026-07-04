@@ -374,22 +374,33 @@ func (x *InstanceSnapshot) GetManagedConfigJson() string {
 }
 
 type ClientUsageSnapshot struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	ClientId          string                 `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	TrafficDeltaBytes uint64                 `protobuf:"varint,2,opt,name=traffic_delta_bytes,json=trafficDeltaBytes,proto3" json:"traffic_delta_bytes,omitempty"`
-	UniqueIpsUsed     int32                  `protobuf:"varint,3,opt,name=unique_ips_used,json=uniqueIpsUsed,proto3" json:"unique_ips_used,omitempty"`
-	ActiveTcpConns    int32                  `protobuf:"varint,4,opt,name=active_tcp_conns,json=activeTcpConns,proto3" json:"active_tcp_conns,omitempty"`
-	ActiveUniqueIps   int32                  `protobuf:"varint,5,opt,name=active_unique_ips,json=activeUniqueIps,proto3" json:"active_unique_ips,omitempty"`
-	ClientName        string                 `protobuf:"bytes,6,opt,name=client_name,json=clientName,proto3" json:"client_name,omitempty"`
-	// Monotonic per-agent sequence number. Starts at 1 on agent boot and
-	// increments with every snapshot emitted by the agent. The control-plane
-	// uses it to dedup retried/duplicate deltas and to detect restarts
-	// (seq resets to 1). See P2-LOG-06 / L-07.
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	ClientId string                 `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	// Legacy one-shot delta protocol (P2-LOG-06 / L-07). Superseded by
+	// traffic_total_bytes + Snapshot.agent_boot_id (P4, cumulative
+	// counters); both fields are removed once agent and panel run the
+	// cumulative protocol.
+	TrafficDeltaBytes uint64 `protobuf:"varint,2,opt,name=traffic_delta_bytes,json=trafficDeltaBytes,proto3" json:"traffic_delta_bytes,omitempty"`
+	UniqueIpsUsed     int32  `protobuf:"varint,3,opt,name=unique_ips_used,json=uniqueIpsUsed,proto3" json:"unique_ips_used,omitempty"`
+	ActiveTcpConns    int32  `protobuf:"varint,4,opt,name=active_tcp_conns,json=activeTcpConns,proto3" json:"active_tcp_conns,omitempty"`
+	ActiveUniqueIps   int32  `protobuf:"varint,5,opt,name=active_unique_ips,json=activeUniqueIps,proto3" json:"active_unique_ips,omitempty"`
+	ClientName        string `protobuf:"bytes,6,opt,name=client_name,json=clientName,proto3" json:"client_name,omitempty"`
+	// Legacy: see traffic_delta_bytes.
 	Seq                uint64 `protobuf:"varint,7,opt,name=seq,proto3" json:"seq,omitempty"`
 	QuotaUsedBytes     uint64 `protobuf:"varint,8,opt,name=quota_used_bytes,json=quotaUsedBytes,proto3" json:"quota_used_bytes,omitempty"`
 	QuotaLastResetUnix uint64 `protobuf:"varint,9,opt,name=quota_last_reset_unix,json=quotaLastResetUnix,proto3" json:"quota_last_reset_unix,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Cumulative traffic counted by THIS agent process since its start —
+	// NOT Telemt's raw counter: the agent absorbs Telemt restarts locally
+	// and accumulates deltas into a per-client monotonic total. Paired
+	// with Snapshot.agent_boot_id, which scopes the counter epoch: the
+	// control-plane keeps a per-(client, agent) watermark
+	// (agent_boot_id, last_total_bytes) and accumulates
+	// max(total - last_total, 0); a new boot id restarts the epoch, so
+	// lost snapshots and replays converge without losing or double
+	// counting bytes (P4, audit 2026-07-02 #8).
+	TrafficTotalBytes uint64 `protobuf:"varint,10,opt,name=traffic_total_bytes,json=trafficTotalBytes,proto3" json:"traffic_total_bytes,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ClientUsageSnapshot) Reset() {
@@ -481,6 +492,13 @@ func (x *ClientUsageSnapshot) GetQuotaUsedBytes() uint64 {
 func (x *ClientUsageSnapshot) GetQuotaLastResetUnix() uint64 {
 	if x != nil {
 		return x.QuotaLastResetUnix
+	}
+	return 0
+}
+
+func (x *ClientUsageSnapshot) GetTrafficTotalBytes() uint64 {
+	if x != nil {
+		return x.TrafficTotalBytes
 	}
 	return 0
 }
@@ -2245,7 +2263,13 @@ type Snapshot struct {
 	// uptime in this snapshot may be missing (zero/empty). The panel must
 	// preserve its last-known values for those fields instead of overwriting
 	// them with the partial blanks (IN-H6).
-	Partial       bool `protobuf:"varint,19,opt,name=partial,proto3" json:"partial,omitempty"`
+	Partial bool `protobuf:"varint,19,opt,name=partial,proto3" json:"partial,omitempty"`
+	// Unique id of the reporting agent process incarnation (UUID minted at
+	// process start). Scopes the cumulative traffic_total_bytes counters
+	// in `clients`: a changed agent_boot_id tells the control-plane the
+	// totals restarted from zero. Stamped on every snapshot; only the
+	// client-usage path consumes it (P4).
+	AgentBootId   string `protobuf:"bytes,20,opt,name=agent_boot_id,json=agentBootId,proto3" json:"agent_boot_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2404,6 +2428,13 @@ func (x *Snapshot) GetPartial() bool {
 		return x.Partial
 	}
 	return false
+}
+
+func (x *Snapshot) GetAgentBootId() string {
+	if x != nil {
+		return x.AgentBootId
+	}
+	return ""
 }
 
 type JobResult struct {
@@ -3874,7 +3905,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\vconnections\x18\x05 \x01(\x05R\vconnections\x12\x1b\n" +
 	"\tread_only\x18\x06 \x01(\bR\breadOnly\x12.\n" +
 	"\x13managed_config_hash\x18\a \x01(\tR\x11managedConfigHash\x12.\n" +
-	"\x13managed_config_json\x18\b \x01(\tR\x11managedConfigJson\"\xf0\x02\n" +
+	"\x13managed_config_json\x18\b \x01(\tR\x11managedConfigJson\"\xa0\x03\n" +
 	"\x13ClientUsageSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +
 	"\x13traffic_delta_bytes\x18\x02 \x01(\x04R\x11trafficDeltaBytes\x12&\n" +
@@ -3885,7 +3916,9 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"clientName\x12\x10\n" +
 	"\x03seq\x18\a \x01(\x04R\x03seq\x12(\n" +
 	"\x10quota_used_bytes\x18\b \x01(\x04R\x0equotaUsedBytes\x121\n" +
-	"\x15quota_last_reset_unix\x18\t \x01(\x04R\x12quotaLastResetUnix\"o\n" +
+	"\x15quota_last_reset_unix\x18\t \x01(\x04R\x12quotaLastResetUnix\x12.\n" +
+	"\x13traffic_total_bytes\x18\n" +
+	" \x01(\x04R\x11trafficTotalBytes\"o\n" +
 	"\x10ClientIPSnapshot\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12\x1d\n" +
 	"\n" +
@@ -4061,7 +4094,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12#\n" +
 	"\rentries_total\x18\x04 \x01(\x05R\fentriesTotal\x12!\n" +
 	"\fentries_json\x18\x05 \x01(\tR\ventriesJson\x12!\n" +
-	"\fcontent_hash\x18\x06 \x01(\tR\vcontentHash\"\xf5\a\n" +
+	"\fcontent_hash\x18\x06 \x01(\tR\vcontentHash\"\x99\b\n" +
 	"\bSnapshot\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12$\n" +
@@ -4082,7 +4115,8 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x0ehas_client_ips\x18\x10 \x01(\bR\fhasClientIps\x12^\n" +
 	"\x13runtime_diagnostics\x18\x11 \x01(\v2-.panvex.gateway.v1.RuntimeDiagnosticsSnapshotR\x12runtimeDiagnostics\x12q\n" +
 	"\x1aruntime_security_inventory\x18\x12 \x01(\v23.panvex.gateway.v1.RuntimeSecurityInventorySnapshotR\x18runtimeSecurityInventory\x12\x18\n" +
-	"\apartial\x18\x13 \x01(\bR\apartial\x1a:\n" +
+	"\apartial\x18\x13 \x01(\bR\apartial\x12\"\n" +
+	"\ragent_boot_id\x18\x14 \x01(\tR\vagentBootId\x1a:\n" +
 	"\fMetricsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xbc\x01\n" +
