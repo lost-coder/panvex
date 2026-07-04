@@ -431,6 +431,12 @@ message AgentRuntimeEvent {
   string level = 2; // "info" | "warn" | "error"
   string message = 3;
   map<string, string> fields = 4;
+  // seq is the agent-process-monotonic sequence number assigned by the
+  // agent-side ring buffer on append. The panel dedups reconnect
+  // replays by (agent_id, seq); a genuine agent restart legitimately
+  // rewinds seq (fresh process => fresh counter) and is admitted by the
+  // panel's newer-timestamp guard. Audit 2026-07-02 #9b.
+  uint64 seq = 5;
 }
 
 // RuntimeEventsBatch is a one-shot batch sent inside ConnectClientMessage.

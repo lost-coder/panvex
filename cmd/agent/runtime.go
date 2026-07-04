@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -33,6 +34,11 @@ import (
 var (
 	runtimeEventsBuf    *runtimeevents.Buffer
 	runtimeEventsNotify chan struct{}
+	// runtimeEventsCursor is the PROCESS-level "last handed-off Seq"
+	// cursor for the pusher. It must outlive individual connections:
+	// the ring buffer survives a reconnect, so a per-connection cursor
+	// replayed up to 200 already-delivered events (audit #9b).
+	runtimeEventsCursor *atomic.Uint64
 )
 
 // runtimeFlags holds the parsed CLI options for the agent runtime. Pulling
@@ -145,6 +151,7 @@ func runRuntime(args []string) error {
 	}
 	runtimeEventsBuf = runtimeBuf
 	runtimeEventsNotify = runtimeNotify
+	runtimeEventsCursor = new(atomic.Uint64)
 
 	credentialsState, err := loadRuntimeCredentials(cfg.stateFile)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/runtimeevents"
@@ -41,6 +42,7 @@ func startRuntimeEventsPusher(
 		sendRuntimeEventsFunc(connectionCtx, telemetryOutbound, agentID),
 		runtimeEventsPushInterval,
 		notify,
+		runtimeEventsCursor,
 	)
 	streamWG.Add(1)
 	go func() {
@@ -55,17 +57,22 @@ func startRuntimeEventsPusher(
 //     this on Warn/Error append)
 //   - every `tickInterval`: drains accumulated Info events
 //
-// The pusher maintains its own cursor (lastSeq) so it doesn't re-send.
-// On send error the cursor is not advanced past the failed batch — the
-// events stay in the ring (subject to overflow) and will be retried on
-// the next cycle. The cursor is the buffer's monotonic Seq, not a
-// timestamp, so events sharing a Ts are never skipped (L-7).
+// The pusher advances a cursor so it doesn't re-send. On send error the
+// cursor is not advanced past the failed batch — the events stay in the
+// ring (subject to overflow) and will be retried on the next cycle. The
+// cursor is the buffer's monotonic Seq, not a timestamp, so events
+// sharing a Ts are never skipped (L-7).
 type runtimeEventsPusher struct {
 	buf          *runtimeevents.Buffer
 	send         func([]runtimeevents.Event) error
 	tickInterval time.Duration
 	notify       <-chan struct{}
-	lastSeq      uint64
+	// cursor is the last successfully handed-off Seq. It is SHARED
+	// across connections (package-level runtimeEventsCursor in
+	// runtime.go): the ring outlives a reconnect, so a per-connection
+	// cursor re-sent up to 200 buffered events after every reconnect
+	// (audit #9b).
+	cursor *atomic.Uint64
 }
 
 // runtimeEventsBatchCap bounds the per-Send message size. The buffer
@@ -78,12 +85,17 @@ func newRuntimeEventsPusher(
 	send func([]runtimeevents.Event) error,
 	tickInterval time.Duration,
 	notify <-chan struct{},
+	cursor *atomic.Uint64,
 ) *runtimeEventsPusher {
+	if cursor == nil {
+		cursor = new(atomic.Uint64)
+	}
 	return &runtimeEventsPusher{
 		buf:          buf,
 		send:         send,
 		tickInterval: tickInterval,
 		notify:       notify,
+		cursor:       cursor,
 	}
 }
 
@@ -106,7 +118,7 @@ func (p *runtimeEventsPusher) flush(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
-	pending := p.buf.DrainAfter(p.lastSeq)
+	pending := p.buf.DrainAfter(p.cursor.Load())
 	if len(pending) == 0 {
 		return
 	}
@@ -120,6 +132,6 @@ func (p *runtimeEventsPusher) flush(ctx context.Context) {
 			// Stop on send error; buffer retains events, future cycle retries.
 			return
 		}
-		p.lastSeq = batch[len(batch)-1].Seq
+		p.cursor.Store(batch[len(batch)-1].Seq)
 	}
 }

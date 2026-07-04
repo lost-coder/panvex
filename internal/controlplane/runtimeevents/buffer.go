@@ -14,6 +14,9 @@ import (
 // Event mirrors internal/agent/runtimeevents.Event but lives in its own
 // package to keep the panel side independent of agent internals.
 type Event struct {
+	// Seq is the agent-process-monotonic sequence assigned by the
+	// agent-side ring. 0 means "unknown" (never dedup-dropped).
+	Seq     uint64
 	Ts      time.Time
 	Level   string // "info" | "warn" | "error"
 	Message string
@@ -32,6 +35,12 @@ type ring struct {
 	mu    sync.Mutex
 	items []Event
 	cap   int
+	// lastSeq/lastTs form the reconnect-replay watermark (audit #9b):
+	// an event with seq and ts both at-or-below the watermark is a
+	// replay. A genuine agent restart rewinds seq but carries a newer
+	// ts, so the ts guard admits it and the watermark rewinds too.
+	lastSeq uint64
+	lastTs  time.Time
 }
 
 func New(perAgentCapacity int) *Buffer {
@@ -44,21 +53,45 @@ func New(perAgentCapacity int) *Buffer {
 	}
 }
 
-func (b *Buffer) Append(agentID string, ev Event) {
-	r := b.getOrCreate(agentID)
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// appendLocked inserts ev unless the watermark marks it as a reconnect
+// replay. Reports whether the event was stored. Caller holds r.mu.
+func (r *ring) appendLocked(ev Event) bool {
+	if ev.Seq != 0 && ev.Seq <= r.lastSeq && !ev.Ts.After(r.lastTs) {
+		return false
+	}
+	if ev.Seq != 0 {
+		r.lastSeq = ev.Seq
+		r.lastTs = ev.Ts
+	}
 	if len(r.items) >= r.cap {
 		copy(r.items, r.items[1:])
 		r.items = r.items[:len(r.items)-1]
 	}
 	r.items = append(r.items, ev)
+	return true
 }
 
-func (b *Buffer) AppendBatch(agentID string, evs []Event) {
+// Append inserts one event; reports whether it was stored (false = replay).
+func (b *Buffer) Append(agentID string, ev Event) bool {
+	r := b.getOrCreate(agentID)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.appendLocked(ev)
+}
+
+// AppendBatch inserts evs in order and returns the events that were
+// actually stored, so callers publish only non-replayed records.
+func (b *Buffer) AppendBatch(agentID string, evs []Event) []Event {
+	r := b.getOrCreate(agentID)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	stored := make([]Event, 0, len(evs))
 	for _, ev := range evs {
-		b.Append(agentID, ev)
+		if r.appendLocked(ev) {
+			stored = append(stored, ev)
+		}
 	}
+	return stored
 }
 
 // Snapshot returns up to `limit` most-recent events for agentID, newest

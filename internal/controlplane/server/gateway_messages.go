@@ -183,6 +183,7 @@ func (s *Server) handleRuntimeEventsBatch(agentID string, batch *gatewayrpc.Runt
 			}
 		}
 		events = append(events, runtimeevents.Event{
+			Seq:     e.GetSeq(),
 			Ts:      e.GetTs().AsTime(),
 			Level:   e.GetLevel(),
 			Message: e.GetMessage(),
@@ -193,9 +194,12 @@ func (s *Server) handleRuntimeEventsBatch(agentID string, batch *gatewayrpc.Runt
 		return
 	}
 	if s.runtimeEvents != nil {
-		s.runtimeEvents.AppendBatch(agentID, events)
+		// Audit #9b: AppendBatch drops reconnect replays via the per-agent
+		// (seq, ts) watermark; publish only what was actually stored so the
+		// dashboard's live feed does not repeat up to 200 events either.
+		events = s.runtimeEvents.AppendBatch(agentID, events)
 	}
-	if s.events == nil {
+	if len(events) == 0 || s.events == nil {
 		return
 	}
 	// D6a: one bus event per inbound batch instead of one per record. A
