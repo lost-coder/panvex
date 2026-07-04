@@ -158,6 +158,29 @@ func enqueueReceivedJob(
 		tracker.release(jobID)
 		return false
 	case targetQueue <- job:
+	default:
+		// Audit #9a: the lane is full. Blocking here would head-of-line
+		// block the inbound pump — no further Recv() means renewal
+		// responses and every other message stall behind slow jobs. Fail
+		// fast with a terminal JobResult instead; the panel retries
+		// terminal failures, and the released reservation lets the retry
+		// execute once the lane drains.
+		tracker.release(jobID)
+		failed := &gatewayrpc.ConnectClientMessage{
+			Body: &gatewayrpc.ConnectClientMessage_JobResult{JobResult: &gatewayrpc.JobResult{
+				AgentId:        agentID,
+				JobId:          jobID,
+				Success:        false,
+				Message:        "job queue full, retry later",
+				ObservedAtUnix: time.Now().UTC().Unix(),
+			}},
+		}
+		select {
+		case <-connectionCtx.Done():
+			return false
+		case criticalOutbound <- failed:
+			return true
+		}
 	}
 
 	select {
