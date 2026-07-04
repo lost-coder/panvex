@@ -73,7 +73,7 @@ func seedMirrorDeployment(t *testing.T, s *Server, clientID string, deployment m
 // seedMirrorUsage writes a usage row for (clientID, agentID) into the mirror
 // (and the DB, since these tests use a repo-backed Service). Requires the
 // Service to be wired with a Repository.
-func seedMirrorUsage(t *testing.T, s *Server, clientID, agentID string, usage clientUsageSnapshot) {
+func seedMirrorUsage(t *testing.T, s *Server, clientID, agentID string, usage clients.UsageSnapshot) {
 	t.Helper()
 	if err := s.clientsSvc.UpsertUsage(context.Background(), clients.Usage{
 		ClientID:           clients.ClientID(clientID),

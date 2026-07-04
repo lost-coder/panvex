@@ -11,7 +11,7 @@ import (
 
 // TestConvertClientUsageSnapshotsCarriesQuotaState guards Phase 1 of the
 // reset-quota plan: the panel's mapping of the gRPC wire
-// ClientUsageSnapshot into the in-memory clientUsageSnapshot mirror must
+// ClientUsageSnapshot into the inbound clients.UsageReport must
 // pass through the two new quota fields (QuotaUsedBytes,
 // QuotaLastResetUnix) verbatim. Without this the panel JSON API can
 // never surface the per-client quota state the agent now reports.
