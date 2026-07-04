@@ -11,13 +11,17 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
-// createGroupApplyBatch persists a config_apply_batches row plus one target
+// createConfigApplyBatch persists a config_apply_batches row plus one target
 // per agent, then enqueues each target's config.apply job and records the
 // resulting job id via SetConfigApplyBatchTargetJob. It is the persistence
-// counterpart to the ASYNC group-apply fan-out: handleApplyGroupConfig calls
-// this instead of enqueueing jobs directly, so an in-flight (or completed)
-// rollout survives a panel restart and can be inspected independently of the
-// jobs store's TTL/eviction.
+// counterpart to the ASYNC apply fan-out: handleApplyGroupConfig and the
+// single-agent handleApplyAgentConfig call this instead of enqueueing jobs
+// directly, so an in-flight (or completed) rollout survives a panel restart
+// and can be inspected independently of the jobs store's TTL/eviction.
+//
+// fleetGroupID is the empty string for an agent-scoped batch-of-one (P3-3.4,
+// single-agent apply): such a batch carries NULL fleet_group_id and never
+// surfaces as a group's active batch. The group fan-out passes the group id.
 //
 // Phase A only implements the all_at_once mode: every agent lands in wave 0,
 // enqueued in the same call. Rolling (multi-wave, halt-on-failure) delivery
@@ -33,7 +37,7 @@ import (
 // pre-existing concurrent-fan-out semantics documented on
 // handleApplyGroupConfig — the operator sees each agent's own outcome via the
 // batch/status views rather than the whole request failing atomically.
-func (s *Server) createGroupApplyBatch(ctx context.Context, actorID, fleetGroupID, mode string, waveSize int, agentIDs []string) (string, error) {
+func (s *Server) createConfigApplyBatch(ctx context.Context, actorID, fleetGroupID, mode string, waveSize int, agentIDs []string) (string, error) {
 	if len(agentIDs) == 0 {
 		return "", nil
 	}

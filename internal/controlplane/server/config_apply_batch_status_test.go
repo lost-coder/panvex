@@ -229,9 +229,9 @@ func TestAdvanceConfigApplyBatchPersistsMessageForStatusEndpoint(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createGroupApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{failAgent})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{failAgent})
 	if err != nil {
-		t.Fatalf("createGroupApplyBatch() error = %v", err)
+		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
 	batch, targets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
 	if err != nil {

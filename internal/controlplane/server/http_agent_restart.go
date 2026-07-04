@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -73,5 +75,42 @@ func (s *Server) handleRestartAgent() http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, restartAgentResponse{AgentID: id, Status: "restarted"})
+	}
+}
+
+// waitJobTargetTerminal polls the job until its target for agentID reaches a
+// terminal status or ctx/the deadline fires. `action` only labels the error
+// messages so callers read clearly; on failure the agent's own ResultText is
+// surfaced verbatim. P3-3.4: config.apply is now async (batch-of-one), so the
+// sole remaining caller is the synchronous runtime.restart wait above; the
+// poll constants live in http_config_apply.go (same package).
+func (s *Server) waitJobTargetTerminal(ctx context.Context, jobID, agentID, action string) error {
+	ticker := time.NewTicker(configApplyPollInterval)
+	defer ticker.Stop()
+	deadline := time.NewTimer(configApplyJobTTL + configApplyPollGrace)
+	defer deadline.Stop()
+	for {
+		if job, ok := s.jobs.Get(jobID); ok {
+			for _, tgt := range job.Targets {
+				if targetAgentID(tgt) != agentID {
+					continue
+				}
+				switch tgt.Status {
+				case jobs.TargetStatusSucceeded:
+					return nil
+				case jobs.TargetStatusFailed:
+					return fmt.Errorf("%s failed on %s: %s", action, agentID, tgt.ResultText)
+				case jobs.TargetStatusExpired:
+					return fmt.Errorf("%s expired on %s", action, agentID)
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("%s timed out on %s", action, agentID)
+		case <-ticker.C:
+		}
 	}
 }

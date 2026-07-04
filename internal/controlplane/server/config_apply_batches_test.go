@@ -26,9 +26,9 @@ func TestConfigApplyBatchAdvanceAllSucceededFinalizesBatch(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createGroupApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{agentA, agentB})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{agentA, agentB})
 	if err != nil {
-		t.Fatalf("createGroupApplyBatch() error = %v", err)
+		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
 	batch, targets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
 	if err != nil {
@@ -88,9 +88,9 @@ func TestConfigApplyBatchAdvanceOneFailedFinalizesBatchFailed(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createGroupApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{okAgent, failAgent})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{okAgent, failAgent})
 	if err != nil {
-		t.Fatalf("createGroupApplyBatch() error = %v", err)
+		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
 	batch, targets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
 	if err != nil {
@@ -144,9 +144,9 @@ func TestConfigApplyBatchAdvanceNonTerminalStaysRunning(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createGroupApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{agentID})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{agentID})
 	if err != nil {
-		t.Fatalf("createGroupApplyBatch() error = %v", err)
+		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
 	batch, targets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
 	if err != nil {
@@ -191,9 +191,9 @@ func TestConfigApplyBatchAdvanceJobEvictedBeforePersistFinalizesFailed(t *testin
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createGroupApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{agentID})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{agentID})
 	if err != nil {
-		t.Fatalf("createGroupApplyBatch() error = %v", err)
+		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
 	batch, targets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
 	if err != nil {
