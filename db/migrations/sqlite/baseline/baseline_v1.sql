@@ -149,9 +149,9 @@ CREATE TABLE config_apply_batch_targets (
     PRIMARY KEY (batch_id, agent_id)
 );
 
-CREATE TABLE config_apply_batches (
+CREATE TABLE "config_apply_batches" (
     id                 TEXT PRIMARY KEY,
-    fleet_group_id     TEXT NOT NULL REFERENCES fleet_groups (id) ON DELETE CASCADE,
+    fleet_group_id     TEXT REFERENCES fleet_groups (id) ON DELETE CASCADE,
     mode               TEXT NOT NULL CHECK (mode IN ('all_at_once', 'rolling')),
     wave_size          INTEGER NOT NULL DEFAULT 1,
     expected_revision  TEXT NOT NULL DEFAULT '',
@@ -696,4 +696,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (52, 1),
   (53, 1),
   (54, 1),
-  (55, 1);
+  (55, 1),
+  (56, 1);

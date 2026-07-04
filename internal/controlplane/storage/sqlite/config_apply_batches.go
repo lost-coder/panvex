@@ -24,7 +24,7 @@ func (s *Store) CreateConfigApplyBatch(ctx context.Context, b storage.ConfigAppl
 		INSERT INTO config_apply_batches
 			(id, fleet_group_id, mode, wave_size, expected_revision, status, created_at_unix, updated_at_unix)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, b.ID, b.FleetGroupID, b.Mode, b.WaveSize, b.ExpectedRevision, b.Status, toUnix(b.CreatedAt), toUnix(b.UpdatedAt)); err != nil {
+	`, b.ID, nullableString(b.FleetGroupID), b.Mode, b.WaveSize, b.ExpectedRevision, b.Status, toUnix(b.CreatedAt), toUnix(b.UpdatedAt)); err != nil {
 		return err
 	}
 
@@ -190,14 +190,26 @@ func (s *Store) PruneConfigApplyBatches(ctx context.Context, before time.Time) (
 	return result.RowsAffected()
 }
 
+// nullableString отдаёт NULL вместо пустой строки — "" в
+// ConfigApplyBatchRecord.FleetGroupID означает agent-scoped батч без
+// fleet-group-скоупа (P3-3.4); NULL не участвует в FK-проверке.
+func nullableString(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
+}
+
 // scanConfigApplyBatch uses the shared rowScanner interface (webhooks.go) so
 // it works for both QueryRowContext and QueryContext call sites.
 func scanConfigApplyBatch(row rowScanner) (storage.ConfigApplyBatchRecord, error) {
 	var b storage.ConfigApplyBatchRecord
 	var createdAt, updatedAt int64
-	if err := row.Scan(&b.ID, &b.FleetGroupID, &b.Mode, &b.WaveSize, &b.ExpectedRevision, &b.Status, &createdAt, &updatedAt); err != nil {
+	var fleetGroupID sql.NullString
+	if err := row.Scan(&b.ID, &fleetGroupID, &b.Mode, &b.WaveSize, &b.ExpectedRevision, &b.Status, &createdAt, &updatedAt); err != nil {
 		return storage.ConfigApplyBatchRecord{}, err
 	}
+	b.FleetGroupID = fleetGroupID.String
 	b.CreatedAt = fromUnix(createdAt)
 	b.UpdatedAt = fromUnix(updatedAt)
 	return b, nil

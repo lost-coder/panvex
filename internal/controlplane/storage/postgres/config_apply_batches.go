@@ -15,9 +15,14 @@ import (
 // a single transaction via the store's internal-tx helper (beginInternalTx):
 // either every row lands or none does.
 func (s *Store) CreateConfigApplyBatch(ctx context.Context, b storage.ConfigApplyBatchRecord, targets []storage.ConfigApplyBatchTargetRecord) error {
-	fleetGroupID, err := uuid.Parse(b.FleetGroupID)
-	if err != nil {
-		return err
+	// P3-3.4: "" fleet group id = agent-scoped batch-of-one → SQL NULL.
+	var fleetGroupID uuid.NullUUID
+	if b.FleetGroupID != "" {
+		parsed, err := uuid.Parse(b.FleetGroupID)
+		if err != nil {
+			return err
+		}
+		fleetGroupID = uuid.NullUUID{UUID: parsed, Valid: true}
 	}
 
 	tx, err := s.beginInternalTx(ctx)
@@ -122,7 +127,9 @@ func (s *Store) ActiveConfigApplyBatchForGroup(ctx context.Context, fleetGroupID
 	if err != nil {
 		return storage.ConfigApplyBatchRecord{}, false, err
 	}
-	row, err := dbsqlc.New(s.db).GetActiveConfigApplyBatchForGroup(ctx, parsed)
+	// The lookup always targets a real group; NULL (agent-scoped) batches
+	// never match `WHERE fleet_group_id = $1` (P3-3.4).
+	row, err := dbsqlc.New(s.db).GetActiveConfigApplyBatchForGroup(ctx, uuid.NullUUID{UUID: parsed, Valid: true})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.ConfigApplyBatchRecord{}, false, nil

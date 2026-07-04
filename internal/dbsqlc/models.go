@@ -138,7 +138,7 @@ type ClientUsage struct {
 
 type ConfigApplyBatch struct {
 	ID               string
-	FleetGroupID     uuid.UUID
+	FleetGroupID     uuid.NullUUID
 	Mode             string
 	WaveSize         int32
 	ExpectedRevision string
@@ -333,37 +333,9 @@ type TelemtInstance struct {
 }
 
 type TelemtRuntimeCurrent struct {
-	AgentID                    string
-	ObservedAt                 time.Time
-	State                      string
-	StateReason                string
-	ReadOnly                   bool
-	AcceptingNewConnections    bool
-	MeRuntimeReady             bool
-	Me2dcFallbackEnabled       bool
-	UseMiddleProxy             bool
-	StartupStatus              string
-	StartupStage               string
-	StartupProgressPct         float64
-	InitializationStatus       string
-	Degraded                   bool
-	InitializationStage        string
-	InitializationProgressPct  float64
-	TransportMode              string
-	CurrentConnections         int64
-	CurrentConnectionsMe       int64
-	CurrentConnectionsDirect   int64
-	ActiveUsers                int64
-	UptimeSeconds              float64
-	ConnectionsTotal           int64
-	ConnectionsBadTotal        int64
-	HandshakeTimeoutsTotal     int64
-	ConfiguredUsers            int64
-	DcCoveragePct              float64
-	HealthyUpstreams           int64
-	TotalUpstreams             int64
-	TelemtUnreachableSinceUnix int64
-	TelemtUnreachable          bool
+	AgentID     string
+	ObservedAt  time.Time
+	RuntimeJson string
 }
 
 type TelemtRuntimeDcsCurrent struct {

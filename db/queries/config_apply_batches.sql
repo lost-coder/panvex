@@ -14,7 +14,7 @@ INSERT INTO config_apply_batch_targets (batch_id, agent_id, wave_index, job_id, 
 VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: GetConfigApplyBatch :one
-SELECT id, fleet_group_id::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
+SELECT id, COALESCE(fleet_group_id::text, '')::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
 FROM config_apply_batches
 WHERE id = $1;
 
@@ -25,13 +25,13 @@ WHERE batch_id = $1
 ORDER BY wave_index ASC, agent_id ASC;
 
 -- name: ListRunningConfigApplyBatches :many
-SELECT id, fleet_group_id::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
+SELECT id, COALESCE(fleet_group_id::text, '')::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
 FROM config_apply_batches
 WHERE status = 'running'
 ORDER BY created_at ASC, id ASC;
 
 -- name: GetActiveConfigApplyBatchForGroup :one
-SELECT id, fleet_group_id::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
+SELECT id, COALESCE(fleet_group_id::text, '')::text AS fleet_group_id, mode, wave_size, expected_revision, status, created_at, updated_at
 FROM config_apply_batches
 WHERE fleet_group_id = $1 AND status = 'running'
 ORDER BY created_at ASC, id ASC
