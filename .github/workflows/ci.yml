@@ -211,12 +211,16 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6
         with:
           go-version: "1.26"
+      - name: Mirror install-agent.sh for //go:embed
+        run: go generate ./internal/controlplane/server/...
       - name: Run storage tree against Postgres (contract + schema-sync + EXPLAIN)
         # -p 1: the migrate schema-sync test DROPs/recreates the public
         # schema while the postgres contract tests TRUNCATE the same
         # database — package-level parallelism would race on the shared
-        # DSN. Expected duration ~3-5 min.
-        run: go test -p 1 -count=1 ./internal/controlplane/storage/...
+        # DSN. Expected duration ~3-5 min. cmd/control-plane rides along
+        # for the Postgres rotate-encryption-key regression test
+        # (audit 2026-07-02 #1).
+        run: go test -p 1 -count=1 ./internal/controlplane/storage/... ./cmd/control-plane/
 
   panel-build:
     name: Build Binaries
