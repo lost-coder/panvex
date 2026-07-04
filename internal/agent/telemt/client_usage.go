@@ -67,43 +67,6 @@ func mergeUserQuotaInfo(rows []ClientUsage, quotas []UserQuotaInfo) {
 	}
 }
 
-func (c *Client) fetchClientUsage(ctx context.Context) ([]ClientUsage, error) {
-	users := make([]struct {
-		Username           string `json:"username"`
-		CurrentConnections int    `json:"current_connections"`
-		ActiveUniqueIPs    int    `json:"active_unique_ips"`
-		RecentUniqueIPs    int    `json:"recent_unique_ips"`
-		TotalOctets        uint64 `json:"total_octets"`
-	}, 0)
-	if err := c.getJSON(ctx, "/v1/stats/users", &users); err != nil {
-		return nil, err
-	}
-
-	clientUsage := make([]ClientUsage, 0, len(users))
-	for _, user := range users {
-		clientUsage = append(clientUsage, ClientUsage{
-			ClientName:       user.Username,
-			TrafficUsedBytes: user.TotalOctets,
-			UniqueIPsUsed:    user.RecentUniqueIPs,
-			CurrentIPsUsed:   user.ActiveUniqueIPs,
-			ActiveTCPConns:   user.CurrentConnections,
-		})
-	}
-
-	// Merge per-user quota info (Telemt 3.4.12+). Quiet on 404 / soft
-	// error so the core usage snapshot remains intact when Telemt is
-	// too old to expose the endpoint or transiently rejects the call;
-	// downstream consumers see zeroed Quota* fields in those cases,
-	// which the panel renders as "no quota data".
-	if quotas, err := c.fetchUserQuotaInfo(ctx); err == nil {
-		mergeUserQuotaInfo(clientUsage, quotas)
-	} else {
-		c.logger.Warn("telemt user quota fetch failed", "path", pathUsersQuota, "err", err)
-	}
-
-	return clientUsage, nil
-}
-
 type ClientUsageMetricsSnapshot struct {
 	Users         []ClientUsage
 	UptimeSeconds float64
@@ -135,7 +98,10 @@ func (c *Client) FetchClientUsageFromMetrics(ctx context.Context) (ClientUsageMe
 		return ClientUsageMetricsSnapshot{}, fmt.Errorf("telemt metrics request failed with status %d", response.StatusCode)
 	}
 
-	body, err := io.ReadAll(response.Body)
+	// Consistent with the 10 MiB cap on every other Telemt response path
+	// (http.go getJSON*): a runaway /metrics endpoint must not balloon
+	// agent memory.
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBodySize))
 	if err != nil {
 		return ClientUsageMetricsSnapshot{}, err
 	}

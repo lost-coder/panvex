@@ -350,13 +350,13 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 			Version:     "2026.03",
 			ReadOnly:    false,
 			Connections: 7,
-			Clients: []telemt.ClientUsage{
-				{
-					ClientID:         "client-1",
-					TrafficUsedBytes: 1024,
-					UniqueIPsUsed:    2,
-					ActiveTCPConns:   3,
-				},
+		},
+		metricsUsage: []telemt.ClientUsage{
+			{
+				ClientID:         "client-1",
+				TrafficUsedBytes: 1024,
+				UniqueIPsUsed:    2,
+				ActiveTCPConns:   3,
 			},
 		},
 	}
@@ -372,7 +372,7 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 	if _, err := agent.BuildUsageSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 5, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("BuildSnapshot(baseline) error = %v", err)
 	}
-	client.state.Clients[0].TrafficUsedBytes = 2048
+	client.metricsUsage[0].TrafficUsedBytes = 2048
 	snapshot, err := agent.BuildUsageSnapshot(context.Background(), time.Date(2026, time.March, 14, 8, 6, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("BuildSnapshot() error = %v", err)
@@ -709,13 +709,13 @@ func TestAgentBuildSnapshotMapsTelemtClientNamesBackToManagedClientIDs(t *testin
 			Version:     "2026.03",
 			ReadOnly:    false,
 			Connections: 1,
-			Clients: []telemt.ClientUsage{
-				{
-					ClientName:       "alice",
-					TrafficUsedBytes: 2048,
-					UniqueIPsUsed:    2,
-					ActiveTCPConns:   1,
-				},
+		},
+		metricsUsage: []telemt.ClientUsage{
+			{
+				ClientName:       "alice",
+				TrafficUsedBytes: 2048,
+				UniqueIPsUsed:    2,
+				ActiveTCPConns:   1,
 			},
 		},
 	}
@@ -780,12 +780,8 @@ func (c *fakeTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeSta
 }
 
 func (c *fakeTelemtClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {
-	usage := c.metricsUsage
-	if usage == nil {
-		usage = c.state.Clients
-	}
 	return telemt.ClientUsageMetricsSnapshot{
-		Users:         usage,
+		Users:         c.metricsUsage,
 		UptimeSeconds: c.metricsUptime,
 	}, nil
 }
@@ -868,10 +864,8 @@ func TestAgentUsageSnapshotSeqIsMonotonic(t *testing.T) {
 	// snapshot (gauge change) — its traffic delta is 0 because the process
 	// just started; counting begins on the next tick.
 	client := &fakeTelemtClient{
-		state: telemt.RuntimeState{
-			Clients: []telemt.ClientUsage{
-				{ClientID: "client-1", TrafficUsedBytes: 500, ActiveTCPConns: 3},
-			},
+		metricsUsage: []telemt.ClientUsage{
+			{ClientID: "client-1", TrafficUsedBytes: 500, ActiveTCPConns: 3},
 		},
 	}
 	var persisted []uint64
@@ -897,7 +891,7 @@ func TestAgentUsageSnapshotSeqIsMonotonic(t *testing.T) {
 	}
 
 	// Advance usage so BuildUsageSnapshot emits another delta.
-	client.state.Clients[0].TrafficUsedBytes = 1300
+	client.metricsUsage[0].TrafficUsedBytes = 1300
 	second, err := agent.BuildUsageSnapshot(context.Background(), now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("BuildUsageSnapshot(2) error = %v", err)
@@ -925,9 +919,7 @@ func TestAgentUsageSeqPersists(t *testing.T) {
 	// Non-zero ActiveTCPConns so the baseline (first) tick still emits a
 	// snapshot carrying the resumed seq, even though its traffic delta is 0.
 	client := &fakeTelemtClient{
-		state: telemt.RuntimeState{
-			Clients: []telemt.ClientUsage{{ClientID: "client-1", TrafficUsedBytes: 1, ActiveTCPConns: 1}},
-		},
+		metricsUsage: []telemt.ClientUsage{{ClientID: "client-1", TrafficUsedBytes: 1, ActiveTCPConns: 1}},
 	}
 	agent := New(Config{
 		AgentID:         "agent-1",
@@ -957,10 +949,8 @@ func TestAgentUsageSeqPersists(t *testing.T) {
 // counting from the adopted baseline.
 func TestAgentRestartDoesNotReplayCumulativeAsDelta(t *testing.T) {
 	client := &fakeTelemtClient{
-		state: telemt.RuntimeState{
-			Clients: []telemt.ClientUsage{
-				{ClientID: "client-1", TrafficUsedBytes: 1_000_000, ActiveTCPConns: 2},
-			},
+		metricsUsage: []telemt.ClientUsage{
+			{ClientID: "client-1", TrafficUsedBytes: 1_000_000, ActiveTCPConns: 2},
 		},
 	}
 	// Simulate a restart: fresh Agent (empty lastOctets) with a resumed,
@@ -983,7 +973,7 @@ func TestAgentRestartDoesNotReplayCumulativeAsDelta(t *testing.T) {
 	}
 
 	// Subsequent real traffic counts normally from the adopted baseline.
-	client.state.Clients[0].TrafficUsedBytes = 1_000_300
+	client.metricsUsage[0].TrafficUsedBytes = 1_000_300
 	second, err := agent.BuildUsageSnapshot(context.Background(), now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("BuildUsageSnapshot(2) error = %v", err)

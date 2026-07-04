@@ -224,10 +224,8 @@ func TestConcurrentBuildUsageSnapshotMonotonicSeq(t *testing.T) {
 	// because BuildUsageSnapshot serialises the post-fetch state under
 	// a.mu.
 	clientStub := &fakeTelemtClient{
-		state: telemt.RuntimeState{
-			Clients: []telemt.ClientUsage{
-				{ClientID: "client-1", TrafficUsedBytes: 1, ActiveTCPConns: 1},
-			},
+		metricsUsage: []telemt.ClientUsage{
+			{ClientID: "client-1", TrafficUsedBytes: 1, ActiveTCPConns: 1},
 		},
 	}
 	agent := New(Config{AgentID: "agent-1"}, clientStub)

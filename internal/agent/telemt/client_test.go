@@ -340,21 +340,6 @@ func TestClientFetchRuntimeStateUsesLoopbackAPI(t *testing.T) {
 	if state.RecentEvents[0].EventType != "upstream_recovered" {
 		t.Fatalf("state.RecentEvents[0].EventType = %q, want %q", state.RecentEvents[0].EventType, "upstream_recovered")
 	}
-	if len(state.Clients) != 1 {
-		t.Fatalf("len(state.Clients) = %d, want %d", len(state.Clients), 1)
-	}
-	if state.Clients[0].ClientName != "alice" {
-		t.Fatalf("state.Clients[0].ClientName = %q, want %q", state.Clients[0].ClientName, "alice")
-	}
-	if state.Clients[0].TrafficUsedBytes != 1024 {
-		t.Fatalf("state.Clients[0].TrafficUsedBytes = %d, want %d", state.Clients[0].TrafficUsedBytes, 1024)
-	}
-	if state.Clients[0].UniqueIPsUsed != 4 {
-		t.Fatalf("state.Clients[0].UniqueIPsUsed = %d, want %d", state.Clients[0].UniqueIPsUsed, 4)
-	}
-	if state.Clients[0].CurrentIPsUsed != 2 {
-		t.Fatalf("state.Clients[0].CurrentIPsUsed = %d, want %d", state.Clients[0].CurrentIPsUsed, 2)
-	}
 }
 
 func TestClientFetchRuntimeStatePreservesDisabledDiagnosticsWithoutFailingFastRuntime(t *testing.T) {
@@ -623,8 +608,12 @@ func TestClientFetchRuntimeStateCachesSlowEndpointsWithinTTL(t *testing.T) {
 	if counts["/v1/runtime/events/recent"] != 1 {
 		t.Fatalf("recent events requests = %d, want %d", counts["/v1/runtime/events/recent"], 1)
 	}
-	if counts["/v1/stats/users"] != 2 {
-		t.Fatalf("user requests = %d, want %d", counts["/v1/stats/users"], 2)
+	// Audit #9d: client usage was removed from the runtime poll (its
+	// RuntimeState.Clients field had zero consumers), so FetchRuntimeState
+	// must not hit the users endpoint at all — FetchClientUsageFromMetrics
+	// is now the sole client-usage path.
+	if counts["/v1/stats/users"] != 0 {
+		t.Fatalf("user requests = %d, want %d (client usage dropped from runtime poll)", counts["/v1/stats/users"], 0)
 	}
 }
 
@@ -757,9 +746,6 @@ func TestClientFetchRuntimeStateAllowsRecentEventsFailure(t *testing.T) {
 	}
 	if len(state.RecentEvents) != 0 {
 		t.Fatalf("len(state.RecentEvents) = %d, want %d", len(state.RecentEvents), 0)
-	}
-	if len(state.Clients) != 1 {
-		t.Fatalf("len(state.Clients) = %d, want %d", len(state.Clients), 1)
 	}
 }
 
@@ -958,9 +944,6 @@ func TestClientFetchRuntimeStatePartialOnSomeFailures(t *testing.T) {
 	}
 	if state.Version != "2026.03" {
 		t.Fatalf("state.Version = %q, want %q (system/info succeeded)", state.Version, "2026.03")
-	}
-	if len(state.Clients) != 1 {
-		t.Fatalf("len(state.Clients) = %d, want 1 (stats/users succeeded)", len(state.Clients))
 	}
 	mu.Lock()
 	gotFails := failedCalls

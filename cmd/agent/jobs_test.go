@@ -132,3 +132,9 @@ func TestDuplicateDeliveryAcrossConnectionsIsNotReExecuted(t *testing.T) {
 		t.Fatalf("duplicate must not be queued for re-execution, queue len = %d", got)
 	}
 }
+
+func TestResetQuotaRidesClientMutationLane(t *testing.T) {
+	if got := jobPipelineForAction("client.reset_quota"); got != jobPipelineClientMutation {
+		t.Fatalf("jobPipelineForAction(client.reset_quota) = %q, want %q (per-client mutations must serialise in delivery order)", got, jobPipelineClientMutation)
+	}
+}

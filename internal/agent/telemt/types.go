@@ -17,7 +17,6 @@ type RuntimeState struct {
 	SecurityInventory RuntimeSecurityInventory
 	MeWritersSummary  RuntimeMeWritersSummary
 	SystemLoad        RuntimeSystemLoad
-	Clients           []ClientUsage
 	// Partial indicates that at least one Telemt sub-fetch failed or the
 	// outer context expired during FetchRuntimeState. Downstream callers
 	// should log a warning and may still forward the snapshot to the

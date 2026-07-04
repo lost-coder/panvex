@@ -107,8 +107,7 @@ func (c *Client) FetchRuntimeState(ctx context.Context) (RuntimeState, error) {
 func (c *Client) collectRuntimeStateRaw(ctx context.Context, markPartial func(string, error), setPartial func()) fetchRuntimeStateRaw {
 	raw := fetchRuntimeStateRaw{}
 
-	// dcs and users live in fields the parallel goroutines write directly;
-	// usersMu is unnecessary because only one goroutine writes raw.users.
+	// dcs lives in a field the parallel goroutines write directly.
 	// The slow-state collector writes raw.slowData; it's the single writer
 	// for that field too. No cross-goroutine field aliasing.
 
@@ -153,16 +152,6 @@ func (c *Client) collectRuntimeStateRaw(ctx context.Context, markPartial func(st
 	// already mutex-protected internally.
 	eg.Go(func() error {
 		c.collectSlowRuntimeState(gctx, &raw, markPartial, setPartial)
-		return nil
-	})
-
-	eg.Go(func() error {
-		users, err := c.fetchClientUsage(gctx)
-		if err != nil {
-			markPartial("/v1/stats/users", err)
-			users = nil
-		}
-		raw.users = users
 		return nil
 	})
 
@@ -351,7 +340,6 @@ func (c *Client) assembleRuntimeState(raw fetchRuntimeStateRaw, partial bool) Ru
 		SecurityInventory: raw.slowData.SecurityInventory,
 		MeWritersSummary:  raw.slowData.MeWritersSummary,
 		SystemLoad:        raw.systemLoad,
-		Clients:           raw.users,
 		Partial:           partial,
 	}
 }

@@ -110,7 +110,6 @@ type fetchRuntimeStateRaw struct {
 	}
 	dcs        []RuntimeDC
 	slowData   slowRuntimeState
-	users      []ClientUsage
 	systemLoad RuntimeSystemLoad
 }
 
