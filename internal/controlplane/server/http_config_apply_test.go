@@ -580,3 +580,28 @@ func TestWaitJobTargetTerminalCtxCancel(t *testing.T) {
 		t.Fatalf("waitJobTargetTerminal with cancelled ctx = nil, want error")
 	}
 }
+
+// TestAggregateGroupApplyStatusUnknownJobIsFailed: the legacy job-id status
+// path shares configApplyJobStatus with the batch orchestrator. A job id
+// that is absent from the jobs store (evicted, or never ours) must
+// aggregate as a terminal failure with an explicit reason — the old
+// missing-job default silently turned ANY lost or foreign job id into
+// "succeeded" (audit 2026-07-02 #2).
+func TestAggregateGroupApplyStatusUnknownJobIsFailed(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+
+	resp := srv.aggregateGroupApplyStatus([]string{"agent-x"}, []string{"job-never-existed"})
+
+	if !resp.Done {
+		t.Fatalf("done = false, want true (failed is terminal)")
+	}
+	if resp.Total != 1 || resp.Failed != 1 || resp.Applied != 0 || resp.Pending != 0 {
+		t.Fatalf("aggregate = %+v, want Total:1 Failed:1 Applied:0 Pending:0", resp)
+	}
+	if resp.Agents[0].Status != applyStatusFailed {
+		t.Fatalf("agent status = %q, want %q", resp.Agents[0].Status, applyStatusFailed)
+	}
+	if resp.Agents[0].Message != configApplyMsgJobLost {
+		t.Fatalf("agent message = %q, want %q", resp.Agents[0].Message, configApplyMsgJobLost)
+	}
+}

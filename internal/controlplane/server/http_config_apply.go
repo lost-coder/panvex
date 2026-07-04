@@ -323,9 +323,12 @@ func (s *Server) handleGroupConfigApplyStatus() http.HandlerFunc {
 
 // aggregateGroupApplyStatus folds the paired agent/job id slices into the
 // status response. An empty job id is a no-op agent (empty effective config),
-// counted as succeeded. A job that is no longer resident in the store (evicted
-// after completing, or never found) is also treated as succeeded so a slow
-// poller does not wedge on a job that already terminated and rolled off.
+// counted as succeeded. A job that is no longer resident in the store
+// (evicted, or never found) resolves to failed with configApplyMsgJobLost —
+// terminal, so a slow poller still completes instead of wedging, but a lost
+// outcome is never presented as a success (audit 2026-07-02 #2). The
+// persistent batch endpoints are the authoritative view; this legacy path
+// only serves pollers still holding the 202 response's job ids.
 func (s *Server) aggregateGroupApplyStatus(agentIDs, jobIDs []string) groupApplyStatusResponse {
 	resp := groupApplyStatusResponse{
 		Done:   true,
@@ -355,18 +358,28 @@ func (s *Server) aggregateGroupApplyStatus(agentIDs, jobIDs []string) groupApply
 	return resp
 }
 
+// configApplyMsgJobLost is the operator-facing message recorded for a
+// target whose config.apply job disappeared from the in-memory jobs store
+// before a terminal status was observed and persisted (TTL eviction,
+// panel restart losing the job, or a foreign/mistyped job id on the
+// legacy poll path). Rendered verbatim in the dashboard's rollout view.
+const configApplyMsgJobLost = "job lost before terminal status was persisted"
+
 // configApplyJobStatus resolves a single config.apply job/agent pair to a
 // per-agent apply status (applyStatus* consts) and message. A job absent
-// from the store is treated as succeeded (it terminated and rolled off
-// before the poll landed). Failed/expired targets surface the agent's own
-// ResultText. Shared by the legacy job-id status endpoint
+// from the store resolves to failed with configApplyMsgJobLost: the only
+// callers pass job ids for targets that are not yet persisted as terminal,
+// so "missing" means the terminal outcome was lost, not that it succeeded
+// (audit 2026-07-02 #2 — the old succeeded default finalized failed
+// rollouts as successful batches). Failed/expired targets surface the
+// agent's own ResultText. Shared by the legacy job-id status endpoint
 // (aggregateGroupApplyStatus) and the persistent-batch orchestrator
 // (advanceConfigApplyBatch in config_apply_batches.go) so the two status
 // paths cannot drift out of sync (DRY).
 func (s *Server) configApplyJobStatus(jobID, agentID string) (status, message string) {
 	job, ok := s.jobs.Get(jobID)
 	if !ok {
-		return applyStatusSucceeded, ""
+		return applyStatusFailed, configApplyMsgJobLost
 	}
 	for _, tgt := range job.Targets {
 		if targetAgentID(tgt) != agentID {
@@ -510,8 +523,8 @@ func (s *Server) handleGetActiveGroupApplyBatch() http.HandlerFunc {
 // this is what survives job eviction and makes the view resumable. A target
 // still pending/running falls back to the live job via configApplyJobStatus
 // for a fresher read (the persisted row is only refreshed periodically by
-// advanceConfigApplyBatch); its Message is empty until the job reaches a
-// terminal state and pollConfigApplyBatches persists it. Done mirrors the
+// advanceConfigApplyBatch); a job already evicted at that point reads as
+// failed/configApplyMsgJobLost, matching what the worker will persist. Done mirrors the
 // batch's own persisted status rather than being re-derived from the
 // targets, so it agrees exactly with when advanceConfigApplyBatch finalizes
 // the batch.
