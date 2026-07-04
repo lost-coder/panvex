@@ -71,9 +71,9 @@ func (s *Store) ListUserAppearances(ctx context.Context) ([]storage.UserAppearan
 
 func defaultUserAppearanceRecord(userID string) storage.UserAppearanceRecord {
 	return storage.UserAppearanceRecord{
-		UserID:  userID,
-		Theme:   "system",
-		Density: "comfortable",
+		UserID:   userID,
+		Theme:    "system",
+		Density:  "comfortable",
 		HelpMode: "basic",
 	}
 }

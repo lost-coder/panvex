@@ -75,7 +75,6 @@ func runSettingsContract(t *testing.T, open OpenStore) {
 		}
 	})
 
-
 	t.Run("retention settings round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
@@ -132,7 +131,6 @@ func runSettingsContract(t *testing.T, open OpenStore) {
 			t.Fatalf("GetRetentionSettings(after overwrite) = %+v, want %+v", got, replacement)
 		}
 	})
-
 
 	t.Run("update config settings and state round trip", func(t *testing.T) {
 		store := open(t)

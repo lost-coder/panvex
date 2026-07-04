@@ -17,8 +17,8 @@ import (
 	"log/slog"
 	"sync"
 
-	sqlitebaseline "github.com/lost-coder/panvex/db/migrations/sqlite/baseline"
 	sqlitemigrations "github.com/lost-coder/panvex/db/migrations/sqlite"
+	sqlitebaseline "github.com/lost-coder/panvex/db/migrations/sqlite/baseline"
 	"github.com/pressly/goose/v3"
 )
 
@@ -113,7 +113,6 @@ func applyBaselineIfFresh(ctx context.Context, db *sql.DB) error {
 	}
 	return nil
 }
-
 
 func tableExists(ctx context.Context, db *sql.DB, name string) (bool, error) {
 	var n int

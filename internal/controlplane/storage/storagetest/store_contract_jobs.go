@@ -147,5 +147,4 @@ func runJobsContract(t *testing.T, open OpenStore) {
 		}
 	})
 
-
 }

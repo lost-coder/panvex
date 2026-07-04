@@ -98,7 +98,6 @@ func runUsersContract(t *testing.T, open OpenStore) {
 		}
 	})
 
-
 	t.Run("user appearance defaults and round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
@@ -219,6 +218,5 @@ func runUsersContract(t *testing.T, open OpenStore) {
 			t.Fatalf("len(ListUserAppearances()) after DeleteUser = %d, want %d", len(appearances), 1)
 		}
 	})
-
 
 }
