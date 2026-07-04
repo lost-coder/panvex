@@ -3,6 +3,7 @@ package storagetest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -239,6 +240,105 @@ func runTransactContract(t *testing.T, open OpenStore) {
 		}
 		if rec.ConsumedAt != nil {
 			t.Fatalf("token consumed despite rollback: ConsumedAt = %v, want nil", rec.ConsumedAt)
+		}
+	})
+
+	t.Run("Transact exposes every store domain on the tx-bound store", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		// Valid-UUID-shaped id that exists in no table, so lookups resolve
+		// to ErrNotFound (not a type/cast error on the Postgres uuid columns).
+		const missingID = "00000000-0000-4000-8000-0000000000ff"
+
+		// One representative call per embedded interface of storage.Store
+		// (audit 2026-07-02 #1: the Postgres tx-bound store rejected most
+		// domains with errTxBoundStore, so RotateKEK and any future
+		// cross-domain Transact composition broke at runtime while the
+		// contract only covered PutFleetGroup + ConsumeEnrollmentToken).
+		// Acceptable outcomes inside the tx: nil or storage.ErrNotFound.
+		// Anything else — including a backend-specific "tx-bound" sentinel —
+		// fails the contract.
+		err := store.Transact(ctx, func(tx storage.Store) error {
+			checks := []struct {
+				domain string
+				call   func() error
+			}{
+				{"UserStore.GetUserByID", func() error { _, err := tx.GetUserByID(ctx, missingID); return err }},
+				{"UserStore.DeleteUser", func() error { return tx.DeleteUser(ctx, missingID) }},
+				{"UserFleetGroupScopeStore.ListUserFleetGroupScopes", func() error { _, err := tx.ListUserFleetGroupScopes(ctx, missingID); return err }},
+				{"UserAppearanceStore.GetUserAppearance", func() error { _, err := tx.GetUserAppearance(ctx, missingID); return err }},
+				{"SessionStore.GetSession", func() error { _, err := tx.GetSession(ctx, missingID); return err }},
+				{"CPSecretStore.GetCPSecret", func() error { _, err := tx.GetCPSecret(ctx, "tx-domain-probe"); return err }},
+				{"ConsumedTotpStore.ListConsumedTotp", func() error { _, err := tx.ListConsumedTotp(ctx); return err }},
+				{"LoginLockoutStore.GetLoginLockout", func() error { _, err := tx.GetLoginLockout(ctx, "tx-probe-user"); return err }},
+				{"AgentRevocationStore.ListAgentRevocations", func() error { _, err := tx.ListAgentRevocations(ctx); return err }},
+				{"AgentFallbackStateStore.GetAgentFallbackState", func() error { _, err := tx.GetAgentFallbackState(ctx, missingID); return err }},
+				{"FleetStore.GetAgentConfigTarget", func() error { _, err := tx.GetAgentConfigTarget(ctx, storage.ConfigScopeAgent, missingID); return err }},
+				{"FleetStore.ListInstances", func() error { _, err := tx.ListInstances(ctx); return err }},
+				{"JobStore.ListJobs", func() error { _, err := tx.ListJobs(ctx); return err }},
+				{"AuditStore.LatestAuditChainHash", func() error { _, err := tx.LatestAuditChainHash(ctx); return err }},
+				{"MetricStore.ListMetricSnapshots", func() error { _, err := tx.ListMetricSnapshots(ctx); return err }},
+				{"TelemetryStore.GetTelemetryRuntimeCurrent", func() error { _, err := tx.GetTelemetryRuntimeCurrent(ctx, missingID); return err }},
+				{"EnrollmentStore.GetEnrollmentToken", func() error { _, err := tx.GetEnrollmentToken(ctx, "tx-domain-missing-token"); return err }},
+				{"AgentCertificateRecoveryGrantStore.GetAgentCertificateRecoveryGrant", func() error { _, err := tx.GetAgentCertificateRecoveryGrant(ctx, missingID); return err }},
+				{"PanelSettingsStore.GetPanelSettings", func() error { _, err := tx.GetPanelSettings(ctx); return err }},
+				{"RetentionSettingsStore.GetRetentionSettings", func() error { _, err := tx.GetRetentionSettings(ctx); return err }},
+				{"UpdateConfigStore.GetUpdateSettings", func() error { _, err := tx.GetUpdateSettings(ctx); return err }},
+				{"UpdateConfigStore.GetGeoIPSettings", func() error { _, err := tx.GetGeoIPSettings(ctx); return err }},
+				{"CertificateAuthorityStore.GetCertificateAuthority", func() error { _, err := tx.GetCertificateAuthority(ctx); return err }},
+				{"TimeseriesStore.CountUniqueClientIPs", func() error { _, err := tx.CountUniqueClientIPs(ctx, missingID); return err }},
+				{"IntegrationStore.ListIntegrationProviders", func() error { _, err := tx.ListIntegrationProviders(ctx); return err }},
+				{"ConfigApplyBatchStore.ListRunningConfigApplyBatches", func() error { _, err := tx.ListRunningConfigApplyBatches(ctx); return err }},
+			}
+			for _, c := range checks {
+				if err := c.call(); err != nil && !errors.Is(err, storage.ErrNotFound) {
+					return fmt.Errorf("%s inside Transact: %w", c.domain, err)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("Transact() error = %v — every Store domain must compose on the tx-bound store", err)
+		}
+	})
+
+	t.Run("cp_secrets writes compose inside Transact (RotateKEK path)", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		const key = "tx-contract/kek-probe"
+		if err := store.PutCPSecret(ctx, key, []byte("wrapped-dek-v1")); err != nil {
+			t.Fatalf("PutCPSecret() outside tx error = %v", err)
+		}
+
+		// Mirrors secretvault.Vault.RotateKEK → TxCPSecretStore.WithCPSecretTx
+		// → storage.Store.Transact: read the current wrapper and replace it
+		// within the same transaction (audit 2026-07-02 #1).
+		if err := store.Transact(ctx, func(tx storage.Store) error {
+			got, err := tx.GetCPSecret(ctx, key)
+			if err != nil {
+				return fmt.Errorf("GetCPSecret inside tx: %w", err)
+			}
+			if string(got) != "wrapped-dek-v1" {
+				return fmt.Errorf("GetCPSecret inside tx = %q, want wrapped-dek-v1", got)
+			}
+			if err := tx.PutCPSecret(ctx, key, []byte("wrapped-dek-v2")); err != nil {
+				return fmt.Errorf("PutCPSecret inside tx: %w", err)
+			}
+			return nil
+		}); err != nil {
+			t.Fatalf("Transact() error = %v", err)
+		}
+
+		got, err := store.GetCPSecret(ctx, key)
+		if err != nil {
+			t.Fatalf("GetCPSecret() after commit error = %v", err)
+		}
+		if string(got) != "wrapped-dek-v2" {
+			t.Fatalf("GetCPSecret() after commit = %q, want wrapped-dek-v2", got)
 		}
 	})
 
