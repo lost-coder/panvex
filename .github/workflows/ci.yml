@@ -492,6 +492,13 @@ jobs:
       - uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff  # v1
         with:
           lint: true
+          # Wire back-compat is intentionally not a constraint here: the
+          # agent and the control-plane are built from one repo and
+          # deployed together (greenfield, pre-prod, no in-field clients to
+          # protect). buf breaking would block legitimate field removals
+          # like the P4 seq-delta protocol retirement (traffic_delta_bytes /
+          # seq deleted with their numbers reserved). Style lint stays on.
+          breaking: false
           pr_comment: false
 
   sqlc-check:
