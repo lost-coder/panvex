@@ -69,6 +69,26 @@ func TestCheckURLPortInsensitive(t *testing.T) {
 	}
 }
 
+// TestCheckURLRejectsHostlessEvenWhenDisabled: a hostless https URL must be
+// rejected regardless of allow-list state, so the disabled ("*") switch cannot
+// let a bad URL through to a murkier downstream dial error (Copilot review,
+// PR #153).
+func TestCheckURLRejectsHostlessEvenWhenDisabled(t *testing.T) {
+	// disabled ("*") — the early-return path that previously skipped host validation
+	t.Setenv(EnvAllowedHosts, "*")
+	if p := PolicyFromEnv(); !p.Disabled() {
+		t.Fatal("PolicyFromEnv() with * did not disable")
+	} else if err := p.CheckURL("https:///path-only"); err == nil {
+		t.Fatal("hostless https URL accepted while disabled")
+	}
+
+	// allow-list enabled — hostless URL is also rejected (empty host is never listed)
+	t.Setenv(EnvAllowedHosts, "github.com")
+	if err := PolicyFromEnv().CheckURL("https:///path-only"); err == nil {
+		t.Fatal("hostless https URL accepted with an allow-list")
+	}
+}
+
 func TestPolicyFromEnvListTrimsAndSorts(t *testing.T) {
 	t.Setenv(EnvAllowedHosts, "  b.example.com , a.example.com ,c.example.com  ")
 	p := PolicyFromEnv()
