@@ -40,14 +40,13 @@ func (ExecRunner) Run(ctx context.Context, name string, args ...string) error {
 // Restarter restarts Telemt and verifies the strategy is usable.
 type Restarter struct {
 	restartCmd []string
-	verifyCmd  []string
 	runner     CommandRunner
 }
 
 // Parse builds a Restarter from a strategy spec:
-//   - "systemd:<unit>"      -> systemctl restart/status <unit>
-//   - "docker:<container>"  -> docker restart/inspect <container>
-//   - "command:<argv...>"   -> run the given command (space-split); Verify is a no-op
+//   - "systemd:<unit>"      -> systemctl restart <unit>
+//   - "docker:<container>"  -> docker restart <container>
+//   - "command:<argv...>"   -> run the given command (space-split)
 func Parse(spec string, runner CommandRunner) (*Restarter, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
@@ -62,13 +61,11 @@ func Parse(spec string, runner CommandRunner) (*Restarter, error) {
 	case "systemd":
 		return &Restarter{
 			restartCmd: []string{"systemctl", "restart", arg},
-			verifyCmd:  []string{"systemctl", "status", arg},
 			runner:     runner,
 		}, nil
 	case "docker":
 		return &Restarter{
 			restartCmd: []string{"docker", "restart", arg},
-			verifyCmd:  []string{"docker", "inspect", arg},
 			runner:     runner,
 		}, nil
 	case "command":
@@ -85,14 +82,4 @@ func Parse(spec string, runner CommandRunner) (*Restarter, error) {
 // Restart stop+starts Telemt via the configured command.
 func (r *Restarter) Restart(ctx context.Context) error {
 	return r.runner.Run(ctx, r.restartCmd[0], r.restartCmd[1:]...)
-}
-
-// Verify probes that the strategy is usable (unit/container exists and the agent
-// has permission) without restarting. For the raw "command" strategy there is
-// nothing safe to probe, so Verify succeeds (the command itself is the contract).
-func (r *Restarter) Verify(ctx context.Context) error {
-	if len(r.verifyCmd) == 0 {
-		return nil
-	}
-	return r.runner.Run(ctx, r.verifyCmd[0], r.verifyCmd[1:]...)
 }
