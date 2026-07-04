@@ -29,6 +29,7 @@ func RunContract(t *testing.T, open OpenRepo) {
 	t.Run("GetSoftDeletedReturnsNotFound", func(t *testing.T) { runGetSoftDeletedReturnsNotFound(t, open(t)) })
 	t.Run("UsageBulkRoundtrip", func(t *testing.T) { runUsageBulk(t, open(t)) })
 	t.Run("UsageMonotonicity", func(t *testing.T) { runUsageMonotonicity(t, open(t)) })
+	t.Run("UsageWatermarkRoundtrip", func(t *testing.T) { runUsageWatermarkRoundtrip(t, open(t)) })
 	t.Run("GetBySubscriptionToken", func(t *testing.T) { runGetBySubscriptionToken(t, open(t)) })
 	// More subtests added as Repository surface grows.
 }
@@ -333,5 +334,52 @@ func runUsageMonotonicity(t *testing.T, repo clients.Repository) {
 	if got := findUsage(); got.LastSeq != 7 || got.TrafficUsedBytes != 700 {
 		t.Fatalf("after seq=7: last_seq=%d traffic=%d, want 7/700 (newer report applies)",
 			got.LastSeq, got.TrafficUsedBytes)
+	}
+}
+
+// runUsageWatermarkRoundtrip verifies the P4 cumulative-counter watermark
+// (agent_boot_id, last_total_bytes) survives persist + ListUsage on both
+// backends, so the panel's Restore rehydrates delta-derivation state
+// across restarts.
+func runUsageWatermarkRoundtrip(t *testing.T, repo clients.Repository) {
+	t.Helper()
+	ctx := context.Background()
+	const (
+		clientID = clients.ClientID("c-wm-1")
+		agentID  = "a-1"
+	)
+	if err := repo.Save(ctx, clients.Client{ID: clientID, Name: string(clientID)}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	base := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	findUsage := func() clients.Usage {
+		t.Helper()
+		all, err := repo.ListUsage(ctx)
+		if err != nil {
+			t.Fatalf("ListUsage: %v", err)
+		}
+		for _, u := range all {
+			if u.ClientID == clientID && u.AgentID == agentID {
+				return u
+			}
+		}
+		t.Fatalf("no usage row found for %s/%s", clientID, agentID)
+		return clients.Usage{}
+	}
+
+	if err := repo.UpsertUsage(ctx, clients.Usage{
+		ClientID: clientID, AgentID: agentID,
+		TrafficUsedBytes: 700,
+		AgentBootID:      "boot-7f3a",
+		LastTotalBytes:   12345,
+		LastSeq:          99, // seq protocol still alive in this task
+		ObservedAt:       base.Add(3 * time.Minute),
+	}); err != nil {
+		t.Fatalf("UpsertUsage(watermark): %v", err)
+	}
+	got := findUsage()
+	if got.AgentBootID != "boot-7f3a" || got.LastTotalBytes != 12345 {
+		t.Fatalf("watermark round-trip: boot=%q total=%d, want boot-7f3a/12345",
+			got.AgentBootID, got.LastTotalBytes)
 	}
 }

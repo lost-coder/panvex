@@ -134,6 +134,8 @@ type ClientUsage struct {
 	ObservedAt         time.Time
 	QuotaUsedBytes     int64
 	QuotaLastResetUnix int64
+	AgentBootID        string
+	LastTotalBytes     int64
 }
 
 type ConfigApplyBatch struct {

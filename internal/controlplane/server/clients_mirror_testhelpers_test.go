@@ -98,8 +98,9 @@ func tsOrNow(ts time.Time) time.Time {
 	return ts
 }
 
-// mirrorUsage reads the usage snapshot for (clientID, agentID) from the mirror.
-func mirrorUsage(s *Server, clientID, agentID string) clientUsageSnapshot {
+// mirrorUsage reads the usage entry (with P4 watermark) for
+// (clientID, agentID) from the mirror.
+func mirrorUsage(s *Server, clientID, agentID string) clients.MirrorUsageEntry {
 	u, _ := s.clientsSvc.MirrorUsageEntryFor(clientID, agentID)
 	return u
 }

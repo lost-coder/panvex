@@ -536,7 +536,13 @@ type ClientUsageRecord struct {
 	QuotaUsedBytes     uint64
 	QuotaLastResetUnix uint64
 	LastSeq            uint64
-	ObservedAt         time.Time
+	// AgentBootID + LastTotalBytes are the P4 cumulative-counter
+	// watermark: the reporting agent process epoch and the last
+	// cumulative total seen for it. TrafficUsedBytes stays the
+	// panel-accumulated absolute.
+	AgentBootID    string
+	LastTotalBytes uint64
+	ObservedAt     time.Time
 }
 
 // ServerLoadHourlyRecord stores one hourly rollup of server load metrics.
