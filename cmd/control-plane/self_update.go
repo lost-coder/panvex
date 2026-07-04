@@ -35,9 +35,10 @@ type tokenSource struct {
 // resolveSelfUpdateToken picks the GitHub token from, in priority order:
 // an explicit -token flag (gated: rejected unless AllowInsecure is set,
 // since the flag value leaks via /proc/<pid>/cmdline), -token-file, then
-// the GITHUB_TOKEN env var. Returns an error if -token was supplied without
-// the insecure opt-in, or if none of the sources yield a token (empty
-// string is valid — self-update against a public repo needs no token).
+// the GITHUB_TOKEN env var. The only token-policy error is a -token flag
+// supplied without the insecure opt-in (a -token-file that cannot be read
+// is surfaced too). An empty result is valid and not an error —
+// self-update against a public repo needs no token.
 func resolveSelfUpdateToken(src tokenSource) (string, error) {
 	if src.FlagWasSet {
 		if !src.AllowInsecure {
