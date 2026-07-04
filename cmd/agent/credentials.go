@@ -118,11 +118,20 @@ func refreshRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, cu
 		updated.ExpiresAt = time.Time{}
 	}
 
-	if err := agentstate.Save(stateFile, updated); err != nil {
+	// Audit #7: patch the cert fields onto the FRESH on-disk state under
+	// the package write lock — a concurrent usage-seq tick between our
+	// Load and Save must not be lost, and vice versa.
+	persisted, err := agentstate.Update(stateFile, func(c *agentstate.Credentials) {
+		c.CertificatePEM = updated.CertificatePEM
+		c.PrivateKeyPEM = updated.PrivateKeyPEM
+		c.CAPEM = updated.CAPEM
+		c.ExpiresAt = updated.ExpiresAt
+	})
+	if err != nil {
 		return current, err
 	}
 
-	return updated, nil
+	return persisted, nil
 }
 
 func runtimeCredentialsNeedRefresh(current agentstate.Credentials, now time.Time) bool {
@@ -350,10 +359,17 @@ func renewCertificateInStream(
 		updated.ExpiresAt = time.Unix(resp.GetExpiresAtUnix(), 0).UTC()
 	}
 
-	if err := agentstate.Save(stateFile, updated); err != nil {
+	// Audit #7: same rationale as the unary path — merge onto fresh disk state.
+	persisted, err := agentstate.Update(stateFile, func(c *agentstate.Credentials) {
+		c.CertificatePEM = updated.CertificatePEM
+		c.PrivateKeyPEM = updated.PrivateKeyPEM
+		c.CAPEM = updated.CAPEM
+		c.ExpiresAt = updated.ExpiresAt
+	})
+	if err != nil {
 		return current, fmt.Errorf("in-stream renewal: persist credentials: %w", err)
 	}
 
-	slog.Info("in-stream certificate renewal completed", "agent_id", current.AgentID, "expires_at", updated.ExpiresAt)
-	return updated, nil
+	slog.Info("in-stream certificate renewal completed", "agent_id", current.AgentID, "expires_at", persisted.ExpiresAt)
+	return persisted, nil
 }

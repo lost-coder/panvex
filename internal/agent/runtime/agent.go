@@ -114,9 +114,9 @@ type Agent struct {
 	restarter configRestarter
 	mu        sync.RWMutex
 
-	observedConfig   observedConfigReporter
-	diagnosticsGate  contentHashGate
-	securityGate     contentHashGate
+	observedConfig  observedConfigReporter
+	diagnosticsGate contentHashGate
+	securityGate    contentHashGate
 
 	clientNames                        map[string]string
 	lastOctets                         map[string]uint64
@@ -614,7 +614,6 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 	usageRows := metricsSnapshot.Users
 
 	a.mu.Lock()
-	defer a.mu.Unlock()
 
 	restarted := metricsSnapshot.UptimeSeconds > 0 && metricsSnapshot.UptimeSeconds < a.lastMetricsUptime
 	// First tick after process start: lastOctets is empty but telemt may
@@ -646,11 +645,15 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 		client.Seq = nextSeq
 	}
 	persist := a.persistUsageSeq
+	a.mu.Unlock()
 
 	snapshot := a.baseSnapshot(observedAt)
 	snapshot.Clients = clients
 	snapshot.HasClientUsage = true
 
+	// Persist OUTSIDE a.mu (audit #7): SaveUsageSeq fsync+renames the
+	// whole state bundle; doing that under the runtime lock stalled every
+	// concurrent snapshot/job for the duration of the disk write.
 	if persist != nil {
 		if err := persist(nextSeq); err != nil {
 			slog.Warn("persist usage seq failed", "seq", nextSeq, "error", err)

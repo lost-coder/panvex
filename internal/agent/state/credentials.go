@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -67,8 +68,22 @@ type Credentials struct {
 	AgentPersistedCertAt time.Time `json:"agent_persisted_cert_at,omitempty"`
 }
 
+// mu serialises every access to the state file within the agent
+// process. All writers (usage-seq ticks, cert renewals, transport
+// switches, probation transitions) funnel through Save/Update under
+// this lock, so a renewal can no longer be clobbered by a concurrent
+// read-modify-write that loaded the bundle before the renewal saved it
+// (audit 2026-07-02 #7).
+var mu sync.Mutex
+
 // Load reads persisted agent credentials from disk.
 func Load(path string) (Credentials, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	return loadLocked(path)
+}
+
+func loadLocked(path string) (Credentials, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Credentials{}, err
@@ -89,7 +104,17 @@ func Load(path string) (Credentials, error) {
 // instead of a truncated bundle the agent cannot load on its next start
 // (which, for an outbound agent whose bootstrap token was already cleared,
 // would otherwise wedge enrollment).
+//
+// Callers that modify an EXISTING state file must use Update instead:
+// a bare Save persists the caller's in-memory copy verbatim and would
+// silently drop fields another writer changed since that copy was loaded.
 func Save(path string, credentials Credentials) error {
+	mu.Lock()
+	defer mu.Unlock()
+	return saveLocked(path, credentials)
+}
+
+func saveLocked(path string, credentials Credentials) error {
 	data, err := json.MarshalIndent(credentials, "", "  ")
 	if err != nil {
 		return err
@@ -126,22 +151,32 @@ func Save(path string, credentials Credentials) error {
 	return os.Rename(tmpName, path)
 }
 
-// SaveUsageSeq rewrites the state file with a new UsageSeq value while
-// preserving all other persisted credential fields. Used on the hot path after
-// every client-usage snapshot — callers should therefore only invoke it when
-// the sequence actually advances, not on every snapshot attempt.
-//
-// The read-modify-write is intentional: callers don't hold the full Credentials
-// struct on the usage-snapshot path, and we must not clobber the mTLS bundle.
-// See P2-LOG-06 / L-07.
-func SaveUsageSeq(path string, seq uint64) error {
-	existing, err := Load(path)
+// Update loads the state file, applies mutate to the freshly loaded
+// bundle, and persists the result — atomically under the package write
+// lock. It returns the persisted credentials so callers can refresh
+// their in-memory copy from the on-disk truth (which may carry
+// concurrent changes to unrelated fields).
+func Update(path string, mutate func(*Credentials)) (Credentials, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	current, err := loadLocked(path)
 	if err != nil {
-		return err
+		return Credentials{}, err
 	}
-	if existing.UsageSeq == seq {
-		return nil
+	mutate(&current)
+	if err := saveLocked(path, current); err != nil {
+		return Credentials{}, err
 	}
-	existing.UsageSeq = seq
-	return Save(path, existing)
+	return current, nil
+}
+
+// SaveUsageSeq rewrites the state file with a new UsageSeq value while
+// preserving all other persisted credential fields. Used on the hot path
+// after every client-usage snapshot. NOTE: the whole usage-seq protocol
+// is scheduled for removal in remediation plan P4 (cumulative counters);
+// until then this must stay race-free with concurrent renewals.
+// See P2-LOG-06 / L-07 and audit 2026-07-02 #7.
+func SaveUsageSeq(path string, seq uint64) error {
+	_, err := Update(path, func(c *Credentials) { c.UsageSeq = seq })
+	return err
 }

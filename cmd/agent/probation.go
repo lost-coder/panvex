@@ -39,7 +39,17 @@ func maybeRevertTransportSwitch(stateFile string, creds *agentstate.Credentials,
 	}
 	creds.PrevTransport = nil
 	creds.TransportSwitchedAtUnix = 0
-	if err := agentstate.Save(stateFile, *creds); err != nil {
+	// Audit #7: apply the same patch to the FRESH on-disk bundle so a
+	// concurrent usage-seq tick cannot be lost (and cannot resurrect the
+	// pre-revert transport fields).
+	if _, err := agentstate.Update(stateFile, func(c *agentstate.Credentials) {
+		c.TransportMode = creds.TransportMode
+		c.ListenAddr = creds.ListenAddr
+		c.GRPCEndpoint = creds.GRPCEndpoint
+		c.GRPCServerName = creds.GRPCServerName
+		c.PrevTransport = nil
+		c.TransportSwitchedAtUnix = 0
+	}); err != nil {
 		slog.Error("transport probation: persist revert failed", "error", err)
 	}
 	return true
@@ -53,7 +63,10 @@ func clearTransportProbation(stateFile string, creds *agentstate.Credentials) {
 	}
 	creds.PrevTransport = nil
 	creds.TransportSwitchedAtUnix = 0
-	if err := agentstate.Save(stateFile, *creds); err != nil {
+	if _, err := agentstate.Update(stateFile, func(c *agentstate.Credentials) {
+		c.PrevTransport = nil
+		c.TransportSwitchedAtUnix = 0
+	}); err != nil {
 		slog.Warn("transport probation: persist clear failed", "error", err)
 		return
 	}
