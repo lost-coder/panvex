@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -21,8 +20,13 @@ const (
 	configApplyHealthTimeoutSec = 30
 	// configApplyJobTTL bounds how long a single config.apply job may stay
 	// outstanding before the target is expired.
+	//
+	// P3-3.4: config apply itself is now async (batch-of-one); the three
+	// poll-* constants below survive only for waitJobTargetTerminal, whose
+	// sole remaining caller is the synchronous runtime.restart wait
+	// (http_agent_restart.go). config.apply no longer polls in-handler.
 	configApplyJobTTL = 5 * time.Minute
-	// configApplyPollInterval is how often the apply handler polls the job
+	// configApplyPollInterval is how often waitJobTargetTerminal polls the job
 	// store for the target's terminal status.
 	configApplyPollInterval = 500 * time.Millisecond
 	// configApplyPollGrace is added to the job TTL to form the wait deadline,
@@ -30,50 +34,12 @@ const (
 	configApplyPollGrace = 30 * time.Second
 )
 
-// configApplyResponse is the JSON shape returned by the single-agent apply
-// handler. It summarizes the rolling fan-out: how many agents applied
-// successfully, the agent id that failed (empty when none), and a
-// human-readable error string ("" when the rollout completed cleanly).
-type configApplyResponse struct {
-	Applied int    `json:"applied"`
-	Failed  string `json:"failed"`
-	Error   string `json:"error"`
-}
-
-// groupApplyAcceptedResponse is the 202 body returned by the ASYNC group
-// apply handler. Instead of blocking on K × TTL, the handler persists a
-// config_apply_batches row (createGroupApplyBatch) and enqueues one
-// config.apply job per in-scope agent, then returns immediately. BatchID is
-// now the PERSISTENT batch id — the client can look up the rollout's state
-// via the batch (surviving a panel restart or job-store eviction), or keep
-// polling the status endpoint with the returned job ids. Jobs is retained for
-// back-compat with existing pollers; jobs[i] pairs each agent with the job
-// enqueued for it — an agent whose effective config was empty carries an
-// empty job_id (nothing to apply, already in sync).
+// groupApplyAcceptedResponse is the 202 body returned by the ASYNC apply
+// handlers (group fan-out and single-agent batch-of-one, P3-3.4). The client
+// polls the persistent-batch endpoint by batch_id; per-job handles were
+// removed along with the legacy job-id poller.
 type groupApplyAcceptedResponse struct {
-	BatchID string                `json:"batch_id"`
-	Jobs    []groupApplyJobHandle `json:"jobs"`
-}
-
-// groupApplyJobHandle pairs an in-scope agent with the config.apply job
-// enqueued for it. JobID is empty when the agent resolved an empty
-// effective config (no-op, treated as already succeeded by the poller).
-type groupApplyJobHandle struct {
-	AgentID string `json:"agent_id"`
-	JobID   string `json:"job_id"`
-}
-
-// groupApplyStatusResponse is the aggregate returned by the status endpoint.
-// Done is true once every target reached a terminal state; Failed counts the
-// terminally-unsuccessful targets so the UI can surface a PARTIAL rollout
-// (some succeeded, some failed) rather than masking it.
-type groupApplyStatusResponse struct {
-	Done    bool                    `json:"done"`
-	Total   int                     `json:"total"`
-	Applied int                     `json:"applied"`
-	Failed  int                     `json:"failed"`
-	Pending int                     `json:"pending"`
-	Agents  []groupApplyAgentStatus `json:"agents"`
+	BatchID string `json:"batch_id"`
 }
 
 // groupApplyAgentStatus is the per-agent status row in the status response.
@@ -104,15 +70,6 @@ type configApplyJobPayload struct {
 // targetAgentID returns the agent id a JobTarget belongs to.
 func targetAgentID(tgt jobs.JobTarget) string {
 	return tgt.AgentID
-}
-
-// errString renders err as a string, or "" when err is nil. Used to fill the
-// apply response's error field.
-func errString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 // effectiveConfigForAgent resolves the agent's effective config target —
@@ -173,52 +130,6 @@ func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID str
 // reaches a terminal status. Returns nil on success, an error on
 // failure/timeout. A no-op (nil) when the effective config is empty. Used by
 // the SYNCHRONOUS single-agent apply path, which blocks on exactly one job.
-func (s *Server) applyConfigToAgent(ctx context.Context, actorID, agentID string) error {
-	jobID, err := s.enqueueConfigApplyJob(ctx, actorID, agentID)
-	if err != nil {
-		return err
-	}
-	if jobID == "" {
-		return nil
-	}
-	return s.waitJobTargetTerminal(ctx, jobID, agentID, "config.apply")
-}
-
-// waitJobTargetTerminal polls the job until its target for agentID reaches a
-// terminal status or ctx/the deadline fires. `action` only labels the error
-// messages so callers (config.apply, runtime.restart) read clearly; on
-// failure the agent's own ResultText is surfaced verbatim.
-func (s *Server) waitJobTargetTerminal(ctx context.Context, jobID, agentID, action string) error {
-	ticker := time.NewTicker(configApplyPollInterval)
-	defer ticker.Stop()
-	deadline := time.NewTimer(configApplyJobTTL + configApplyPollGrace)
-	defer deadline.Stop()
-	for {
-		if job, ok := s.jobs.Get(jobID); ok {
-			for _, tgt := range job.Targets {
-				if targetAgentID(tgt) != agentID {
-					continue
-				}
-				switch tgt.Status {
-				case jobs.TargetStatusSucceeded:
-					return nil
-				case jobs.TargetStatusFailed:
-					return fmt.Errorf("%s failed on %s: %s", action, agentID, tgt.ResultText)
-				case jobs.TargetStatusExpired:
-					return fmt.Errorf("%s expired on %s", action, agentID)
-				}
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-deadline.C:
-			return fmt.Errorf("%s timed out on %s", action, agentID)
-		case <-ticker.C:
-		}
-	}
-}
-
 // handleApplyGroupConfig applies the effective config target to every in-scope
 // agent in a fleet group ASYNCHRONOUSLY. It enqueues one config.apply job per
 // agent and returns 202 Accepted immediately with a batch id + the per-agent
@@ -260,103 +171,14 @@ func (s *Server) handleApplyGroupConfig() http.HandlerFunc {
 				agentIDs = append(agentIDs, agent.ID)
 			}
 		}
-		batchID, err := s.createGroupApplyBatch(ctx, user.ID, id, storage.ConfigApplyBatchModeAllAtOnce, 1, agentIDs)
+		batchID, err := s.createConfigApplyBatch(ctx, user.ID, id, storage.ConfigApplyBatchModeAllAtOnce, 1, agentIDs)
 		if err != nil {
 			writeErrorLogged(ctx, w, http.StatusInternalServerError,
 				"failed to enqueue config apply", err)
 			return
 		}
-		// Jobs is kept for back-compat with existing pollers: it's a cheap
-		// re-read of the just-written targets, not a second source of truth.
-		handles := make([]groupApplyJobHandle, 0, len(agentIDs))
-		if batchID != "" {
-			if _, targets, err := s.store.GetConfigApplyBatch(ctx, batchID); err != nil {
-				slog.ErrorContext(ctx, "failed to reload config-apply batch targets",
-					"batch_id", batchID, "error", err)
-			} else {
-				for _, tgt := range targets {
-					handles = append(handles, groupApplyJobHandle{AgentID: tgt.AgentID, JobID: tgt.JobID})
-				}
-			}
-		}
-		writeJSON(w, http.StatusAccepted, groupApplyAcceptedResponse{
-			BatchID: batchID,
-			Jobs:    handles,
-		})
+		writeJSON(w, http.StatusAccepted, groupApplyAcceptedResponse{BatchID: batchID})
 	}
-}
-
-// handleGroupConfigApplyStatus aggregates the per-agent state of an in-flight
-// group config apply. The client passes the job ids it received from the 202
-// response as repeated ?job= query params (agent ids ride along as ?agent= in
-// the same order so a no-op agent — empty job id — is still represented). The
-// handler looks each job up in the jobs store and folds the matching target's
-// status into pending / running / succeeded / failed, returning the aggregate
-// plus a done flag once every target is terminal. Partial failure is
-// first-class: applied and failed counts are reported independently.
-func (s *Server) handleGroupConfigApplyStatus() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		_, user, err := s.requireSession(r)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-		id := chi.URLParam(r, "id")
-		if id == "" {
-			writeError(w, http.StatusBadRequest, msgConfigTargetIDReq)
-			return
-		}
-		scope, ok := s.requireFleetScope(w, r, user)
-		if !ok {
-			return
-		}
-		if !scope.IsAllowed(id) {
-			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
-			return
-		}
-		query := r.URL.Query()
-		jobIDs := query["job"]
-		agentIDs := query["agent"]
-		resp := s.aggregateGroupApplyStatus(agentIDs, jobIDs)
-		writeJSON(w, http.StatusOK, resp)
-	}
-}
-
-// aggregateGroupApplyStatus folds the paired agent/job id slices into the
-// status response. An empty job id is a no-op agent (empty effective config),
-// counted as succeeded. A job that is no longer resident in the store
-// (evicted, or never found) resolves to failed with configApplyMsgJobLost —
-// terminal, so a slow poller still completes instead of wedging, but a lost
-// outcome is never presented as a success (audit 2026-07-02 #2). The
-// persistent batch endpoints are the authoritative view; this legacy path
-// only serves pollers still holding the 202 response's job ids.
-func (s *Server) aggregateGroupApplyStatus(agentIDs, jobIDs []string) groupApplyStatusResponse {
-	resp := groupApplyStatusResponse{
-		Done:   true,
-		Agents: make([]groupApplyAgentStatus, 0, len(jobIDs)),
-	}
-	for i, jobID := range jobIDs {
-		agentID := ""
-		if i < len(agentIDs) {
-			agentID = agentIDs[i]
-		}
-		row := groupApplyAgentStatus{AgentID: agentID, JobID: jobID, Status: applyStatusSucceeded}
-		if jobID != "" {
-			row.Status, row.Message = s.configApplyJobStatus(jobID, agentID)
-		}
-		switch row.Status {
-		case applyStatusSucceeded:
-			resp.Applied++
-		case applyStatusFailed:
-			resp.Failed++
-		default:
-			resp.Pending++
-			resp.Done = false
-		}
-		resp.Agents = append(resp.Agents, row)
-	}
-	resp.Total = len(resp.Agents)
-	return resp
 }
 
 // configApplyMsgJobLost is the operator-facing message recorded for a
@@ -564,9 +386,14 @@ func (s *Server) aggregateGroupApplyBatchStatus(batch storage.ConfigApplyBatchRe
 }
 
 // handleApplyAgentConfig applies the effective config target to a single
-// in-scope agent, blocking on the config.apply job's terminal status.
+// in-scope agent as a persistent BATCH-OF-ONE (P3-3.4, audit #25a): creates a
+// config_apply_batches row with no fleet-group scope, enqueues one config.apply
+// job and immediately returns 202 + batch_id. Progress is observed via
+// handleGetAgentApplyBatchStatus — the same mechanism as the group rollout; the
+// old in-handler 500ms/5min poll is gone.
 func (s *Server) handleApplyAgentConfig() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
 		_, user, err := s.requireSession(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
@@ -592,13 +419,63 @@ func (s *Server) handleApplyAgentConfig() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
-		res := rollingApply(r.Context(), []string{id}, func(c context.Context, a string) error {
-			return s.applyConfigToAgent(c, user.ID, a)
-		})
-		writeJSON(w, http.StatusOK, configApplyResponse{
-			Applied: res.Applied,
-			Failed:  res.Failed,
-			Error:   errString(res.Err),
-		})
+		// fleetGroupID intentionally empty: the batch is agent-scoped and must
+		// not surface as the group's "active batch" on the fleet-group page.
+		batchID, err := s.createConfigApplyBatch(ctx, user.ID, "", storage.ConfigApplyBatchModeAllAtOnce, 1, []string{id})
+		if err != nil {
+			writeErrorLogged(ctx, w, http.StatusInternalServerError,
+				"failed to enqueue config apply", err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, groupApplyAcceptedResponse{BatchID: batchID})
+	}
+}
+
+// handleGetAgentApplyBatchStatus returns the persisted-batch aggregate for a
+// single-agent config apply. The batch is agent-scoped (fleet_group_id NULL),
+// so membership is checked via its targets: the batch is readable through an
+// agent URL only if its sole target is that agent; otherwise 404 (do not leak
+// the existence of another agent's batch, symmetric with the group endpoint).
+func (s *Server) handleGetAgentApplyBatchStatus() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		_, user, err := s.requireSession(r)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			writeError(w, http.StatusBadRequest, msgConfigTargetIDReq)
+			return
+		}
+		existing, exists := s.live.Get(id)
+		if !exists {
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
+			return
+		}
+		scope, ok := s.requireFleetScope(w, r, user)
+		if !ok {
+			return
+		}
+		if !scope.IsAllowed(existing.FleetGroupID) {
+			writeError(w, http.StatusNotFound, msgAgentNotFound)
+			return
+		}
+		batchID := chi.URLParam(r, "batchId")
+		batch, targets, err := s.store.GetConfigApplyBatch(ctx, batchID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotFound) {
+				writeError(w, http.StatusNotFound, msgConfigApplyBatchNotFound)
+				return
+			}
+			writeErrorLogged(ctx, w, http.StatusInternalServerError, "failed to load config-apply batch", err)
+			return
+		}
+		if len(targets) != 1 || targets[0].AgentID != id {
+			writeError(w, http.StatusNotFound, msgConfigApplyBatchNotFound)
+			return
+		}
+		writeJSON(w, http.StatusOK, s.aggregateGroupApplyBatchStatus(batch, targets))
 	}
 }
