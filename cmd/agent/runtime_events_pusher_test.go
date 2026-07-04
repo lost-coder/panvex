@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,7 +37,7 @@ func TestPusherImmediatePushOnWarn(t *testing.T) {
 	buf := runtimeevents.NewBuffer(10)
 	sender := &fakeSender{}
 	notify := make(chan struct{}, 1)
-	p := newRuntimeEventsPusher(buf, sender.send, time.Hour, notify)
+	p := newRuntimeEventsPusher(buf, sender.send, time.Hour, notify, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -67,7 +69,7 @@ func TestPusherBatchesInfoOnTick(t *testing.T) {
 	sender := &fakeSender{}
 	notify := make(chan struct{}, 1)
 	interval := 30 * time.Millisecond
-	p := newRuntimeEventsPusher(buf, sender.send, interval, notify)
+	p := newRuntimeEventsPusher(buf, sender.send, interval, notify, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -87,5 +89,54 @@ func TestPusherBatchesInfoOnTick(t *testing.T) {
 	}
 	if total < 2 {
 		t.Fatalf("expected at least 2 events; got %d", total)
+	}
+}
+
+// TestPusherCursorSurvivesReconnect reproduces audit #9b: the ring
+// buffer is process-wide (200 entries) but the pusher used to be
+// re-created per connection with a zero cursor, replaying the whole
+// ring after every reconnect. With a shared process-level cursor each
+// buffered event is delivered exactly once across the reconnect.
+func TestPusherCursorSurvivesReconnect(t *testing.T) {
+	buf := runtimeevents.NewBuffer(200)
+	for i := 0; i < 200; i++ {
+		buf.Append(runtimeevents.Event{Ts: time.Now(), Level: "info", Message: fmt.Sprintf("ev-%d", i)})
+	}
+
+	cursor := new(atomic.Uint64)
+	var mu sync.Mutex
+	seen := map[uint64]int{}
+	sends := 0
+	send := func(batch []runtimeevents.Event) error {
+		mu.Lock()
+		defer mu.Unlock()
+		sends++
+		// Simulate the connection dying mid-buffer: the 3rd batch fails.
+		if sends == 3 {
+			return context.Canceled
+		}
+		for _, ev := range batch {
+			seen[ev.Seq]++
+		}
+		return nil
+	}
+
+	// Connection 1: flushes two 50-event batches, dies on the third.
+	p1 := newRuntimeEventsPusher(buf, send, time.Hour, nil, cursor)
+	p1.flush(context.Background())
+
+	// Connection 2 (reconnect): fresh pusher, SAME process-level cursor.
+	p2 := newRuntimeEventsPusher(buf, send, time.Hour, nil, cursor)
+	p2.flush(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 200 {
+		t.Fatalf("delivered %d distinct events, want 200", len(seen))
+	}
+	for seq, n := range seen {
+		if n != 1 {
+			t.Fatalf("event seq=%d delivered %d times, want exactly once", seq, n)
+		}
 	}
 }

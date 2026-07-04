@@ -20,6 +20,7 @@ func runtimeEventsBatchMessage(agentID string, batch []runtimeevents.Event) *gat
 			Level:   ev.Level,
 			Message: ev.Message,
 			Fields:  ev.Fields,
+			Seq:     ev.Seq,
 		})
 	}
 	return &gatewayrpc.ConnectClientMessage{
@@ -40,9 +41,10 @@ func runtimeEventsBatchMessage(agentID string, batch []runtimeevents.Event) *gat
 // stream.Send for a given connection.
 //
 // The send respects connectionCtx: if the connection has gone away the
-// batch is dropped (returns nil so the pusher advances its cursor) since
-// the next connection will start with an empty cursor and any unsent
-// events still live in the ring.
+// enqueue fails with the ctx error, the pusher does NOT advance the
+// shared process-level cursor, and the events are retried from the ring
+// on the next connection. Panel-side (agent_id, seq) dedup covers the
+// residual "enqueued locally but never transmitted" ambiguity.
 func sendRuntimeEventsFunc(connectionCtx context.Context, telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage, agentID string) func([]runtimeevents.Event) error {
 	return func(batch []runtimeevents.Event) error {
 		if len(batch) == 0 {

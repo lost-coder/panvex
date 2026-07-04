@@ -3190,11 +3190,17 @@ func (*ConnectClientMessage_RuntimeEvents) isConnectClientMessage_Body() {}
 // AgentRuntimeEvent is a single slog-derived record shipped from the
 // agent to the panel for the live "Recent events" UI section.
 type AgentRuntimeEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ts            *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=ts,proto3" json:"ts,omitempty"`
-	Level         string                 `protobuf:"bytes,2,opt,name=level,proto3" json:"level,omitempty"` // "info" | "warn" | "error"
-	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
-	Fields        map[string]string      `protobuf:"bytes,4,rep,name=fields,proto3" json:"fields,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Ts      *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=ts,proto3" json:"ts,omitempty"`
+	Level   string                 `protobuf:"bytes,2,opt,name=level,proto3" json:"level,omitempty"` // "info" | "warn" | "error"
+	Message string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Fields  map[string]string      `protobuf:"bytes,4,rep,name=fields,proto3" json:"fields,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// seq is the agent-process-monotonic sequence number assigned by the
+	// agent-side ring buffer on append. The panel dedups reconnect
+	// replays by (agent_id, seq); a genuine agent restart legitimately
+	// rewinds seq (fresh process => fresh counter) and is admitted by the
+	// panel's newer-timestamp guard. Audit 2026-07-02 #9b.
+	Seq           uint64 `protobuf:"varint,5,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3255,6 +3261,13 @@ func (x *AgentRuntimeEvent) GetFields() map[string]string {
 		return x.Fields
 	}
 	return nil
+}
+
+func (x *AgentRuntimeEvent) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 // RuntimeEventsBatch is a one-shot batch sent inside ConnectClientMessage.
@@ -4142,12 +4155,13 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x14client_data_response\x18\x05 \x01(\v2%.panvex.gateway.v1.ClientDataResponseH\x00R\x12clientDataResponse\x12L\n" +
 	"\x0frenewal_request\x18\x06 \x01(\v2!.panvex.gateway.v1.RenewalRequestH\x00R\x0erenewalRequest\x12N\n" +
 	"\x0eruntime_events\x18\a \x01(\v2%.panvex.gateway.v1.RuntimeEventsBatchH\x00R\rruntimeEventsB\x06\n" +
-	"\x04body\"\xf4\x01\n" +
+	"\x04body\"\x86\x02\n" +
 	"\x11AgentRuntimeEvent\x12*\n" +
 	"\x02ts\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02ts\x12\x14\n" +
 	"\x05level\x18\x02 \x01(\tR\x05level\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12H\n" +
-	"\x06fields\x18\x04 \x03(\v20.panvex.gateway.v1.AgentRuntimeEvent.FieldsEntryR\x06fields\x1a9\n" +
+	"\x06fields\x18\x04 \x03(\v20.panvex.gateway.v1.AgentRuntimeEvent.FieldsEntryR\x06fields\x12\x10\n" +
+	"\x03seq\x18\x05 \x01(\x04R\x03seq\x1a9\n" +
 	"\vFieldsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"m\n" +
