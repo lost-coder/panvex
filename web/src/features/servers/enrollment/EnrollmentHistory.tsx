@@ -7,6 +7,8 @@ import type { EnrollmentAttempt } from "@/shared/api/types-enrollment";
 import { resolveConfiguredRootPath } from "@/shared/lib/runtime-path";
 import { StatusLabel, type StatusTone } from "@/ui";
 
+import { enrollmentAttemptsKeys } from "@/features/enrollment-attempts/queryKeys";
+
 import { Fold } from "../server-detail/components/Fold";
 import { EnrollmentTimeline } from "./EnrollmentTimeline";
 
@@ -32,7 +34,7 @@ function statusTone(status: EnrollmentAttempt["status"]): StatusTone {
 export function EnrollmentHistory({ agentId }: Readonly<Props>) {
   const { t } = useTranslation("enrollment");
   const list = useQuery({
-    queryKey: ["enrollment-attempts", "by-agent", agentId],
+    queryKey: enrollmentAttemptsKeys.byAgent(agentId),
     queryFn: () => apiClient.listEnrollmentAttempts({ agent_id: agentId, limit: 5 }),
   });
 
@@ -43,7 +45,7 @@ export function EnrollmentHistory({ agentId }: Readonly<Props>) {
   const viewAllHref = `${rootPath}/enrollment-attempts?agent_id=${encodeURIComponent(agentId)}`;
 
   const detail = useQuery({
-    queryKey: ["enrollment-attempts", "detail", expanded],
+    queryKey: enrollmentAttemptsKeys.detail(expanded!),
     queryFn: () => apiClient.getEnrollmentAttempt(expanded!),
     enabled: !!expanded,
   });

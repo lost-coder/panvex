@@ -3,6 +3,8 @@ import {
   invalidationsForEvent,
   isKnownEventType,
 } from "./event-invalidations";
+import { EVENT_TYPES } from "./event-types";
+import { enrollmentAttemptsKeys } from "@/features/enrollment-attempts/queryKeys";
 
 describe("invalidationsForEvent", () => {
   it("invalidates control-room and agents for every agents.* event", () => {
@@ -78,5 +80,24 @@ describe("isKnownEventType", () => {
     expect(isKnownEventType("audit.rotated")).toBe(false);
     expect(isKnownEventType("mystery")).toBe(false);
     expect(isKnownEventType("")).toBe(false);
+  });
+});
+
+describe("invalidationsForEvent enrollment branch (P3-3.3)", () => {
+  it("инвалидирует только enrollment-attempts ключи", () => {
+    for (const type of ["enrollment.event", "enrollment.completed", "enrollment.failed"]) {
+      const result = invalidationsForEvent({ type });
+      expect(result.keys).toEqual([enrollmentAttemptsKeys.all]);
+      expect(result.telemetry).toBeUndefined();
+    }
+  });
+  it("каждый тип контракта известен", () => {
+    for (const type of EVENT_TYPES) {
+      expect(isKnownEventType(type), type).toBe(true);
+    }
+  });
+  it("clients.updated инвалидирует clients-ключи (ветка ожила)", () => {
+    const result = invalidationsForEvent({ type: "clients.updated" });
+    expect(result.keys.length).toBeGreaterThan(0);
   });
 });

@@ -350,6 +350,9 @@ jobs:
       - name: i18n parity + hardcoded-Cyrillic guard
         working-directory: web
         run: npm run check:i18n
+      - name: Event taxonomy + reason-string parity guard
+        working-directory: web
+        run: npm run check:events
 
   frontend-e2e:
     name: Frontend E2E (Playwright)

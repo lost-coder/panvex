@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "check:i18n": "node ./scripts/check-i18n-parity.mjs && node ./scripts/check-no-hardcoded-cyrillic.mjs",
+    "check:events": "node ./scripts/check-event-parity.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

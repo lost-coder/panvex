@@ -10,6 +10,7 @@
 
 import { auditKeys, jobsKeys } from "@/features/activity/queryKeys";
 import { clientsKeys } from "@/features/clients/queryKeys";
+import { enrollmentAttemptsKeys } from "@/features/enrollment-attempts/queryKeys";
 import { agentsKeys, controlRoomKeys } from "@/features/servers/queryKeys";
 
 export interface EventEnvelope {
@@ -68,6 +69,13 @@ export function invalidationsForEvent(event: EventEnvelope): EventInvalidation {
     // fallback sweep on every log batch (D6a).
     return { keys: [] };
   }
+  if (event.type.startsWith("enrollment.")) {
+    // P3-3.3 (аудит #22): шаги энроллмента меняют ТОЛЬКО кэши
+    // enrollment-attempts; раньше неизвестный тип проваливался в
+    // broad-sweep всего живого кэша на каждый шаг. Появление нового
+    // агента покрывает отдельное событие agents.enrolled.
+    return { keys: [enrollmentAttemptsKeys.all] };
+  }
   return {
     keys: [
       controlRoomKeys.all,
@@ -80,12 +88,6 @@ export function invalidationsForEvent(event: EventEnvelope): EventInvalidation {
   };
 }
 
-export function isKnownEventType(type: string): boolean {
-  return (
-    type.startsWith("agents.") ||
-    type.startsWith("jobs.") ||
-    type === "audit.created" ||
-    type.startsWith("clients.") ||
-    type === "runtime.events"
-  );
-}
+// P3-3.3: isKnownEventType теперь живёт в ./event-types (сверяется с
+// EVENT_TYPES — единым контрактом, который парсит check-event-parity.mjs).
+export { isKnownEventType } from "./event-types";

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/api";
 import type { EnrollmentAttemptDetail } from "@/shared/api/types-enrollment";
+import { enrollmentAttemptsKeys } from "@/features/enrollment-attempts/queryKeys";
 
 const LIST_POLL_MS = 5_000;
 const DETAIL_POLL_MS = 3_000;
@@ -32,7 +33,7 @@ interface LiveAttempt {
  */
 export function useEnrollmentLiveAttempt(agentId: string | null): LiveAttempt {
   const list = useQuery({
-    queryKey: ["enrollment-attempts", "by-agent", agentId],
+    queryKey: enrollmentAttemptsKeys.byAgent(agentId!),
     queryFn: () => apiClient.listEnrollmentAttempts({ agent_id: agentId!, limit: 1 }),
     enabled: !!agentId,
     refetchInterval: LIST_POLL_MS,
@@ -45,7 +46,7 @@ export function useEnrollmentLiveAttempt(agentId: string | null): LiveAttempt {
   const latestId = list.data?.items[0]?.id ?? null;
 
   const detail = useQuery({
-    queryKey: ["enrollment-attempts", "detail", latestId],
+    queryKey: enrollmentAttemptsKeys.detail(latestId!),
     queryFn: () => apiClient.getEnrollmentAttempt(latestId!),
     enabled: !!latestId,
     // Stop polling once the attempt reaches a terminal state — the
