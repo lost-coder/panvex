@@ -276,7 +276,14 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 			"initial sync completed",
 			nil,
 		)
-		if flushErr := reporter.Flush(connectionCtx, client); flushErr != nil {
+		if client == nil {
+			// Listen mode: the SessionRunner gets no AgentGatewayClient
+			// (transport/listen.go), so buffered enrollment steps cannot be
+			// flushed on this connection. Keep them buffered — a later
+			// dial-mode connection may still flush them — and DO NOT
+			// Disable(): that used to silently destroy the events (#9e).
+			slog.DebugContext(connectionCtx, "enrollment events not flushed (listen mode)")
+		} else if flushErr := reporter.Flush(connectionCtx, client); flushErr != nil {
 			// Connection tear-down (server-close, supervisor cancel,
 			// transport-mode switch) races the flush; the gRPC call
 			// returns context.Canceled in that window. That is not

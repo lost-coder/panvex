@@ -25,7 +25,7 @@ func jobPipelineForAction(action string) jobPipeline {
 		return jobPipelineRuntimeReload
 	case "telemetry.refresh_diagnostics":
 		return jobPipelineRuntimeReload
-	case "client.create", "client.update", "client.rotate_secret", "client.delete":
+	case "client.create", "client.update", "client.rotate_secret", "client.delete", "client.reset_quota":
 		return jobPipelineClientMutation
 	default:
 		return jobPipelineDefault
