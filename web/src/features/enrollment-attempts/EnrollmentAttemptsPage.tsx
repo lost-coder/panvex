@@ -14,6 +14,7 @@ import { StatusLabel, formatDateTime, shortId, type StatusTone } from "@/ui";
 import { EnrollmentTimeline } from "@/features/servers/enrollment/EnrollmentTimeline";
 
 import { EnrollmentAttemptsFilters } from "./EnrollmentAttemptsFilters";
+import { enrollmentAttemptsKeys } from "./queryKeys";
 
 const PAGE_SIZE = 50;
 
@@ -68,7 +69,7 @@ export function EnrollmentAttemptsPage() {
   );
 
   const query = useInfiniteQuery({
-    queryKey: ["enrollment-attempts", "page", filter],
+    queryKey: enrollmentAttemptsKeys.page(filter),
     queryFn: ({ pageParam }) =>
       apiClient.listEnrollmentAttempts({
         ...filter,
@@ -86,7 +87,7 @@ export function EnrollmentAttemptsPage() {
 
   const [expanded, setExpanded] = useState<string | null>(null);
   const detail = useQuery({
-    queryKey: ["enrollment-attempts", "detail", expanded],
+    queryKey: enrollmentAttemptsKeys.detail(expanded!),
     queryFn: () => apiClient.getEnrollmentAttempt(expanded!),
     enabled: !!expanded,
   });
