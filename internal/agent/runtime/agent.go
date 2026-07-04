@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/agent/telemtrestart"
 	"github.com/lost-coder/panvex/internal/agent/updater"
@@ -65,13 +66,6 @@ type Config struct {
 	// e.g. "systemd:telemt.service", "docker:telemt", or "command:<argv>".
 	// Empty means restart-required config changes are refused on this node.
 	TelemtRestart string
-	// InitialUsageSeq is the last snapshot sequence number persisted from a
-	// previous agent incarnation. On fresh agents it is zero. See P2-LOG-06.
-	InitialUsageSeq uint64
-	// PersistUsageSeq is called (if non-nil) after every BuildUsageSnapshot
-	// so the next run can resume from the last emitted sequence. Errors are
-	// logged but do not fail snapshot emission.
-	PersistUsageSeq func(seq uint64) error
 	// UpdateTransport, if non-nil, is called when a switch_transport_mode job
 	// is processed. It is responsible for persisting the new transport state and
 	// signalling the outer reconnect loop to pick up the change on next iteration.
@@ -127,23 +121,27 @@ type Agent struct {
 	completedJobs                      map[string]completedJobRecord
 	completedJobRetention              time.Duration
 	ipCollector                        *telemt.IPCollector
-	// usageSeq is the last monotonic client-usage sequence number emitted
-	// by this agent process. Loaded from persisted state on boot (InitialUsageSeq)
-	// and incremented for every BuildUsageSnapshot. The control-plane dedups
-	// duplicate seqs and resets its baseline when seq rewinds (agent restart
-	// on a fresh state file). See P2-LOG-06 / L-07.
-	usageSeq        uint64
-	persistUsageSeq func(seq uint64) error
-	// usageBaselinePrimed guards against double-counting all historical
-	// traffic on an agent-process restart. lastOctets (the per-client
-	// delta baseline) lives only in memory, so after a restart it is
-	// empty while telemt's counters carry the full cumulative total. Since
-	// usageSeq is persisted and resumes (it does NOT rewind to 1 on a
-	// restart with an intact state file), the control-plane would accept
-	// the first post-restart "delta" — really the entire cumulative total —
-	// and add it on top of what it already had. On the first
-	// BuildUsageSnapshot of the process we therefore treat current totals
-	// as the baseline and emit delta=0, then count normally from there.
+	// bootID uniquely identifies this agent process incarnation (UUID
+	// minted in New). Stamped on every snapshot (Snapshot.agent_boot_id)
+	// so the control-plane scopes its per-(client, agent) usage watermark
+	// to one counter epoch: a changed bootID tells the panel the
+	// cumulative usageTotals below restarted from zero. P4 (cumulative
+	// traffic counters, audit 2026-07-02 #8).
+	bootID string
+	// usageTotals accumulates the per-client cumulative traffic counted
+	// by THIS process since start, keyed by the same tracking key as
+	// lastOctets. Monotonically non-decreasing for the process lifetime:
+	// entries deliberately survive cleanupStaleUsageStateLocked, so a
+	// client that vanishes from one Telemt sample and returns cannot
+	// rewind its reported total. The wire carries these absolutes; the
+	// panel derives deltas against its stored watermark.
+	usageTotals map[string]uint64
+	// usageBaselinePrimed: on the first BuildUsageSnapshot of the process
+	// lastOctets is empty while telemt may already hold large cumulative
+	// counters. That pre-existing traffic belongs to the PREVIOUS process
+	// epoch (previous bootID) and was already accumulated by the panel
+	// under that epoch's watermark — so the first tick adopts current
+	// telemt counters as the delta baseline and counts from there.
 	usageBaselinePrimed bool
 }
 
@@ -158,8 +156,8 @@ func New(config Config, client telemtClient) *Agent {
 		completedJobs:         make(map[string]completedJobRecord),
 		completedJobRetention: defaultCompletedJobRetention,
 		ipCollector:           telemt.NewIPCollector(),
-		usageSeq:              config.InitialUsageSeq,
-		persistUsageSeq:       config.PersistUsageSeq,
+		bootID:                uuid.NewString(),
+		usageTotals:           make(map[string]uint64),
 	}
 	a.restarter = buildRestarter(config.TelemtRestart)
 	return a
@@ -602,7 +600,12 @@ func (a *Agent) RuntimeSnapshotInterval(baseInterval time.Duration, fastInterval
 	return baseInterval
 }
 
-// BuildUsageSnapshot fetches per-client counters from Telemt metrics and emits only changed deltas.
+// BuildUsageSnapshot fetches per-client counters from Telemt metrics and
+// emits process-cumulative totals for rows whose counters or gauges
+// changed. The totals are idempotent on the wire: the control-plane
+// derives deltas against its per-(client, agent) watermark, so dropped
+// or replayed snapshots converge without losing or double-counting
+// bytes (P4, audit 2026-07-02 #8).
 func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*gatewayrpc.Snapshot, error) {
 	metricsSnapshot, err := a.telemt.FetchClientUsageFromMetrics(ctx)
 	if err != nil {
@@ -611,12 +614,9 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 	usageRows := metricsSnapshot.Users
 
 	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	restarted := metricsSnapshot.UptimeSeconds > 0 && metricsSnapshot.UptimeSeconds < a.lastMetricsUptime
-	// First tick after process start: lastOctets is empty but telemt may
-	// already hold large cumulative counters. Prime baselines and emit
-	// delta=0 so we never replay the full cumulative total as a single
-	// "delta" (which the control-plane would accumulate → double-count).
 	baselineTick := !a.usageBaselinePrimed
 	a.usageBaselinePrimed = true
 	clients := make([]*gatewayrpc.ClientUsageSnapshot, 0, len(usageRows))
@@ -632,36 +632,18 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 		a.lastMetricsUptime = metricsSnapshot.UptimeSeconds
 	}
 
-	// Advance the monotonic per-agent snapshot sequence. The sequence is
-	// stamped on every ClientUsageSnapshot (even on empty deltas) so the
-	// control-plane can dedup retries/replays and detect agent restarts
-	// (seq rewinds to 1). P2-LOG-06 / L-07.
-	a.usageSeq++
-	nextSeq := a.usageSeq
-	for _, client := range clients {
-		client.Seq = nextSeq
-	}
-	persist := a.persistUsageSeq
-	a.mu.Unlock()
-
 	snapshot := a.baseSnapshot(observedAt)
 	snapshot.Clients = clients
 	snapshot.HasClientUsage = true
-
-	// Persist OUTSIDE a.mu (audit #7): SaveUsageSeq fsync+renames the
-	// whole state bundle; doing that under the runtime lock stalled every
-	// concurrent snapshot/job for the duration of the disk write.
-	if persist != nil {
-		if err := persist(nextSeq); err != nil {
-			slog.Warn("persist usage seq failed", "seq", nextSeq, "error", err)
-		}
-	}
 	return snapshot, nil
 }
 
-// processUsageRowLocked computes the per-client delta, updates last-known
-// trackers, and returns the gateway snapshot when the row contributes a
-// non-empty change. Caller must hold a.mu.
+// processUsageRowLocked folds one Telemt sample row into the cumulative
+// per-client total, updates last-known trackers, and returns the gateway
+// snapshot when the row contributes a non-empty change. The local delta
+// against lastOctets (with baseline-tick and Telemt-restart handling)
+// exists only to grow usageTotals — the wire carries the resulting
+// absolute. Caller must hold a.mu.
 func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted, baselineTick bool, seen map[string]struct{}) (*gatewayrpc.ClientUsageSnapshot, bool) {
 	clientID := client.ClientID
 	if clientID == "" && client.ClientName != "" {
@@ -682,13 +664,17 @@ func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted, base
 	delta := currentTotal
 	switch {
 	case baselineTick:
-		// First tick of the process: adopt current totals as the baseline
-		// without emitting them as traffic. Counting resumes on the next
+		// First tick of the process: adopt current telemt totals as the
+		// baseline without counting them. Counting resumes on the next
 		// tick from this baseline.
 		delta = 0
 	case !restarted && currentTotal >= previousTotal:
 		delta = currentTotal - previousTotal
 	}
+	// restarted (or a counter rewind without an uptime rewind) falls
+	// through with delta = currentTotal: telemt restarted, its fresh
+	// counter is entirely new traffic.
+	a.usageTotals[trackingKey] += delta
 	connectionsChanged := a.lastConnections[trackingKey] != client.ActiveTCPConns
 
 	a.lastOctets[trackingKey] = currentTotal
@@ -699,9 +685,13 @@ func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted, base
 		return nil, false
 	}
 	return &gatewayrpc.ClientUsageSnapshot{
-		ClientId:          clientID,
-		ClientName:        client.ClientName,
+		ClientId:   clientID,
+		ClientName: client.ClientName,
+		// Legacy delta field: kept populated until the panel cutover to
+		// totals so accounting never pauses mid-branch; removed in P4
+		// задача 5 together with the proto field.
 		TrafficDeltaBytes: delta,
+		TrafficTotalBytes: a.usageTotals[trackingKey],
 		// IN-L1: clamp to int32 so a malformed/huge telemt gauge cannot wrap
 		// to a negative count on the wire.
 		UniqueIpsUsed:      clampInt32(client.UniqueIPsUsed),
@@ -724,8 +714,13 @@ func clampInt32(v int) int32 {
 	return int32(v)
 }
 
-// cleanupStaleUsageStateLocked drops tracker entries for clients absent
-// from the latest sample. Caller must hold a.mu.
+// cleanupStaleUsageStateLocked drops per-tick tracker entries for clients
+// absent from the latest sample. usageTotals is deliberately NOT pruned:
+// the wire total must stay monotonic for the whole process epoch, and a
+// client that reappears within the same Telemt run would otherwise
+// re-count its full counter (lastOctets is re-baselined via the delta
+// falling through as the full counter — a pre-existing property of the
+// delta logic, unchanged here). Caller must hold a.mu.
 func (a *Agent) cleanupStaleUsageStateLocked(seen map[string]struct{}) {
 	for clientID := range a.lastConnections {
 		if _, ok := seen[clientID]; ok {
@@ -793,6 +788,7 @@ func (a *Agent) baseSnapshot(observedAt time.Time) *gatewayrpc.Snapshot {
 		FleetGroupId:   a.config.FleetGroupID,
 		Version:        a.config.Version,
 		ObservedAtUnix: observedAt.UTC().Unix(),
+		AgentBootId:    a.bootID,
 	}
 }
 

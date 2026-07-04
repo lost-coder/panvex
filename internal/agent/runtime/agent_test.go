@@ -387,6 +387,12 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 	if snapshot.Clients[0].TrafficDeltaBytes != 1024 {
 		t.Fatalf("snapshot.Clients[0].TrafficDeltaBytes = %d, want %d (2048-1024)", snapshot.Clients[0].TrafficDeltaBytes, 1024)
 	}
+	if snapshot.Clients[0].TrafficTotalBytes != 1024 {
+		t.Fatalf("snapshot.Clients[0].TrafficTotalBytes = %d, want %d", snapshot.Clients[0].TrafficTotalBytes, 1024)
+	}
+	if snapshot.AgentBootId == "" {
+		t.Fatal("snapshot.AgentBootId is empty")
+	}
 }
 
 func TestAgentHandleJobExecutesRuntimeReload(t *testing.T) {
@@ -856,24 +862,22 @@ func (c *fakeTelemtClient) ResetUserQuota(_ context.Context, username string) (t
 	return c.resetQuotaResult, nil
 }
 
-// TestAgentUsageSnapshotSeqIsMonotonic verifies that each BuildUsageSnapshot
-// stamps a strictly increasing seq on every ClientUsageSnapshot and invokes
-// the persistence hook with that value. Guards P2-LOG-06 / L-07.
-func TestAgentUsageSnapshotSeqIsMonotonic(t *testing.T) {
+// TestAgentUsageTotalsAreCumulative verifies the P4 wire contract: every
+// emitted ClientUsageSnapshot carries the process-cumulative total
+// (traffic counted by this agent process since start), alongside the
+// legacy delta until the panel cutover. The first (baseline) tick adopts
+// Telemt's pre-existing counter without counting it — that traffic
+// belongs to the previous process epoch.
+func TestAgentUsageTotalsAreCumulative(t *testing.T) {
 	// ActiveTCPConns is non-zero so the first (baseline) tick still emits a
-	// snapshot (gauge change) — its traffic delta is 0 because the process
+	// row (gauge change) — its delta and total are 0 because the process
 	// just started; counting begins on the next tick.
 	client := &fakeTelemtClient{
 		metricsUsage: []telemt.ClientUsage{
 			{ClientID: "client-1", TrafficUsedBytes: 500, ActiveTCPConns: 3},
 		},
 	}
-	var persisted []uint64
-	agent := New(Config{
-		AgentID:         "agent-1",
-		NodeName:        "node-a",
-		PersistUsageSeq: func(seq uint64) error { persisted = append(persisted, seq); return nil },
-	}, client)
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
 
 	now := time.Date(2026, time.April, 18, 12, 0, 0, 0, time.UTC)
 	first, err := agent.BuildUsageSnapshot(context.Background(), now)
@@ -883,82 +887,91 @@ func TestAgentUsageSnapshotSeqIsMonotonic(t *testing.T) {
 	if len(first.Clients) == 0 {
 		t.Fatalf("first snapshot has no clients")
 	}
-	if first.Clients[0].Seq != 1 {
-		t.Fatalf("first snapshot seq = %d, want 1", first.Clients[0].Seq)
+	if first.Clients[0].TrafficTotalBytes != 0 {
+		t.Fatalf("baseline tick total = %d, want 0 (pre-existing telemt counter is the previous epoch)", first.Clients[0].TrafficTotalBytes)
 	}
-	if first.Clients[0].TrafficDeltaBytes != 0 {
-		t.Fatalf("baseline tick delta = %d, want 0", first.Clients[0].TrafficDeltaBytes)
+	if first.AgentBootId == "" {
+		t.Fatal("snapshot AgentBootId is empty, want process uuid")
 	}
 
-	// Advance usage so BuildUsageSnapshot emits another delta.
+	// +800 bytes, then +200 more: totals must accumulate 800 -> 1000.
 	client.metricsUsage[0].TrafficUsedBytes = 1300
 	second, err := agent.BuildUsageSnapshot(context.Background(), now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("BuildUsageSnapshot(2) error = %v", err)
 	}
-	if len(second.Clients) == 0 || second.Clients[0].Seq != 2 {
-		t.Fatalf("second snapshot seq = %d, want 2", second.Clients[0].Seq)
+	if len(second.Clients) == 0 || second.Clients[0].TrafficTotalBytes != 800 {
+		t.Fatalf("second tick total = %d, want 800", second.Clients[0].TrafficTotalBytes)
 	}
 	if second.Clients[0].TrafficDeltaBytes != 800 {
-		t.Fatalf("second tick delta = %d, want 800 (1300-500)", second.Clients[0].TrafficDeltaBytes)
+		t.Fatalf("second tick legacy delta = %d, want 800 (kept until panel cutover)", second.Clients[0].TrafficDeltaBytes)
 	}
 
-	if got := agent.UsageSeq(); got != 2 {
-		t.Fatalf("UsageSeq() = %d, want 2", got)
+	client.metricsUsage[0].TrafficUsedBytes = 1500
+	third, err := agent.BuildUsageSnapshot(context.Background(), now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("BuildUsageSnapshot(3) error = %v", err)
 	}
-	if len(persisted) != 2 || persisted[0] != 1 || persisted[1] != 2 {
-		t.Fatalf("persisted = %v, want [1 2]", persisted)
+	if len(third.Clients) == 0 || third.Clients[0].TrafficTotalBytes != 1000 {
+		t.Fatalf("third tick total = %d, want 1000 (800+200)", third.Clients[0].TrafficTotalBytes)
+	}
+	if third.AgentBootId != first.AgentBootId {
+		t.Fatalf("AgentBootId changed within one process: %q -> %q", first.AgentBootId, third.AgentBootId)
 	}
 }
 
-// TestAgentUsageSeqPersists asserts that InitialUsageSeq resumes the
-// sequence across process restarts so the control-plane never sees a rewind
-// when the agent is simply reconnecting with prior state intact.
-// Guards P2-LOG-06 / L-07.
-func TestAgentUsageSeqPersists(t *testing.T) {
-	// Non-zero ActiveTCPConns so the baseline (first) tick still emits a
-	// snapshot carrying the resumed seq, even though its traffic delta is 0.
+// TestAgentUsageTotalSurvivesTelemtRestart: when Telemt restarts (uptime
+// rewinds, its counter resets), the agent counts the entire fresh counter
+// as new traffic and the cumulative total keeps growing monotonically —
+// the process epoch (bootID) does NOT change.
+func TestAgentUsageTotalSurvivesTelemtRestart(t *testing.T) {
 	client := &fakeTelemtClient{
-		metricsUsage: []telemt.ClientUsage{{ClientID: "client-1", TrafficUsedBytes: 1, ActiveTCPConns: 1}},
+		metricsUsage: []telemt.ClientUsage{
+			{ClientID: "client-1", TrafficUsedBytes: 1000, ActiveTCPConns: 1},
+		},
+		metricsUptime: 100,
 	}
-	agent := New(Config{
-		AgentID:         "agent-1",
-		NodeName:        "node-a",
-		InitialUsageSeq: 42,
-	}, client)
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
 
-	snapshot, err := agent.BuildUsageSnapshot(context.Background(), time.Now())
+	now := time.Date(2026, time.April, 18, 12, 0, 0, 0, time.UTC)
+	if _, err := agent.BuildUsageSnapshot(context.Background(), now); err != nil {
+		t.Fatalf("baseline tick: %v", err)
+	}
+	client.metricsUsage[0].TrafficUsedBytes = 1600 // +600
+	if _, err := agent.BuildUsageSnapshot(context.Background(), now.Add(time.Minute)); err != nil {
+		t.Fatalf("second tick: %v", err)
+	}
+
+	// Telemt restart: uptime rewound, counter reset to a small fresh value.
+	client.metricsUptime = 5
+	client.metricsUsage[0].TrafficUsedBytes = 50
+	third, err := agent.BuildUsageSnapshot(context.Background(), now.Add(2*time.Minute))
 	if err != nil {
-		t.Fatalf("BuildUsageSnapshot() error = %v", err)
+		t.Fatalf("post-restart tick: %v", err)
 	}
-	if snapshot.Clients[0].Seq != 43 {
-		t.Fatalf("resumed seq = %d, want 43", snapshot.Clients[0].Seq)
-	}
-	if got := agent.UsageSeq(); got != 43 {
-		t.Fatalf("UsageSeq() = %d, want 43", got)
+	if len(third.Clients) == 0 || third.Clients[0].TrafficTotalBytes != 650 {
+		t.Fatalf("post-telemt-restart total = %d, want 650 (600 + full fresh counter 50)", third.Clients[0].TrafficTotalBytes)
 	}
 }
 
 // TestAgentRestartDoesNotReplayCumulativeAsDelta is the regression guard for
 // the traffic double-count defect (C-2). lastOctets (the per-client delta
 // baseline) lives only in memory and is empty after a process restart, while
-// telemt keeps the full cumulative counter. Because usageSeq is persisted and
-// resumes (it does NOT rewind to 1), the control-plane would accept the first
-// post-restart "delta" — the entire cumulative total — and add it on top of
-// what it already had. The first tick must therefore emit delta=0 and resume
-// counting from the adopted baseline.
+// telemt keeps the full cumulative counter. Without the baseline-tick guard
+// the agent would emit the entire pre-existing cumulative total as the first
+// "delta"/total of the fresh process epoch. The first tick must therefore
+// adopt current telemt counters as the baseline (delta=0, total=0) and resume
+// counting from there — the panel's boot-id watermark scopes the epoch.
 func TestAgentRestartDoesNotReplayCumulativeAsDelta(t *testing.T) {
 	client := &fakeTelemtClient{
 		metricsUsage: []telemt.ClientUsage{
 			{ClientID: "client-1", TrafficUsedBytes: 1_000_000, ActiveTCPConns: 2},
 		},
 	}
-	// Simulate a restart: fresh Agent (empty lastOctets) with a resumed,
-	// non-1 usage seq loaded from persisted state.
+	// Simulate a restart: fresh Agent (empty lastOctets, new bootID).
 	agent := New(Config{
-		AgentID:         "agent-1",
-		NodeName:        "node-a",
-		InitialUsageSeq: 500,
+		AgentID:  "agent-1",
+		NodeName: "node-a",
 	}, client)
 
 	now := time.Date(2026, time.May, 29, 12, 0, 0, 0, time.UTC)
@@ -970,6 +983,9 @@ func TestAgentRestartDoesNotReplayCumulativeAsDelta(t *testing.T) {
 		if c.TrafficDeltaBytes != 0 {
 			t.Fatalf("baseline tick emitted delta %d for %s, want 0 (double-count regression)", c.TrafficDeltaBytes, c.ClientId)
 		}
+	}
+	if len(first.Clients) > 0 && first.Clients[0].TrafficTotalBytes != 0 {
+		t.Fatalf("baseline tick total = %d, want 0", first.Clients[0].TrafficTotalBytes)
 	}
 
 	// Subsequent real traffic counts normally from the adopted baseline.

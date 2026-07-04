@@ -42,11 +42,6 @@ type Credentials struct {
 	// maybeRevertTransportSwitch when the window expires with no session.
 	PrevTransport           *TransportSnapshot `json:"prev_transport,omitempty"`
 	TransportSwitchedAtUnix int64              `json:"transport_switched_at_unix,omitempty"`
-	// UsageSeq is the last client-usage snapshot sequence number emitted by
-	// the agent. Persisted across restarts so the control-plane can dedup
-	// replayed deltas and detect true agent restarts (seq resets to 1).
-	// See P2-LOG-06 / L-07.
-	UsageSeq uint64 `json:"usage_seq,omitempty"`
 	// InsecureTransport records that this agent bootstrapped against a
 	// plain-HTTP panel URL behind a trusted private link (e.g. VPN-only
 	// deployment). Persisted so certificate recovery on later runs honors
@@ -170,13 +165,3 @@ func Update(path string, mutate func(*Credentials)) (Credentials, error) {
 	return current, nil
 }
 
-// SaveUsageSeq rewrites the state file with a new UsageSeq value while
-// preserving all other persisted credential fields. Used on the hot path
-// after every client-usage snapshot. NOTE: the whole usage-seq protocol
-// is scheduled for removal in remediation plan P4 (cumulative counters);
-// until then this must stay race-free with concurrent renewals.
-// See P2-LOG-06 / L-07 and audit 2026-07-02 #7.
-func SaveUsageSeq(path string, seq uint64) error {
-	_, err := Update(path, func(c *Credentials) { c.UsageSeq = seq })
-	return err
-}

@@ -74,24 +74,18 @@ func (e *errTelemt) HealthReady(context.Context) (bool, string, error) {
 
 // TestBuildUsageSnapshotPropagatesTelemtError verifies that when Telemt
 // is unreachable the usage path returns the error WITHOUT advancing the
-// usageSeq counter or invoking the persist hook (S27 T3).
-//
-// A regression that bumps the seq on error would corrupt the
-// monotonic-by-seq dedup contract (P2-LOG-06 / L-07): the panel would
-// throw away a real later snapshot because its seq matched a nominal
-// "skip" from a transient telemt failure.
+// cumulative totals (P4). A regression that folded a partial/error read
+// into usageTotals would corrupt the panel's watermark accounting.
 func TestBuildUsageSnapshotPropagatesTelemtError(t *testing.T) {
 	stub := &errTelemt{fetchUsageErr: errors.New("telemt unreachable")}
 
-	persistCalls := 0
 	agent := New(Config{
-		AgentID:         "agent-1",
-		NodeName:        "node-a",
-		Version:         "1.0.0",
-		PersistUsageSeq: func(uint64) error { persistCalls++; return nil },
+		AgentID:  "agent-1",
+		NodeName: "node-a",
+		Version:  "1.0.0",
 	}, stub)
 
-	seqBefore := agent.UsageSeq()
+	totalBefore := agent.UsageTotalForTest("client-1")
 	snap, err := agent.BuildUsageSnapshot(context.Background(), time.Now())
 	if err == nil {
 		t.Fatal("BuildUsageSnapshot err = nil, want telemt error")
@@ -99,11 +93,8 @@ func TestBuildUsageSnapshotPropagatesTelemtError(t *testing.T) {
 	if snap != nil {
 		t.Fatalf("BuildUsageSnapshot snap = %v, want nil on error", snap)
 	}
-	if got := agent.UsageSeq(); got != seqBefore {
-		t.Fatalf("usageSeq = %d, want unchanged %d (must NOT bump on telemt error)", got, seqBefore)
-	}
-	if persistCalls != 0 {
-		t.Fatalf("persistUsageSeq calls = %d, want 0 on error", persistCalls)
+	if got := agent.UsageTotalForTest("client-1"); got != totalBefore {
+		t.Fatalf("usageTotals = %d, want unchanged %d (must NOT advance on telemt error)", got, totalBefore)
 	}
 }
 
@@ -213,16 +204,11 @@ func TestHandleSwitchTransportModeRejectsBadInput(t *testing.T) {
 	}
 }
 
-// TestConcurrentBuildUsageSnapshotMonotonicSeq fires N goroutines into
-// BuildUsageSnapshot concurrently. The sequence stamped on each
-// returned snapshot must be unique and monotonically increasing across
-// the N calls (under -race) — this catches any unsynchronised access
-// to a.usageSeq (P2-LOG-06 / L-07) (S27 T3).
-func TestConcurrentBuildUsageSnapshotMonotonicSeq(t *testing.T) {
-	// Use the existing fakeTelemtClient so we get a non-error usage
-	// path; concurrent calls into a shared FakeTelemtClient are fine
-	// because BuildUsageSnapshot serialises the post-fetch state under
-	// a.mu.
+// TestConcurrentBuildUsageSnapshotTotalsMonotonic fires N goroutines into
+// BuildUsageSnapshot concurrently. The cumulative total observed via the
+// test export must never decrease across calls (under -race) — this
+// catches any unsynchronised access to a.usageTotals (P4).
+func TestConcurrentBuildUsageSnapshotTotalsMonotonic(t *testing.T) {
 	clientStub := &fakeTelemtClient{
 		metricsUsage: []telemt.ClientUsage{
 			{ClientID: "client-1", TrafficUsedBytes: 1, ActiveTCPConns: 1},
@@ -232,12 +218,10 @@ func TestConcurrentBuildUsageSnapshotMonotonicSeq(t *testing.T) {
 
 	const workers = 16
 	var wg sync.WaitGroup
-	seqs := make(chan uint64, workers)
+	totals := make(chan uint64, workers)
 
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		// Bump traffic so each call produces a non-empty delta and
-		// therefore sets Seq on at least one ClientUsageSnapshot.
 		go func(i int) {
 			defer wg.Done()
 			snap, err := agent.BuildUsageSnapshot(context.Background(), time.Now())
@@ -249,24 +233,18 @@ func TestConcurrentBuildUsageSnapshotMonotonicSeq(t *testing.T) {
 				t.Errorf("BuildUsageSnapshot[%d]: nil snapshot", i)
 				return
 			}
-			// Even an empty-delta call increments usageSeq; capture
-			// the agent's view of seq instead of the per-snapshot one,
-			// because the snapshot may have zero ClientUsageSnapshot
-			// entries when the same row is read repeatedly.
-			seqs <- agent.UsageSeq()
+			totals <- agent.UsageTotalForTest("client-1")
 		}(i)
 	}
 	wg.Wait()
-	close(seqs)
+	close(totals)
 
-	final := agent.UsageSeq()
-	if final != workers {
-		t.Fatalf("final UsageSeq = %d, want %d (each call must bump exactly once)", final, workers)
-	}
-	// All emitted seq snapshots must be in (0, workers].
-	for s := range seqs {
-		if s == 0 || s > workers {
-			t.Fatalf("emitted seq = %d, out of (0, %d] window", s, workers)
+	// The counter never advances past the baseline in this stub (traffic
+	// constant), so every observed total must be exactly 0 — the real
+	// assertion is the -race pass over concurrent map access.
+	for total := range totals {
+		if total != 0 {
+			t.Fatalf("cumulative total = %d, want 0 (constant telemt counter)", total)
 		}
 	}
 }
