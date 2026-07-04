@@ -190,32 +190,31 @@ func runRuntime(args []string) error {
 			return agentstate.SaveUsageSeq(statePath, seq)
 		},
 		UpdateTransport: func(mode, listenAddr, panelURL string) error {
-			// Load current state, patch transport fields, and save back to disk.
-			// The reconnect loop re-reads disk at the top of its next iteration
-			// (guarded by transportReload.pending) so the new mode takes effect
-			// on the subsequent connection without requiring a process restart.
-			current, err := agentstate.Load(statePath)
-			if err != nil {
-				return fmt.Errorf("switch_transport_mode: load state: %w", err)
-			}
-			if current.TransportMode != mode {
-				// A2: snapshot the pre-switch state so the reconnect loop
-				// can roll back if the panel never reaches us in the new mode.
-				current.PrevTransport = &agentstate.TransportSnapshot{
-					Mode:           current.TransportMode,
-					ListenAddr:     current.ListenAddr,
-					GRPCEndpoint:   current.GRPCEndpoint,
-					GRPCServerName: current.GRPCServerName,
+			// Patch transport fields onto fresh disk state under the state
+			// package's write lock (audit #7) — a concurrent usage-seq tick
+			// or renewal must not interleave its own Load→Save. The
+			// reconnect loop re-reads disk at the top of its next iteration
+			// (guarded by transportReload.pending) so the new mode takes
+			// effect on the subsequent connection without a process restart.
+			if _, err := agentstate.Update(statePath, func(current *agentstate.Credentials) {
+				if current.TransportMode != mode {
+					// A2: snapshot the pre-switch state so the reconnect loop
+					// can roll back if the panel never reaches us in the new mode.
+					current.PrevTransport = &agentstate.TransportSnapshot{
+						Mode:           current.TransportMode,
+						ListenAddr:     current.ListenAddr,
+						GRPCEndpoint:   current.GRPCEndpoint,
+						GRPCServerName: current.GRPCServerName,
+					}
+					current.TransportSwitchedAtUnix = time.Now().Unix()
 				}
-				current.TransportSwitchedAtUnix = time.Now().Unix()
-			}
-			current.TransportMode = mode
-			current.ListenAddr = listenAddr
-			if panelURL != "" {
-				current.PanelURL = panelURL
-			}
-			if err := agentstate.Save(statePath, current); err != nil {
-				return fmt.Errorf("switch_transport_mode: save state: %w", err)
+				current.TransportMode = mode
+				current.ListenAddr = listenAddr
+				if panelURL != "" {
+					current.PanelURL = panelURL
+				}
+			}); err != nil {
+				return fmt.Errorf("switch_transport_mode: update state: %w", err)
 			}
 			slog.Info("transport mode updated; reconnecting to apply",
 				"mode", mode, "listen_addr", listenAddr)
