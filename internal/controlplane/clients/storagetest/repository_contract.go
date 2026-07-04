@@ -255,28 +255,18 @@ func runUsageBulk(t *testing.T, repo clients.Repository) {
 	}
 }
 
-// runUsageLastWriteWins is the P4 storagetest case: the usage upsert is
-// unconditional last-write-wins — ordering and duplicate protection moved
-// upstream into the panel's watermark derivation
-// (server.mergeClientUsageBatch), so ANY later write must apply, including
-// one carrying a smaller absolute (e.g. an operator usage reset). The old
-// last_seq monotonicity guard is gone.
-func runUsageLastWriteWins(t *testing.T, repo clients.Repository) {
+// seedUsageContractRow saves a client (agent "a-1" is pre-seeded by both
+// backends' contract fixtures to satisfy the client_usage.agent_id FK) and
+// returns a findUsage accessor for the (clientID, "a-1") row. Shared by the
+// P4 usage upsert cases.
+func seedUsageContractRow(t *testing.T, repo clients.Repository, clientID clients.ClientID) (agentID string, findUsage func() clients.Usage) {
 	t.Helper()
 	ctx := context.Background()
-	const (
-		clientID = clients.ClientID("c-lww-1")
-		// a-1 is the agent seeded by both backends' contract fixtures
-		// (seedContractFixtures in sqlite, inline seed in postgres) to
-		// satisfy the client_usage.agent_id FK.
-		agentID = "a-1"
-	)
+	agentID = "a-1"
 	if err := repo.Save(ctx, clients.Client{ID: clientID, Name: string(clientID)}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-
-	base := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
-	findUsage := func() clients.Usage {
+	findUsage = func() clients.Usage {
 		t.Helper()
 		all, err := repo.ListUsage(ctx)
 		if err != nil {
@@ -290,6 +280,21 @@ func runUsageLastWriteWins(t *testing.T, repo clients.Repository) {
 		t.Fatalf("no usage row found for %s/%s", clientID, agentID)
 		return clients.Usage{}
 	}
+	return agentID, findUsage
+}
+
+// runUsageLastWriteWins is the P4 storagetest case: the usage upsert is
+// unconditional last-write-wins — ordering and duplicate protection moved
+// upstream into the panel's watermark derivation
+// (server.mergeClientUsageBatch), so ANY later write must apply, including
+// one carrying a smaller absolute (e.g. an operator usage reset). The old
+// last_seq monotonicity guard is gone.
+func runUsageLastWriteWins(t *testing.T, repo clients.Repository) {
+	t.Helper()
+	ctx := context.Background()
+	const clientID = clients.ClientID("c-lww-1")
+	agentID, findUsage := seedUsageContractRow(t, repo, clientID)
+	base := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
 
 	if err := repo.UpsertUsage(ctx, clients.Usage{
 		ClientID: clientID, AgentID: agentID,
@@ -319,28 +324,9 @@ func runUsageLastWriteWins(t *testing.T, repo clients.Repository) {
 func runUsageWatermarkRoundtrip(t *testing.T, repo clients.Repository) {
 	t.Helper()
 	ctx := context.Background()
-	const (
-		clientID = clients.ClientID("c-wm-1")
-		agentID  = "a-1"
-	)
-	if err := repo.Save(ctx, clients.Client{ID: clientID, Name: string(clientID)}); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
+	const clientID = clients.ClientID("c-wm-1")
+	agentID, findUsage := seedUsageContractRow(t, repo, clientID)
 	base := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
-	findUsage := func() clients.Usage {
-		t.Helper()
-		all, err := repo.ListUsage(ctx)
-		if err != nil {
-			t.Fatalf("ListUsage: %v", err)
-		}
-		for _, u := range all {
-			if u.ClientID == clientID && u.AgentID == agentID {
-				return u
-			}
-		}
-		t.Fatalf("no usage row found for %s/%s", clientID, agentID)
-		return clients.Usage{}
-	}
 
 	if err := repo.UpsertUsage(ctx, clients.Usage{
 		ClientID: clientID, AgentID: agentID,
