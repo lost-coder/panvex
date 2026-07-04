@@ -10,6 +10,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
+	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
@@ -281,7 +282,7 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 		"fleet_group_id": token.FleetGroupID,
 	})
 	s.events.Publish(eventbus.Event{
-		Type: "agents.enrolled",
+		Type: cpevents.TypeAgentsEnrolled,
 		Data: agent,
 	})
 

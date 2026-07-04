@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
+	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
 	controltelemetry "github.com/lost-coder/panvex/internal/controlplane/telemetry"
 )
 
@@ -331,7 +332,7 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 		s.agentsUpdated.Offer(agent)
 	} else {
 		s.events.Publish(eventbus.Event{
-			Type: "agents.updated",
+			Type: cpevents.TypeAgentsUpdated,
 			Data: agent,
 		})
 	}

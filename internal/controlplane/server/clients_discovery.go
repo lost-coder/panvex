@@ -336,6 +336,7 @@ func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID st
 	// the store portion is skipped), the reconciler will catch up on the
 	// next snapshot.
 	s.replaceClientStateInMemory(client, assignments, deployments)
+	s.publishClientsUpdated(client.ID)
 
 	// Seed live usage with the stats Telemt already reported for this user
 	// — primary record plus every sibling we just folded in.

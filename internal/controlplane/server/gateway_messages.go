@@ -8,6 +8,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
+	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
 	"github.com/lost-coder/panvex/internal/controlplane/runtimeevents"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/prometheus/client_golang/prometheus"
@@ -218,7 +219,7 @@ func (s *Server) handleRuntimeEventsBatch(agentID string, batch *gatewayrpc.Runt
 		})
 	}
 	s.events.Publish(eventbus.Event{
-		Type: "runtime.events",
+		Type: cpevents.TypeRuntimeEvents,
 		Data: map[string]any{
 			"agent_id": agentID,
 			"events":   records,

@@ -484,6 +484,7 @@ func (s *Server) handleTelemetryServerRefreshDiagnostics() http.HandlerFunc {
 		}
 
 		s.notifyAgentSessions(job.TargetAgentIDs)
+		s.publishJobCreated(job)
 		writeJSON(w, http.StatusAccepted, map[string]any{
 			"job_id": job.ID,
 			"status": "queued",

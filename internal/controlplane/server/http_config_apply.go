@@ -164,6 +164,7 @@ func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID str
 		return "", fmt.Errorf("enqueue config.apply: %w", err)
 	}
 	s.notifyAgentSessions(job.TargetAgentIDs)
+	s.publishJobCreated(job)
 	return job.ID, nil
 }
 

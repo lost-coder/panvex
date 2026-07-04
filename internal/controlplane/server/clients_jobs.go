@@ -66,6 +66,7 @@ func (s *Server) enqueueClientResetQuotaJob(ctx context.Context, actorID string,
 		return jobs.Job{}, err
 	}
 	s.notifyAgentSessions(job.TargetAgentIDs)
+	s.publishJobCreated(job)
 	return job, nil
 }
 
@@ -115,6 +116,7 @@ func (s *Server) enqueueClientJob(ctx context.Context, actorID string, action jo
 		return jobs.Job{}, err
 	}
 	s.notifyAgentSessions(job.TargetAgentIDs)
+	s.publishJobCreated(job)
 
 	return job, nil
 }

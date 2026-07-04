@@ -485,12 +485,12 @@ func (s *Server) replaceClientStateWithContext(ctx context.Context, client manag
 		if err := s.clientsSvc.SaveState(ctx, client, assignments, deployments); err != nil {
 			return err
 		}
-		return nil
+	} else {
+		// No-repo fallback (test doubles / pre-migrate stores): update the
+		// in-memory mirror directly.
+		s.replaceClientStateInMemory(client, assignments, deployments)
 	}
-
-	// No-repo fallback (test doubles / pre-migrate stores): update the
-	// in-memory mirror directly.
-	s.replaceClientStateInMemory(client, assignments, deployments)
+	s.publishClientsUpdated(client.ID)
 	return nil
 }
 

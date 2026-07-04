@@ -64,6 +64,7 @@ func (s *Server) handleRestartAgent() http.HandlerFunc {
 			return
 		}
 		s.notifyAgentSessions(job.TargetAgentIDs)
+		s.publishJobCreated(job)
 
 		if err := s.waitJobTargetTerminal(r.Context(), job.ID, id, "runtime.restart"); err != nil {
 			// The agent ran the job but reported failure (e.g. no restart

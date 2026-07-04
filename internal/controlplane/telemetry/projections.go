@@ -102,6 +102,31 @@ func DetailBoostState(expiresAt, now time.Time) DetailBoost {
 	}
 }
 
+// Reason-строки статусов узла — контракт Go↔TS по ТОЧНОМУ литералу:
+// web/src/ui/lib/reason-text.ts (REASON_KEYS + TELEMT_PREFIX) локализует
+// их по этим строкам. SYNC guard: web/scripts/check-event-parity.mjs
+// (CI, npm run check:events) парсит этот блок регэкспом
+// `Reason\w+\s*=\s*"…"` — формат блока не менять.
+// Динамические композиты (обёртки ME→Direct fallback) в контракт не
+// входят — TS пропускает их verbatim by design.
+const (
+	ReasonOffline                 = "Agent heartbeat is offline"
+	ReasonStale                   = "Telemetry is stale"
+	ReasonReadOnly                = "Telemt API is read-only"
+	ReasonAdmissionClosed         = "Admission is closed"
+	ReasonStartup                 = "Startup is still in progress"
+	ReasonNoDcs                   = "no reachable DCs"
+	ReasonDcDegraded              = "DC coverage is degraded"
+	ReasonMeDegraded              = "ME runtime is degraded"
+	ReasonMeDown                  = "ME pool unavailable, traffic stopped"
+	ReasonUpstreamFailing         = "upstream DC connect failing"
+	ReasonDcConnDegraded          = "degraded DC connectivity"
+	ReasonNoUpstreams             = "no upstreams configured"
+	ReasonAllUpstreamsDown        = "all upstreams down"
+	ReasonSomeUpstreamsUnhealthy  = "some upstreams unhealthy"
+	ReasonTelemtUnreachablePrefix = "Telemt API unreachable since "
+)
+
 // SeverityAndReason derives one operator-facing severity and primary reason.
 //
 // SYNC: the reason strings returned by SeverityAndReason and its mode
@@ -112,20 +137,20 @@ func DetailBoostState(expiresAt, now time.Time) DetailBoost {
 func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string) {
 	switch {
 	case input.PresenceState == presence.StateOffline:
-		return "bad", "Agent heartbeat is offline"
+		return "bad", ReasonOffline
 	case input.TelemtUnreachable:
-		return "critical", "Telemt API unreachable since " + formatTelemtSince(input.TelemtUnreachableSinceUnix)
+		return "critical", ReasonTelemtUnreachablePrefix + formatTelemtSince(input.TelemtUnreachableSinceUnix)
 	case freshness.State == "stale":
-		return "warn", "Telemetry is stale"
+		return "warn", ReasonStale
 	case input.ReadOnly:
-		return "warn", "Telemt API is read-only"
+		return "warn", ReasonReadOnly
 	case !input.AcceptingNewConnections:
-		return "warn", "Admission is closed"
+		return "warn", ReasonAdmissionClosed
 	case input.StartupStatus != "" && input.StartupStatus != "ready":
 		// SYNC: the web UI maps this exact reason string to the neutral
 		// PENDING pill (web/src/ui/lib/node-status.ts: STARTUP_REASONS).
 		// If you change this literal, update that constant too.
-		return "warn", "Startup is still in progress"
+		return "warn", ReasonStartup
 	}
 	// NOTE: input.Degraded reflects Telemt's /v1/runtime/initialization, which
 	// is the ME-pool init state. It is meaningful only in ME and (implicitly)
@@ -141,7 +166,7 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 	case ModeFallback:
 		return severityFallback(input)
 	case ModeMeDown:
-		return "critical", "ME pool unavailable, traffic stopped"
+		return "critical", ReasonMeDown
 	}
 	return "ok", ""
 }
@@ -151,11 +176,11 @@ func SeverityAndReason(input SeverityInput, freshness Freshness) (string, string
 func severityME(in SeverityInput) (severity, reason string) {
 	switch {
 	case in.AgentReported && in.DCCoveragePct == 0:
-		return "critical", "no reachable DCs"
+		return "critical", ReasonNoDcs
 	case in.DCCoveragePct > 0 && in.DCCoveragePct < 100:
-		return "warn", "DC coverage is degraded"
+		return "warn", ReasonDcDegraded
 	case in.Degraded:
-		return "warn", "ME runtime is degraded"
+		return "warn", ReasonMeDegraded
 	}
 	return "ok", ""
 }
@@ -166,9 +191,9 @@ func severityDirect(in SeverityInput) (severity, reason string) {
 	if in.UpstreamFailRateKnown {
 		switch {
 		case in.UpstreamFailRatePct5m >= 50:
-			return "critical", "upstream DC connect failing"
+			return "critical", ReasonUpstreamFailing
 		case in.UpstreamFailRatePct5m >= 10:
-			return "warn", "degraded DC connectivity"
+			return "warn", ReasonDcConnDegraded
 		}
 	}
 
@@ -178,11 +203,11 @@ func severityDirect(in SeverityInput) (severity, reason string) {
 
 	switch {
 	case in.TotalUpstreams == 0:
-		return "warn", "no upstreams configured"
+		return "warn", ReasonNoUpstreams
 	case in.HealthyUpstreams == 0:
-		return "critical", "all upstreams down"
+		return "critical", ReasonAllUpstreamsDown
 	case in.HealthyUpstreams < in.TotalUpstreams:
-		return "warn", "some upstreams unhealthy"
+		return "warn", ReasonSomeUpstreamsUnhealthy
 	}
 	return "ok", ""
 }

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
+	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
 )
 
 // Q5.U-Q-01: audit-trail subsystem extracted out of server.go. The
@@ -64,7 +65,7 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 	}
 
 	s.events.Publish(eventbus.Event{
-		Type: "audit.created",
+		Type: cpevents.TypeAuditCreated,
 		Data: event,
 	})
 }
@@ -120,7 +121,7 @@ func (s *Server) appendAuditSync(ctx context.Context, actorID, action, targetID 
 	}
 
 	s.events.Publish(eventbus.Event{
-		Type: "audit.created",
+		Type: cpevents.TypeAuditCreated,
 		Data: event,
 	})
 

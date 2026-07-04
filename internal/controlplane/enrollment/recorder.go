@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lost-coder/panvex/internal/controlplane/events"
 )
 
 // Attempt is the persistent shape of an enrollment attempt.
@@ -206,7 +207,7 @@ func (r *Recorder) Event(ctx context.Context, attemptID string, step Step, level
 	r.log.LogAttrs(ctx, slogLevel(level), message, attrs...)
 
 	if r.pub != nil {
-		r.pub.Publish("enrollment.event", map[string]any{
+		r.pub.Publish(events.TypeEnrollmentEvent, map[string]any{
 			"attempt_id": attemptID,
 			"step":       step,
 			"level":      level,
@@ -238,7 +239,7 @@ func (r *Recorder) Complete(ctx context.Context, attemptID string) error {
 		slog.String("attempt_id", attemptID),
 	)
 	if r.pub != nil {
-		r.pub.Publish("enrollment.completed", map[string]any{
+		r.pub.Publish(events.TypeEnrollmentCompleted, map[string]any{
 			"attempt_id": attemptID,
 			"ts":         now,
 		})
@@ -273,7 +274,7 @@ func (r *Recorder) Fail(ctx context.Context, attemptID string, code ErrorCode, c
 	r.log.LogAttrs(ctx, slog.LevelError, "enrollment attempt failed", attrs...)
 
 	if r.pub != nil {
-		r.pub.Publish("enrollment.failed", map[string]any{
+		r.pub.Publish(events.TypeEnrollmentFailed, map[string]any{
 			"attempt_id":    attemptID,
 			"error_code":    code,
 			"error_message": msg,
