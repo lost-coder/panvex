@@ -101,39 +101,17 @@ type UserAppearanceRecord struct {
 	UpdatedAt time.Time
 }
 
-// TelemetryRuntimeCurrentRecord stores one node's latest fast Telemt runtime summary.
+// TelemetryRuntimeCurrentRecord stores one node's latest Telemt runtime
+// summary as a canonical JSON blob (P3-3.1, аудит #3). RuntimeJSON — это
+// json.Marshal(server.AgentRuntime) целиком; storage-слой обращается с ним
+// как с непрозрачной строкой и обязан возвращать её байт-в-байт.
+// ObservedAt хранится отдельной колонкой ТОЛЬКО для ORDER BY в List и
+// диагностики; при чтении сервер перезаписывает updated_at рантайма из
+// этой колонки (единственный источник истины для часов — см. P3-3.2).
 type TelemetryRuntimeCurrentRecord struct {
-	AgentID                    string
-	ObservedAt                 time.Time
-	State                      string
-	StateReason                string
-	ReadOnly                   bool
-	AcceptingNewConnections    bool
-	MERuntimeReady             bool
-	ME2DCFallbackEnabled       bool
-	UseMiddleProxy             bool
-	StartupStatus              string
-	StartupStage               string
-	StartupProgressPct         float64
-	InitializationStatus       string
-	Degraded                   bool
-	InitializationStage        string
-	InitializationProgressPct  float64
-	TransportMode              string
-	CurrentConnections         int
-	CurrentConnectionsME       int
-	CurrentConnectionsDirect   int
-	ActiveUsers                int
-	UptimeSeconds              float64
-	ConnectionsTotal           uint64
-	ConnectionsBadTotal        uint64
-	HandshakeTimeoutsTotal     uint64
-	ConfiguredUsers            int
-	DCCoveragePct              float64
-	HealthyUpstreams           int
-	TotalUpstreams             int
-	TelemtUnreachable          bool
-	TelemtUnreachableSinceUnix int64
+	AgentID     string
+	ObservedAt  time.Time
+	RuntimeJSON string
 }
 
 // TelemetryRuntimeDCRecord stores one node's latest DC health row.

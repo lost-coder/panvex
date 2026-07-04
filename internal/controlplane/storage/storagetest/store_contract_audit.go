@@ -45,7 +45,6 @@ func runAuditContract(t *testing.T, open OpenStore) {
 		}
 	})
 
-
 	t.Run("audit prune deletes rows older than cutoff", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()

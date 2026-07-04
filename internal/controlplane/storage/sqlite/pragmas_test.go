@@ -17,7 +17,7 @@ func TestOpenAppliesWALPragma(t *testing.T) {
 	store := openTestStore(t)
 
 	var journalMode string
-	if err := store.sqlDB.QueryRowContext(t.Context(),"PRAGMA journal_mode").Scan(&journalMode); err != nil {
+	if err := store.sqlDB.QueryRowContext(t.Context(), "PRAGMA journal_mode").Scan(&journalMode); err != nil {
 		t.Fatalf("PRAGMA journal_mode: %v", err)
 	}
 	if !strings.EqualFold(journalMode, "wal") {
@@ -85,7 +85,7 @@ func TestOpenAppliesSynchronousPragma(t *testing.T) {
 	store := openTestStore(t)
 
 	var sync int
-	if err := store.sqlDB.QueryRowContext(t.Context(),"PRAGMA synchronous").Scan(&sync); err != nil {
+	if err := store.sqlDB.QueryRowContext(t.Context(), "PRAGMA synchronous").Scan(&sync); err != nil {
 		t.Fatalf("PRAGMA synchronous: %v", err)
 	}
 	if sync != 1 {
@@ -99,7 +99,7 @@ func TestOpenAppliesTempStorePragma(t *testing.T) {
 	store := openTestStore(t)
 
 	var tempStore int
-	if err := store.sqlDB.QueryRowContext(t.Context(),"PRAGMA temp_store").Scan(&tempStore); err != nil {
+	if err := store.sqlDB.QueryRowContext(t.Context(), "PRAGMA temp_store").Scan(&tempStore); err != nil {
 		t.Fatalf("PRAGMA temp_store: %v", err)
 	}
 	if tempStore != 2 {
@@ -112,7 +112,7 @@ func TestOpenAppliesMmapSizePragma(t *testing.T) {
 	store := openTestStore(t)
 
 	var mmapSize int64
-	if err := store.sqlDB.QueryRowContext(t.Context(),"PRAGMA mmap_size").Scan(&mmapSize); err != nil {
+	if err := store.sqlDB.QueryRowContext(t.Context(), "PRAGMA mmap_size").Scan(&mmapSize); err != nil {
 		t.Fatalf("PRAGMA mmap_size: %v", err)
 	}
 	if mmapSize != 268435456 {

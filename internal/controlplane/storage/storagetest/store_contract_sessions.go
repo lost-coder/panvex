@@ -114,5 +114,4 @@ func runSessionsContract(t *testing.T, open OpenStore) {
 		}
 	})
 
-
 }

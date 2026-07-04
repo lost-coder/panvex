@@ -12,125 +12,37 @@ import (
 
 func (s *Store) PutTelemetryRuntimeCurrent(ctx context.Context, record storage.TelemetryRuntimeCurrentRecord) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO telemt_runtime_current (
-			agent_id, observed_at_unix, state, state_reason, read_only, accepting_new_connections,
-			me_runtime_ready, me2dc_fallback_enabled, use_middle_proxy, startup_status, startup_stage,
-			startup_progress_pct, initialization_status, degraded, initialization_stage, initialization_progress_pct,
-			transport_mode, current_connections, current_connections_me, current_connections_direct, active_users,
-			uptime_seconds, connections_total, connections_bad_total, handshake_timeouts_total, configured_users,
-			dc_coverage_pct, healthy_upstreams, total_upstreams,
-			telemt_unreachable, telemt_unreachable_since_unix
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO telemt_runtime_current (agent_id, observed_at_unix, runtime_json)
+		VALUES (?, ?, ?)
 		ON CONFLICT(agent_id) DO UPDATE SET
 			observed_at_unix = excluded.observed_at_unix,
-			state = excluded.state,
-			state_reason = excluded.state_reason,
-			read_only = excluded.read_only,
-			accepting_new_connections = excluded.accepting_new_connections,
-			me_runtime_ready = excluded.me_runtime_ready,
-			me2dc_fallback_enabled = excluded.me2dc_fallback_enabled,
-			use_middle_proxy = excluded.use_middle_proxy,
-			startup_status = excluded.startup_status,
-			startup_stage = excluded.startup_stage,
-			startup_progress_pct = excluded.startup_progress_pct,
-			initialization_status = excluded.initialization_status,
-			degraded = excluded.degraded,
-			initialization_stage = excluded.initialization_stage,
-			initialization_progress_pct = excluded.initialization_progress_pct,
-			transport_mode = excluded.transport_mode,
-			current_connections = excluded.current_connections,
-			current_connections_me = excluded.current_connections_me,
-			current_connections_direct = excluded.current_connections_direct,
-			active_users = excluded.active_users,
-			uptime_seconds = excluded.uptime_seconds,
-			connections_total = excluded.connections_total,
-			connections_bad_total = excluded.connections_bad_total,
-			handshake_timeouts_total = excluded.handshake_timeouts_total,
-			configured_users = excluded.configured_users,
-			dc_coverage_pct = excluded.dc_coverage_pct,
-			healthy_upstreams = excluded.healthy_upstreams,
-			total_upstreams = excluded.total_upstreams,
-			telemt_unreachable = excluded.telemt_unreachable,
-			telemt_unreachable_since_unix = excluded.telemt_unreachable_since_unix
-	`,
-		record.AgentID, toUnix(record.ObservedAt), record.State, record.StateReason, boolToInt(record.ReadOnly),
-		boolToInt(record.AcceptingNewConnections), boolToInt(record.MERuntimeReady), boolToInt(record.ME2DCFallbackEnabled),
-		boolToInt(record.UseMiddleProxy), record.StartupStatus, record.StartupStage, record.StartupProgressPct,
-		record.InitializationStatus, boolToInt(record.Degraded), record.InitializationStage, record.InitializationProgressPct,
-		record.TransportMode, record.CurrentConnections, record.CurrentConnectionsME, record.CurrentConnectionsDirect,
-		record.ActiveUsers, record.UptimeSeconds, int64(record.ConnectionsTotal), int64(record.ConnectionsBadTotal),
-		int64(record.HandshakeTimeoutsTotal), record.ConfiguredUsers, record.DCCoveragePct, record.HealthyUpstreams, record.TotalUpstreams,
-		boolToInt(record.TelemtUnreachable), record.TelemtUnreachableSinceUnix,
-	)
+			runtime_json = excluded.runtime_json
+	`, record.AgentID, toUnix(record.ObservedAt), record.RuntimeJSON)
 	return err
 }
 
 func (s *Store) GetTelemetryRuntimeCurrent(ctx context.Context, agentID string) (storage.TelemetryRuntimeCurrentRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT agent_id, observed_at_unix, state, state_reason, read_only, accepting_new_connections,
-		       me_runtime_ready, me2dc_fallback_enabled, use_middle_proxy, startup_status, startup_stage,
-		       startup_progress_pct, initialization_status, degraded, initialization_stage, initialization_progress_pct,
-		       transport_mode, current_connections, current_connections_me, current_connections_direct, active_users,
-		       uptime_seconds, connections_total, connections_bad_total, handshake_timeouts_total, configured_users,
-		       dc_coverage_pct, healthy_upstreams, total_upstreams,
-		       telemt_unreachable, telemt_unreachable_since_unix
+		SELECT agent_id, observed_at_unix, runtime_json
 		FROM telemt_runtime_current
 		WHERE agent_id = ?
 	`, agentID)
 
 	var record storage.TelemetryRuntimeCurrentRecord
 	var observedAt int64
-	var readOnly int
-	var accepting int
-	var meRuntimeReady int
-	var meFallback int
-	var useMiddleProxy int
-	var degraded int
-	var connectionsTotal int64
-	var connectionsBadTotal int64
-	var handshakeTimeoutsTotal int64
-	var telemtUnreachable int
-	var telemtUnreachableSince int64
-	if err := row.Scan(
-		&record.AgentID, &observedAt, &record.State, &record.StateReason, &readOnly, &accepting,
-		&meRuntimeReady, &meFallback, &useMiddleProxy, &record.StartupStatus, &record.StartupStage,
-		&record.StartupProgressPct, &record.InitializationStatus, &degraded, &record.InitializationStage, &record.InitializationProgressPct,
-		&record.TransportMode, &record.CurrentConnections, &record.CurrentConnectionsME, &record.CurrentConnectionsDirect, &record.ActiveUsers,
-		&record.UptimeSeconds, &connectionsTotal, &connectionsBadTotal, &handshakeTimeoutsTotal, &record.ConfiguredUsers,
-		&record.DCCoveragePct, &record.HealthyUpstreams, &record.TotalUpstreams,
-		&telemtUnreachable, &telemtUnreachableSince,
-	); err != nil {
+	if err := row.Scan(&record.AgentID, &observedAt, &record.RuntimeJSON); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.TelemetryRuntimeCurrentRecord{}, storage.ErrNotFound
 		}
 		return storage.TelemetryRuntimeCurrentRecord{}, err
 	}
-
 	record.ObservedAt = fromUnix(observedAt)
-	record.ReadOnly = intToBool(readOnly)
-	record.AcceptingNewConnections = intToBool(accepting)
-	record.MERuntimeReady = intToBool(meRuntimeReady)
-	record.ME2DCFallbackEnabled = intToBool(meFallback)
-	record.UseMiddleProxy = intToBool(useMiddleProxy)
-	record.Degraded = intToBool(degraded)
-	record.ConnectionsTotal = uint64(connectionsTotal)
-	record.ConnectionsBadTotal = uint64(connectionsBadTotal)
-	record.HandshakeTimeoutsTotal = uint64(handshakeTimeoutsTotal)
-	record.TelemtUnreachable = intToBool(telemtUnreachable)
-	record.TelemtUnreachableSinceUnix = telemtUnreachableSince
 	return record, nil
 }
 
 func (s *Store) ListTelemetryRuntimeCurrent(ctx context.Context) ([]storage.TelemetryRuntimeCurrentRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT agent_id, observed_at_unix, state, state_reason, read_only, accepting_new_connections,
-		       me_runtime_ready, me2dc_fallback_enabled, use_middle_proxy, startup_status, startup_stage,
-		       startup_progress_pct, initialization_status, degraded, initialization_stage, initialization_progress_pct,
-		       transport_mode, current_connections, current_connections_me, current_connections_direct, active_users,
-		       uptime_seconds, connections_total, connections_bad_total, handshake_timeouts_total, configured_users,
-		       dc_coverage_pct, healthy_upstreams, total_upstreams,
-		       telemt_unreachable, telemt_unreachable_since_unix
+		SELECT agent_id, observed_at_unix, runtime_json
 		FROM telemt_runtime_current
 		ORDER BY observed_at_unix, agent_id
 	`)
@@ -143,43 +55,12 @@ func (s *Store) ListTelemetryRuntimeCurrent(ctx context.Context) ([]storage.Tele
 	for rows.Next() {
 		var record storage.TelemetryRuntimeCurrentRecord
 		var observedAt int64
-		var readOnly int
-		var accepting int
-		var meRuntimeReady int
-		var meFallback int
-		var useMiddleProxy int
-		var degraded int
-		var connectionsTotal int64
-		var connectionsBadTotal int64
-		var handshakeTimeoutsTotal int64
-		var telemtUnreachable int
-		var telemtUnreachableSince int64
-		if err := rows.Scan(
-			&record.AgentID, &observedAt, &record.State, &record.StateReason, &readOnly, &accepting,
-			&meRuntimeReady, &meFallback, &useMiddleProxy, &record.StartupStatus, &record.StartupStage,
-			&record.StartupProgressPct, &record.InitializationStatus, &degraded, &record.InitializationStage, &record.InitializationProgressPct,
-			&record.TransportMode, &record.CurrentConnections, &record.CurrentConnectionsME, &record.CurrentConnectionsDirect, &record.ActiveUsers,
-			&record.UptimeSeconds, &connectionsTotal, &connectionsBadTotal, &handshakeTimeoutsTotal, &record.ConfiguredUsers,
-			&record.DCCoveragePct, &record.HealthyUpstreams, &record.TotalUpstreams,
-			&telemtUnreachable, &telemtUnreachableSince,
-		); err != nil {
+		if err := rows.Scan(&record.AgentID, &observedAt, &record.RuntimeJSON); err != nil {
 			return nil, err
 		}
 		record.ObservedAt = fromUnix(observedAt)
-		record.ReadOnly = intToBool(readOnly)
-		record.AcceptingNewConnections = intToBool(accepting)
-		record.MERuntimeReady = intToBool(meRuntimeReady)
-		record.ME2DCFallbackEnabled = intToBool(meFallback)
-		record.UseMiddleProxy = intToBool(useMiddleProxy)
-		record.Degraded = intToBool(degraded)
-		record.ConnectionsTotal = uint64(connectionsTotal)
-		record.ConnectionsBadTotal = uint64(connectionsBadTotal)
-		record.HandshakeTimeoutsTotal = uint64(handshakeTimeoutsTotal)
-		record.TelemtUnreachable = intToBool(telemtUnreachable)
-		record.TelemtUnreachableSinceUnix = telemtUnreachableSince
 		result = append(result, record)
 	}
-
 	return result, rows.Err()
 }
 

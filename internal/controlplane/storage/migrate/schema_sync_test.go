@@ -885,8 +885,8 @@ var sqliteBooleanCheckRE = regexp.MustCompile(`^[a-z0-9_]+ in 0 1$`)
 // JSONB column type already enforces at write time — there is no PG-side
 // CHECK constraint to match because the type system does the job, so
 // these are engine-inherent and excluded from parity. The pattern also
-// matches the permissive `col = '' or json_valid(col)` form used for
-// jobs.payload_json, where '' is a legitimate empty-payload sentinel.
+// matches the permissive `col = ” or json_valid(col)` form used for
+// jobs.payload_json, where ” is a legitimate empty-payload sentinel.
 //
 // This pattern also happens to match integration_providers.config's
 // permissive `json_valid(config) OR config LIKE 'PVS_:%'` SQLite CHECK,

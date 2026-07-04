@@ -104,7 +104,6 @@ func runEnrollmentContract(t *testing.T, open OpenStore) {
 		}
 	})
 
-
 	t.Run("prune enrollment tokens removes only dead rows", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
@@ -275,6 +274,5 @@ func runEnrollmentContract(t *testing.T, open OpenStore) {
 			t.Fatalf("GetAgentCertificateRecoveryGrant() after revoke RevokedAt = %v, want %v", storedGrant.RevokedAt, revokedAt)
 		}
 	})
-
 
 }

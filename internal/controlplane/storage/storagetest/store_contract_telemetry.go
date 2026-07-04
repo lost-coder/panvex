@@ -2,11 +2,36 @@ package storagetest
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
+
+// seedAgentForTelemetry inserts the fleet group + agent row that
+// telemt_runtime_current's FK requires, so a runtime-current sub-test can
+// Put a row for agentID. Mirrors the inline seeding the other blocks do.
+func seedAgentForTelemetry(t *testing.T, store storage.Store, agentID string) {
+	t.Helper()
+	ctx := context.Background()
+	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
+		ID:        testFleetGroupID,
+		Name:      "Default",
+		CreatedAt: time.Date(2026, time.July, 2, 9, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("seedAgentForTelemetry: PutFleetGroup() error = %v", err)
+	}
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     agentID,
+		FleetGroupID: testFleetGroupID,
+		Version:      "dev",
+		LastSeenAt:   time.Date(2026, time.July, 2, 9, 1, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("seedAgentForTelemetry: PutAgent() error = %v", err)
+	}
+}
 
 // runTelemetryContract extracts the telemetry current-state + detail-boost contract blocks from
 // the historic store_contract.go monolith (R-Q-18). RunStoreContract
@@ -33,35 +58,9 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 			LastSeenAt:   time.Date(2026, time.March, 28, 10, 1, 0, 0, time.UTC),
 		}
 		runtime := storage.TelemetryRuntimeCurrentRecord{
-			AgentID:                   agent.ID,
-			ObservedAt:                time.Date(2026, time.March, 28, 10, 2, 0, 0, time.UTC),
-			State:                     "fresh",
-			StateReason:               "",
-			ReadOnly:                  false,
-			AcceptingNewConnections:   true,
-			MERuntimeReady:            true,
-			ME2DCFallbackEnabled:      true,
-			UseMiddleProxy:            false,
-			StartupStatus:             "ready",
-			StartupStage:              "steady_state",
-			StartupProgressPct:        100,
-			InitializationStatus:      "ready",
-			Degraded:                  false,
-			InitializationStage:       "steady_state",
-			InitializationProgressPct: 100,
-			TransportMode:             "direct",
-			CurrentConnections:        120,
-			CurrentConnectionsME:      70,
-			CurrentConnectionsDirect:  50,
-			ActiveUsers:               95,
-			UptimeSeconds:             3600,
-			ConnectionsTotal:          1024,
-			ConnectionsBadTotal:       12,
-			HandshakeTimeoutsTotal:    2,
-			ConfiguredUsers:           4096,
-			DCCoveragePct:             83,
-			HealthyUpstreams:          2,
-			TotalUpstreams:            3,
+			AgentID:     agent.ID,
+			ObservedAt:  time.Date(2026, time.March, 28, 10, 2, 0, 0, time.UTC),
+			RuntimeJSON: `{"current_connections":120,"active_users":95,"transport_mode":"direct"}`,
 		}
 		dcs := []storage.TelemetryRuntimeDCRecord{
 			{
@@ -150,8 +149,8 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		if err != nil {
 			t.Fatalf("GetTelemetryRuntimeCurrent() error = %v", err)
 		}
-		if storedRuntime.CurrentConnections != runtime.CurrentConnections {
-			t.Fatalf("GetTelemetryRuntimeCurrent() CurrentConnections = %d, want %d", storedRuntime.CurrentConnections, runtime.CurrentConnections)
+		if storedRuntime.RuntimeJSON != runtime.RuntimeJSON {
+			t.Fatalf("GetTelemetryRuntimeCurrent() RuntimeJSON = %q, want %q", storedRuntime.RuntimeJSON, runtime.RuntimeJSON)
 		}
 
 		storedRuntimes, err := store.ListTelemetryRuntimeCurrent(ctx)
@@ -250,11 +249,13 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 			t.Fatalf("PutAgent(default) error = %v", err)
 		}
 
+		// The unreachable flag now lives inside the runtime_json blob (the
+		// storage layer is opaque to its shape); round-trip it verbatim.
+		const unreachableJSON = `{"telemt_unreachable":true,"telemt_unreachable_since_unix":1699999970}`
 		rec := storage.TelemetryRuntimeCurrentRecord{
-			AgentID:                    "agent-unreachable",
-			ObservedAt:                 time.Unix(1700000000, 0).UTC(),
-			TelemtUnreachable:          true,
-			TelemtUnreachableSinceUnix: 1699999970,
+			AgentID:     "agent-unreachable",
+			ObservedAt:  time.Unix(1700000000, 0).UTC(),
+			RuntimeJSON: unreachableJSON,
 		}
 		if err := store.PutTelemetryRuntimeCurrent(ctx, rec); err != nil {
 			t.Fatalf("PutTelemetryRuntimeCurrent() error = %v", err)
@@ -263,17 +264,15 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		if err != nil {
 			t.Fatalf("GetTelemetryRuntimeCurrent() error = %v", err)
 		}
-		if !got.TelemtUnreachable {
-			t.Fatal("TelemtUnreachable round-trip = false, want true")
-		}
-		if got.TelemtUnreachableSinceUnix != 1699999970 {
-			t.Fatalf("TelemtUnreachableSinceUnix = %d, want 1699999970",
-				got.TelemtUnreachableSinceUnix)
+		if got.RuntimeJSON != unreachableJSON {
+			t.Fatalf("RuntimeJSON round-trip = %q, want %q", got.RuntimeJSON, unreachableJSON)
 		}
 
+		const healthyJSON = `{"telemt_unreachable":false}`
 		rec2 := storage.TelemetryRuntimeCurrentRecord{
-			AgentID:    "agent-default",
-			ObservedAt: time.Unix(1700000100, 0).UTC(),
+			AgentID:     "agent-default",
+			ObservedAt:  time.Unix(1700000100, 0).UTC(),
+			RuntimeJSON: healthyJSON,
 		}
 		if err := store.PutTelemetryRuntimeCurrent(ctx, rec2); err != nil {
 			t.Fatalf("PutTelemetryRuntimeCurrent(default) error = %v", err)
@@ -282,11 +281,8 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		if err != nil {
 			t.Fatalf("GetTelemetryRuntimeCurrent(default) error = %v", err)
 		}
-		if got2.TelemtUnreachable {
-			t.Fatal("TelemtUnreachable for default record = true, want false (healthy by default)")
-		}
-		if got2.TelemtUnreachableSinceUnix != 0 {
-			t.Fatalf("TelemtUnreachableSinceUnix for default = %d, want 0", got2.TelemtUnreachableSinceUnix)
+		if got2.RuntimeJSON != healthyJSON {
+			t.Fatalf("RuntimeJSON(default) round-trip = %q, want %q", got2.RuntimeJSON, healthyJSON)
 		}
 	})
 
@@ -315,9 +311,9 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 				t.Fatalf("PutAgent(%s) error = %v", agent.ID, err)
 			}
 			if err := store.PutTelemetryRuntimeCurrent(ctx, storage.TelemetryRuntimeCurrentRecord{
-				AgentID:    agent.ID,
-				ObservedAt: base,
-				State:      "fresh",
+				AgentID:     agent.ID,
+				ObservedAt:  base,
+				RuntimeJSON: `{}`,
 			}); err != nil {
 				t.Fatalf("PutTelemetryRuntimeCurrent(%s) error = %v", agent.ID, err)
 			}
@@ -444,6 +440,91 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 			if !seenSeq[seq] {
 				t.Fatalf("ListAllTelemetryRuntimeEventsPerAgent(10) missing recent sequence %d for A", seq)
 			}
+		}
+	})
+
+	// runtimeJSONFixture — нетривиальный JSON-документ: вложенные объекты,
+	// массивы, юникод, спецсимволы. Хранилище обязано вернуть его байт-в-байт:
+	// колонка runtime_json — непрозрачная строка для storage-слоя.
+	const runtimeJSONFixture = `{"route_mode":"me→direct","system_load":{"cpu_usage_pct":42.5,"load_1m":1.25},` +
+		`"connections_bad_by_class":[{"class":"тайм-аут","total":7}],"fail_rate_pct_5m":0.031,` +
+		`"quote":"a\"b\\c","updated_at":"2026-07-02T03:04:05.123456789Z"}`
+
+	t.Run("runtime current stores the JSON blob verbatim", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+		ctx := context.Background()
+		seedAgentForTelemetry(t, store, "agent-json")
+
+		observed := time.Date(2026, time.July, 2, 10, 0, 0, 0, time.UTC)
+		rec := storage.TelemetryRuntimeCurrentRecord{
+			AgentID:     "agent-json",
+			ObservedAt:  observed,
+			RuntimeJSON: runtimeJSONFixture,
+		}
+		if err := store.PutTelemetryRuntimeCurrent(ctx, rec); err != nil {
+			t.Fatalf("PutTelemetryRuntimeCurrent() error = %v", err)
+		}
+		got, err := store.GetTelemetryRuntimeCurrent(ctx, "agent-json")
+		if err != nil {
+			t.Fatalf("GetTelemetryRuntimeCurrent() error = %v", err)
+		}
+		if got.RuntimeJSON != runtimeJSONFixture {
+			t.Fatalf("RuntimeJSON round-trip mismatch:\n got: %s\nwant: %s", got.RuntimeJSON, runtimeJSONFixture)
+		}
+		if !got.ObservedAt.Equal(observed) {
+			t.Fatalf("ObservedAt = %v, want %v", got.ObservedAt, observed)
+		}
+		if got.AgentID != "agent-json" {
+			t.Fatalf("AgentID = %q, want %q", got.AgentID, "agent-json")
+		}
+	})
+
+	t.Run("runtime current upsert overwrites blob and observed_at", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+		ctx := context.Background()
+		seedAgentForTelemetry(t, store, "agent-upsert")
+
+		first := storage.TelemetryRuntimeCurrentRecord{
+			AgentID:     "agent-upsert",
+			ObservedAt:  time.Date(2026, time.July, 2, 10, 0, 0, 0, time.UTC),
+			RuntimeJSON: `{"v":1}`,
+		}
+		second := storage.TelemetryRuntimeCurrentRecord{
+			AgentID:     "agent-upsert",
+			ObservedAt:  time.Date(2026, time.July, 2, 11, 0, 0, 0, time.UTC),
+			RuntimeJSON: `{"v":2}`,
+		}
+		if err := store.PutTelemetryRuntimeCurrent(ctx, first); err != nil {
+			t.Fatalf("Put(first) error = %v", err)
+		}
+		if err := store.PutTelemetryRuntimeCurrent(ctx, second); err != nil {
+			t.Fatalf("Put(second) error = %v", err)
+		}
+		got, err := store.GetTelemetryRuntimeCurrent(ctx, "agent-upsert")
+		if err != nil {
+			t.Fatalf("Get() error = %v", err)
+		}
+		if got.RuntimeJSON != `{"v":2}` || !got.ObservedAt.Equal(second.ObservedAt) {
+			t.Fatalf("upsert did not overwrite: got %+v", got)
+		}
+
+		all, err := store.ListTelemetryRuntimeCurrent(ctx)
+		if err != nil {
+			t.Fatalf("List() error = %v", err)
+		}
+		if len(all) != 1 || all[0].RuntimeJSON != `{"v":2}` {
+			t.Fatalf("List() = %+v, want single {v:2} row", all)
+		}
+	})
+
+	t.Run("runtime current missing row returns ErrNotFound", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+		_, err := store.GetTelemetryRuntimeCurrent(context.Background(), "agent-absent")
+		if !errors.Is(err, storage.ErrNotFound) {
+			t.Fatalf("Get(absent) error = %v, want storage.ErrNotFound", err)
 		}
 	})
 }

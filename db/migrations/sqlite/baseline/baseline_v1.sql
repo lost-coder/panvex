@@ -360,33 +360,7 @@ CREATE TABLE "telemt_instances" (
 CREATE TABLE telemt_runtime_current (
     agent_id TEXT PRIMARY KEY,
     observed_at_unix INTEGER NOT NULL,
-    state TEXT NOT NULL DEFAULT '',
-    state_reason TEXT NOT NULL DEFAULT '',
-    read_only INTEGER NOT NULL DEFAULT 0,
-    accepting_new_connections INTEGER NOT NULL DEFAULT 0,
-    me_runtime_ready INTEGER NOT NULL DEFAULT 0,
-    me2dc_fallback_enabled INTEGER NOT NULL DEFAULT 0,
-    use_middle_proxy INTEGER NOT NULL DEFAULT 0,
-    startup_status TEXT NOT NULL DEFAULT '',
-    startup_stage TEXT NOT NULL DEFAULT '',
-    startup_progress_pct REAL NOT NULL DEFAULT 0,
-    initialization_status TEXT NOT NULL DEFAULT '',
-    degraded INTEGER NOT NULL DEFAULT 0,
-    initialization_stage TEXT NOT NULL DEFAULT '',
-    initialization_progress_pct REAL NOT NULL DEFAULT 0,
-    transport_mode TEXT NOT NULL DEFAULT '',
-    current_connections INTEGER NOT NULL DEFAULT 0,
-    current_connections_me INTEGER NOT NULL DEFAULT 0,
-    current_connections_direct INTEGER NOT NULL DEFAULT 0,
-    active_users INTEGER NOT NULL DEFAULT 0,
-    uptime_seconds REAL NOT NULL DEFAULT 0,
-    connections_total INTEGER NOT NULL DEFAULT 0,
-    connections_bad_total INTEGER NOT NULL DEFAULT 0,
-    handshake_timeouts_total INTEGER NOT NULL DEFAULT 0,
-    configured_users INTEGER NOT NULL DEFAULT 0,
-    dc_coverage_pct REAL NOT NULL DEFAULT 0,
-    healthy_upstreams INTEGER NOT NULL DEFAULT 0,
-    total_upstreams INTEGER NOT NULL DEFAULT 0, telemt_unreachable_since_unix INTEGER NOT NULL DEFAULT 0, telemt_unreachable INTEGER NOT NULL DEFAULT 0,
+    runtime_json TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
@@ -721,4 +695,5 @@ INSERT INTO goose_db_version (version_id, is_applied) VALUES
   (51, 1),
   (52, 1),
   (53, 1),
-  (54, 1);
+  (54, 1),
+  (55, 1);

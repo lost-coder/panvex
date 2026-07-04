@@ -45,5 +45,4 @@ func runAuthorityContract(t *testing.T, open OpenStore) {
 		}
 	})
 
-
 }
