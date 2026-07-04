@@ -190,12 +190,6 @@ func runRuntime(args []string) error {
 		Version:          cfg.version,
 		TelemtConfigPath: cfg.telemtConfigPath,
 		TelemtRestart:    cfg.telemtRestart,
-		// Resume snapshot sequence across restarts so the control-plane can
-		// dedup duplicate deltas. See P2-LOG-06 / L-07.
-		InitialUsageSeq: credentialsState.UsageSeq,
-		PersistUsageSeq: func(seq uint64) error {
-			return agentstate.SaveUsageSeq(statePath, seq)
-		},
 		UpdateTransport: func(mode, listenAddr, panelURL string) error {
 			// Patch transport fields onto fresh disk state under the state
 			// package's write lock (audit #7) — a concurrent usage-seq tick

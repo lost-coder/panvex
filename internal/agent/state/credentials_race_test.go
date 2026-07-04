@@ -6,16 +6,16 @@ import (
 	"testing"
 )
 
-// TestConcurrentUsageSeqAndRenewalUpdate reproduces audit #7: the
-// usage-seq worker's Load→Save racing a certificate renewal must never
-// resurrect the OLD cert on disk. Run with -race.
-func TestConcurrentUsageSeqAndRenewalUpdate(t *testing.T) {
+// TestConcurrentFieldWritersAndRenewalUpdate reproduces audit #7: a
+// high-frequency state-file writer (Update on one field) racing a
+// certificate renewal must never resurrect the OLD cert on disk. Run
+// with -race.
+func TestConcurrentFieldWritersAndRenewalUpdate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	initial := Credentials{
 		AgentID:        "agent-1",
 		CertificatePEM: "OLD-CERT",
 		PrivateKeyPEM:  "OLD-KEY",
-		UsageSeq:       1,
 	}
 	if err := Save(path, initial); err != nil {
 		t.Fatalf("Save initial: %v", err)
@@ -23,12 +23,14 @@ func TestConcurrentUsageSeqAndRenewalUpdate(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
-		seq := uint64(i + 2)
+		i := i
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			if err := SaveUsageSeq(path, seq); err != nil {
-				t.Errorf("SaveUsageSeq(%d): %v", seq, err)
+			if _, err := Update(path, func(c *Credentials) {
+				c.TransportSwitchedAtUnix = int64(i) //nolint:gosec
+			}); err != nil {
+				t.Errorf("Update(TransportSwitchedAtUnix=%d): %v", i, err)
 			}
 		}()
 		go func() {
@@ -49,9 +51,6 @@ func TestConcurrentUsageSeqAndRenewalUpdate(t *testing.T) {
 		t.Fatalf("Load final: %v", err)
 	}
 	if final.CertificatePEM != "NEW-CERT" || final.PrivateKeyPEM != "NEW-KEY" {
-		t.Fatalf("renewal lost: cert=%q key=%q, want NEW-CERT/NEW-KEY (usage-seq writer clobbered the renewal)", final.CertificatePEM, final.PrivateKeyPEM)
-	}
-	if final.UsageSeq < 2 {
-		t.Fatalf("UsageSeq = %d, want >= 2 (usage-seq writes lost)", final.UsageSeq)
+		t.Fatalf("renewal lost: cert=%q key=%q, want NEW-CERT/NEW-KEY (field writer clobbered the renewal)", final.CertificatePEM, final.PrivateKeyPEM)
 	}
 }
