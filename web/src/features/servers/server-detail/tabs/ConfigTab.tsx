@@ -23,6 +23,7 @@ import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
 import {
   useAgentConfig,
+  useAgentConfigApplyBatch,
   useApplyAgentConfig,
   usePutAgentConfig,
 } from "@/features/servers/config/configHooks";
@@ -59,6 +60,26 @@ export function ConfigTab({
   const { data, isLoading, isError } = useAgentConfig(agentId);
   const putMutation = usePutAgentConfig(agentId);
   const applyMutation = useApplyAgentConfig(agentId);
+
+  // P3-3.4: single Apply is a batch-of-one. Hold the launched batch id in state
+  // and poll to terminal; the completion toast fires HERE now (the button is
+  // kickoff-only).
+  const [applyBatchId, setApplyBatchId] = useState<string | null>(null);
+  const applyStatus = useAgentConfigApplyBatch(agentId, applyBatchId);
+  const applyDone = applyStatus.data?.done === true;
+  useEffect(() => {
+    if (!applyBatchId || !applyDone) return;
+    const status = applyStatus.data;
+    if (!status) return;
+    if (status.failed > 0) {
+      const message = status.agents.find((a) => a.status === "failed")?.message ?? "";
+      toast.error(t("config.apply.failed", { agent: server.name, error: message }));
+    } else {
+      toast.success(t("config.apply.applied", { count: status.applied }));
+    }
+    setApplyBatchId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyBatchId, applyDone]);
 
   // Editor state — seeded from the OVERRIDE. We keep the initial flatten so
   // the changed-path diff is stable across re-renders.
@@ -198,9 +219,23 @@ export function ConfigTab({
         )}
         <ApplyConfigButton
           changedPaths={overridePaths}
-          onApply={() => applyMutation.mutateAsync()}
-          disabled={changedPaths.length > 0 || putMutation.isPending}
+          onApply={async () => {
+            const accepted = await applyMutation.mutateAsync();
+            setApplyBatchId(accepted.batch_id);
+          }}
+          disabled={
+            changedPaths.length > 0 || putMutation.isPending || applyBatchId !== null
+          }
         />
+        {applyBatchId !== null && (
+          <span
+            className="flex items-center gap-2 text-micro text-fg-muted"
+            aria-live="polite"
+          >
+            <Spinner />
+            {t("config.apply.inProgress")}
+          </span>
+        )}
       </div>
     </div>
   );

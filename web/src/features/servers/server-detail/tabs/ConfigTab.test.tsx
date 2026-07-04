@@ -19,10 +19,13 @@ vi.mock("@/app/providers/ToastProvider", () => ({
 // Mock the config hooks so the tab can be exercised without a QueryClient or
 // network — the same isolation strategy the feature's component tests use.
 const putMutate = vi.fn();
-const applyMutateAsync = vi.fn().mockResolvedValue({ applied: 1, failed: "", error: "" });
+const applyMutateAsync = vi.fn().mockResolvedValue({ batch_id: "batch-1" });
 const useAgentConfig = vi.fn();
+const useAgentConfigApplyBatch = vi.fn();
 vi.mock("@/features/servers/config/configHooks", () => ({
   useAgentConfig: (id: string) => useAgentConfig(id),
+  useAgentConfigApplyBatch: (agentId: string, batchId: string | null) =>
+    useAgentConfigApplyBatch(agentId, batchId),
   usePutAgentConfig: () => ({ mutate: putMutate, isPending: false }),
   useApplyAgentConfig: () => ({ mutateAsync: applyMutateAsync, isPending: false }),
 }));
@@ -49,6 +52,9 @@ describe("ConfigTab", () => {
       isLoading: false,
       isError: false,
     });
+    // No apply batch in flight by default; individual tests override this to
+    // simulate a terminal batch and assert the completion toast.
+    useAgentConfigApplyBatch.mockReturnValue({ data: undefined });
     // jsdom lacks <dialog> modal methods used by ApplyConfigButton's confirm.
     HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) {
       this.open = true;
@@ -117,6 +123,47 @@ describe("ConfigTab", () => {
     expect(screen.getByText("Restart required")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(applyMutateAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows the in-progress indicator on Apply and toasts success when the batch completes", async () => {
+    // Hot-only override so Apply kicks off directly (no restart dialog).
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        override: { general: { log_level: "info" } },
+        effective: { general: { log_level: "info" } },
+        drift: { status: "in_sync", fields: [] },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    const { rerender } = render(<ConfigTab server={server} />);
+    fireEvent.click(screen.getByRole("button", { name: "Apply to node" }));
+    await waitFor(() => expect(applyMutateAsync).toHaveBeenCalledTimes(1));
+    // Live "applying…" indicator shows while the batch is in flight.
+    await screen.findByText("Applying configuration…");
+
+    // The batch poll settles done with a clean result → success toast fires
+    // here (the button is kickoff-only).
+    useAgentConfigApplyBatch.mockReturnValue({
+      data: {
+        batch_id: "batch-1",
+        mode: "all_at_once",
+        status: "succeeded",
+        done: true,
+        total: 1,
+        applied: 1,
+        failed: 0,
+        pending: 0,
+        skipped: 0,
+        agents: [
+          { agent_id: "agent-7", job_id: "job-1", status: "succeeded", message: "" },
+        ],
+      },
+    });
+    rerender(<ConfigTab server={server} />);
+    await waitFor(() =>
+      expect(toastApi.success).toHaveBeenCalledWith("Applied to 1 node(s)"),
+    );
   });
 
   it("disables Apply while there are unsaved edits", () => {

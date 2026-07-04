@@ -264,7 +264,7 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
 
       {/* Actions — Save persists the group target, Apply rolls it out to every
           node. Apply is gated on there being no unsaved edits; the rolling
-          ApplyResult (applied / failed) is surfaced by ApplyConfigButton. */}
+          progress + terminal toast are surfaced from the batch status below. */}
       <div className="flex flex-wrap items-center gap-3 border-t border-divider pt-4">
         <Button onClick={handleSave} disabled={putMutation.isPending}>
           {t("config.save")}

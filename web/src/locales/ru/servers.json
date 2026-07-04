@@ -445,6 +445,7 @@
       "cancel": "Отмена",
       "applied": "Применено к {{count}} ноде(ам)",
       "failed": "Ошибка на {{agent}}: {{error}}",
+      "inProgress": "Применение конфигурации…",
       "inFlight": "Применение к {{count}} узлам…",
       "done": "Применено ко всем {{count}} узлам",
       "partial": "Применено к {{applied}} из {{total}} узлов, {{failed}} с ошибкой",

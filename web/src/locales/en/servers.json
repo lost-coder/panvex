@@ -434,6 +434,7 @@
       "cancel": "Cancel",
       "applied": "Applied to {{count}} node(s)",
       "failed": "Failed on {{agent}}: {{error}}",
+      "inProgress": "Applying configuration…",
       "inFlight": "Applying to {{count}} node(s)…",
       "done": "Applied to all {{count}} node(s)",
       "partial": "Applied to {{applied}} of {{total}} node(s), {{failed}} failed",
