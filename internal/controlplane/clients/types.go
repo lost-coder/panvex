@@ -146,7 +146,11 @@ type Usage struct {
 	QuotaUsedBytes     uint64
 	QuotaLastResetUnix uint64
 	LastSeq            uint64
-	ObservedAt         time.Time
+	// AgentBootID + LastTotalBytes: P4 watermark, see
+	// storage.ClientUsageRecord.
+	AgentBootID    string
+	LastTotalBytes uint64
+	ObservedAt     time.Time
 }
 
 // AggregatedUsage is the sum-over-agents of UsageSnapshot for a single

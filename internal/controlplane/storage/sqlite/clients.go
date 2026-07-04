@@ -342,29 +342,34 @@ func (s *Store) UpsertClientUsage(ctx context.Context, r storage.ClientUsageReco
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO client_usage (
 			client_id, agent_id, traffic_used_bytes, unique_ips_used,
-			active_tcp_conns, active_unique_ips, last_seq, observed_at_unix
+			active_tcp_conns, active_unique_ips, last_seq, observed_at_unix,
+			agent_boot_id, last_total_bytes
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(client_id, agent_id) DO UPDATE SET
 			traffic_used_bytes = excluded.traffic_used_bytes,
 			unique_ips_used    = excluded.unique_ips_used,
 			active_tcp_conns   = excluded.active_tcp_conns,
 			active_unique_ips  = excluded.active_unique_ips,
 			last_seq           = excluded.last_seq,
-			observed_at_unix   = excluded.observed_at_unix
+			observed_at_unix   = excluded.observed_at_unix,
+			agent_boot_id      = excluded.agent_boot_id,
+			last_total_bytes   = excluded.last_total_bytes
 		WHERE excluded.last_seq > client_usage.last_seq
 	`,
 		r.ClientID, r.AgentID,
 		int64(r.TrafficUsedBytes), r.UniqueIPsUsed,
 		r.ActiveTCPConns, r.ActiveUniqueIPs,
-		int64(r.LastSeq), toUnix(r.ObservedAt))
+		int64(r.LastSeq), toUnix(r.ObservedAt),
+		r.AgentBootID, int64(r.LastTotalBytes))
 	return err
 }
 
 func (s *Store) ListClientUsage(ctx context.Context) ([]storage.ClientUsageRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
-			active_tcp_conns, active_unique_ips, last_seq, observed_at_unix
+			active_tcp_conns, active_unique_ips, last_seq, observed_at_unix,
+			agent_boot_id, last_total_bytes
 		FROM client_usage
 	`)
 	if err != nil {
@@ -377,12 +382,15 @@ func (s *Store) ListClientUsage(ctx context.Context) ([]storage.ClientUsageRecor
 		var r storage.ClientUsageRecord
 		var traffic, lastSeq int64
 		var observedAt int64
+		var lastTotal int64
 		if err := rows.Scan(&r.ClientID, &r.AgentID, &traffic, &r.UniqueIPsUsed,
-			&r.ActiveTCPConns, &r.ActiveUniqueIPs, &lastSeq, &observedAt); err != nil {
+			&r.ActiveTCPConns, &r.ActiveUniqueIPs, &lastSeq, &observedAt,
+			&r.AgentBootID, &lastTotal); err != nil {
 			return nil, err
 		}
 		r.TrafficUsedBytes = uint64(traffic)
 		r.LastSeq = uint64(lastSeq)
+		r.LastTotalBytes = uint64(lastTotal)
 		r.ObservedAt = fromUnix(observedAt)
 		result = append(result, r)
 	}

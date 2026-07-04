@@ -459,6 +459,8 @@ func rowToUsage(row dbsqlc.ClientUsage) clients.Usage {
 		QuotaUsedBytes:     uint64(row.QuotaUsedBytes),     //nolint:gosec
 		QuotaLastResetUnix: uint64(row.QuotaLastResetUnix), //nolint:gosec
 		LastSeq:            uint64(row.LastSeq),            //nolint:gosec
+		AgentBootID:        row.AgentBootID,
+		LastTotalBytes:     uint64(row.LastTotalBytes), //nolint:gosec
 		ObservedAt:         row.ObservedAt.UTC(),
 	}
 }
@@ -474,6 +476,8 @@ func usageToUpsertParams(u clients.Usage) dbsqlc.UpsertClientUsageParams {
 		QuotaUsedBytes:     int64(u.QuotaUsedBytes),     //nolint:gosec
 		QuotaLastResetUnix: int64(u.QuotaLastResetUnix), //nolint:gosec
 		LastSeq:            int64(u.LastSeq),            //nolint:gosec
+		AgentBootID:        u.AgentBootID,
+		LastTotalBytes:     int64(u.LastTotalBytes), //nolint:gosec
 		ObservedAt:         u.ObservedAt.UTC(),
 	}
 }

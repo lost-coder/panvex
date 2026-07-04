@@ -28,6 +28,12 @@ type usageMirror struct {
 	QuotaLastResetUnix uint64
 	ObservedAt         time.Time
 	LastSeq            uint64
+	// AgentBootID + LastTotalBytes: P4 watermark of the reporting agent's
+	// cumulative counter. Empty boot id = row seeded before any
+	// cumulative report (discovery adoption) — the first report for the
+	// pair baselines instead of accumulating.
+	AgentBootID    string
+	LastTotalBytes uint64
 }
 
 // snapshot projects the in-memory usageMirror row onto the handler-facing
@@ -312,6 +318,8 @@ func (s *Service) Restore(ctx context.Context) error {
 			QuotaLastResetUnix: u.QuotaLastResetUnix,
 			ObservedAt:         u.ObservedAt,
 			LastSeq:            u.LastSeq,
+			AgentBootID:        u.AgentBootID,
+			LastTotalBytes:     u.LastTotalBytes,
 		}
 		if u.LastSeq > s.mirrorLastUsageSeq[u.AgentID] {
 			s.mirrorLastUsageSeq[u.AgentID] = u.LastSeq
@@ -652,6 +660,12 @@ type MirrorUsageEntry struct {
 	QuotaLastResetUnix uint64
 	ObservedAt         time.Time
 	LastSeq            uint64
+	// AgentBootID + LastTotalBytes: P4 watermark of the reporting agent's
+	// cumulative counter. Empty boot id = row seeded before any
+	// cumulative report (discovery adoption) — the first report for the
+	// pair baselines instead of accumulating.
+	AgentBootID    string
+	LastTotalBytes uint64
 }
 
 // MirrorState is the full snapshot of the in-memory mirror, returned by
@@ -706,6 +720,8 @@ func (s *Service) MirrorSnapshot() MirrorState {
 				QuotaLastResetUnix: u.QuotaLastResetUnix,
 				ObservedAt:         u.ObservedAt,
 				LastSeq:            u.LastSeq,
+				AgentBootID:        u.AgentBootID,
+				LastTotalBytes:     u.LastTotalBytes,
 			}
 		}
 		usage[k] = cp
@@ -842,6 +858,8 @@ func (s *Service) applyUsageMirrorLocked(u Usage) {
 		QuotaLastResetUnix: u.QuotaLastResetUnix,
 		ObservedAt:         u.ObservedAt,
 		LastSeq:            u.LastSeq,
+		AgentBootID:        u.AgentBootID,
+		LastTotalBytes:     u.LastTotalBytes,
 	}
 	if u.LastSeq > s.mirrorLastUsageSeq[u.AgentID] {
 		s.mirrorLastUsageSeq[u.AgentID] = u.LastSeq
@@ -1017,18 +1035,31 @@ func (s *Service) MirrorReplaceInMemory(client Client, assignments []Assignment,
 	s.mirrorDeployments[cid] = next
 }
 
-// MirrorUsageEntryFor returns the current usage snapshot for a (client,
-// agent) pair from the mirror. ok=false when the pair is not tracked.
-func (s *Service) MirrorUsageEntryFor(clientID, agentID string) (UsageSnapshot, bool) {
+// MirrorUsageEntryFor returns the current usage entry (including the P4
+// cumulative-counter watermark) for a (client, agent) pair from the
+// mirror. ok=false when the pair is not tracked.
+func (s *Service) MirrorUsageEntryFor(clientID, agentID string) (MirrorUsageEntry, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	byAgent, ok := s.mirrorUsage[ClientID(clientID)]
 	if !ok {
-		return UsageSnapshot{}, false
+		return MirrorUsageEntry{}, false
 	}
 	u, ok := byAgent[agentID]
 	if !ok {
-		return UsageSnapshot{}, false
+		return MirrorUsageEntry{}, false
 	}
-	return u.snapshot(), true
+	return MirrorUsageEntry{
+		ClientID:           u.ClientID,
+		TrafficUsedBytes:   u.TrafficUsedBytes,
+		UniqueIPsUsed:      u.UniqueIPsUsed,
+		ActiveTCPConns:     u.ActiveTCPConns,
+		ActiveUniqueIPs:    u.ActiveUniqueIPs,
+		QuotaUsedBytes:     u.QuotaUsedBytes,
+		QuotaLastResetUnix: u.QuotaLastResetUnix,
+		ObservedAt:         u.ObservedAt,
+		LastSeq:            u.LastSeq,
+		AgentBootID:        u.AgentBootID,
+		LastTotalBytes:     u.LastTotalBytes,
+	}, true
 }

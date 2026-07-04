@@ -434,6 +434,7 @@ func clientUsageBulkArgs(r storage.ClientUsageRecord) []any {
 		int64(r.TrafficUsedBytes), r.UniqueIPsUsed,
 		r.ActiveTCPConns, r.ActiveUniqueIPs,
 		int64(r.LastSeq), r.ObservedAt.UTC(),
+		r.AgentBootID, int64(r.LastTotalBytes),
 	}
 }
 
@@ -454,13 +455,14 @@ func (s *Store) UpsertClientUsageBulk(ctx context.Context, records []storage.Cli
 	// Deduplicate by conflict key (client_id, agent_id) before sending to
 	// Postgres; duplicate keys in one INSERT … ON CONFLICT cause SQLSTATE 21000.
 	records = dedupClientUsage(records)
-	const cols = 8
+	const cols = 10
 	return s.execInTx(ctx, func(exec dbExecutor) error {
 		return runBulkChunks(ctx, exec, len(records), cols,
 			func(ph string) string {
 				return `INSERT INTO client_usage (
 						client_id, agent_id, traffic_used_bytes, unique_ips_used,
-						active_tcp_conns, active_unique_ips, last_seq, observed_at
+						active_tcp_conns, active_unique_ips, last_seq, observed_at,
+						agent_boot_id, last_total_bytes
 					) VALUES ` + ph +
 					` ON CONFLICT (client_id, agent_id) DO UPDATE SET
 						traffic_used_bytes = EXCLUDED.traffic_used_bytes,
@@ -468,7 +470,9 @@ func (s *Store) UpsertClientUsageBulk(ctx context.Context, records []storage.Cli
 						active_tcp_conns   = EXCLUDED.active_tcp_conns,
 						active_unique_ips  = EXCLUDED.active_unique_ips,
 						last_seq           = EXCLUDED.last_seq,
-						observed_at        = EXCLUDED.observed_at
+						observed_at        = EXCLUDED.observed_at,
+						agent_boot_id      = EXCLUDED.agent_boot_id,
+						last_total_bytes   = EXCLUDED.last_total_bytes
 					WHERE EXCLUDED.last_seq > client_usage.last_seq`
 			},
 			func(start, end int) ([]any, error) {
