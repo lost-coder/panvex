@@ -549,7 +549,8 @@ func populateExtraTables(t *testing.T, store storage.MigrationStore, fleetGroupI
 		AgentID:          "agent-000001",
 		TrafficUsedBytes: 4096,
 		UniqueIPsUsed:    3,
-		LastSeq:          7,
+		AgentBootID:      "boot-1",
+		LastTotalBytes:   7,
 		ObservedAt:       now,
 	}); err != nil {
 		t.Fatalf("UpsertClientUsage() error = %v", err)

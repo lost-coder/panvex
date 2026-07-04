@@ -214,18 +214,6 @@ func (s *Service) recoverSequencesLocked(clientIDs, assignmentIDs, discoveredIDs
 	}
 }
 
-// recoverSequencesFromRecords seeds the Service's monotonic counters
-// from persisted record IDs so the next NextClientID / NextAssignmentID /
-// NextDiscoveredID call returns a value strictly greater than any
-// previously-issued ID. Safe to call multiple times.
-func (s *Service) recoverSequencesFromRecords(
-	clientIDs, assignmentIDs, discoveredIDs []string,
-) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.recoverSequencesLocked(clientIDs, assignmentIDs, discoveredIDs)
-}
-
 // --- Repository-backed mirror methods ---
 
 // Restore loads all clients (and their assignments, deployments, usage)

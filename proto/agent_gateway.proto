@@ -58,17 +58,13 @@ message InstanceSnapshot {
 
 message ClientUsageSnapshot {
   string client_id = 1;
-  // Legacy one-shot delta protocol (P2-LOG-06 / L-07). Superseded by
-  // traffic_total_bytes + Snapshot.agent_boot_id (P4, cumulative
-  // counters); both fields are removed once agent and panel run the
-  // cumulative protocol.
-  uint64 traffic_delta_bytes = 2;
+  // 2 = traffic_delta_bytes, 7 = seq: the pre-P4 one-shot delta protocol.
+  reserved 2, 7;
+  reserved "traffic_delta_bytes", "seq";
   int32 unique_ips_used = 3;
   int32 active_tcp_conns = 4;
   int32 active_unique_ips = 5;
   string client_name = 6;
-  // Legacy: see traffic_delta_bytes.
-  uint64 seq = 7;
   uint64 quota_used_bytes = 8;
   uint64 quota_last_reset_unix = 9;
   // Cumulative traffic counted by THIS agent process since its start —

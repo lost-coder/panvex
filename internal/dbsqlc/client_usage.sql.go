@@ -21,7 +21,7 @@ func (q *Queries) DeleteClientUsageByClient(ctx context.Context, clientID string
 
 const listAllClientUsage = `-- name: ListAllClientUsage :many
 SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
-       active_tcp_conns, active_unique_ips, last_seq, observed_at,
+       active_tcp_conns, active_unique_ips, observed_at,
        quota_used_bytes, quota_last_reset_unix, agent_boot_id,
        last_total_bytes
 FROM client_usage
@@ -44,7 +44,6 @@ func (q *Queries) ListAllClientUsage(ctx context.Context) ([]ClientUsage, error)
 			&i.UniqueIpsUsed,
 			&i.ActiveTcpConns,
 			&i.ActiveUniqueIps,
-			&i.LastSeq,
 			&i.ObservedAt,
 			&i.QuotaUsedBytes,
 			&i.QuotaLastResetUnix,
@@ -67,7 +66,7 @@ func (q *Queries) ListAllClientUsage(ctx context.Context) ([]ClientUsage, error)
 const listClientUsageForClient = `-- name: ListClientUsageForClient :many
 
 SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
-       active_tcp_conns, active_unique_ips, last_seq, observed_at,
+       active_tcp_conns, active_unique_ips, observed_at,
        quota_used_bytes, quota_last_reset_unix, agent_boot_id,
        last_total_bytes
 FROM client_usage
@@ -76,9 +75,9 @@ WHERE client_id = $1
 
 // R-Q-03: client_usage — per-(client, agent) usage counters reported
 // back from agents.
-// Column order matches the physical table (quota_* were ALTER-appended by
-// 0043, watermark columns by 0057) so sqlc maps the row straight onto
-// dbsqlc.ClientUsage.
+// Column order matches the physical table (quota_* appended by 0043,
+// watermark by 0057, last_seq dropped by 0058) so sqlc maps the row
+// straight onto dbsqlc.ClientUsage.
 func (q *Queries) ListClientUsageForClient(ctx context.Context, clientID string) ([]ClientUsage, error) {
 	rows, err := q.db.QueryContext(ctx, listClientUsageForClient, clientID)
 	if err != nil {
@@ -95,7 +94,6 @@ func (q *Queries) ListClientUsageForClient(ctx context.Context, clientID string)
 			&i.UniqueIpsUsed,
 			&i.ActiveTcpConns,
 			&i.ActiveUniqueIps,
-			&i.LastSeq,
 			&i.ObservedAt,
 			&i.QuotaUsedBytes,
 			&i.QuotaLastResetUnix,

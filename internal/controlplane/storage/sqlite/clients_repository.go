@@ -470,13 +470,9 @@ func (r *clientsRepository) upsertDeployment(ctx context.Context, d clients.Depl
 	return err
 }
 
-// upsertUsageRow inserts or updates one (client, agent) usage row. last_seq
-// is the agent's per-connection report cursor; the ON CONFLICT DO UPDATE
-// only fires when the incoming last_seq is strictly newer than the stored
-// one, so an out-of-order or duplicate/older report is a no-op rather than
-// regressing the stored counters (audit finding: monotonicity guard). A
-// brand-new (client, agent) pair always inserts normally since ON CONFLICT
-// only triggers against an existing row.
+// upsertUsageRow inserts or updates one (client, agent) usage row.
+// Unconditional last-write-wins upsert (P4): ordering/duplicate protection
+// lives upstream in the panel's watermark derivation, not in SQL.
 func (r *clientsRepository) upsertUsageRow(ctx context.Context, exec dbtx, u clients.Usage) error {
 	_, err := exec.ExecContext(ctx, `
 		INSERT INTO client_usage (

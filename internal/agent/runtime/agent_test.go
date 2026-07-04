@@ -384,11 +384,8 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 	if snapshot.Clients[0].ClientId != "client-1" {
 		t.Fatalf("snapshot.Clients[0].ClientId = %q, want %q", snapshot.Clients[0].ClientId, "client-1")
 	}
-	if snapshot.Clients[0].TrafficDeltaBytes != 1024 {
-		t.Fatalf("snapshot.Clients[0].TrafficDeltaBytes = %d, want %d (2048-1024)", snapshot.Clients[0].TrafficDeltaBytes, 1024)
-	}
 	if snapshot.Clients[0].TrafficTotalBytes != 1024 {
-		t.Fatalf("snapshot.Clients[0].TrafficTotalBytes = %d, want %d", snapshot.Clients[0].TrafficTotalBytes, 1024)
+		t.Fatalf("snapshot.Clients[0].TrafficTotalBytes = %d, want %d (2048-1024)", snapshot.Clients[0].TrafficTotalBytes, 1024)
 	}
 	if snapshot.AgentBootId == "" {
 		t.Fatal("snapshot.AgentBootId is empty")
@@ -903,9 +900,6 @@ func TestAgentUsageTotalsAreCumulative(t *testing.T) {
 	if len(second.Clients) == 0 || second.Clients[0].TrafficTotalBytes != 800 {
 		t.Fatalf("second tick total = %d, want 800", second.Clients[0].TrafficTotalBytes)
 	}
-	if second.Clients[0].TrafficDeltaBytes != 800 {
-		t.Fatalf("second tick legacy delta = %d, want 800 (kept until panel cutover)", second.Clients[0].TrafficDeltaBytes)
-	}
 
 	client.metricsUsage[0].TrafficUsedBytes = 1500
 	third, err := agent.BuildUsageSnapshot(context.Background(), now.Add(2*time.Minute))
@@ -979,23 +973,20 @@ func TestAgentRestartDoesNotReplayCumulativeAsDelta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildUsageSnapshot(1) error = %v", err)
 	}
-	for _, c := range first.Clients {
-		if c.TrafficDeltaBytes != 0 {
-			t.Fatalf("baseline tick emitted delta %d for %s, want 0 (double-count regression)", c.TrafficDeltaBytes, c.ClientId)
-		}
-	}
 	if len(first.Clients) > 0 && first.Clients[0].TrafficTotalBytes != 0 {
-		t.Fatalf("baseline tick total = %d, want 0", first.Clients[0].TrafficTotalBytes)
+		t.Fatalf("baseline tick total = %d, want 0 (pre-existing counter is the previous epoch)", first.Clients[0].TrafficTotalBytes)
 	}
 
-	// Subsequent real traffic counts normally from the adopted baseline.
+	// Subsequent real traffic counts normally from the adopted baseline: the
+	// cumulative total advances by the 300-byte increment (not the full
+	// pre-existing counter).
 	client.metricsUsage[0].TrafficUsedBytes = 1_000_300
 	second, err := agent.BuildUsageSnapshot(context.Background(), now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("BuildUsageSnapshot(2) error = %v", err)
 	}
-	if len(second.Clients) == 0 || second.Clients[0].TrafficDeltaBytes != 300 {
-		t.Fatalf("post-baseline delta = %+v, want a single 300-byte delta", second.Clients)
+	if len(second.Clients) == 0 || second.Clients[0].TrafficTotalBytes != 300 {
+		t.Fatalf("post-baseline total = %+v, want a single 300-byte total", second.Clients)
 	}
 }
 

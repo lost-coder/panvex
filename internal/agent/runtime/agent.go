@@ -685,12 +685,8 @@ func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted, base
 		return nil, false
 	}
 	return &gatewayrpc.ClientUsageSnapshot{
-		ClientId:   clientID,
-		ClientName: client.ClientName,
-		// Legacy delta field: kept populated until the panel cutover to
-		// totals so accounting never pauses mid-branch; removed in P4
-		// задача 5 together with the proto field.
-		TrafficDeltaBytes: delta,
+		ClientId:          clientID,
+		ClientName:        client.ClientName,
 		TrafficTotalBytes: a.usageTotals[trackingKey],
 		// IN-L1: clamp to int32 so a malformed/huge telemt gauge cannot wrap
 		// to a negative count on the wire.

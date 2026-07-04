@@ -433,21 +433,19 @@ func clientUsageBulkArgs(r storage.ClientUsageRecord) []any {
 		r.ClientID, r.AgentID,
 		int64(r.TrafficUsedBytes), r.UniqueIPsUsed,
 		r.ActiveTCPConns, r.ActiveUniqueIPs,
-		int64(r.LastSeq), r.ObservedAt.UTC(),
+		r.ObservedAt.UTC(),
 		r.AgentBootID, int64(r.LastTotalBytes),
 	}
 }
 
 // UpsertClientUsageBulk upserts a batch of (client, agent) usage counters in
-// a single transaction. Same ON CONFLICT (client_id, agent_id) DO UPDATE
-// semantics as the single-row UpsertClientUsage, including the last_seq
-// monotonicity guard (a conflicting row only applies when its last_seq is
-// strictly newer than the stored one — stale/out-of-order reports are a
-// no-op, not a regression); duplicate keys within one batch collapse to
-// last-write-wins via dedupClientUsage before the guard ever sees them.
-// P-1 (sprint S-23 perf-critical) — the hot-path agent-flow tick was
-// issuing N single-row Exec calls per snapshot (500 clients x 50 agents =
-// 25k round-trips); this batches them into one.
+// a single transaction. Unconditional last-write-wins upsert (P4): ordering
+// and duplicate protection live upstream in the panel's watermark derivation
+// (server.mergeClientUsageBatch), not in SQL; duplicate keys within one batch
+// collapse to last-write-wins via dedupClientUsage. P-1 (sprint S-23
+// perf-critical) — the hot-path agent-flow tick was issuing N single-row Exec
+// calls per snapshot (500 clients x 50 agents = 25k round-trips); this batches
+// them into one.
 func (s *Store) UpsertClientUsageBulk(ctx context.Context, records []storage.ClientUsageRecord) error {
 	if len(records) == 0 {
 		return nil
@@ -455,13 +453,13 @@ func (s *Store) UpsertClientUsageBulk(ctx context.Context, records []storage.Cli
 	// Deduplicate by conflict key (client_id, agent_id) before sending to
 	// Postgres; duplicate keys in one INSERT … ON CONFLICT cause SQLSTATE 21000.
 	records = dedupClientUsage(records)
-	const cols = 10
+	const cols = 9
 	return s.execInTx(ctx, func(exec dbExecutor) error {
 		return runBulkChunks(ctx, exec, len(records), cols,
 			func(ph string) string {
 				return `INSERT INTO client_usage (
 						client_id, agent_id, traffic_used_bytes, unique_ips_used,
-						active_tcp_conns, active_unique_ips, last_seq, observed_at,
+						active_tcp_conns, active_unique_ips, observed_at,
 						agent_boot_id, last_total_bytes
 					) VALUES ` + ph +
 					` ON CONFLICT (client_id, agent_id) DO UPDATE SET
@@ -469,11 +467,9 @@ func (s *Store) UpsertClientUsageBulk(ctx context.Context, records []storage.Cli
 						unique_ips_used    = EXCLUDED.unique_ips_used,
 						active_tcp_conns   = EXCLUDED.active_tcp_conns,
 						active_unique_ips  = EXCLUDED.active_unique_ips,
-						last_seq           = EXCLUDED.last_seq,
 						observed_at        = EXCLUDED.observed_at,
 						agent_boot_id      = EXCLUDED.agent_boot_id,
-						last_total_bytes   = EXCLUDED.last_total_bytes
-					WHERE EXCLUDED.last_seq > client_usage.last_seq`
+						last_total_bytes   = EXCLUDED.last_total_bytes`
 			},
 			func(start, end int) ([]any, error) {
 				args := make([]any, 0, (end-start)*cols)

@@ -43,19 +43,6 @@ func enqueueInboundAgentMessage(
 		}
 	}
 
-	// IN-C1: a snapshot carrying client usage holds one-shot traffic deltas
-	// the agent never resends. It must not be dropped from the regular queue
-	// under load — block (backpressure) until it is accepted. Heartbeats and
-	// gauge-only snapshots keep the drop-oldest path below.
-	if carriesClientUsage(message) {
-		select {
-		case <-connectionCtx.Done():
-			return false
-		case regularInbound <- message:
-			return true
-		}
-	}
-
 	select {
 	case <-connectionCtx.Done():
 		return false
@@ -88,13 +75,6 @@ func enqueueInboundAgentMessage(
 
 func isPriorityAgentMessage(message *gatewayrpc.ConnectClientMessage) bool {
 	return message.GetJobResult() != nil || message.GetJobAcknowledgement() != nil
-}
-
-// carriesClientUsage reports whether the message is a snapshot bearing
-// one-shot client-usage deltas, which must never be dropped (IN-C1).
-func carriesClientUsage(message *gatewayrpc.ConnectClientMessage) bool {
-	snap := message.GetSnapshot()
-	return snap != nil && snap.GetHasClientUsage()
 }
 
 func (s *Server) processRegularAgentMessage(

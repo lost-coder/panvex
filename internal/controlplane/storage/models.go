@@ -522,10 +522,11 @@ type ClientIPAggregateRecord struct {
 }
 
 // ClientUsageRecord stores the lifetime traffic + live-gauge counters
-// for one (client, agent) pair. Persisted so the in-memory
-// server.clientUsage map rehydrates across restarts without losing
-// accumulated totals. LastSeq is the per-agent delta cursor (rewinds
-// to 1 on agent restart; the higher value wins).
+// for one (client, agent) pair. Persisted so the usage mirror
+// rehydrates across panel restarts without losing accumulated totals.
+// AgentBootID + LastTotalBytes are the P4 cumulative-counter watermark:
+// the reporting agent process epoch and the last cumulative total seen
+// for it; TrafficUsedBytes is the panel-accumulated absolute.
 type ClientUsageRecord struct {
 	ClientID           string
 	AgentID            string
@@ -535,14 +536,9 @@ type ClientUsageRecord struct {
 	ActiveUniqueIPs    int
 	QuotaUsedBytes     uint64
 	QuotaLastResetUnix uint64
-	LastSeq            uint64
-	// AgentBootID + LastTotalBytes are the P4 cumulative-counter
-	// watermark: the reporting agent process epoch and the last
-	// cumulative total seen for it. TrafficUsedBytes stays the
-	// panel-accumulated absolute.
-	AgentBootID    string
-	LastTotalBytes uint64
-	ObservedAt     time.Time
+	AgentBootID        string
+	LastTotalBytes     uint64
+	ObservedAt         time.Time
 }
 
 // ServerLoadHourlyRecord stores one hourly rollup of server load metrics.

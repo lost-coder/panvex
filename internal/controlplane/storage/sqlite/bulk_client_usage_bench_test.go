@@ -67,7 +67,7 @@ func benchSetupClientUsage(b *testing.B) (*Store, []storage.ClientUsageRecord) {
 			ClientID: clientID, AgentID: agent.ID,
 			TrafficUsedBytes: uint64(1000 + i), UniqueIPsUsed: 2,
 			ActiveTCPConns: 1, ActiveUniqueIPs: 1,
-			LastSeq: uint64(i + 1), ObservedAt: now,
+			AgentBootID: "boot-bench", LastTotalBytes: uint64(i + 1), ObservedAt: now,
 		})
 	}
 	return store, records
