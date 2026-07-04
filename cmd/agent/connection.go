@@ -12,6 +12,7 @@ import (
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	agentTransport "github.com/lost-coder/panvex/internal/agent/transport"
+	"github.com/lost-coder/panvex/internal/agent/updater"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -30,6 +31,11 @@ type transportReloadState struct {
 // control-plane's outbound client certificate. Duplicated as a literal
 // because cmd/agent must not import the control-plane server package.
 const panelClientCN = "control-plane.panvex.internal"
+
+// updateBackupCleanupOnce gates the one-shot removal of the self-update
+// backup binary: the first successful panel sync of this process is the
+// health-check that makes the previous binary's .bak disposable.
+var updateBackupCleanupOnce sync.Once
 
 // selectTransport returns either a listen-mode or dial-mode Transport based on
 // the TransportMode field of the credentials state. It is extracted as a
@@ -255,6 +261,11 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 			return initErr
 		}
 		slog.Info("initial sync completed", "agent_id", agent.AgentID(), "node", agent.NodeName())
+
+		// Health-check confirmation for a preceding self-update: the new
+		// binary connected and completed the initial sync, so the old
+		// binary's .bak is no longer needed for rollback (audit #9c).
+		updateBackupCleanupOnce.Do(func() { updater.RemoveBackup(slog.Default()) })
 
 		// First sync confirmed: outbound queue accepted heartbeat + snapshot.
 		// Flush buffered events to the panel. Failure is non-fatal — events

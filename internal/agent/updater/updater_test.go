@@ -24,7 +24,7 @@ func TestExtractAndReplace(t *testing.T) {
 	createTestArchive(t, archivePath, "panvex-agent-linux-amd64", binaryContent)
 
 	// Extract binary from archive.
-	binaryPath, err := extractBinaryFromArchive(archivePath)
+	binaryPath, err := extractBinaryFromArchive(archivePath, "panvex-agent-linux-amd64")
 	if err != nil {
 		t.Fatalf("extractBinaryFromArchive() error = %v", err)
 	}
