@@ -38,3 +38,28 @@ func TestReachabilityTrackerPerAgent(t *testing.T) {
 		t.Fatal("agent b never went unreachable; no edge")
 	}
 }
+
+func TestReachabilityTrackerForgetResetsEdgeState(t *testing.T) {
+	tr := NewReachabilityTracker()
+
+	// Ordinary recovery edge: unreachable -> reachable reports recovered=true.
+	if tr.Observe("a1", true) {
+		t.Fatal("first observation must never be an edge")
+	}
+	if !tr.Observe("a1", false) {
+		t.Fatal("unreachable -> reachable must report recovery")
+	}
+
+	// After Forget the agent is a clean slate: a stale unreachable flag must
+	// not produce a false recovery edge on re-registration.
+	if tr.Observe("a1", true) {
+		t.Fatal("reachable -> unreachable is not a recovery edge")
+	}
+	tr.Forget("a1")
+	if tr.Observe("a1", false) {
+		t.Fatal("first observation after Forget must not be a recovery edge")
+	}
+
+	// Idempotent.
+	tr.Forget("missing")
+}

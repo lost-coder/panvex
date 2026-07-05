@@ -209,13 +209,18 @@ func (s *Server) purgeAgentInMemory(agentID string) {
 	s.live.Remove(agentID)
 	delete(s.detailBoosts, agentID)
 	delete(s.initializationWatchCooldowns, agentID)
-	// Drop the agent's usage rows (and per-agent seq cursor) from the
-	// clients.Service mirror — the single owner of usage state. Service.mu is
-	// acquired while holding Server.mu, matching the documented Server.mu ->
-	// Service.mu lock ordering.
+	// Drop the agent's usage rows from the clients.Service mirror — the
+	// single owner of usage state. Service.mu is acquired while holding
+	// Server.mu, matching the documented Server.mu -> Service.mu lock ordering.
 	if s.clientsSvc != nil {
 		s.clientsSvc.DropAgentUsageMirror(agentID)
 	}
+	// Drop the last-known Telemt reachability so a re-registered agent starts
+	// from the "first observation is never an edge" state instead of inheriting
+	// a stale unreachable flag (P5, audit #18: Forget was dead because its
+	// wiring was missing). ReachabilityTracker has its own lock and never calls
+	// back into the server, so calling it under s.mu preserves lock ordering.
+	s.telemtReach.Forget(agentID)
 	s.revokedAgentIDs[agentID] = struct{}{}
 	s.mu.Unlock()
 }
