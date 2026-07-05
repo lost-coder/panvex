@@ -75,11 +75,7 @@ func (s *Store) ListServerLoadPoints(ctx context.Context, agentID string, from t
 }
 
 func (s *Store) PruneServerLoadPoints(ctx context.Context, olderThan time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM ts_server_load WHERE captured_at_unix < ?`, toUnix(olderThan))
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	return s.pruneChunked(ctx, "ts_server_load", "captured_at_unix", olderThan)
 }
 
 // ListServerLoadPointsForAgents returns load points for a batch of
@@ -185,11 +181,7 @@ func (s *Store) ListDCHealthPoints(ctx context.Context, agentID string, from tim
 }
 
 func (s *Store) PruneDCHealthPoints(ctx context.Context, olderThan time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM ts_dc_health WHERE captured_at_unix < ?`, toUnix(olderThan))
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	return s.pruneChunked(ctx, "ts_dc_health", "captured_at_unix", olderThan)
 }
 
 func (s *Store) UpsertClientIPHistory(ctx context.Context, record storage.ClientIPHistoryRecord) error {
@@ -315,11 +307,7 @@ func (s *Store) CountUniqueClientIPsForClients(ctx context.Context, clientIDs []
 }
 
 func (s *Store) PruneClientIPHistory(ctx context.Context, olderThan time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM client_ip_history WHERE last_seen_unix < ?`, toUnix(olderThan))
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	return s.pruneChunked(ctx, "client_ip_history", "last_seen_unix", olderThan)
 }
 
 func (s *Store) RollupServerLoadHourly(ctx context.Context, bucketHour time.Time) error {
@@ -391,9 +379,5 @@ func (s *Store) ListServerLoadHourly(ctx context.Context, agentID string, from t
 }
 
 func (s *Store) PruneServerLoadHourly(ctx context.Context, olderThan time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM ts_server_load_hourly WHERE bucket_hour_unix < ?`, toUnix(olderThan))
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	return s.pruneChunked(ctx, "ts_server_load_hourly", "bucket_hour_unix", olderThan)
 }
