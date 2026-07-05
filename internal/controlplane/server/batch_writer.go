@@ -100,17 +100,37 @@ type batchMetricsSink interface {
 	SetQueueDepth(buffer string, depth float64)
 	ObservePersistRetry(stream, outcome string)
 	ObserveFlushDuration(stream string, seconds float64)
+	// ObserveBufferDrop is incremented by n every time the bounded buffer
+	// evicts items under the drop-oldest overflow policy (P6-6.1c, #11).
+	ObserveBufferDrop(buffer string, n int)
 }
 
 // batchBuffer accumulates items of type T and flushes them either on a timer
 // or when the buffer reaches a size threshold. The flush function runs outside
 // the buffer's own lock, so long-running DB writes do not block enqueue callers.
+//
+// P6-6.1c (finding #11): the buffer is bounded by capLimit with a
+// drop-oldest policy. The live window is items[start:]; on overflow the
+// head index advances (O(1)) and the evicted element is reported via
+// onDropped/observeDrop. When the dead prefix grows past capLimit the
+// backing slice is compacted in one copy — amortised O(1) per enqueue,
+// bounded memory of ~2×capLimit elements. capLimit <= 0 disables the bound
+// (unbounded, prior behaviour).
 type batchBuffer[T any] struct {
-	mu      sync.Mutex
-	items   []T
-	maxSize int
-	flushFn func(ctx context.Context, items []T)
-	signal  chan struct{}
+	mu       sync.Mutex
+	items    []T
+	start    int // logical head: items[start:] are live
+	maxSize  int // flush threshold (per-stream, streamBatchSizes)
+	capLimit int // hard bound on live items; <=0 = unbounded
+	flushFn  func(ctx context.Context, items []T)
+	signal   chan struct{}
+	// onDropped, when non-nil, receives every item evicted by the
+	// drop-oldest policy. Invoked OUTSIDE the buffer lock. Used by the
+	// audit stream to spool evicted events to the dead-letter file.
+	onDropped func(item T)
+	// observeDrop, when non-nil, reports the number of evicted items to
+	// the metrics sink (panvex_batch_dropped_total). Outside the lock.
+	observeDrop func(n int)
 }
 
 func newBatchBuffer[T any](maxSize int, flush func(ctx context.Context, items []T)) *batchBuffer[T] {
@@ -122,14 +142,46 @@ func newBatchBuffer[T any](maxSize int, flush func(ctx context.Context, items []
 	}
 }
 
-// Enqueue appends an item to the buffer. If the buffer is full, a non-blocking
-// signal is sent to trigger an immediate flush.
+// Enqueue appends an item to the buffer. If the buffer is at capLimit the
+// OLDEST item is evicted (drop-oldest keeps the newest data — for
+// telemetry-style streams the most recent snapshot is the valuable one).
+// If the live window reaches maxSize a non-blocking flush signal fires.
 func (b *batchBuffer[T]) Enqueue(item T) {
+	var evicted T
+	overflow := false
+
 	b.mu.Lock()
 	b.items = append(b.items, item)
-	full := len(b.items) >= b.maxSize
+	if b.capLimit > 0 && len(b.items)-b.start > b.capLimit {
+		evicted = b.items[b.start]
+		var zero T
+		b.items[b.start] = zero // release the reference for GC
+		b.start++
+		overflow = true
+		if b.start > b.capLimit {
+			// Compact: slide the live window to the front so the backing
+			// array never exceeds ~2×capLimit elements.
+			n := copy(b.items, b.items[b.start:])
+			tail := b.items[n:]
+			for i := range tail {
+				var zero T
+				tail[i] = zero
+			}
+			b.items = b.items[:n]
+			b.start = 0
+		}
+	}
+	full := len(b.items)-b.start >= b.maxSize
 	b.mu.Unlock()
 
+	if overflow {
+		if b.observeDrop != nil {
+			b.observeDrop(1)
+		}
+		if b.onDropped != nil {
+			b.onDropped(evicted)
+		}
+	}
 	if full {
 		select {
 		case b.signal <- struct{}{}:
@@ -138,25 +190,26 @@ func (b *batchBuffer[T]) Enqueue(item T) {
 	}
 }
 
-// Len returns the current number of queued items. Used by the flush loop to
-// sample the queue-depth gauge before draining.
+// Len returns the current number of queued (live) items. Used by the flush
+// loop to sample the queue-depth gauge before draining.
 func (b *batchBuffer[T]) Len() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return len(b.items)
+	return len(b.items) - b.start
 }
 
-// Drain swaps out the current buffer and flushes accumulated items. Safe to
-// call concurrently — only one drain runs at a time because items are swapped
-// under the lock before the flush function is invoked.
+// Drain swaps out the current live window and flushes accumulated items. Safe
+// to call concurrently — only one drain runs at a time because items are
+// swapped under the lock before the flush function is invoked.
 func (b *batchBuffer[T]) Drain(ctx context.Context) {
 	b.mu.Lock()
-	if len(b.items) == 0 {
+	if len(b.items)-b.start == 0 {
 		b.mu.Unlock()
 		return
 	}
-	batch := b.items
+	batch := b.items[b.start:]
 	b.items = make([]T, 0, b.maxSize)
+	b.start = 0
 	b.mu.Unlock()
 
 	b.flushFn(ctx, batch)
@@ -259,6 +312,7 @@ func (noopMetricsSink) ObserveFlushError(string, string)     { /* null-object */
 func (noopMetricsSink) SetQueueDepth(string, float64)        { /* null-object */ }
 func (noopMetricsSink) ObservePersistRetry(string, string)   { /* null-object */ }
 func (noopMetricsSink) ObserveFlushDuration(string, float64) { /* null-object */ }
+func (noopMetricsSink) ObserveBufferDrop(string, int)        { /* null-object */ }
 
 func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func() time.Time) *storeBatchWriter {
 	if metrics == nil {
@@ -290,7 +344,56 @@ func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func
 	w.auditEvents = newBatchBuffer(batchSizeFor("audit"), w.flushAuditEvents)
 	w.fallbackState = newBatchBuffer(batchSizeFor("fallback_state"), w.flushFallbackState)
 
+	w.SetBufferCap(defaultBatchBufferCap)
+	w.wireDropObservers()
+
 	return w
+}
+
+// defaultBatchBufferCap bounds every stream buffer (P6-6.1c, finding #11).
+// Overridable via the storage.batch_buffer_cap operational setting.
+const defaultBatchBufferCap = 10_000
+
+// SetBufferCap applies one hard bound to every stream buffer. Must be
+// called before Start(); the operational-settings store supplies the
+// value in lifecycle.go next to flushInterval.
+func (w *storeBatchWriter) SetBufferCap(capLimit int) {
+	w.agents.capLimit = capLimit
+	w.instances.capLimit = capLimit
+	w.metricsBuf.capLimit = capLimit
+	w.serverLoad.capLimit = capLimit
+	w.dcHealth.capLimit = capLimit
+	w.clientIPs.capLimit = capLimit
+	w.telemetry.capLimit = capLimit
+	w.auditEvents.capLimit = capLimit
+	w.fallbackState.capLimit = capLimit
+}
+
+// wireDropObservers connects every buffer's overflow path to the metrics
+// sink, and routes evicted AUDIT events into the dead-letter spool so the
+// critical stream never drops silently (A4). fallback_state eviction is
+// safe by construction: put/delete ops are full per-agent overwrites, so
+// the newest op per agent supersedes any evicted older one.
+func (w *storeBatchWriter) wireDropObservers() {
+	w.agents.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("agents", n) }
+	w.instances.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("instances", n) }
+	w.metricsBuf.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("metrics", n) }
+	w.serverLoad.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("server_load", n) }
+	w.dcHealth.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("dc_health", n) }
+	w.clientIPs.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("client_ips", n) }
+	w.telemetry.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("telemetry", n) }
+	w.auditEvents.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("audit", n) }
+	w.fallbackState.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("fallback_state", n) }
+	w.auditEvents.onDropped = func(item storage.AuditEventRecord) {
+		if err := w.writeDeadLetter(item); err != nil {
+			slog.Error("audit overflow dead-letter write failed",
+				"domain", "audit",
+				"audit_id", item.ID,
+				"error", err,
+				"alert", "audit_deadletter_write_failed",
+			)
+		}
+	}
 }
 
 // Start launches the background flush goroutine.

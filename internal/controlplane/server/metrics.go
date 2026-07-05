@@ -47,6 +47,7 @@ type metricsCollectors struct {
 
 	batchQueueDepth       *prometheus.GaugeVec
 	batchFlushErrorsTotal *prometheus.CounterVec
+	batchDroppedTotal     *prometheus.CounterVec
 	// P2-REL-06: batch_writer retry + persistence error surfacing (H14).
 	// persist_errors_total mirrors flush_errors_total with the spec-mandated
 	// label names (stream/type instead of buffer/error_type). The older metric
@@ -170,6 +171,8 @@ var knownBatchBuffers = []string{
 	"dc_health",
 	"client_ips",
 	"telemetry",
+	"audit",
+	"fallback_state",
 }
 
 // newMetricsCollectors constructs and registers all Prometheus collectors
@@ -201,6 +204,10 @@ func newMetricsCollectors() *metricsCollectors {
 			Name: "panvex_batch_flush_errors_total",
 			Help: "Total number of batch flush errors by buffer and error_type (transient|persistent).",
 		}, []string{"buffer", "error_type"}),
+		batchDroppedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "panvex_batch_dropped_total",
+			Help: "Items evicted from a bounded batch-writer buffer under the drop-oldest overflow policy, by buffer. Sustained growth means the store cannot keep up with fleet inflow.",
+		}, []string{"buffer"}),
 		batchPersistErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_batch_persist_errors_total",
 			Help: "Batch writer persistence errors by stream and type (transient|persistent). A transient increment means an individual retry attempt failed; the persistent counter increments once per item that was ultimately dropped.",
@@ -329,6 +336,7 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.agentConnected,
 		mc.batchQueueDepth,
 		mc.batchFlushErrorsTotal,
+		mc.batchDroppedTotal,
 		mc.batchPersistErrorsTotal,
 		mc.batchPersistRetriesTotal,
 		mc.batchFlushDuration,
@@ -367,6 +375,7 @@ func newMetricsCollectors() *metricsCollectors {
 		mc.batchQueueDepth.WithLabelValues(buf).Set(0)
 		mc.batchFlushErrorsTotal.WithLabelValues(buf, "transient").Add(0)
 		mc.batchFlushErrorsTotal.WithLabelValues(buf, "persistent").Add(0)
+		mc.batchDroppedTotal.WithLabelValues(buf).Add(0)
 		mc.batchPersistErrorsTotal.WithLabelValues(buf, "transient").Add(0)
 		mc.batchPersistErrorsTotal.WithLabelValues(buf, "persistent").Add(0)
 		mc.batchPersistRetriesTotal.WithLabelValues(buf, "success").Add(0)
@@ -511,6 +520,14 @@ func (mc *metricsCollectors) ObserveFlushError(buffer, errorType string) {
 	}
 	mc.batchFlushErrorsTotal.WithLabelValues(buffer, errorType).Inc()
 	mc.batchPersistErrorsTotal.WithLabelValues(buffer, errorType).Inc()
+}
+
+// ObserveBufferDrop satisfies batchMetricsSink (P6-6.1c).
+func (mc *metricsCollectors) ObserveBufferDrop(buffer string, n int) {
+	if mc == nil {
+		return
+	}
+	mc.batchDroppedTotal.WithLabelValues(buffer).Add(float64(n))
 }
 
 // ObserveJobPersistFailure satisfies jobs.MetricsSink (C3).

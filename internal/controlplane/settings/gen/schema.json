@@ -560,6 +560,17 @@
     "desc": "Cadence for flushing accumulated audit/agent events to storage."
   },
   {
+    "name": "storage.batch_buffer_cap",
+    "class": "operational",
+    "apply": "restart",
+    "type": "int",
+    "default": "10000",
+    "min": "1000",
+    "max": "1000000",
+    "store": "runtime_settings",
+    "desc": "Hard bound (items) on each batch-writer stream buffer; overflow evicts oldest items and increments panvex_batch_dropped_total."
+  },
+  {
     "name": "storage.rollup_interval",
     "class": "operational",
     "apply": "restart",

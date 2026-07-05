@@ -85,6 +85,7 @@ type Operational struct {
 
 	// storage.* operational tunables
 	StorageBatchFlushInterval string `setting:"name=storage.batch_flush_interval, type=duration, default=500ms, min=100ms, max=5s, apply=restart, store=runtime_settings, desc='Cadence for flushing accumulated audit/agent events to storage.'"`
+	StorageBatchBufferCap     int    `setting:"name=storage.batch_buffer_cap, type=int, default=10000, min=1000, max=1000000, apply=restart, store=runtime_settings, desc='Hard bound (items) on each batch-writer stream buffer; overflow evicts oldest items and increments panvex_batch_dropped_total.'"`
 	StorageRollupInterval     string `setting:"name=storage.rollup_interval, type=duration, default=5m, min=1m, max=1h, apply=restart, store=runtime_settings, desc='Cadence for the timeseries rollup worker.'"`
 
 	// subscription.* operational tunables
