@@ -411,8 +411,9 @@ func (w *storeBatchWriter) Start(parentCtx context.Context) {
 	if parentCtx == nil {
 		parentCtx = context.WithoutCancel(context.Background()) //nolint:noctx,contextcheck // reason: test-only fallback when Start is called without a lifecycle ctx; production wiring (lifecycle.go) always supplies serverCtx.
 	}
-	w.wg.Add(1)
+	w.wg.Add(2)
 	go w.flushLoop(parentCtx)
+	go w.criticalFlushLoop(parentCtx)
 }
 
 // Stop cancels the background goroutine, waits for it to exit, then performs
@@ -510,12 +511,35 @@ func (w *storeBatchWriter) flushLoop(parentCtx context.Context) {
 		case <-w.clientIPs.signal:
 		case <-w.telemetry.signal:
 		case <-w.auditEvents.signal:
+		}
+		// Any signal (including ticker) triggers a drain of all regular
+		// buffers. This prevents signal coalescing from letting individual
+		// buffers grow beyond its per-stream batch size for more than one
+		// flush cycle. fallback_state is drained by criticalFlushLoop.
+		w.drainRegular(flushCtx)
+	}
+}
+
+// criticalFlushLoop is the dedicated drain goroutine for the CRITICAL
+// fallback_state stream (P6-6.1d, finding #11). Telemetry/audit bulk
+// flushes with their retry backoffs no longer sit between an agent's
+// ME→Direct transition and its persistence: fallback_state gets its own
+// ticker + signal wake-up. Same flushCtx detachment rationale as flushLoop.
+func (w *storeBatchWriter) criticalFlushLoop(parentCtx context.Context) {
+	defer w.wg.Done()
+	ticker := time.NewTicker(w.flushInterval)
+	defer ticker.Stop()
+
+	flushCtx := context.WithoutCancel(parentCtx)
+	for {
+		select {
+		case <-w.done:
+			return
+		case <-ticker.C:
 		case <-w.fallbackState.signal:
 		}
-		// Any signal (including ticker) triggers a full drain of all buffers.
-		// This prevents signal coalescing from letting individual buffers grow
-		// beyond its per-stream batch size for more than one flush cycle.
-		w.drainAll(flushCtx)
+		w.metrics.SetQueueDepth("fallback_state", float64(w.fallbackState.Len()))
+		w.fallbackState.Drain(flushCtx)
 	}
 }
 
@@ -535,7 +559,10 @@ func (w *storeBatchWriter) observeQueueDepths() {
 	w.metrics.SetQueueDepth("fallback_state", float64(w.fallbackState.Len()))
 }
 
-func (w *storeBatchWriter) drainAll(ctx context.Context) {
+// drainRegular drains every stream EXCEPT fallback_state, which is owned
+// by criticalFlushLoop. Ordering rationale unchanged: audit last so rows
+// it references land first.
+func (w *storeBatchWriter) drainRegular(ctx context.Context) {
 	w.observeQueueDepths()
 	w.agents.Drain(ctx)
 	w.instances.Drain(ctx)
@@ -550,6 +577,13 @@ func (w *storeBatchWriter) drainAll(ctx context.Context) {
 	// not enforce cross-table FKs for audit — but it keeps logs readable
 	// when operators correlate rows by timestamp.
 	w.auditEvents.Drain(ctx)
+}
+
+// drainAll is the shutdown-path drain (StopWithTimeout): regular streams
+// plus fallback_state. Both loops have already exited (wg.Wait), so there
+// is no concurrent Drain.
+func (w *storeBatchWriter) drainAll(ctx context.Context) {
+	w.drainRegular(ctx)
 	w.fallbackState.Drain(ctx)
 }
 
@@ -888,17 +922,6 @@ func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.C
 	})
 }
 
-// flushAuditEvents persists queued audit events one row at a time through the
-// existing single-row Store API (AppendAuditEvent). The Store interface does
-// not expose a batch AppendAuditEvents method today, so we loop — per
-// P2-LOG-10 scoping: "Prefer batch API if store supports it; else reuse
-// existing single-insert." A batch API could be added later as a pure
-// performance optimisation without changing this call site's contract.
-//
-// Each row goes through flushItem so it inherits the shared retry +
-// classification + metrics observations, and — crucially for P7-R6 — the
-// audit-specific alert key ("alert=audit_persist_failed") surfaces via
-// streamAlerts[audit] when a row cannot be persisted.
 // flushAuditEvents persists queued audit events as ONE multi-row insert
 // (P6-6.1b, finding #10) via AppendAuditEventsBulk, replacing the previous
 // per-row loop. Hash-chain integrity is unaffected: PrevHash/EventHash are

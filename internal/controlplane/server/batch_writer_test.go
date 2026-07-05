@@ -1021,6 +1021,69 @@ func TestBatchBufferCompactionKeepsOrderUnderSustainedOverflow(t *testing.T) {
 	}
 }
 
+// slowTelemetryStore stalls the telemetry runtime bulk write and signals when
+// a fallback put lands, so a test can prove fallback_state has its own drain
+// goroutine (P6-6.1d). The embedded nil Store is never dereferenced: the test
+// only enqueues a telemetry runtime unit and one fallback put.
+type slowTelemetryStore struct {
+	storage.Store
+	onTelemetry   func()
+	onFallbackPut func()
+}
+
+func (s *slowTelemetryStore) PutTelemetryRuntimeCurrentBulk(context.Context, []storage.TelemetryRuntimeCurrentRecord) error {
+	if s.onTelemetry != nil {
+		s.onTelemetry()
+	}
+	return nil
+}
+
+func (s *slowTelemetryStore) PutAgentFallbackState(context.Context, storage.AgentFallbackStateRecord) error {
+	if s.onFallbackPut != nil {
+		s.onFallbackPut()
+	}
+	return nil
+}
+
+func TestFallbackStateFlushNotBlockedBySlowTelemetry(t *testing.T) {
+	telemetryStarted := make(chan struct{})
+	fallbackPersisted := make(chan struct{}, 1)
+	st := &slowTelemetryStore{
+		onTelemetry: func() {
+			close(telemetryStarted)
+			time.Sleep(2 * time.Second)
+		},
+		onFallbackPut: func() {
+			select {
+			case fallbackPersisted <- struct{}{}:
+			default:
+			}
+		},
+	}
+	w := newStoreBatchWriter(st, nil, nil)
+	w.flushInterval = 20 * time.Millisecond
+	w.Start(context.Background())
+	defer func() { _ = w.StopWithTimeout(context.Background(), 5*time.Second) }()
+
+	// Забить телеметрию, дождаться начала её flush'а...
+	w.telemetry.Enqueue(telemetryWriteUnit{
+		agentID: "a1",
+		runtime: &storage.TelemetryRuntimeCurrentRecord{AgentID: "a1", RuntimeJSON: "{}"},
+	})
+	<-telemetryStarted
+	// ...и только теперь поставить fallback-op. При общей горутине он ждал бы
+	// окончания телеметрии (~2s); при выделенной — персистится в пределах
+	// пары тиков.
+	w.EnqueueFallbackPut("a1", time.Now())
+
+	select {
+	case <-fallbackPersisted:
+		// ок — уложились до конца телеметрийного flush'а
+	case <-time.After(1 * time.Second):
+		t.Fatal("fallback_state persist waited behind slow telemetry flush")
+	}
+}
+
 func TestAuditBufferOverflowSpoolsToDeadLetter(t *testing.T) {
 	st := &countingAuditBulkStore{}
 	w := newStoreBatchWriter(st, nil, nil)
