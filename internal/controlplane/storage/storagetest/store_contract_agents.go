@@ -16,6 +16,41 @@ import (
 func runAgentsContract(t *testing.T, open OpenStore) {
 	t.Helper()
 
+	t.Run("EarliestAgentCertExpiry returns min across agents", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		// Пусто — nil без ошибки.
+		got, err := store.EarliestAgentCertExpiry(ctx)
+		if err != nil {
+			t.Fatalf("EarliestAgentCertExpiry(empty): %v", err)
+		}
+		if got != nil {
+			t.Fatalf("empty store: got %v, want nil", got)
+		}
+
+		ts := time.Date(2026, time.July, 2, 12, 0, 0, 0, time.UTC)
+		early := ts.Add(24 * time.Hour)
+		late := ts.Add(240 * time.Hour)
+		agents := []storage.AgentRecord{
+			{ID: "a-late", NodeName: "late", Version: "v1", LastSeenAt: ts, CertExpiresAt: &late},
+			{ID: "a-early", NodeName: "early", Version: "v1", LastSeenAt: ts, CertExpiresAt: &early},
+			{ID: "a-none", NodeName: "none", Version: "v1", LastSeenAt: ts}, // NULL — игнорируется
+		}
+		if err := store.PutAgentsBulk(ctx, agents); err != nil {
+			t.Fatalf("seed agents: %v", err)
+		}
+
+		got, err = store.EarliestAgentCertExpiry(ctx)
+		if err != nil {
+			t.Fatalf("EarliestAgentCertExpiry: %v", err)
+		}
+		if got == nil || !got.Equal(early) {
+			t.Fatalf("earliest = %v, want %v", got, early)
+		}
+	})
+
 	t.Run("agent and instance snapshot persistence round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()

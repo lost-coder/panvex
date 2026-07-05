@@ -647,6 +647,19 @@ func (s *memoryStore) ListAgents(_ context.Context) ([]storage.AgentRecord, erro
 	return result, nil
 }
 
+func (s *memoryStore) EarliestAgentCertExpiry(_ context.Context) (*time.Time, error) {
+	var earliest *time.Time
+	for _, agent := range s.agents {
+		if agent.CertExpiresAt == nil {
+			continue
+		}
+		if earliest == nil || agent.CertExpiresAt.Before(*earliest) {
+			earliest = agent.CertExpiresAt
+		}
+	}
+	return earliest, nil
+}
+
 func (s *memoryStore) DeleteAgent(_ context.Context, agentID string) error {
 	if _, ok := s.agents[agentID]; !ok {
 		return storage.ErrNotFound

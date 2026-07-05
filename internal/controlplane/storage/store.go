@@ -132,6 +132,11 @@ type FleetStore interface {
 	// worst offenders (jobs + audit) — see commit feat(server): cursor
 	// pagination for ListJobs and ListAuditEvents.
 	ListAgents(ctx context.Context) ([]AgentRecord, error)
+	// EarliestAgentCertExpiry returns the minimum cert_expires_at across
+	// all enrolled agents, or nil when no agent has one recorded
+	// (P6-6.3f, finding #14 — replaces the metrics poller's full
+	// ListAgents scan with a single-scalar MIN query).
+	EarliestAgentCertExpiry(ctx context.Context) (*time.Time, error)
 	DeleteAgent(ctx context.Context, agentID string) error
 	UpdateAgentNodeName(ctx context.Context, agentID string, nodeName string) error
 	// UpdateAgentFleetGroup reassigns the agent to a different fleet
