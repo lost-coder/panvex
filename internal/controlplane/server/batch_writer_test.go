@@ -750,3 +750,130 @@ func TestBatchWriterRecordsFlushDuration(t *testing.T) {
 		t.Fatalf("duration observations for agents after persistent error = %d, want 2", got)
 	}
 }
+
+// telemetryBulkRecorder is a storage.Store test double that records which
+// bulk telemetry methods were invoked and with how many rows/agents. The
+// embedded storage.Store is nil: flushTelemetry only touches the six
+// overridden bulk methods, so it is never dereferenced.
+type telemetryBulkRecorder struct {
+	storage.Store
+	mu          sync.Mutex
+	runtimeRows []storage.TelemetryRuntimeCurrentRecord
+	dcAgents    map[string][]storage.TelemetryRuntimeDCRecord
+	upAgents    map[string][]storage.TelemetryRuntimeUpstreamRecord
+	eventRows   []storage.TelemetryRuntimeEventRecord
+	diagRows    []storage.TelemetryDiagnosticsCurrentRecord
+	secRows     []storage.TelemetrySecurityInventoryCurrentRecord
+	calls       []string
+}
+
+func (r *telemetryBulkRecorder) PutTelemetryRuntimeCurrentBulk(_ context.Context, records []storage.TelemetryRuntimeCurrentRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, "runtime")
+	r.runtimeRows = append(r.runtimeRows, records...)
+	return nil
+}
+
+func (r *telemetryBulkRecorder) ReplaceTelemetryRuntimeDCsBulk(_ context.Context, byAgent map[string][]storage.TelemetryRuntimeDCRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, "dcs")
+	r.dcAgents = byAgent
+	return nil
+}
+
+func (r *telemetryBulkRecorder) ReplaceTelemetryRuntimeUpstreamsBulk(_ context.Context, byAgent map[string][]storage.TelemetryRuntimeUpstreamRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, "upstreams")
+	r.upAgents = byAgent
+	return nil
+}
+
+func (r *telemetryBulkRecorder) AppendTelemetryRuntimeEventsBulk(_ context.Context, records []storage.TelemetryRuntimeEventRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, "events")
+	r.eventRows = append(r.eventRows, records...)
+	return nil
+}
+
+func (r *telemetryBulkRecorder) PutTelemetryDiagnosticsCurrentBulk(_ context.Context, records []storage.TelemetryDiagnosticsCurrentRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, "diagnostics")
+	r.diagRows = append(r.diagRows, records...)
+	return nil
+}
+
+func (r *telemetryBulkRecorder) PutTelemetrySecurityInventoryCurrentBulk(_ context.Context, records []storage.TelemetrySecurityInventoryCurrentRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, "security")
+	r.secRows = append(r.secRows, records...)
+	return nil
+}
+
+func TestFlushTelemetryGroupsPartsIntoBulkCalls(t *testing.T) {
+	rec := &telemetryBulkRecorder{}
+	w := newStoreBatchWriter(rec, nil, nil)
+
+	ts := time.Date(2026, time.July, 2, 12, 0, 0, 0, time.UTC)
+	units := []telemetryWriteUnit{
+		{
+			agentID: "a1",
+			runtime: &storage.TelemetryRuntimeCurrentRecord{AgentID: "a1", ObservedAt: ts, RuntimeJSON: `{"v":1}`},
+			dcs:     []storage.TelemetryRuntimeDCRecord{{AgentID: "a1", DC: 1, ObservedAt: ts}},
+			events:  []storage.TelemetryRuntimeEventRecord{{AgentID: "a1", Sequence: 1, ObservedAt: ts, Timestamp: ts, EventType: "x"}},
+		},
+		{
+			agentID:     "a2",
+			runtime:     &storage.TelemetryRuntimeCurrentRecord{AgentID: "a2", ObservedAt: ts, RuntimeJSON: `{"v":2}`},
+			upstreams:   []storage.TelemetryRuntimeUpstreamRecord{{AgentID: "a2", UpstreamID: 1, ObservedAt: ts}},
+			diagnostics: &storage.TelemetryDiagnosticsCurrentRecord{AgentID: "a2", ObservedAt: ts},
+			security:    &storage.TelemetrySecurityInventoryCurrentRecord{AgentID: "a2", ObservedAt: ts},
+		},
+		// Второй unit агента a1 в том же батче: replace-часть dcs должна
+		// перезаписаться (побеждает последний non-nil слайс).
+		{
+			agentID: "a1",
+			dcs:     []storage.TelemetryRuntimeDCRecord{{AgentID: "a1", DC: 5, ObservedAt: ts}},
+		},
+	}
+
+	w.flushTelemetry(context.Background(), units)
+
+	// Ровно по одному bulk-вызову на непустую часть — не 6×len(units).
+	wantCalls := map[string]int{"runtime": 1, "dcs": 1, "upstreams": 1, "events": 1, "diagnostics": 1, "security": 1}
+	gotCalls := map[string]int{}
+	for _, c := range rec.calls {
+		gotCalls[c]++
+	}
+	for part, n := range wantCalls {
+		if gotCalls[part] != n {
+			t.Fatalf("bulk calls for %q = %d, want %d (calls=%v)", part, gotCalls[part], n, rec.calls)
+		}
+	}
+	if len(rec.runtimeRows) != 2 {
+		t.Fatalf("runtime rows = %d, want 2", len(rec.runtimeRows))
+	}
+	// last-wins для dcs агента a1.
+	if got := rec.dcAgents["a1"]; len(got) != 1 || got[0].DC != 5 {
+		t.Fatalf("dcs[a1] = %+v, want single DC=5 (last unit wins)", got)
+	}
+	if len(rec.eventRows) != 1 || rec.eventRows[0].AgentID != "a1" {
+		t.Fatalf("event rows = %+v", rec.eventRows)
+	}
+}
+
+func TestFlushTelemetryNilPartsProduceNoCalls(t *testing.T) {
+	rec := &telemetryBulkRecorder{}
+	w := newStoreBatchWriter(rec, nil, nil)
+
+	w.flushTelemetry(context.Background(), []telemetryWriteUnit{{agentID: "a1"}})
+
+	if len(rec.calls) != 0 {
+		t.Fatalf("calls = %v, want none for all-nil unit", rec.calls)
+	}
+}
