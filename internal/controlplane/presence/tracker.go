@@ -102,10 +102,44 @@ func (t *Tracker) ConnectedAt(agentID string) (time.Time, bool) {
 // transition log is the single point at which presence flips are surfaced
 // (P2-LOG-09 / L-09); callers that just want the raw state pay the same
 // cost they always did.
+// P6-6.3a (finding #14): the common no-transition case runs entirely
+// under RLock so per-agent evaluations from list handlers do not
+// serialize against each other or against stream heartbeats. Only a
+// REAL transition (derived != cached lastState) escalates to the write
+// lock, where evaluateLocked re-derives under exclusion (the state may
+// have changed between RUnlock and Lock) and emits the transition log
+// exactly once (P2-LOG-09 semantics preserved).
 func (t *Tracker) Evaluate(agentID string, now time.Time) State {
+	t.mu.RLock()
+	presence, ok := t.agentTimestamps[agentID]
+	if !ok {
+		t.mu.RUnlock()
+		return StateOffline
+	}
+	next := t.deriveState(presence, now)
+	if presence.lastState == next {
+		t.mu.RUnlock()
+		return next
+	}
+	t.mu.RUnlock()
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.evaluateLocked(agentID, now)
+}
+
+// deriveState computes the liveness state from the last-seen timestamp.
+// Pure — no cache mutation, callable under RLock.
+func (t *Tracker) deriveState(p agentPresence, now time.Time) State {
+	idle := now.UTC().Sub(p.lastSeenAt)
+	switch {
+	case idle >= t.offlineAfter:
+		return StateOffline
+	case idle >= t.degradedAfter:
+		return StateDegraded
+	default:
+		return StateOnline
+	}
 }
 
 // EvaluateAll derives the liveness state of every tracked agent at now —
@@ -136,16 +170,7 @@ func (t *Tracker) evaluateLocked(agentID string, now time.Time) State {
 		return StateOffline
 	}
 
-	idle := now.UTC().Sub(presence.lastSeenAt)
-	var next State
-	switch {
-	case idle >= t.offlineAfter:
-		next = StateOffline
-	case idle >= t.degradedAfter:
-		next = StateDegraded
-	default:
-		next = StateOnline
-	}
+	next := t.deriveState(presence, now)
 
 	prev := presence.lastState
 	if prev != "" && prev != next {
