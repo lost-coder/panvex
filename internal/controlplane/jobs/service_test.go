@@ -1123,6 +1123,15 @@ func TestEnqueueSupersedesOlderPendingClientJobs(t *testing.T) {
 	}
 }
 
+// countingFailSink is a MetricsSink test double (package jobs) that counts
+// ObserveJobFailed calls — the F3 failed-job signal that absorbed the old
+// SetJobFailureHook.
+type countingFailSink struct{ failed int }
+
+func (c *countingFailSink) ObserveJobPersistFailure() {}
+func (c *countingFailSink) ObserveJobFailed()         { c.failed++ }
+func (c *countingFailSink) failedCount() int          { return c.failed }
+
 // TestEnqueueDoesNotSupersedeNonClientActions pins the scope: only client.*
 // payload-frozen jobs participate; node-level actions are untouched.
 func TestJobFailureHookFiresOnTerminalFailure(t *testing.T) {
@@ -1130,8 +1139,8 @@ func TestJobFailureHookFiresOnTerminalFailure(t *testing.T) {
 	svc := NewService()
 	svc.SetNow(func() time.Time { return now })
 
-	var fired int
-	svc.SetJobFailureHook(func() { fired++ })
+	sink := &countingFailSink{}
+	svc.SetMetricsSink(sink)
 
 	job, err := svc.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
@@ -1148,14 +1157,14 @@ func TestJobFailureHookFiresOnTerminalFailure(t *testing.T) {
 		t.Fatal("RecordResult = false, want true")
 	}
 
-	if fired != 1 {
-		t.Fatalf("failure hook fired %d times, want 1", fired)
+	if sink.failedCount() != 1 {
+		t.Fatalf("ObserveJobFailed fired %d times, want 1", sink.failedCount())
 	}
 
 	// Re-reporting the same terminal state must not double-count.
 	svc.RecordResult(context.Background(), "agent-1", job.ID, false, "boom again", "", now)
-	if fired != 1 {
-		t.Fatalf("failure hook fired %d times after re-report, want 1 (no double-count)", fired)
+	if sink.failedCount() != 1 {
+		t.Fatalf("ObserveJobFailed fired %d times after re-report, want 1 (no double-count)", sink.failedCount())
 	}
 }
 

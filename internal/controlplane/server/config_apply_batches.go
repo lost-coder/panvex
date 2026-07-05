@@ -217,8 +217,8 @@ func (s *Server) advanceConfigApplyBatch(ctx context.Context, batch storage.Conf
 // startConfigApplyBatchWorker polls ListRunningConfigApplyBatches on a fixed
 // interval and calls advanceConfigApplyBatch on each. There is no
 // terminal-notification/wake mechanism in the jobs engine to drive this
-// event-style (jobs.Service exposes only a failure-only bare-func hook via
-// SetJobFailureHook), so polling is the only option — this mirrors
+// event-style (jobs.Service only surfaces a failed-job counter via
+// MetricsSink.ObserveJobFailed), so polling is the only option — this mirrors
 // startTimeseriesRollupWorker's shape (ctx-derived from rollupCtx, joined via
 // s.rollupWg, ticker + select).
 //

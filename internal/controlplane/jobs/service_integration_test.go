@@ -951,8 +951,9 @@ func TestEnqueueRetryAfterTransientStoreError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 type recordingJobMetricsSink struct {
-	mu       sync.Mutex
-	failures int
+	mu         sync.Mutex
+	failures   int
+	jobsFailed int
 }
 
 func (r *recordingJobMetricsSink) ObserveJobPersistFailure() {
@@ -961,10 +962,22 @@ func (r *recordingJobMetricsSink) ObserveJobPersistFailure() {
 	r.mu.Unlock()
 }
 
+func (r *recordingJobMetricsSink) ObserveJobFailed() {
+	r.mu.Lock()
+	r.jobsFailed++
+	r.mu.Unlock()
+}
+
 func (r *recordingJobMetricsSink) count() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.failures
+}
+
+func (r *recordingJobMetricsSink) failedCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.jobsFailed
 }
 
 // TestServicePersistFailureNotifiesMetricsSink (C3): a write-behind

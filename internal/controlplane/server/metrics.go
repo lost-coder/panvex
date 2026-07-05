@@ -521,9 +521,9 @@ func (mc *metricsCollectors) ObserveJobPersistFailure() {
 	mc.jobPersistFailuresTotal.Inc()
 }
 
-// IncJobFailure bumps panvex_job_failures_total. Wired into
-// jobs.Service via SetJobFailureHook; safe on a nil receiver.
-func (mc *metricsCollectors) IncJobFailure() {
+// ObserveJobFailed satisfies jobs.MetricsSink: bumps panvex_job_failures_total
+// on every transition into the failed terminal status. Safe on a nil receiver.
+func (mc *metricsCollectors) ObserveJobFailed() {
 	if mc == nil {
 		return
 	}
