@@ -348,6 +348,9 @@ func (s *OperationalStore) TelemetryDetailBoostTTL() time.Duration {
 func (s *OperationalStore) StorageBatchFlushInterval() time.Duration {
 	return s.durationByName("storage.batch_flush_interval")
 }
+func (s *OperationalStore) StorageBatchBufferCap() int {
+	return s.intByName("storage.batch_buffer_cap")
+}
 func (s *OperationalStore) StorageRollupInterval() time.Duration {
 	return s.durationByName("storage.rollup_interval")
 }

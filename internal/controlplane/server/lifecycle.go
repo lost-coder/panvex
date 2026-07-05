@@ -707,6 +707,7 @@ func New(options Options) (*Server, error) {
 		server.batchWriter = newStoreBatchWriter(server.store, server.obs, server.now)
 		if server.settings != nil {
 			server.batchWriter.flushInterval = server.settings.StorageBatchFlushInterval()
+			server.batchWriter.SetBufferCap(server.settings.StorageBatchBufferCap())
 		}
 		server.batchWriter.Start(server.serverCtx)
 	}

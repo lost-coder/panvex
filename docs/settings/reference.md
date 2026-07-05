@@ -67,5 +67,6 @@ Operational settings are stored in the database and edited via the panel UI or t
 | `observability.telemetry_dashboard_window` | duration | `40m` | — | — | Lookback window for the dashboard load sparkline. |
 | `observability.telemetry_detail_boost_ttl` | duration | `10m` | — | — | TTL for the dashboard detail-boost cache (high-resolution graph window). |
 | `storage.batch_flush_interval` | duration | `500ms` | — | — | Cadence for flushing accumulated audit/agent events to storage. |
+| `storage.batch_buffer_cap` | int | `10000` | — | — | Hard bound (items) on each batch-writer stream buffer; overflow evicts oldest items and increments panvex_batch_dropped_total. |
 | `storage.rollup_interval` | duration | `5m` | — | — | Cadence for the timeseries rollup worker. |
 | `subscription.public_base_url` | string | _(empty)_ | `PANVEX_SUBSCRIPTION_BASE_URL` | — | Public origin of the subscription page (e.g. https://sub.example.com); used to build shareable /sub links in the dashboard. Empty disables the link. |

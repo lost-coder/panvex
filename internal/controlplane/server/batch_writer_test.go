@@ -253,6 +253,7 @@ type recordingSink struct {
 	flushErrors    map[string]int // key = buffer|errorType
 	persistRetries map[string]int // key = stream|outcome
 	depths         map[string]float64
+	drops          map[string]int // key = buffer
 	// P2-OBS-03: per-flush duration observations, stream-labelled. Appended in
 	// the order the batch writer recorded them so tests can assert both count
 	// and ordering.
@@ -267,6 +268,7 @@ func newRecordingSink() *recordingSink {
 		flushErrors:    map[string]int{},
 		persistRetries: map[string]int{},
 		depths:         map[string]float64{},
+		drops:          map[string]int{},
 	}
 }
 
@@ -294,6 +296,12 @@ func (s *recordingSink) ObserveFlushDuration(stream string, seconds float64) {
 		stream  string
 		seconds float64
 	}{stream: stream, seconds: seconds})
+	s.mu.Unlock()
+}
+
+func (s *recordingSink) ObserveBufferDrop(buffer string, n int) {
+	s.mu.Lock()
+	s.drops[buffer] += n
 	s.mu.Unlock()
 }
 
@@ -951,5 +959,87 @@ func TestFlushAuditEventsBulkSingleStoreCall(t *testing.T) {
 	}
 	if st.rows != 50 {
 		t.Fatalf("rows = %d, want 50", st.rows)
+	}
+}
+
+func TestBatchBufferCapDropsOldestKeepsNewest(t *testing.T) {
+	var droppedItems []int
+	b := newBatchBuffer[int](10, func(context.Context, []int) {})
+	b.capLimit = 5
+	b.onDropped = func(item int) { droppedItems = append(droppedItems, item) }
+
+	for i := 1; i <= 8; i++ {
+		b.Enqueue(i)
+	}
+
+	if got := b.Len(); got != 5 {
+		t.Fatalf("Len() = %d, want 5 (cap)", got)
+	}
+	// Дропнуты САМЫЕ СТАРЫЕ: 1, 2, 3.
+	if len(droppedItems) != 3 || droppedItems[0] != 1 || droppedItems[2] != 3 {
+		t.Fatalf("dropped = %v, want [1 2 3]", droppedItems)
+	}
+	// Drain отдаёт новейшие 4..8 в порядке поступления.
+	var drained []int
+	b.flushFn = func(_ context.Context, items []int) { drained = items }
+	b.Drain(context.Background())
+	want := []int{4, 5, 6, 7, 8}
+	if len(drained) != len(want) {
+		t.Fatalf("drained = %v, want %v", drained, want)
+	}
+	for i := range want {
+		if drained[i] != want[i] {
+			t.Fatalf("drained = %v, want %v", drained, want)
+		}
+	}
+}
+
+func TestBatchBufferCapZeroMeansUnbounded(t *testing.T) {
+	b := newBatchBuffer[int](10, func(context.Context, []int) {})
+	// capLimit по умолчанию 0 в самом buffer'е — граница задаётся writer'ом.
+	for i := 0; i < 25_000; i++ {
+		b.Enqueue(i)
+	}
+	if got := b.Len(); got != 25_000 {
+		t.Fatalf("Len() = %d, want 25000 (unbounded when capLimit=0)", got)
+	}
+}
+
+func TestBatchBufferCompactionKeepsOrderUnderSustainedOverflow(t *testing.T) {
+	b := newBatchBuffer[int](10, func(context.Context, []int) {})
+	b.capLimit = 100
+	// 3 полных цикла компакции (start превышает capLimit многократно).
+	for i := 0; i < 500; i++ {
+		b.Enqueue(i)
+	}
+	var drained []int
+	b.flushFn = func(_ context.Context, items []int) { drained = items }
+	b.Drain(context.Background())
+	if len(drained) != 100 || drained[0] != 400 || drained[99] != 499 {
+		t.Fatalf("drained[0]=%d drained[last]=%d len=%d, want 400..499",
+			drained[0], drained[len(drained)-1], len(drained))
+	}
+}
+
+func TestAuditBufferOverflowSpoolsToDeadLetter(t *testing.T) {
+	st := &countingAuditBulkStore{}
+	w := newStoreBatchWriter(st, nil, nil)
+	var spooled []storage.AuditEventRecord
+	w.writeDeadLetter = func(item storage.AuditEventRecord) error {
+		spooled = append(spooled, item)
+		return nil
+	}
+	w.wireDropObservers() // перевесить onDropped на новый writeDeadLetter
+	w.SetBufferCap(3)
+
+	for i := 0; i < 5; i++ {
+		w.auditEvents.Enqueue(storage.AuditEventRecord{ID: fmt.Sprintf("audit-%d", i)})
+	}
+
+	if len(spooled) != 2 || spooled[0].ID != "audit-0" || spooled[1].ID != "audit-1" {
+		t.Fatalf("spooled = %+v, want oldest two (audit-0, audit-1)", spooled)
+	}
+	if got := w.auditEvents.Len(); got != 3 {
+		t.Fatalf("audit buffer len = %d, want 3", got)
 	}
 }
