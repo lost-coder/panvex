@@ -321,25 +321,17 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 		default:
 			// Unknown concrete store type that still exposes a *sql.DB —
 			// always a test double wrapping a real SQLite store (failingStore).
-			// Build the SQLite repo set from rawDB; use the override repo for
-			// clients when failure-injection tests supply one.
-			clientsRepo = options.ClientsRepoOverride
-			if clientsRepo == nil {
-				clientsRepo = sqlite.NewClientsRepository(rawDB)
-			}
+			// Build the SQLite repo set from rawDB. Failure-injection tests
+			// swap s.clientsSvc after construction (swapClientsRepoForTests)
+			// rather than threading an override through production wiring.
+			clientsRepo = sqlite.NewClientsRepository(rawDB)
 			discoveredRepoV2 = sqlite.NewDiscoveredRepository(rawDB)
 			uowImpl = sqlite.NewUoW(rawDB)
-		}
-		uowAdapter := newClientsUoWAdapter(uowImpl)
-		if options.ClientsRepoOverride != nil {
-			// Failure-injection tests need rs.Clients() inside SaveState's UoW
-			// callback to return the override repo (not the tx-bound real one).
-			uowAdapter = newClientsUoWAdapterWithOverride(uowImpl, options.ClientsRepoOverride)
 		}
 		s.clientsSvc = clients.NewService(clients.ServiceConfig{
 			Repo:           clientsRepo,
 			DiscoveredRepo: discoveredRepoV2,
-			UoW:            uowAdapter,
+			UoW:            newClientsUoWAdapter(uowImpl),
 			Vault:          vault,
 			Now:            s.now,
 		})

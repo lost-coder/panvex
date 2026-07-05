@@ -85,12 +85,12 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 	}
 
 	server := mustNew(t, Options{
-		LoginTimingFloor:    -1,
-		Now:                 func() time.Time { return now },
-		Store:               failing,
-		ClientsRepoOverride: failingRepo,
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            failing,
 	})
 	defer server.Close()
+	swapClientsRepoForTests(t, server, baseStore.DB(), failingRepo)
 
 	// Seed the agent in-memory so createClient can resolve a target.
 	server.mu.Lock()
