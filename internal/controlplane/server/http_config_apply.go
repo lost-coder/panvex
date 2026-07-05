@@ -171,7 +171,7 @@ func (s *Server) handleApplyGroupConfig() http.HandlerFunc {
 				agentIDs = append(agentIDs, agent.ID)
 			}
 		}
-		batchID, err := s.createConfigApplyBatch(ctx, user.ID, id, storage.ConfigApplyBatchModeAllAtOnce, 1, agentIDs)
+		batchID, err := s.createConfigApplyBatch(ctx, user.ID, id, agentIDs)
 		if err != nil {
 			writeErrorLogged(ctx, w, http.StatusInternalServerError,
 				"failed to enqueue config apply", err)
@@ -421,7 +421,7 @@ func (s *Server) handleApplyAgentConfig() http.HandlerFunc {
 		}
 		// fleetGroupID intentionally empty: the batch is agent-scoped and must
 		// not surface as the group's "active batch" on the fleet-group page.
-		batchID, err := s.createConfigApplyBatch(ctx, user.ID, "", storage.ConfigApplyBatchModeAllAtOnce, 1, []string{id})
+		batchID, err := s.createConfigApplyBatch(ctx, user.ID, "", []string{id})
 		if err != nil {
 			writeErrorLogged(ctx, w, http.StatusInternalServerError,
 				"failed to enqueue config apply", err)

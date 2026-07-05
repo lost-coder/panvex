@@ -26,7 +26,7 @@ func TestConfigApplyBatchAdvanceAllSucceededFinalizesBatch(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{agentA, agentB})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA, agentB})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -88,7 +88,7 @@ func TestConfigApplyBatchAdvanceOneFailedFinalizesBatchFailed(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{okAgent, failAgent})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{okAgent, failAgent})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -144,7 +144,7 @@ func TestConfigApplyBatchAdvanceNonTerminalStaysRunning(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{agentID})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -191,7 +191,7 @@ func TestConfigApplyBatchAdvanceJobEvictedBeforePersistFinalizesFailed(t *testin
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 1, []string{agentID})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}

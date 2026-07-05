@@ -355,7 +355,7 @@ func TestCreateGroupApplyBatchMidLoopFailureMarksBatchFailed(t *testing.T) {
 	// first (succeeds) and failAgent second (fails), reproducing the
 	// mid-loop scenario deterministically rather than depending on map
 	// iteration order.
-	batchID, err := srv.createConfigApplyBatch(context.Background(), "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 0, []string{okAgent, failAgent})
+	batchID, err := srv.createConfigApplyBatch(context.Background(), "tester", groupID, []string{okAgent, failAgent})
 	if err == nil {
 		t.Fatalf("createConfigApplyBatch() error = nil, want non-nil (injected failure for %s)", failAgent)
 	}
@@ -384,7 +384,7 @@ func TestCreateGroupApplyBatchEmptyAgentListNoBatch(t *testing.T) {
 	srv, _ := newConfigTargetTestServer(t)
 	groupID := seedTestFleetGroup(t, srv.store, "apply-empty-agents-group", time.Time{})
 
-	batchID, err := srv.createConfigApplyBatch(context.Background(), "tester", groupID, storage.ConfigApplyBatchModeAllAtOnce, 0, nil)
+	batchID, err := srv.createConfigApplyBatch(context.Background(), "tester", groupID, nil)
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch(empty agentIDs) error = %v, want nil", err)
 	}
