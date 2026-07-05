@@ -17,15 +17,14 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
-// TestExpireStaleSealsQueuedJob verifies the ExpireStale path: once a
-// job's TTL has elapsed, ExpireStale must seal it as expired and the
-// terminal-key bookkeeping must record the eviction timestamp so PruneKeys
-// can later release the idempotency key.
+// TestLazyExpirySealsQueuedJob verifies the lazy read-path expiry: once a
+// job's TTL has elapsed, the next read (ListWithContext) must seal it as
+// expired and the terminal-key bookkeeping must record the eviction
+// timestamp so PruneKeys can later release the idempotency key.
 //
 // Existing TestServiceListProjectsExpiredQueuedJobsAsFailed covers the
-// List-driven projection; this one drives the sealing through the explicit
-// ExpireStale entry-point and asserts the key-bookkeeping side effect (S27 T2).
-func TestExpireStaleSealsQueuedJob(t *testing.T) {
+// projection; this one asserts the key-bookkeeping side effect (S27 T2).
+func TestLazyExpirySealsQueuedJob(t *testing.T) {
 	start := time.Date(2026, time.April, 18, 10, 0, 0, 0, time.UTC)
 	currentNow := start
 	service := jobs.NewService()
@@ -41,17 +40,17 @@ func TestExpireStaleSealsQueuedJob(t *testing.T) {
 		t.Fatalf("Enqueue: %v", err)
 	}
 
-	// Pre-TTL: ExpireStale is a no-op.
+	// Pre-TTL: the read-path expiry is a no-op.
 	currentNow = start.Add(30 * time.Second)
-	service.ExpireStale(context.Background())
+	service.ListWithContext(context.Background())
 	depth := service.QueueDepth()
 	if depth != 1 {
 		t.Fatalf("QueueDepth pre-TTL = %d, want 1 (still queued)", depth)
 	}
 
-	// Post-TTL: ExpireStale flips status to Expired.
+	// Post-TTL: the next read flips status to Expired.
 	currentNow = start.Add(2 * time.Minute)
-	service.ExpireStale(context.Background())
+	service.ListWithContext(context.Background())
 
 	list := service.List()
 	if len(list) != 1 {
@@ -101,7 +100,7 @@ func TestRecordResultIdempotentForSealedTarget(t *testing.T) {
 	// Walk the clock past TTL so ExpireStale flips the target to Expired
 	// (not via RecordResult).
 	currentNow = start.Add(2 * time.Minute)
-	service.ExpireStale(context.Background())
+	service.ListWithContext(context.Background())
 
 	// Now a late RecordResult arrives — must NOT re-flip the expired
 	// target's status. updateTarget returns true (job exists), but the

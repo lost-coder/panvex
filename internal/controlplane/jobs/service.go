@@ -929,18 +929,6 @@ func (s *Service) ListRecentWithContext(ctx context.Context, limit int) []Job {
 	return reversed
 }
 
-// ExpireStale proactively expires jobs that exceeded their TTL.
-// ctx is the lifecycle context of the caller (serverCtx on the panel / context.Background() in
-// tests) and is forwarded to storage writes so a Close() can abort in-flight persistence.
-func (s *Service) ExpireStale(ctx context.Context) {
-	s.mu.Lock()
-	candidates := s.expireJobsLocked(s.now().UTC())
-	s.mu.Unlock()
-
-	for _, candidate := range candidates {
-		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
-	}
-}
 
 // PendingForAgent returns queued and stale-sent jobs for one agent in creation order.
 //

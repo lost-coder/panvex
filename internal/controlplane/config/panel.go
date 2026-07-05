@@ -36,16 +36,3 @@ var (
 	ErrInvalidRootPath = errors.New("invalid root path")
 )
 
-// ControlPlaneConfig describes startup-critical control-plane runtime configuration.
-type ControlPlaneConfig struct {
-	Storage             StorageConfig
-	HTTPListenAddress   string
-	HTTPRootPath        string
-	AgentHTTPRootPath   string
-	PanelAllowedCIDRs   []string
-	GRPCListenAddress   string
-	RestartMode         string
-	TLSMode             string
-	TLSCertFile         string
-	TLSKeyFile          string
-}

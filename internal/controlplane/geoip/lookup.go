@@ -3,7 +3,6 @@ package geoip
 import (
 	"fmt"
 	"net"
-	"strings"
 )
 
 // CityResult is the subset of GeoLite2-City fields the panel surfaces
@@ -51,15 +50,3 @@ func ShouldLookup(ip net.IP) bool {
 	return true
 }
 
-// trimAndJoin is a small helper used by city decoding to flatten
-// MaxMind's localised name maps into a single English string.
-func trimAndJoin(parts ...string) string {
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return strings.Join(out, ", ")
-}

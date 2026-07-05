@@ -33,13 +33,6 @@ var githubHosts = []string{
 	"codeload.github.com",
 }
 
-// GitHubHosts returns a copy of the canonical GitHub host set.
-func GitHubHosts() []string {
-	out := make([]string, len(githubHosts))
-	copy(out, githubHosts)
-	return out
-}
-
 // IsDefaultHost reports whether host is one of the canonical GitHub hosts,
 // independent of the active policy. Drives the "download to a non-GitHub
 // host" warning.

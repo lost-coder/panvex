@@ -2,8 +2,8 @@
 //
 // This package is the second slice of the P3-ARCH-01 god-package split
 // (remediation plan v4, task 01b). It currently exports:
-//   - Domain types: Client, Assignment, Deployment, DiscoveredRecord —
-//     the pure-data DTOs mirrored by the in-memory and persisted state.
+//   - Domain types: Client, Assignment, Deployment — the pure-data DTOs
+//     mirrored by the in-memory and persisted state.
 //   - Assignment-target constants (TargetTypeFleetGroup, TargetTypeAgent)
 //     and deployment-status constants.
 //   - Pure, I/O-free helpers: ResolveUserADTag, NormalizeExpiration,

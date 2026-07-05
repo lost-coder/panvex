@@ -6,24 +6,6 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
-// EnrollmentRequest is the input of the agent enrollment flow.
-// Agents present a short-lived token plus their identity; the control-plane
-// returns an mTLS identity wrapped in an EnrollmentResponse.
-type EnrollmentRequest struct {
-	Token    string
-	NodeName string
-	Version  string
-}
-
-// EnrollmentResponse is the mTLS identity issued to a newly enrolled agent.
-type EnrollmentResponse struct {
-	AgentID        string
-	CertificatePEM string
-	PrivateKeyPEM  string
-	CAPEM          string
-	ExpiresAt      time.Time
-}
-
 // InstanceSnapshot describes one Telemt instance that an agent reports on.
 type InstanceSnapshot struct {
 	ID                string

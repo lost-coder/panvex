@@ -241,9 +241,6 @@ func (s *OperationalStore) PasswordMinLength() int {
 	return n
 }
 
-func (s *OperationalStore) RetentionJSON() string { return s.rawByName("retention") }
-func (s *OperationalStore) GeoIPJSON() string     { return s.rawByName("geoip") }
-
 func (s *OperationalStore) UpdatesChannel() string {
 	v := s.rawByName("updates.channel")
 	if v == "" {
