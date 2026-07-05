@@ -50,7 +50,6 @@ func newTestStore() *LiveStore[testAgent, testInstance] {
 		cloneTestAgent,
 		cloneTestInstance,
 		func(i testInstance) string { return i.ID },
-		func(i testInstance) string { return i.AgentID },
 	)
 }
 
@@ -70,16 +69,13 @@ func TestLiveStoreNewLiveStorePanicsOnNilFuncs(t *testing.T) {
 		mk   func() *LiveStore[testAgent, testInstance]
 	}{
 		{"cloneAgent", func() *LiveStore[testAgent, testInstance] {
-			return NewLiveStore[testAgent, testInstance](nil, cloneTestInstance, ok, ok)
+			return NewLiveStore[testAgent, testInstance](nil, cloneTestInstance, ok)
 		}},
 		{"cloneInstance", func() *LiveStore[testAgent, testInstance] {
-			return NewLiveStore[testAgent, testInstance](cloneTestAgent, nil, ok, ok)
+			return NewLiveStore[testAgent, testInstance](cloneTestAgent, nil, ok)
 		}},
 		{"instanceID", func() *LiveStore[testAgent, testInstance] {
-			return NewLiveStore[testAgent, testInstance](cloneTestAgent, cloneTestInstance, nil, ok)
-		}},
-		{"instanceAgent", func() *LiveStore[testAgent, testInstance] {
-			return NewLiveStore[testAgent, testInstance](cloneTestAgent, cloneTestInstance, ok, nil)
+			return NewLiveStore[testAgent, testInstance](cloneTestAgent, cloneTestInstance, nil)
 		}},
 	}
 	for _, tc := range cases {
@@ -272,5 +268,36 @@ func TestLiveStoreInstanceListDeepCopyIsolation(t *testing.T) {
 		if fresh[0].Scopes[0] != "s1" {
 			t.Fatalf("mirror instance Scopes mutated via returned copy: %v", fresh[0].Scopes)
 		}
+	}
+}
+
+func TestLiveStoreReplaceIsScopedToOneAgent(t *testing.T) {
+	s := newTestStore()
+	s.ApplySnapshot("a1", testAgent{ID: "a1"}, []testInstance{{ID: "i1", AgentID: "a1"}, {ID: "i2", AgentID: "a1"}})
+	s.ApplySnapshot("a2", testAgent{ID: "a2"}, []testInstance{{ID: "j1", AgentID: "a2"}})
+
+	// Replace агента a1 новым набором: его старые инстансы уходят,
+	// чужие остаются нетронутыми.
+	s.SetInstances("a1", []testInstance{{ID: "i3", AgentID: "a1"}})
+
+	a1 := s.InstancesForAgent("a1")
+	if len(a1) != 1 || a1[0].ID != "i3" {
+		t.Fatalf("a1 instances = %+v, want single i3", a1)
+	}
+	a2 := s.InstancesForAgent("a2")
+	if len(a2) != 1 || a2[0].ID != "j1" {
+		t.Fatalf("a2 instances = %+v, want untouched j1", a2)
+	}
+	if all := s.AllInstances(); len(all) != 2 {
+		t.Fatalf("AllInstances = %d, want 2", len(all))
+	}
+
+	// Remove эвиктит агента со ВСЕМИ его инстансами.
+	s.Remove("a1")
+	if got := s.InstancesForAgent("a1"); len(got) != 0 {
+		t.Fatalf("a1 instances after Remove = %+v, want none", got)
+	}
+	if all := s.AllInstances(); len(all) != 1 {
+		t.Fatalf("AllInstances after Remove = %d, want 1", len(all))
 	}
 }

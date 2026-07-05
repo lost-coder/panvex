@@ -137,13 +137,13 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		retentionDisabledWarned:   make(map[string]bool),
 		// live (A2/A1): single owner of agent live-state + instances. The
 		// clone funcs deep-copy every reference-type field of Agent/Instance
-		// so reads return isolated copies (see live_clone.go). instanceID /
-		// instanceAgent project the prune keys.
+		// so reads return isolated copies (see live_clone.go). instanceID
+		// projects the instance key; the owning agent is the outer key of
+		// the two-level index (P6-6.2b).
 		live: agents.NewLiveStore[Agent, Instance](
 			cloneAgentForMirror,
 			cloneInstanceForMirror,
 			func(i Instance) string { return i.ID },
-			func(i Instance) string { return i.AgentID },
 		),
 		detailBoosts:                 make(map[string]time.Time),
 		initializationWatchCooldowns: make(map[string]time.Time),

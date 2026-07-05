@@ -41,11 +41,16 @@ type LiveStore[A any, I any] struct {
 	cloneAgent    func(A) A
 	cloneInstance func(I) I
 	instanceID    func(I) string
-	instanceAgent func(I) string
 
-	mu        sync.RWMutex
-	agents    map[string]A
-	instances map[string]I
+	mu     sync.RWMutex
+	agents map[string]A
+	// instances is a two-level index: agentID → instanceID → instance
+	// (P6-6.2b, finding #13). Replace/lookup/remove for one agent touch
+	// only that agent's inner map instead of scanning the whole fleet
+	// under the exclusive lock. INVARIANT: every instance passed to
+	// ApplySnapshot/SetInstances belongs to the agentID argument — the
+	// owning agent is the OUTER KEY, not a field of I.
+	instances map[string]map[string]I
 }
 
 // NewLiveStore constructs an empty LiveStore.
@@ -53,16 +58,14 @@ type LiveStore[A any, I any] struct {
 // cloneAgent and cloneInstance MUST return deep copies of their argument
 // (every reference-type field — slices, maps, pointers — cloned), because
 // they are the only thing standing between the mirror and a handler that
-// mutates a value the store returned. instanceID and instanceAgent project
-// an instance's identity and owning-agent id; they drive the prune logic
-// and per-agent lookups. All four funcs are required (nil panics at
-// construction) so a miswired caller fails loudly at boot, not under a
-// concurrent snapshot.
+// mutates a value the store returned. instanceID projects an instance's
+// identity; the owning agent is the outer key of the two-level index, not a
+// field of I. All three funcs are required (nil panics at construction) so a
+// miswired caller fails loudly at boot, not under a concurrent snapshot.
 func NewLiveStore[A any, I any](
 	cloneAgent func(A) A,
 	cloneInstance func(I) I,
 	instanceID func(I) string,
-	instanceAgent func(I) string,
 ) *LiveStore[A, I] {
 	switch {
 	case cloneAgent == nil:
@@ -71,16 +74,13 @@ func NewLiveStore[A any, I any](
 		panic("agents.NewLiveStore: cloneInstance is nil")
 	case instanceID == nil:
 		panic("agents.NewLiveStore: instanceID is nil")
-	case instanceAgent == nil:
-		panic("agents.NewLiveStore: instanceAgent is nil")
 	}
 	return &LiveStore[A, I]{
 		cloneAgent:    cloneAgent,
 		cloneInstance: cloneInstance,
 		instanceID:    instanceID,
-		instanceAgent: instanceAgent,
 		agents:        make(map[string]A),
-		instances:     make(map[string]I),
+		instances:     make(map[string]map[string]I),
 	}
 }
 
@@ -116,25 +116,20 @@ func (s *LiveStore[A, I]) SetInstances(agentID string, instances []I) {
 	s.replaceInstancesLocked(agentID, instances)
 }
 
-// replaceInstancesLocked prunes the agent's vanished instances then writes
-// the new set. Caller must hold s.mu. Matches commitInstancesLocked.
+// replaceInstancesLocked REPLACES the agent's instance set: with the
+// two-level index the prune of vanished instances is implicit — the old
+// inner map is dropped wholesale. O(len(instances)), fleet-independent.
+// Caller must hold s.mu.
 func (s *LiveStore[A, I]) replaceInstancesLocked(agentID string, instances []I) {
-	live := make(map[string]struct{}, len(instances))
+	if len(instances) == 0 {
+		delete(s.instances, agentID)
+		return
+	}
+	inner := make(map[string]I, len(instances))
 	for _, inst := range instances {
-		live[s.instanceID(inst)] = struct{}{}
+		inner[s.instanceID(inst)] = s.cloneInstance(inst)
 	}
-	for id, entry := range s.instances {
-		if s.instanceAgent(entry) != agentID {
-			continue
-		}
-		if _, ok := live[id]; ok {
-			continue
-		}
-		delete(s.instances, id)
-	}
-	for _, inst := range instances {
-		s.instances[s.instanceID(inst)] = s.cloneInstance(inst)
-	}
+	s.instances[agentID] = inner
 }
 
 // Get returns a deep copy of the agent's full live value. ok is false when
@@ -168,11 +163,13 @@ func (s *LiveStore[A, I]) List() []A {
 func (s *LiveStore[A, I]) InstancesForAgent(agentID string) []I {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []I
-	for _, inst := range s.instances {
-		if s.instanceAgent(inst) == agentID {
-			out = append(out, s.cloneInstance(inst))
-		}
+	inner := s.instances[agentID]
+	if len(inner) == 0 {
+		return nil
+	}
+	out := make([]I, 0, len(inner))
+	for _, inst := range inner {
+		out = append(out, s.cloneInstance(inst))
 	}
 	return out
 }
@@ -183,9 +180,15 @@ func (s *LiveStore[A, I]) InstancesForAgent(agentID string) []I {
 func (s *LiveStore[A, I]) AllInstances() []I {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]I, 0, len(s.instances))
-	for _, inst := range s.instances {
-		out = append(out, s.cloneInstance(inst))
+	var total int
+	for _, inner := range s.instances {
+		total += len(inner)
+	}
+	out := make([]I, 0, total)
+	for _, inner := range s.instances {
+		for _, inst := range inner {
+			out = append(out, s.cloneInstance(inst))
+		}
 	}
 	return out
 }
@@ -196,11 +199,7 @@ func (s *LiveStore[A, I]) Remove(agentID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.agents, agentID)
-	for id, entry := range s.instances {
-		if s.instanceAgent(entry) == agentID {
-			delete(s.instances, id)
-		}
-	}
+	delete(s.instances, agentID)
 }
 
 // Has reports whether the agent is present in the live mirror. Provided for
