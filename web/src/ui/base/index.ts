@@ -8,7 +8,6 @@ export * from "./popover";
 export * from "./select";
 export * from "./sheet";
 export * from "./tabs";
-export * from "./theme-toggle";
 export * from "./toast";
 export * from "./toggle";
 export * from "./tooltip";

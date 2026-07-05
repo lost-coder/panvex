@@ -1,7 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetBody } from "./sheet";
 import { Button } from "./button";
-import { GaugeCell } from "@/ui/primitives/GaugeCell";
 import { StatusBeacon } from "@/ui/primitives/StatusBeacon";
 
 const meta: Meta = { title: "UI/Sheet", parameters: { layout: "fullscreen" } };
@@ -24,10 +23,17 @@ export const RightSheet: Story = {
           </SheetHeader>
           <SheetBody>
             <div className="grid grid-cols-2 gap-2">
-              <GaugeCell value="42" unit="%" label="CPU" />
-              <GaugeCell value="6.1" unit="GB" label="Memory" />
-              <GaugeCell value="14d 7h" label="Uptime" />
-              <GaugeCell value="99.98" unit="%" label="Health" />
+              {[
+                { value: "42%", label: "CPU" },
+                { value: "6.1 GB", label: "Memory" },
+                { value: "14d 7h", label: "Uptime" },
+                { value: "99.98%", label: "Health" },
+              ].map((m) => (
+                <div key={m.label} className="flex flex-col gap-1">
+                  <span className="text-lg font-mono text-fg">{m.value}</span>
+                  <span className="text-nano text-fg-muted uppercase">{m.label}</span>
+                </div>
+              ))}
             </div>
           </SheetBody>
         </SheetContent>

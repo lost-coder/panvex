@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { AppShell } from "./AppShell";
 import { PageHeader } from "./PageHeader";
 import { SectionHeader } from "./SectionHeader";
-import { GaugeStrip } from "@/ui/compositions/GaugeStrip";
 import { AlertStrip } from "@/ui/compositions/AlertStrip";
 
 const meta: Meta<typeof AppShell> = {
@@ -34,14 +33,19 @@ export const DashboardPage: Story = {
         <div className="px-4 md:px-8 flex flex-col gap-6">
           <div>
             <SectionHeader title="Server Metrics" />
-            <GaugeStrip
-              items={[
-                { value: "42", unit: "%", label: "AVG CPU" },
-                { value: "6.1", unit: "GB", label: "AVG MEM" },
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { value: "42%", label: "AVG CPU" },
+                { value: "6.1 GB", label: "AVG MEM" },
                 { value: "25", label: "Total Nodes" },
-                { value: "99.9", unit: "%", label: "SLA" },
-              ]}
-            />
+                { value: "99.9%", label: "SLA" },
+              ].map((m) => (
+                <div key={m.label} className="flex flex-col gap-1">
+                  <span className="text-lg font-mono text-fg">{m.value}</span>
+                  <span className="text-nano text-fg-muted uppercase">{m.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
           <div>
             <SectionHeader title="Alerts" badge={2} />
