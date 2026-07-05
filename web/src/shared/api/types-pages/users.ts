@@ -8,14 +8,6 @@ export interface UserListItem {
   createdAt: string;
 }
 
-export interface UsersSectionProps {
-  users: UserListItem[];
-  onAdd: () => void;
-  onEdit: (userId: string) => void;
-  onResetTotp: (userId: string) => void;
-  onDelete: (userId: string) => void;
-}
-
 export interface UserFormData {
   username: string;
   password: string;
