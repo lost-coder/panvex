@@ -323,7 +323,7 @@ func discoveredRowsForAgent(t *testing.T, store storage.MigrationStore, agentID 
 		query = "SELECT COUNT(*) FROM discovered_clients WHERE agent_id = $1"
 	}
 	var n int
-	if err := db.QueryRow(query, agentID).Scan(&n); err != nil {
+	if err := db.QueryRowContext(context.Background(), query, agentID).Scan(&n); err != nil {
 		t.Fatalf("count discovered rows: %v", err)
 	}
 	return n, true

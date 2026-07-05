@@ -43,7 +43,13 @@ func NewHub() *Hub {
 	return &Hub{backend: newMemoryBackend()}
 }
 
-// Publish broadcasts one event to every current subscriber.
+// Publish broadcasts one event to every current subscriber. The fan-out is
+// intentionally fire-and-forget and carries no request context — the
+// backend's internal slog debug-gate uses context.Background() by design.
+// (Before P5 collapsed the Backend interface, that call was hidden from
+// contextcheck behind the interface boundary.)
+//
+//nolint:contextcheck // reason: pub/sub fan-out is ctx-free by design; the WS layer owns request ctx
 func (h *Hub) Publish(evt Event) { h.backend.Publish(evt) }
 
 // Subscribe registers a new consumer. The returned channel receives every
