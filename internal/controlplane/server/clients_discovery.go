@@ -808,29 +808,6 @@ func discoveredClientFromDomain(r discovered.DiscoveredClient) discoveredClient 
 	}
 }
 
-// discoveredClientFromStorageRecord maps a storage.DiscoveredClientRecord to a
-// discovered.DiscoveredClient for the tx-path functions that still receive a
-// storage record (persistAdoptedClient's Transact closure).
-func discoveredClientFromStorageRecord(r storage.DiscoveredClientRecord) discovered.DiscoveredClient {
-	return discovered.DiscoveredClient{
-		ID:                 discovered.DiscoveredID(r.ID),
-		AgentID:            r.AgentID,
-		ClientName:         r.ClientName,
-		Secret:             r.Secret,
-		Status:             discovered.Status(r.Status),
-		TotalOctets:        r.TotalOctets,
-		CurrentConnections: uint32(r.CurrentConnections), //nolint:gosec
-		ActiveUniqueIPs:    uint32(r.ActiveUniqueIPs),    //nolint:gosec
-		ConnectionLinks:    r.ConnectionLinks,
-		MaxTCPConns:        r.MaxTCPConns,
-		MaxUniqueIPs:       r.MaxUniqueIPs,
-		DataQuotaBytes:     r.DataQuotaBytes,
-		Expiration:         r.Expiration,
-		FirstSeen:          r.DiscoveredAt,
-		UpdatedAt:          r.UpdatedAt,
-	}
-}
-
 func sortDiscoveredClientsByName(clients []discoveredClient) {
 	sort.Slice(clients, func(i, j int) bool {
 		return clients[i].ClientName < clients[j].ClientName

@@ -757,13 +757,6 @@ func (s *Server) jobByID(_ context.Context, jobID string) (jobs.Job, bool) {
 	return s.jobs.Get(jobID)
 }
 
-// aggregatedClientUsage delegates the sum-over-agents computation to
-// clients.AggregateUsage, reading the per-(client, agent) usage from the
-// clients.Service mirror (the single owner of usage state).
-func (s *Server) aggregatedClientUsage(clientID string) aggregatedClientUsage {
-	return s.clientsSvc.AggregateUsage(s.clientsSvc.MirrorUsageByAgent(clientID))
-}
-
 // resolveClientIDByName finds the panel client ID for a given client name
 // assigned to a specific agent. Used when the agent sends usage snapshots
 // without a panel-assigned client_id (e.g. adopted clients).

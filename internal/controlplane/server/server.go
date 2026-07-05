@@ -392,15 +392,6 @@ func (a enrollmentBusAdapter) Publish(t string, payload any) {
 	a.bus.Publish(eventbus.Event{Type: t, Data: payload})
 }
 
-// vault exposes the secret vault initialised from EncryptionKey. A nil
-// or disabled return value means encryption is off and callers should
-// continue to operate on plaintext (legacy mode).
-func (s *Server) vault() *secretvault.Vault {
-	if s == nil {
-		return nil
-	}
-	return s.secretVault
-}
 
 // Context returns the Server's lifecycle context. The context is alive
 // between New() and Close(); Close() cancels it so long-lived workers can
