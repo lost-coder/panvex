@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/ui";
+import { writeClipboard } from "@/ui/lib/clipboard";
 
 export interface SubscriptionLinkCardProps {
   url: string;
@@ -23,18 +24,11 @@ export function SubscriptionLinkCard({
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard
-        .writeText(url)
-        .then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        })
-        .catch(() => {});
-    } else {
+    void writeClipboard(url).then((ok) => {
+      if (!ok) return;
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    }
+    });
   };
 
   const handleRotate = () => {
