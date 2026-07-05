@@ -563,39 +563,12 @@ func (s *Server) persistAdoptedClient(ctx context.Context, discoveredID string, 
 	})
 }
 
-// markDuplicateDiscoveredClientsAdopted marks all other discovered clients with the same
-// secret as adopted, since they represent the same user on different servers.
-func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excludeID, name, secret string, observedAt time.Time) {
-	if s.discoveredRepo == nil {
-		return
-	}
-	all, err := s.discoveredRepo.List(ctx)
-	if err != nil {
-		return
-	}
-	// Q2.U-P-10: collect all duplicate IDs and flip them in a single
-	// SQL UPDATE instead of N round-trips.
-	ids := collectDuplicateDiscoveredIDs(all, excludeID, name, secret)
-	if len(ids) == 0 {
-		return
-	}
-	discIDs := make([]discovered.DiscoveredID, len(ids))
-	for i, id := range ids {
-		discIDs[i] = discovered.DiscoveredID(id)
-	}
-	if err := s.discoveredRepo.UpdateStatusBulk(ctx, discIDs, discovered.StatusAdopted, observedAt.UTC()); err != nil {
-		s.logger.ErrorContext(ctx, "bulk mark duplicate discovered clients adopted failed", "count", len(ids), "error", err)
-	}
-}
-
-// markDuplicateDiscoveredClientsAdoptedUoW is the UoW-bound twin of
-// markDuplicateDiscoveredClientsAdopted. It operates via the
-// caller-provided RepoSet (tx-bound inside uow.Do) so the duplicate-flip
-// lands in the same atomic unit as the primary adopt writes. Unlike the
-// untransacted variant it surfaces errors to the caller — inside a UoW.Do,
-// failing one write must abort the whole transaction.
-func markDuplicateDiscoveredClientsAdoptedUoW(ctx context.Context, rs uow.RepoSet, excludeID, name, secret string, observedAt time.Time) error {
-	all, err := rs.Discovered().List(ctx)
+// flipDuplicateDiscoveredToAdopted lists + filters + bulk-flips every
+// non-adopted duplicate of (name, secret) except excludeID, via the given
+// repository — the shared core of the tx and non-tx adoption paths (P5,
+// audit #20). Q2.U-P-10: one SQL UPDATE instead of N round-trips.
+func flipDuplicateDiscoveredToAdopted(ctx context.Context, repo discovered.Repository, excludeID, name, secret string, observedAt time.Time) error {
+	all, err := repo.List(ctx)
 	if err != nil {
 		return err
 	}
@@ -607,7 +580,27 @@ func markDuplicateDiscoveredClientsAdoptedUoW(ctx context.Context, rs uow.RepoSe
 	for i, id := range ids {
 		discIDs[i] = discovered.DiscoveredID(id)
 	}
-	return rs.Discovered().UpdateStatusBulk(ctx, discIDs, discovered.StatusAdopted, observedAt.UTC())
+	return repo.UpdateStatusBulk(ctx, discIDs, discovered.StatusAdopted, observedAt.UTC())
+}
+
+// markDuplicateDiscoveredClientsAdopted marks all other discovered clients with
+// the same (name, secret) as adopted. Non-tx variant: errors are logged, not
+// surfaced (the next tick retries).
+func (s *Server) markDuplicateDiscoveredClientsAdopted(ctx context.Context, excludeID, name, secret string, observedAt time.Time) {
+	if s.discoveredRepo == nil {
+		return
+	}
+	if err := flipDuplicateDiscoveredToAdopted(ctx, s.discoveredRepo, excludeID, name, secret, observedAt); err != nil {
+		s.logger.ErrorContext(ctx, "bulk mark duplicate discovered clients adopted failed", "error", err)
+	}
+}
+
+// markDuplicateDiscoveredClientsAdoptedUoW is the UoW-bound twin: it flips via
+// the caller-provided tx-bound RepoSet so the duplicate-flip lands in the same
+// atomic unit as the primary adopt writes, and surfaces errors to the caller
+// (inside uow.Do a failed write must abort the whole transaction).
+func markDuplicateDiscoveredClientsAdoptedUoW(ctx context.Context, rs uow.RepoSet, excludeID, name, secret string, observedAt time.Time) error {
+	return flipDuplicateDiscoveredToAdopted(ctx, rs.Discovered(), excludeID, name, secret, observedAt)
 }
 
 // collectDuplicateDiscoveredIDs returns IDs of every non-adopted
