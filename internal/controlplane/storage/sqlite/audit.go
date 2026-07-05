@@ -172,11 +172,8 @@ func (s *Store) ListAuditEventsCursor(ctx context.Context, params storage.ListAu
 
 // PruneAuditEvents deletes audit_events rows strictly older than before and
 // returns the RowsAffected count. Exec-based to avoid pulling all rows through
-// Go for retention worker efficiency (P2-REL-04).
+// Go for retention worker efficiency (P2-REL-04); chunked so a catch-up prune
+// cannot monopolise the writer lock (P6-6.3d).
 func (s *Store) PruneAuditEvents(ctx context.Context, before time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM audit_events WHERE created_at_unix < ?`, toUnix(before))
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	return s.pruneChunked(ctx, "audit_events", "created_at_unix", before)
 }

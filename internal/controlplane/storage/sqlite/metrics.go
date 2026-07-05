@@ -53,11 +53,7 @@ func (s *Store) ListMetricSnapshots(ctx context.Context) ([]storage.MetricSnapsh
 }
 
 // PruneMetricSnapshots deletes metric_snapshots rows strictly older than
-// before and returns the RowsAffected count (P2-REL-05).
+// before and returns the RowsAffected count (P2-REL-05; chunked P6-6.3d).
 func (s *Store) PruneMetricSnapshots(ctx context.Context, before time.Time) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM metric_snapshots WHERE captured_at_unix < ?`, toUnix(before))
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	return s.pruneChunked(ctx, "metric_snapshots", "captured_at_unix", before)
 }
