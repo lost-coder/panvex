@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"container/heap"
 	"sort"
 	"strconv"
 	"strings"
@@ -882,21 +883,94 @@ func (s *Service) recomputeNextExpiryLocked() {
 // control plane cannot ship unbounded payloads to the UI (Q2.U-P-13).
 const DefaultListRecentLimit = 200
 
+// jobRecency is the ordering key of one job for the top-K selection:
+// newest-first by CreatedAt, ties broken by ID descending (matches the
+// pre-P6 sort-ascending-then-reverse ordering exactly).
+type jobRecency struct {
+	createdAt time.Time
+	id        string
+}
+
+// olderThan reports whether a sorts strictly BEFORE b in recency, i.e. a
+// is less relevant for a newest-first listing.
+func (a jobRecency) olderThan(b jobRecency) bool {
+	if a.createdAt.Equal(b.createdAt) {
+		return a.id < b.id
+	}
+	return a.createdAt.Before(b.createdAt)
+}
+
+// recencyHeap is a min-heap over jobRecency: the root is the OLDEST kept
+// candidate, so pushing a newer job evicts the oldest of the current K.
+type recencyHeap []jobRecency
+
+func (h recencyHeap) Len() int           { return len(h) }
+func (h recencyHeap) Less(i, j int) bool { return h[i].olderThan(h[j]) }
+func (h recencyHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *recencyHeap) Push(x any)        { *h = append(*h, x.(jobRecency)) }
+func (h *recencyHeap) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
+}
+
 // ListRecentWithContext returns the most recently created jobs, sorted
 // newest-first, capped at limit. A non-positive limit falls back to
-// DefaultListRecentLimit. Internally reuses ListWithContext so expiry
-// bookkeeping still runs on every call.
+// DefaultListRecentLimit.
+//
+// P6-6.3c (finding #14): previously this cloned EVERY job in the
+// retention window (Payload/Result JSON included) via ListWithContext,
+// sorted all of them and discarded everything past the limit. Now a
+// bounded min-heap selects the top-K (CreatedAt, ID) keys under RLock
+// without cloning, and only the K winners are cloned. Expiry
+// housekeeping is preserved: the same fast/slow escalation as
+// ListWithContext runs first.
 func (s *Service) ListRecentWithContext(ctx context.Context, limit int) []Job {
 	if limit <= 0 || limit > DefaultListRecentLimit*5 {
 		limit = DefaultListRecentLimit
 	}
-	all := s.ListWithContext(ctx)
-	// ListWithContext sorts ascending; reverse to newest-first then trim.
-	reversed := make([]Job, 0, limit)
-	for i := len(all) - 1; i >= 0 && len(reversed) < limit; i-- {
-		reversed = append(reversed, all[i])
+
+	// Expiry pass — same contract as ListWithContext: RLock check, write
+	// escalation only when something is actually due.
+	s.mu.RLock()
+	needsExpiry := s.anyJobNeedsExpiryLocked(s.now().UTC())
+	s.mu.RUnlock()
+	if needsExpiry {
+		s.mu.Lock()
+		candidates := s.expireJobsLocked(s.now().UTC())
+		s.mu.Unlock()
+		for _, candidate := range candidates {
+			s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
+		}
 	}
-	return reversed
+
+	s.mu.RLock()
+	h := make(recencyHeap, 0, limit)
+	heap.Init(&h)
+	for id, job := range s.jobs {
+		key := jobRecency{createdAt: job.CreatedAt, id: id}
+		switch {
+		case len(h) < limit:
+			heap.Push(&h, key)
+		case h[0].olderThan(key):
+			h[0] = key
+			heap.Fix(&h, 0)
+		}
+	}
+	// Извлечь ключи и отсортировать newest-first.
+	keys := make([]jobRecency, len(h))
+	copy(keys, h)
+	sort.Slice(keys, func(i, j int) bool { return keys[j].olderThan(keys[i]) })
+	result := make([]Job, 0, len(keys))
+	for _, key := range keys {
+		if job, ok := s.jobs[key.id]; ok {
+			result = append(result, cloneJob(job))
+		}
+	}
+	s.mu.RUnlock()
+	return result
 }
 
 
