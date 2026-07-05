@@ -684,10 +684,6 @@ func (s *Server) peekEnrollmentTokenWithContext(ctx context.Context, value strin
 	}, nil
 }
 
-func (s *Server) listEnrollmentTokens(now time.Time, requestURL *url.URL, forwardedProto string, requestHost string) ([]enrollmentTokenResponse, error) {
-	return s.listEnrollmentTokensWithContext(s.Context(), now, requestURL, forwardedProto, requestHost)
-}
-
 func (s *Server) listEnrollmentTokensWithContext(ctx context.Context, now time.Time, requestURL *url.URL, forwardedProto string, requestHost string) ([]enrollmentTokenResponse, error) {
 	records, err := s.store.ListEnrollmentTokens(ctx)
 	if err != nil {
@@ -723,10 +719,6 @@ func (s *Server) listEnrollmentTokensWithContext(ctx context.Context, now time.T
 	}
 
 	return response, nil
-}
-
-func (s *Server) revokeEnrollmentToken(value string, now time.Time) (storage.EnrollmentTokenRecord, bool, error) {
-	return s.revokeEnrollmentTokenWithContext(s.Context(), value, now)
 }
 
 func (s *Server) revokeEnrollmentTokenWithContext(ctx context.Context, value string, now time.Time) (storage.EnrollmentTokenRecord, bool, error) {

@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"path"
 	"strings"
-	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -172,15 +171,6 @@ func buildAgentPublicURL(settings PanelSettings, runtime PanelRuntime, requestUR
 		return ""
 	}
 	return strings.TrimRight(base, "/") + runtime.AgentHTTPRootPath
-}
-
-func panelSettingsToRecord(settings PanelSettings) storage.PanelSettingsRecord {
-	return storage.PanelSettingsRecord{
-		HTTPPublicURL:      settings.HTTPPublicURL,
-		GRPCPublicEndpoint: settings.GRPCPublicEndpoint,
-		PasswordMinLength:  settings.PasswordMinLength,
-		UpdatedAt:          time.Unix(settings.UpdatedAt, 0).UTC(),
-	}
 }
 
 func panelSettingsFromRecord(record storage.PanelSettingsRecord) PanelSettings {

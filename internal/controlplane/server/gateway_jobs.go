@@ -54,13 +54,8 @@ func (s *Server) markJobDelivered(ctx context.Context, agentID string, jobID str
 	s.jobs.MarkDelivered(ctx, agentID, jobID, s.now())
 }
 
-// Test-only convenience wrappers. Production code drives these flows
+// Test-only convenience wrapper. Production code drives this flow
 // through processPriorityAgentMessageAsync with the connection ctx.
-func (s *Server) recordJobAcknowledged(ctx context.Context, agentID string, jobID string, observedAt time.Time) {
-	s.recordJobAcknowledgedState(ctx, agentID, jobID, observedAt)
-	s.appendAuditWithContext(ctx, agentID, auditJobsAcknowledged, jobID, map[string]any{})
-}
-
 func (s *Server) recordJobResult(ctx context.Context, agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
 	s.recordJobResultState(ctx, agentID, jobID, success, message, resultJSON, observedAt)
 	s.recordClientJobResultWithContext(ctx, agentID, jobID, success, message, resultJSON, observedAt)

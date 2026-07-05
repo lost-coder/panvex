@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"sort"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -490,17 +489,6 @@ func (s *Server) handleTelemetryServerRefreshDiagnostics() http.HandlerFunc {
 			"status": "queued",
 		})
 	}
-}
-
-func sortTelemetryAttention(items []telemetryAttentionItem) {
-	sort.Slice(items, func(left, right int) bool {
-		leftRank := telemetrySeverityRank(items[left].Severity)
-		rightRank := telemetrySeverityRank(items[right].Severity)
-		if leftRank != rightRank {
-			return leftRank > rightRank
-		}
-		return items[left].NodeName < items[right].NodeName
-	})
 }
 
 func decodeJSONMap(raw string) map[string]any {

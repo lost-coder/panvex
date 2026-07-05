@@ -41,31 +41,6 @@ func (s *Server) logUsername(username string) string {
 	return "u-" + hex.EncodeToString(mac.Sum(nil)[:6])
 }
 
-// logIPHash returns a privacy-preserving identifier for a client IP,
-// suitable for structured log fields tied to the IP-keyed lockout
-// tracker (Task 6, S-medium). Raw client IPs in logs are PII for
-// residential users and operationally noisy; hashing keeps lines
-// correlatable within a process / deploy without exposing the value.
-//
-// Implemented as a top-level function (not a method on *Server) so
-// callers in the lockout pre-check path do not depend on Server
-// internals — but the HMAC key still rotates only when EncryptionKey
-// rotates, via the package-level keying helper described in
-// usernameHashKey. We accept a Server-less form by deriving from the
-// same per-process key when the caller is not server-bound, falling
-// back to a sha256 prefix when no key is available. In practice every
-// caller is on the *Server hot path; the bare function is just a thin
-// adapter.
-func (s *Server) logIPHash(ip string) string {
-	ip = strings.TrimSpace(ip)
-	if ip == "" {
-		return "ip-anon"
-	}
-	mac := hmac.New(sha256.New, s.usernameHashKey())
-	mac.Write([]byte(ip))
-	return "ip-" + hex.EncodeToString(mac.Sum(nil)[:6])
-}
-
 // logIPHash is the package-level shim used from contexts that don't
 // have a *Server in scope (the lockout pre-check is one). It computes a
 // non-keyed sha256 prefix — sufficient for correlation, since the IP
