@@ -394,31 +394,7 @@ func (s *Server) handleBulkClientAction() http.HandlerFunc {
 }
 
 func (s *Server) handleRotateClientSecret() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, scope, ok := s.requireClientsAccessWithScope(w, r)
-		if !ok {
-			return
-		}
-
-		clientID := chi.URLParam(r, "id")
-		if clientID == "" {
-			writeError(w, http.StatusBadRequest, msgClientIDRequired)
-			return
-		}
-
-		if !s.ensureClientMutationScope(r.Context(), w, clientID, scope) {
-			return
-		}
-
-		client, assignments, deployments, err := s.rotateClientSecret(r.Context(), clientID, session.UserID, s.now())
-		if !handleClientMutationError(w, err) {
-			return
-		}
-
-		s.logger.InfoContext(r.Context(), "client secret rotated", "client_id", client.ID, "user_id", session.UserID)
-		s.appendAuditWithContext(r.Context(), session.UserID, "clients.rotate_secret", string(client.ID), nil)
-		writeJSON(w, http.StatusOK, s.buildClientDetailResponse(r.Context(), client, assignments, deployments, true))
-	}
+	return s.handleClientRotation(s.rotateClientSecret, "client secret rotated", "clients.rotate_secret", true)
 }
 
 // handleRedeployClient re-queues the client.create rollout job for
