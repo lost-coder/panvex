@@ -27,7 +27,7 @@ func TestListRecentTopKMatchesReference(t *testing.T) {
 	// 500 джоб: перемешанные времена + группы с ОДИНАКОВЫМ CreatedAt
 	// (tie-break по ID обязан совпасть с эталоном). TTL=0 → expiry не
 	// вмешивается.
-	rng := rand.New(rand.NewSource(42))
+	rng := rand.New(rand.NewSource(42)) //nolint:gosec // deterministic seed for reproducible test fixtures, not security-sensitive
 	for i := 0; i < 500; i++ {
 		created := base.Add(time.Duration(rng.Intn(100)) * time.Minute)
 		if _, err := svc.Enqueue(context.Background(), CreateJobInput{
