@@ -188,6 +188,25 @@ func (s *chaosCountingAuditStore) AppendAuditEvent(ctx context.Context, event st
 	return nil
 }
 
+// AppendAuditEventsBulk mirrors the single-row stall/count semantics for the
+// bulk audit flush path (P6-6.1b). The bulk insert is atomic: either the whole
+// batch commits and the counter advances by len(events), or the stall is
+// cancelled and nothing is persisted.
+func (s *chaosCountingAuditStore) AppendAuditEventsBulk(ctx context.Context, events []storage.AuditEventRecord) error {
+	if s.stall > 0 {
+		select {
+		case <-time.After(s.stall):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if err := s.Store.AppendAuditEventsBulk(ctx, events); err != nil {
+		return err
+	}
+	s.appended.Add(int32(len(events))) //nolint:gosec // bounded by chaos-test event count
+	return nil
+}
+
 func TestChaosShutdownMidAudit(t *testing.T) {
 	base, err := sqlite.Open(filepath.Join(t.TempDir(), "chaos-audit.db"))
 	if err != nil {

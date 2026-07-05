@@ -43,6 +43,16 @@ func (s *slowAuditStore) AppendAuditEvent(ctx context.Context, event storage.Aud
 	return s.Store.AppendAuditEvent(ctx, event)
 }
 
+func (s *slowAuditStore) AppendAuditEventsBulk(ctx context.Context, events []storage.AuditEventRecord) error {
+	s.calls.Add(1)
+	select {
+	case <-time.After(s.stall):
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return s.Store.AppendAuditEventsBulk(ctx, events)
+}
+
 // notNullAuditStore wraps a Store and returns a pg NOT NULL violation for
 // every AppendAuditEvent. 23502 is classified as "persistent" by
 // classifyFlushError, so the batch writer's retry loop short-circuits and
@@ -52,6 +62,10 @@ type notNullAuditStore struct {
 }
 
 func (s *notNullAuditStore) AppendAuditEvent(_ context.Context, _ storage.AuditEventRecord) error {
+	return &pgconn.PgError{Code: "23502", Message: "null value in column \"actor_id\""}
+}
+
+func (s *notNullAuditStore) AppendAuditEventsBulk(_ context.Context, _ []storage.AuditEventRecord) error {
 	return &pgconn.PgError{Code: "23502", Message: "null value in column \"actor_id\""}
 }
 

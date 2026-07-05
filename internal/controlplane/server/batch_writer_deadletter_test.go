@@ -14,15 +14,19 @@ import (
 )
 
 // alwaysFailAuditStore embeds the storage.Store interface (so it satisfies the
-// type) but only implements AppendAuditEvent, which always returns a
-// non-retriable ("persistent") error. flushAuditEvents calls no other Store
-// method, so the embedded nil interface is never dereferenced.
+// type) but only implements the audit append methods, which always return a
+// non-retriable ("persistent") error. flushAuditEvents calls only
+// AppendAuditEventsBulk, so the embedded nil interface is never dereferenced.
 type alwaysFailAuditStore struct {
 	storage.Store
 	err error
 }
 
 func (s alwaysFailAuditStore) AppendAuditEvent(context.Context, storage.AuditEventRecord) error {
+	return s.err
+}
+
+func (s alwaysFailAuditStore) AppendAuditEventsBulk(context.Context, []storage.AuditEventRecord) error {
 	return s.err
 }
 
