@@ -21,61 +21,6 @@ func (q *Queries) DeleteClientDeploymentsForClient(ctx context.Context, clientID
 	return err
 }
 
-const listAllClientDeployments = `-- name: ListAllClientDeployments :many
-SELECT client_id, agent_id, desired_operation, status, last_error,
-       connection_links, link_diagnostic, last_applied_at, updated_at,
-       last_reset_epoch_secs
-FROM client_deployments
-ORDER BY client_id ASC, agent_id ASC
-`
-
-type ListAllClientDeploymentsRow struct {
-	ClientID           string
-	AgentID            string
-	DesiredOperation   string
-	Status             string
-	LastError          string
-	ConnectionLinks    json.RawMessage
-	LinkDiagnostic     string
-	LastAppliedAt      sql.NullTime
-	UpdatedAt          time.Time
-	LastResetEpochSecs int64
-}
-
-func (q *Queries) ListAllClientDeployments(ctx context.Context) ([]ListAllClientDeploymentsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listAllClientDeployments)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListAllClientDeploymentsRow
-	for rows.Next() {
-		var i ListAllClientDeploymentsRow
-		if err := rows.Scan(
-			&i.ClientID,
-			&i.AgentID,
-			&i.DesiredOperation,
-			&i.Status,
-			&i.LastError,
-			&i.ConnectionLinks,
-			&i.LinkDiagnostic,
-			&i.LastAppliedAt,
-			&i.UpdatedAt,
-			&i.LastResetEpochSecs,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listClientDeployments = `-- name: ListClientDeployments :many
 
 SELECT client_id, agent_id, desired_operation, status, last_error,
@@ -133,34 +78,6 @@ func (q *Queries) ListClientDeployments(ctx context.Context, clientID string) ([
 		return nil, err
 	}
 	return items, nil
-}
-
-const updateClientDeploymentLastReset = `-- name: UpdateClientDeploymentLastReset :exec
-UPDATE client_deployments
-SET last_reset_epoch_secs = $3,
-    updated_at = $4
-WHERE client_id = $1 AND agent_id = $2
-`
-
-type UpdateClientDeploymentLastResetParams struct {
-	ClientID           string
-	AgentID            string
-	LastResetEpochSecs int64
-	UpdatedAt          time.Time
-}
-
-// Phase 3 (reset-quota): bump last_reset_epoch_secs after a successful
-// client.reset_quota job lands. Kept separate from UpsertClientDeployment
-// so the job-completion path doesn't have to re-supply every column of
-// the row.
-func (q *Queries) UpdateClientDeploymentLastReset(ctx context.Context, arg UpdateClientDeploymentLastResetParams) error {
-	_, err := q.db.ExecContext(ctx, updateClientDeploymentLastReset,
-		arg.ClientID,
-		arg.AgentID,
-		arg.LastResetEpochSecs,
-		arg.UpdatedAt,
-	)
-	return err
 }
 
 const upsertClientDeployment = `-- name: UpsertClientDeployment :exec

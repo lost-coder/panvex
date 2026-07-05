@@ -48,42 +48,6 @@ func (q *Queries) InsertClientAssignment(ctx context.Context, arg InsertClientAs
 	return err
 }
 
-const listAllClientAssignments = `-- name: ListAllClientAssignments :many
-SELECT id, client_id, target_type, fleet_group_id, agent_id, created_at
-FROM client_assignments
-ORDER BY client_id ASC, created_at ASC, id ASC
-`
-
-func (q *Queries) ListAllClientAssignments(ctx context.Context) ([]ClientAssignment, error) {
-	rows, err := q.db.QueryContext(ctx, listAllClientAssignments)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ClientAssignment
-	for rows.Next() {
-		var i ClientAssignment
-		if err := rows.Scan(
-			&i.ID,
-			&i.ClientID,
-			&i.TargetType,
-			&i.FleetGroupID,
-			&i.AgentID,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listClientAssignments = `-- name: ListClientAssignments :many
 
 SELECT id, client_id, target_type, fleet_group_id, agent_id, created_at

@@ -7,7 +7,6 @@ package dbsqlc
 
 import (
 	"context"
-	"time"
 )
 
 const listJobTargets = `-- name: ListJobTargets :many
@@ -45,35 +44,4 @@ func (q *Queries) ListJobTargets(ctx context.Context, jobID string) ([]JobTarget
 		return nil, err
 	}
 	return items, nil
-}
-
-const upsertJobTarget = `-- name: UpsertJobTarget :exec
-INSERT INTO job_targets (job_id, agent_id, status, result_text, result_json, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (job_id, agent_id) DO UPDATE
-SET status = EXCLUDED.status,
-    result_text = EXCLUDED.result_text,
-    result_json = EXCLUDED.result_json,
-    updated_at = EXCLUDED.updated_at
-`
-
-type UpsertJobTargetParams struct {
-	JobID      string
-	AgentID    string
-	Status     string
-	ResultText string
-	ResultJson string
-	UpdatedAt  time.Time
-}
-
-func (q *Queries) UpsertJobTarget(ctx context.Context, arg UpsertJobTargetParams) error {
-	_, err := q.db.ExecContext(ctx, upsertJobTarget,
-		arg.JobID,
-		arg.AgentID,
-		arg.Status,
-		arg.ResultText,
-		arg.ResultJson,
-		arg.UpdatedAt,
-	)
-	return err
 }

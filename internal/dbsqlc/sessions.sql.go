@@ -87,17 +87,3 @@ func (q *Queries) ListSessions(ctx context.Context) ([]Session, error) {
 	}
 	return items, nil
 }
-
-const touchSessionLastSeen = `-- name: TouchSessionLastSeen :exec
-UPDATE sessions SET last_seen_at = $2 WHERE id = $1
-`
-
-type TouchSessionLastSeenParams struct {
-	ID         string
-	LastSeenAt time.Time
-}
-
-func (q *Queries) TouchSessionLastSeen(ctx context.Context, arg TouchSessionLastSeenParams) error {
-	_, err := q.db.ExecContext(ctx, touchSessionLastSeen, arg.ID, arg.LastSeenAt)
-	return err
-}

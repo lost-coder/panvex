@@ -6,11 +6,6 @@ SELECT name, value_json, updated_at, updated_by
   FROM runtime_settings
  WHERE name = $1;
 
--- name: ListRuntimeSettings :many
-SELECT name, value_json, updated_at, updated_by
-  FROM runtime_settings
- ORDER BY name;
-
 -- name: UpsertRuntimeSetting :exec
 INSERT INTO runtime_settings (name, value_json, updated_at, updated_by)
 VALUES ($1, $2, $3, $4)
