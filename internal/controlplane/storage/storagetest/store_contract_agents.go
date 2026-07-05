@@ -135,16 +135,7 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 		}); err != nil {
 			t.Fatalf("PutAgentCertificateRecoveryGrant() error = %v", err)
 		}
-		if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
-			ID:           "discovered-deregister",
-			AgentID:      agent.ID,
-			ClientName:   "stranger",
-			Status:       "pending_review",
-			DiscoveredAt: agent.LastSeenAt,
-			UpdatedAt:    agent.LastSeenAt,
-		}); err != nil {
-			t.Fatalf("PutDiscoveredClient() error = %v", err)
-		}
+		seedDiscoveredClientForCascade(t, ctx, store, "discovered-deregister", agent.ID, "stranger", agent.LastSeenAt)
 
 		if err := store.DeleteInstancesByAgent(ctx, agent.ID); err != nil {
 			t.Fatalf("DeleteInstancesByAgent() error = %v", err)
@@ -176,13 +167,9 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 		// Cascade should have purged the satellite rows along with the
 		// agent. Memory-store backends that don't enforce FKs may keep
 		// them; only check on backends where the row count is exposed
-		// via list helpers.
-		discovered, err := store.ListDiscoveredClientsByAgent(ctx, agent.ID)
-		if err != nil {
-			t.Fatalf("ListDiscoveredClientsByAgent() error = %v", err)
-		}
-		if len(discovered) != 0 {
-			t.Fatalf("ListDiscoveredClientsByAgent() = %d rows, want 0 (cascade did not purge)", len(discovered))
+		// via raw SQL.
+		if n, ok := discoveredRowsForAgent(t, store, agent.ID); ok && n != 0 {
+			t.Fatalf("discovered_clients for deregistered agent = %d rows, want 0 (cascade did not purge)", n)
 		}
 	})
 
@@ -285,4 +272,59 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 			t.Fatalf("remaining revocations = %+v, want only agent-live", remaining)
 		}
 	})
+}
+
+// seedDiscoveredClientForCascade inserts a minimal discovered_clients row
+// directly. The typed PutDiscoveredClient store method was removed in the P5
+// ballast cleanup, so the FK-cascade contract seeds the row via raw SQL. The
+// statement is dialect-branched because SQLite names the timestamp columns
+// discovered_at_unix/updated_at_unix while Postgres uses discovered_at/
+// updated_at. All other columns rely on their schema defaults. Backends that
+// do not expose a raw *sql.DB (the in-memory contract double) have no
+// discovered_clients table and are skipped — they don't enforce real FKs, so
+// the cascade assertion is meaningful only on the SQL backends.
+func seedDiscoveredClientForCascade(t *testing.T, ctx context.Context, store storage.MigrationStore, id, agentID, clientName string, at time.Time) {
+	t.Helper()
+	h, ok := store.(dbHandleStore)
+	if !ok {
+		return
+	}
+	db := h.DB()
+	var err error
+	if isPostgresHandle(db) {
+		_, err = db.ExecContext(ctx, `
+			INSERT INTO discovered_clients (id, agent_id, client_name, discovered_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5)
+		`, id, agentID, clientName, at, at)
+	} else {
+		_, err = db.ExecContext(ctx, `
+			INSERT INTO discovered_clients (id, agent_id, client_name, discovered_at_unix, updated_at_unix)
+			VALUES (?, ?, ?, ?, ?)
+		`, id, agentID, clientName, at.UTC().Unix(), at.UTC().Unix())
+	}
+	if err != nil {
+		t.Fatalf("seed discovered_clients: %v", err)
+	}
+}
+
+// discoveredRowsForAgent counts discovered_clients rows for an agent via raw
+// SQL, replacing the removed ListDiscoveredClientsByAgent store method. The
+// second return reports whether the backend exposes a raw *sql.DB; when false
+// (in-memory double) callers skip the cascade assertion.
+func discoveredRowsForAgent(t *testing.T, store storage.MigrationStore, agentID string) (int, bool) {
+	t.Helper()
+	h, ok := store.(dbHandleStore)
+	if !ok {
+		return 0, false
+	}
+	db := h.DB()
+	query := "SELECT COUNT(*) FROM discovered_clients WHERE agent_id = ?"
+	if isPostgresHandle(db) {
+		query = "SELECT COUNT(*) FROM discovered_clients WHERE agent_id = $1"
+	}
+	var n int
+	if err := db.QueryRow(query, agentID).Scan(&n); err != nil {
+		t.Fatalf("count discovered rows: %v", err)
+	}
+	return n, true
 }

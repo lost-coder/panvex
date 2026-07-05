@@ -8,8 +8,9 @@ import (
 
 // OpenStore constructs a fresh storage backend for one contract test run.
 // It returns MigrationStore so that low-level storagetest helpers (agents
-// cascade, bulk ops) can access ClientStore and DiscoveredClientStore
-// methods without those interfaces being part of the Store aggregate.
+// cascade, bulk ops) can access ClientStore methods and the raw *sql.DB
+// (via a DB() type-assertion, e.g. the discovered_clients cascade seed)
+// without those being part of the Store aggregate.
 type OpenStore func(t *testing.T) storage.MigrationStore
 
 // testFleetGroupID is a deterministic UUIDv4 used as the fleet-group

@@ -34,9 +34,16 @@ func copyTierOneEntities(ctx context.Context, source, target storage.MigrationSt
 	if err := copyEntities(ctx, source.ListSessions, target.PutSession, func(n int) { summary.Sessions = n }); err != nil {
 		return err
 	}
-	if err := copyEntities(ctx, source.ListDiscoveredClients, target.PutDiscoveredClient, func(n int) { summary.DiscoveredClients = n }); err != nil {
+	// discovered_clients is copied as raw rows: the SQLite backend stores
+	// discovered_at_unix/updated_at_unix while Postgres uses discovered_at/
+	// updated_at, and the dynamic SELECT * → INSERT round-trips whatever
+	// columns each backend exposes without a typed Store method.
+	dollar := targetUsesDollarPlaceholders(target)
+	n, err := copyTableRaw(ctx, source, target, "discovered_clients", dollar)
+	if err != nil {
 		return err
 	}
+	summary.DiscoveredClients = n
 	return copyCPSecrets(ctx, source, target, summary)
 }
 
@@ -257,11 +264,11 @@ func countTierOneEntities(ctx context.Context, store storage.MigrationStore, sum
 	}
 	summary.Sessions = len(sessions)
 
-	discovered, err := store.ListDiscoveredClients(ctx)
+	discovered, err := countTableRaw(ctx, store, "discovered_clients")
 	if err != nil {
 		return err
 	}
-	summary.DiscoveredClients = len(discovered)
+	summary.DiscoveredClients = discovered
 
 	secrets, err := store.ListCPSecrets(ctx)
 	if err != nil {
