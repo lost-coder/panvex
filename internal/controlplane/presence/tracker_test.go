@@ -68,3 +68,16 @@ func TestTrackerHeartbeatRecoversDegradedAgent(t *testing.T) {
 		t.Fatalf("Evaluate() recovered state = %q, want %q", state, StateOnline)
 	}
 }
+
+// Test-only accessor relocated from production in P5 (audit #18 §5.2).
+//
+// TrackedCount returns the number of agents currently tracked (have an entry
+// in the presence map), regardless of their evaluated liveness. This is the
+// raw map size; the panvex_agent_connected gauge instead uses EvaluateAll so
+// stale-but-not-deregistered agents are excluded (L-8). Retained for
+// diagnostics/tests.
+func (t *Tracker) TrackedCount() int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return len(t.agentTimestamps)
+}

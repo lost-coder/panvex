@@ -50,7 +50,7 @@ func TestWorkerHappyPath(t *testing.T) {
 	w := NewWorker(store, WorkerConfig{
 		Clock: func() time.Time { return now },
 	})
-	w.Tick(context.Background())
+	w.tick(context.Background())
 
 	if hits.Load() != 1 {
 		t.Fatalf("receiver hits = %d, want 1", hits.Load())
@@ -98,7 +98,7 @@ func TestWorkerRetriesOn5xx(t *testing.T) {
 		Clock:   func() time.Time { return now },
 		Backoff: func(attempt int) time.Duration { return time.Duration(attempt) * time.Second },
 	})
-	w.Tick(context.Background())
+	w.tick(context.Background())
 
 	got, _ := store.snapshot("r1")
 	if got.Attempt != 1 {
@@ -147,7 +147,7 @@ func TestWorkerDeadLettersAfterMaxAttempts(t *testing.T) {
 		Clock:       func() time.Time { return now },
 		Backoff:     func(int) time.Duration { return time.Second },
 	})
-	w.Tick(context.Background())
+	w.tick(context.Background())
 
 	got, _ := store.snapshot("r1")
 	if got.Attempt != 3 {
@@ -177,7 +177,7 @@ func TestWorkerPreflightRejectsHTTPInProd(t *testing.T) {
 		MaxAttempts: 5,
 		Clock:       func() time.Time { return now },
 	})
-	w.Tick(context.Background())
+	w.tick(context.Background())
 
 	got, _ := store.snapshot("r1")
 	if !got.Dead {
@@ -204,7 +204,7 @@ func TestWorkerPreflightRejectsPrivateCIDRWithoutOptIn(t *testing.T) {
 		MaxAttempts: 5,
 		Clock:       func() time.Time { return now },
 	})
-	w.Tick(context.Background())
+	w.tick(context.Background())
 
 	got, _ := store.snapshot("r1")
 	if !got.Dead {

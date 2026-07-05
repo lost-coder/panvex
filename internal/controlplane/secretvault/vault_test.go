@@ -13,7 +13,7 @@ const (
 
 func mustVault(t *testing.T, passphrase string) *Vault {
 	t.Helper()
-	v, err := New(passphrase, []string{domainClient, domainTotp})
+	v, err := NewWithSalt(passphrase, []string{domainClient, domainTotp}, []byte("panvex-test-hkdf-salt-16b"))
 	if err != nil {
 		t.Fatalf("New(%q) error = %v", passphrase, err)
 	}
@@ -77,7 +77,7 @@ func TestDecryptWrongKeyFails(t *testing.T) {
 }
 
 func TestPlaintextPassthroughWhenDisabled(t *testing.T) {
-	v, err := New("", []string{domainClient})
+	v, err := NewWithSalt("", []string{domainClient}, []byte("panvex-test-hkdf-salt-16b"))
 	if err != nil {
 		t.Fatalf("New(\"\") error = %v", err)
 	}
@@ -117,7 +117,7 @@ func TestDecryptEncryptedRequiresEnabledVault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt() error = %v", err)
 	}
-	disabled, _ := New("", []string{domainClient})
+	disabled, _ := NewWithSalt("", []string{domainClient}, []byte("panvex-test-hkdf-salt-16b"))
 	if _, err := disabled.Decrypt(domainClient, ciphertext); err == nil {
 		t.Fatal("Decrypt() with disabled vault accepted ciphertext")
 	}
@@ -135,7 +135,7 @@ func TestEmptyPlaintextStaysEmpty(t *testing.T) {
 }
 
 func TestUnknownDomainErrors(t *testing.T) {
-	v, err := New("passphrase", []string{domainClient})
+	v, err := NewWithSalt("passphrase", []string{domainClient}, []byte("panvex-test-hkdf-salt-16b"))
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

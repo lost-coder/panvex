@@ -93,10 +93,6 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
-// Tick is exposed for tests that drive the worker manually
-// (avoiding goroutine + ticker indirection in unit fixtures).
-func (w *Worker) Tick(ctx context.Context) { w.tick(ctx) }
-
 func (w *Worker) tick(ctx context.Context) {
 	now := w.cfg.Clock().UTC()
 	start := time.Now()

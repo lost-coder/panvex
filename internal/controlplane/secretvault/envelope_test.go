@@ -289,13 +289,4 @@ func TestIsEncryptedRecognisesPVS3(t *testing.T) {
 	if !IsEncrypted("PVS3:v1:abc") {
 		t.Error("IsEncrypted should accept PVS3")
 	}
-	if IsLegacyEncrypted("PVS3:v1:abc") {
-		t.Error("IsLegacyEncrypted should NOT accept PVS3 (envelope is the new world)")
-	}
-	if !IsLegacyEncrypted("PVS2:abc") {
-		t.Error("IsLegacyEncrypted should accept PVS2")
-	}
-	if !IsLegacyEncrypted("PVS1:abc") {
-		t.Error("IsLegacyEncrypted should accept PVS1")
-	}
 }

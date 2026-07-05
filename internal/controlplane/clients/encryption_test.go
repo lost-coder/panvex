@@ -23,7 +23,7 @@ func TestSaveStateEncryptsClientSecretWhenVaultEnabled(t *testing.T) {
 		CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
-	vault, err := secretvault.New("operator-passphrase", secretvault.AllDomains)
+	vault, err := secretvault.NewWithSalt("operator-passphrase", secretvault.AllDomains, []byte("panvex-test-hkdf-salt-16b"))
 	if err != nil {
 		t.Fatalf("secretvault.New() error = %v", err)
 	}
@@ -81,7 +81,7 @@ func TestRestoreDecryptsClientSecret(t *testing.T) {
 		CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
-	vault, err := secretvault.New("operator-passphrase", secretvault.AllDomains)
+	vault, err := secretvault.NewWithSalt("operator-passphrase", secretvault.AllDomains, []byte("panvex-test-hkdf-salt-16b"))
 	if err != nil {
 		t.Fatalf("secretvault.New() error = %v", err)
 	}
@@ -128,7 +128,7 @@ func TestRestoreDecryptsClientSecret(t *testing.T) {
 // to plaintext without manual intervention.
 func TestRestoreHealsDoubleEncryptedSecret(t *testing.T) {
 	plaintextSecret := "deadbeef0123456789abcdef01234567"
-	vault, err := secretvault.New("operator-passphrase", secretvault.AllDomains)
+	vault, err := secretvault.NewWithSalt("operator-passphrase", secretvault.AllDomains, []byte("panvex-test-hkdf-salt-16b"))
 	if err != nil {
 		t.Fatalf("secretvault.New() error = %v", err)
 	}
@@ -175,7 +175,7 @@ func TestRestoreHealsDoubleEncryptedSecret(t *testing.T) {
 // PVS2:PVS2: corruption from recurring on any save path.
 func TestEncryptSecretIsIdempotent(t *testing.T) {
 	plaintextSecret := "deadbeef0123456789abcdef01234567"
-	vault, err := secretvault.New("operator-passphrase", secretvault.AllDomains)
+	vault, err := secretvault.NewWithSalt("operator-passphrase", secretvault.AllDomains, []byte("panvex-test-hkdf-salt-16b"))
 	if err != nil {
 		t.Fatalf("secretvault.New() error = %v", err)
 	}

@@ -31,7 +31,7 @@ func TestProviderConfigEncryptedAtRest(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	vault, err := secretvault.New("test-passphrase", secretvault.AllDomains)
+	vault, err := secretvault.NewWithSalt("test-passphrase", secretvault.AllDomains, []byte("panvex-test-hkdf-salt-16b"))
 	if err != nil {
 		t.Fatalf("secretvault.New() error = %v", err)
 	}

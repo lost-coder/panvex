@@ -50,6 +50,11 @@ func (a FleetScopeAccess) IsAllowed(fleetGroupID string) bool {
 	return ok
 }
 
+// NOTE(P5): test-only on the current slice, but NOT dead — multi-tenant
+// (per-operator fleet scoping) stays on the project roadmap and
+// IsAllowedAny/Filter are its API surface (see
+// docs/plans/2026-07-02-quality-remediation-spec.md §5.2, owner decision).
+//
 // IsAllowedAny reports whether at least one of the supplied fleet
 // group ids is in scope. Used by client-side checks where a managed
 // client may live in multiple groups — operator access is granted as
@@ -68,6 +73,9 @@ func (a FleetScopeAccess) IsAllowedAny(fleetGroupIDs []string) bool {
 	return false
 }
 
+// NOTE(P5): test-only on the current slice, kept for the roadmap
+// multi-tenant work — see IsAllowedAny above.
+//
 // Filter returns the subset of input ids the operator can access.
 // Useful for narrowing list responses and bulk-job target lists in one
 // pass without per-id allocation.

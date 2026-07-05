@@ -200,12 +200,6 @@ func (m *Manager) OnNodeChanged(ctx context.Context, nodeID string) {
 	}
 }
 
-// HasOutboundSupervisor reports whether an outbound supervisor entry exists for
-// the given node. Used in tests and health-check handlers.
-func (m *Manager) HasOutboundSupervisor(nodeID string) bool {
-	return m.outbound.has(nodeID)
-}
-
 // SetSupervisorGaugeDelta wires a callback that is invoked with +1/-1 whenever
 // an outbound supervisor is added or removed. This is the seam used by the
 // server's Prometheus collector (metricsCollectors.AddOutboundSupervisor) to

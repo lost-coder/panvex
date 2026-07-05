@@ -210,3 +210,11 @@ func TestManagerOnNodeChangedRespectsContextCancel(t *testing.T) {
 		t.Fatal("OnNodeChanged did not honour ctx cancel")
 	}
 }
+
+// Test-only accessor relocated from production in P5 (audit #18 §5.2).
+//
+// HasOutboundSupervisor reports whether an outbound supervisor entry exists for
+// the given node. Used in tests and health-check handlers.
+func (m *Manager) HasOutboundSupervisor(nodeID string) bool {
+	return m.outbound.has(nodeID)
+}

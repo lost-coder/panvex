@@ -1187,3 +1187,28 @@ func TestEnqueueDoesNotSupersedeNonClientActions(t *testing.T) {
 		t.Fatalf("runtime.reload target status = %s, want queued", got.Targets[0].Status)
 	}
 }
+
+// Test-only accessor relocated from production in P5 (audit #18 §5.2).
+//
+// LatestSucceededWithContext returns the most recently observed succeeded
+// client.* job for the given Telemt client_id, or (nil, false) if no such
+// job has been recorded yet. The lookup is O(1) — backed by the
+// latestSucceededByClient index that this package updates whenever a
+// client.* job transitions into StatusSucceeded (P-4).
+//
+// The ctx parameter is reserved for future asynchronous storage hydration
+// (parity with ListWithContext / RecordResult); the in-memory path does
+// not currently consult ctx.
+func (s *Service) LatestSucceededWithContext(_ context.Context, clientID string) (*Job, bool) {
+	if clientID == "" {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	job, ok := s.latestSucceededByClient[clientID]
+	if !ok {
+		return nil, false
+	}
+	cloned := cloneJob(job)
+	return &cloned, true
+}
