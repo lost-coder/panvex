@@ -373,20 +373,6 @@ type ClientStore interface {
 	// copyTierOneEntities) plus the storagetest contract suite — do not
 	// remove.
 	UpsertClientUsage(ctx context.Context, record ClientUsageRecord) error
-	// UpsertClientUsageBulk upserts a batch of (client, agent) usage rows
-	// in a single transaction using chunked multi-row INSERT ... ON
-	// CONFLICT DO UPDATE. Same per-row semantics as UpsertClientUsage;
-	// when the same (client_id, agent_id) key appears twice in one batch,
-	// the last entry wins (last-write-wins via ON CONFLICT). Empty slice
-	// is a no-op. Originally added for P-1 (sprint S-23 perf-critical).
-	//
-	// Deprecated: dead code, no production caller (the live agent-flow
-	// batch-write path moved to clientsSvc.UpsertUsageBulk /
-	// clients_repository, see persistClientUsageRecords in
-	// server/agent_flow.go). Kept alive only by the storagetest contract
-	// suite and a sqlite benchmark; remove when convenient (see backlog
-	// item — audit 2026-07-01).
-	UpsertClientUsageBulk(ctx context.Context, records []ClientUsageRecord) error
 	ListClientUsage(ctx context.Context) ([]ClientUsageRecord, error)
 	DeleteClientUsageByClient(ctx context.Context, clientID string) error
 }
