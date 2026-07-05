@@ -1,11 +1,75 @@
 package eventbus
 
 import (
+	"bytes"
+	"encoding/json"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestPublishPreMarshalsEnvelopeBytesIdentically(t *testing.T) {
+	h := NewHub()
+	ch, cancel := h.Subscribe()
+	defer cancel()
+
+	h.Publish(Event{
+		Type: "agents.updated",
+		Data: map[string]any{"id": "a1", "cpu": 42.5, "tags": []string{"x", "y"}},
+	})
+
+	got := <-ch
+	if len(got.Raw) == 0 {
+		t.Fatal("Event.Raw is empty — Publish must pre-marshal the envelope")
+	}
+	// Эталон — то, что раньше делал http_events per-подписчик:
+	// json.Marshal всего события (Raw исключён тегом json:"-").
+	want, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("reference marshal: %v", err)
+	}
+	if !bytes.Equal(got.Raw, want) {
+		t.Fatalf("Raw bytes differ from per-subscriber marshal:\n raw: %s\nwant: %s", got.Raw, want)
+	}
+	// Seq вошёл в envelope (а не нулевой до-Publish снапшот).
+	if !bytes.Contains(got.Raw, []byte(`"seq":1`)) {
+		t.Fatalf("Raw must embed the assigned Seq: %s", got.Raw)
+	}
+}
+
+func TestPublishSameBytesForAllSubscribers(t *testing.T) {
+	h := NewHub()
+	ch1, cancel1 := h.Subscribe()
+	defer cancel1()
+	ch2, cancel2 := h.Subscribe()
+	defer cancel2()
+
+	h.Publish(Event{Type: "audit.created", Data: map[string]any{"k": "v"}})
+
+	e1, e2 := <-ch1, <-ch2
+	if !bytes.Equal(e1.Raw, e2.Raw) {
+		t.Fatal("subscribers must share identical pre-marshaled bytes")
+	}
+	// Один и тот же backing array — маршал был ровно один.
+	if len(e1.Raw) > 0 && &e1.Raw[0] != &e2.Raw[0] {
+		t.Fatal("Raw must be marshaled once and shared, not re-marshaled per subscriber")
+	}
+}
+
+func TestPublishMarshalFailureFallsBackToErrorEnvelope(t *testing.T) {
+	h := NewHub()
+	ch, cancel := h.Subscribe()
+	defer cancel()
+
+	h.Publish(Event{Type: "bad", Data: func() {}}) // функции не маршалятся
+
+	got := <-ch
+	want := `{"type":"server.error","data":{"error":"event encoding failed"}}`
+	if string(got.Raw) != want {
+		t.Fatalf("fallback Raw = %s, want %s", got.Raw, want)
+	}
+}
 
 func TestHubBroadcastsPublishedEventToSubscribers(t *testing.T) {
 	hub := NewHub()
@@ -108,9 +172,22 @@ func TestHubNonBlockingWithSlowSubscriber(t *testing.T) {
 // attach 10 fast subscribers and run Publish via testing.AllocsPerRun,
 // which already discards the first iteration so warm-up allocations don't
 // taint the measurement.
-func TestHubPublishZeroAllocHotPath(t *testing.T) {
-	hub := NewHub()
+// TestHubPublishFanOutAllocFreeBeyondSingleMarshal guards the P6-6.3b
+// tradeoff: Publish now marshals the envelope EXACTLY ONCE (finding #14),
+// so its allocation cost is the single json.Marshal and nothing more — the
+// fan-out itself stays allocation-free regardless of subscriber count. The
+// former "zero-alloc Publish" invariant no longer holds (pre-marshaling
+// intentionally allocates one byte slice), but the O(1)-in-subscribers
+// guarantee — the property that actually matters at fleet scale — does.
+func TestHubPublishFanOutAllocFreeBeyondSingleMarshal(t *testing.T) {
+	evt := Event{Type: "test.event", Data: 42}
 
+	// Baseline: the cost of marshaling the envelope once, no fan-out.
+	marshalAllocs := testing.AllocsPerRun(1000, func() {
+		_ = marshalEnvelope(evt)
+	})
+
+	hub := NewHub()
 	// 10 fast subscribers; drained by background goroutines so the channels
 	// never block and Publish always takes the success branch of its select.
 	const subCount = 10
@@ -128,7 +205,6 @@ func TestHubPublishZeroAllocHotPath(t *testing.T) {
 		}()
 	}
 
-	evt := Event{Type: "test.event", Data: 42}
 	allocs := testing.AllocsPerRun(1000, func() {
 		hub.Publish(evt)
 	})
@@ -138,11 +214,11 @@ func TestHubPublishZeroAllocHotPath(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Each Publish should perform zero heap allocations: no slice copy, no
-	// closure capture, no map iteration. Allow tiny slack for runtime jitter
-	// (e.g. slog.Debug which is gated by level and shouldn't fire here).
-	if allocs > 0 {
-		t.Fatalf("Publish allocates per call: AllocsPerRun = %.2f, want 0", allocs)
+	// Publish across 10 subscribers must not allocate MORE than the bare
+	// single marshal — the slice copy / closure capture / map iteration
+	// hazards the old test guarded against are still absent.
+	if allocs > marshalAllocs {
+		t.Fatalf("fan-out adds allocations beyond the single envelope marshal: publish=%.2f marshal=%.2f", allocs, marshalAllocs)
 	}
 }
 
