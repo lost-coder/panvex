@@ -59,8 +59,8 @@ const SheetContent = React.forwardRef<
     // a manual dismiss path anymore. Kept the onOpenChange prop in the
     // signature to avoid churning every call site.
 
-    // Previously `side="bottom"` was handled by react-modal-sheet,
-    // whose Framer Motion drag recognizer captured pointerdown on
+    // Previously `side="bottom"` was a separate bottom-sheet
+    // implementation whose drag recognizer captured pointerdown on
     // every child — text inputs inside the sheet could not receive
     // focus or accept keystrokes even with `disableDrag`. We now
     // render every side variant through Radix Dialog.Content and

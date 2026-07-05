@@ -39,6 +39,8 @@
   /* Status + accent raw values. Themed here (not as static @theme
      literals) so the light theme can swap them for contrast — they were
      previously dark-only, washing out on light surfaces. */
+  /* NOTE(P5): mirrored in src/ui/tokens/colors.ts and guarded by
+     colors.contrast.test.ts — keep the three in sync. */
   --panvex-status-ok: #34d399;
   --panvex-status-warn: #f59e0b;
   --panvex-status-warn-ink: #1a1306;
