@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { DataTable, type DataTableColumn } from "./DataTable";
-import { ConnectionBadge } from "@/ui/primitives/ConnectionBadge";
 import { TrafficCell } from "@/ui/primitives/TrafficCell";
 
 const meta: Meta = {
@@ -36,7 +35,11 @@ const columns: DataTableColumn<User>[] = [
   {
     key: "status",
     header: "Status",
-    render: (r) => <ConnectionBadge online={r.online} count={r.connections} />,
+    render: (r) => (
+      <span className="text-xs text-fg">
+        {r.online ? "online" : "offline"} ({r.connections})
+      </span>
+    ),
   },
   {
     key: "traffic",

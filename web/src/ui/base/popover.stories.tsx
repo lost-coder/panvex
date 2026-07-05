@@ -1,7 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { Popover, PopoverTrigger, PopoverContent } from "./popover";
 import { Button } from "./button";
-import { IPTag } from "@/ui/primitives/IPTag";
 
 const meta: Meta = { title: "UI/Popover" };
 export default meta;
@@ -20,11 +19,15 @@ export const Default: Story = {
           <h4 className="text-sm font-medium text-fg">Connection Links</h4>
           <div className="flex flex-col gap-1">
             <span className="text-nano text-fg-muted uppercase">Classic</span>
-            <IPTag address="tg://proxy?server=185.76.151.1&port=443&secret=ee..." />
+            <span className="font-mono text-xs text-fg truncate">
+              tg://proxy?server=185.76.151.1&port=443&secret=ee...
+            </span>
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-nano text-fg-muted uppercase">Secure</span>
-            <IPTag address="tg://proxy?server=185.76.151.1&port=443&secret=dd..." />
+            <span className="font-mono text-xs text-fg truncate">
+              tg://proxy?server=185.76.151.1&port=443&secret=dd...
+            </span>
           </div>
         </div>
       </PopoverContent>
