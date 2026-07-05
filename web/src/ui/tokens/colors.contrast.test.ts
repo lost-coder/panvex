@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { bgColors, fgColors, statusColors } from "./colors";
 
+// NOTE(P5): this WCAG guard mirrors the palette a THIRD time (the
+// light-theme literals below + the imported dark-theme statusColors). The
+// canonical sources are the --panvex-* CSS vars in src/ui-kit.css and their
+// JS mirror in src/ui/tokens/colors.ts — keep all three in sync when the
+// palette changes.
+//
 // WCAG 2.1 relative luminance + contrast ratio (sRGB hex → ratio).
 function luminance(hex: string): number {
   const v = hex.replace("#", "");
