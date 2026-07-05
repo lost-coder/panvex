@@ -25,8 +25,9 @@ import (
 //
 // Phase A only implements the all_at_once mode: every agent lands in wave 0,
 // enqueued in the same call. Rolling (multi-wave, halt-on-failure) delivery
-// is Phase B — mode/waveSize are threaded through now so that handler and
-// storage plumbing do not need to change shape again when it lands.
+// is Phase B — when it lands, mode/waveSize become parameters again; the DB
+// columns and record fields already carry them, so only this function's
+// signature changes (P5, audit #19).
 //
 // An empty agentIDs list means the group has no in-scope agents; no batch is
 // created and ("", nil) is returned, matching the pre-batch behavior where an
@@ -37,7 +38,7 @@ import (
 // pre-existing concurrent-fan-out semantics documented on
 // handleApplyGroupConfig — the operator sees each agent's own outcome via the
 // batch/status views rather than the whole request failing atomically.
-func (s *Server) createConfigApplyBatch(ctx context.Context, actorID, fleetGroupID, mode string, waveSize int, agentIDs []string) (string, error) {
+func (s *Server) createConfigApplyBatch(ctx context.Context, actorID, fleetGroupID string, agentIDs []string) (string, error) {
 	if len(agentIDs) == 0 {
 		return "", nil
 	}
@@ -55,8 +56,8 @@ func (s *Server) createConfigApplyBatch(ctx context.Context, actorID, fleetGroup
 	batch := storage.ConfigApplyBatchRecord{
 		ID:           batchID,
 		FleetGroupID: fleetGroupID,
-		Mode:         mode,
-		WaveSize:     waveSize,
+		Mode:         storage.ConfigApplyBatchModeAllAtOnce,
+		WaveSize:     1,
 		Status:       storage.ConfigApplyBatchStatusRunning,
 		CreatedAt:    now,
 		UpdatedAt:    now,
