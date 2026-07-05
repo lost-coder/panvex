@@ -430,7 +430,7 @@ func TestService_Save_EncryptsAndPersists(t *testing.T) {
 func TestService_Save_VaultEncryptsSecret(t *testing.T) {
 	t.Parallel()
 
-	vault, err := secretvault.New("test-passphrase-32bytes-long-ok!", secretvault.AllDomains)
+	vault, err := secretvault.NewWithSalt("test-passphrase-32bytes-long-ok!", secretvault.AllDomains, []byte("panvex-test-hkdf-salt-16b"))
 	if err != nil {
 		t.Fatalf("new vault: %v", err)
 	}

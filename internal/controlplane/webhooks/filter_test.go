@@ -1,6 +1,33 @@
 package webhooks
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+// parseFilter splits a comma-separated CSV stored on
+// webhook_endpoints.event_filter into the slice form the package uses
+// internally. Trims whitespace; an empty input yields nil (which
+// matchesFilter treats as match-all). Test-only after P5 (production
+// reads the filter straight from storage rows).
+func parseFilter(csv string) []string {
+	csv = strings.TrimSpace(csv)
+	if csv == "" {
+		return nil
+	}
+	parts := strings.Split(csv, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
 
 func TestMatchesFilter(t *testing.T) {
 	cases := []struct {

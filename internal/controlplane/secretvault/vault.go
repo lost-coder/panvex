@@ -131,13 +131,6 @@ type Vault struct {
 	kek []byte
 }
 
-// New constructs a vault using the legacy hard-coded HKDF salt for
-// every domain. Retained for tests and short-lived tooling that does
-// not need per-install salt isolation; production callers should
-// resolve a per-install salt via storage and use NewWithSalt.
-func New(passphrase string, domains []string) (*Vault, error) {
-	return NewWithSalt(passphrase, domains, []byte(legacyHKDFSalt))
-}
 
 // NewWithSalt constructs a vault from the operator passphrase using the
 // supplied per-install HKDF salt. The list of domains must be
@@ -309,13 +302,4 @@ func IsEncrypted(value string) bool {
 		strings.HasPrefix(value, Prefix3)
 }
 
-// IsLegacyEncrypted reports whether the value uses one of the
-// pre-envelope wire formats (PVS1 or PVS2). Used by the
-// rotate-encryption-key subcommand's safety check: PVS1/PVS2
-// ciphertexts depend on keys derived directly from the current
-// passphrase, so rotating the KEK invalidates them. The upgrade-vault
-// migration (follow-up) re-encrypts them to PVS3.
-func IsLegacyEncrypted(value string) bool {
-	return strings.HasPrefix(value, Prefix1) || strings.HasPrefix(value, Prefix2)
-}
 

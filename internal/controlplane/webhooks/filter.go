@@ -38,26 +38,3 @@ func matchesFilter(action string, filter []string) bool {
 	}
 	return false
 }
-
-// parseFilter splits a comma-separated CSV stored on
-// webhook_endpoints.event_filter into the slice form the package
-// uses internally. Trims whitespace; an empty input yields nil
-// (which matchesFilter treats as match-all).
-func parseFilter(csv string) []string {
-	csv = strings.TrimSpace(csv)
-	if csv == "" {
-		return nil
-	}
-	parts := strings.Split(csv, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}

@@ -204,9 +204,10 @@ type Service struct {
 	// latestSucceededByClient maps a Telemt client_id (extracted from a
 	// client.* job's PayloadJSON) to the most recently observed succeeded
 	// job for that client. Updated under s.mu whenever a client.* job
-	// transitions into StatusSucceeded. Backs LatestSucceededWithContext
-	// so the call site no longer needs an O(N) ListWithContext scan to
-	// recover a client's connection_links result (P-4).
+	// transitions into StatusSucceeded. This is the latest-succeeded-per-client
+	// index, read by tests via LatestSucceededWithContext; keeping it warm
+	// avoids an O(N) ListWithContext scan to recover a client's
+	// connection_links result (P-4).
 	latestSucceededByClient map[string]Job
 	jobStore                Store
 	startupErr              error
@@ -605,29 +606,6 @@ func (s *Service) Get(jobID string) (Job, bool) {
 		return Job{}, false
 	}
 	return cloneJob(job), true
-}
-
-// LatestSucceededWithContext returns the most recently observed succeeded
-// client.* job for the given Telemt client_id, or (nil, false) if no such
-// job has been recorded yet. The lookup is O(1) — backed by the
-// latestSucceededByClient index that this package updates whenever a
-// client.* job transitions into StatusSucceeded (P-4).
-//
-// The ctx parameter is reserved for future asynchronous storage hydration
-// (parity with ListWithContext / RecordResult); the in-memory path does
-// not currently consult ctx.
-func (s *Service) LatestSucceededWithContext(_ context.Context, clientID string) (*Job, bool) {
-	if clientID == "" {
-		return nil, false
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	job, ok := s.latestSucceededByClient[clientID]
-	if !ok {
-		return nil, false
-	}
-	cloned := cloneJob(job)
-	return &cloned, true
 }
 
 // clientIDFromPayload returns the Telemt client_id embedded in a client.*
