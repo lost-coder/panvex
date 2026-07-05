@@ -653,9 +653,9 @@ func New(options Options) (*Server, error) {
 	// C3: surface write-behind job persist failures as a Prometheus
 	// counter. Must run after initStoreBackedSubsystems (which replaces
 	// s.jobs) and after newMetricsCollectors.
+	// The sink also carries the F3 failed-job counter (ObserveJobFailed),
+	// which absorbed the former SetJobFailureHook.
 	server.jobs.SetMetricsSink(server.obs)
-	// F3: count jobs that enter the failed terminal status.
-	server.jobs.SetJobFailureHook(func() { server.obs.IncJobFailure() })
 
 	// S-06: warn once at startup if the panel binds to a non-loopback
 	// address but no trusted-proxy CIDRs are configured. In that state

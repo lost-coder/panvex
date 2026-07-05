@@ -213,40 +213,32 @@ type Service struct {
 	startupErr              error
 	now                     func() time.Time
 	metrics                 MetricsSink
-	// onJobFailed is invoked (under s.mu) every time a job transitions INTO
-	// StatusFailed. Nil when not set. Must be cheap and non-blocking.
-	onJobFailed func()
 }
 
-// MetricsSink receives job-persistence failure observations (C3).
-// Implemented by server.metricsCollectors; the noop default keeps the
-// store-less NewService path and tests free of Prometheus wiring —
-// same null-object pattern as server.batchMetricsSink.
+// MetricsSink receives job observability signals (C3). Implemented by
+// server.metricsCollectors; the noop default keeps the store-less
+// NewService path and tests free of Prometheus wiring — same null-object
+// pattern as server.batchMetricsSink.
 type MetricsSink interface {
 	ObserveJobPersistFailure()
+	// ObserveJobFailed is invoked (under s.mu) every time a job transitions
+	// INTO the failed terminal status. Implementations must be cheap and
+	// non-blocking. Absorbed the former SetJobFailureHook (P5, audit #19).
+	ObserveJobFailed()
 }
 
 type noopMetricsSink struct{}
 
 func (noopMetricsSink) ObserveJobPersistFailure() { /* null-object */ }
+func (noopMetricsSink) ObserveJobFailed()         { /* null-object */ }
 
-// SetMetricsSink wires the failure counter. Call during boot, before
+// SetMetricsSink wires the metrics sink. Call during boot, before
 // background traffic starts (matches SetNow's contract).
 func (s *Service) SetMetricsSink(sink MetricsSink) {
 	if sink == nil {
 		sink = noopMetricsSink{}
 	}
 	s.metrics = sink
-}
-
-// SetJobFailureHook registers fn to be invoked (under s.mu) every time a
-// job transitions INTO the failed terminal status. Used by the server to
-// bump panvex_job_failures_total without making this package depend on
-// Prometheus. fn must be cheap and non-blocking.
-func (s *Service) SetJobFailureHook(fn func()) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.onJobFailed = fn
 }
 
 // Store is the subset of the storage layer that the jobs Service depends on
@@ -752,8 +744,8 @@ func expireCoveredTargets(targets []JobTarget, newTargets map[string]struct{}, s
 func (s *Service) applySupersededJob(jobID string, job Job, supersederID, clientID string, now time.Time) *persistCandidate {
 	prevStatus := job.Status
 	job.Status = deriveJobStatus(job.Targets)
-	if job.Status == StatusFailed && prevStatus != StatusFailed && s.onJobFailed != nil {
-		s.onJobFailed()
+	if job.Status == StatusFailed && prevStatus != StatusFailed {
+		s.metrics.ObserveJobFailed()
 	}
 	s.jobs[jobID] = job
 	s.syncJobTargetsIndexLocked(job)
@@ -1091,8 +1083,8 @@ func expireAcknowledgedTargets(job *Job, cutoff, now time.Time) int {
 func (s *Service) commitPrunedJobLocked(jobID string, job Job, now time.Time, candidates []persistCandidate) []persistCandidate {
 	prevStatus := job.Status
 	job.Status = deriveJobStatus(job.Targets)
-	if job.Status == StatusFailed && prevStatus != StatusFailed && s.onJobFailed != nil {
-		s.onJobFailed()
+	if job.Status == StatusFailed && prevStatus != StatusFailed {
+		s.metrics.ObserveJobFailed()
 	}
 	s.jobs[jobID] = job
 	s.syncJobTargetsIndexLocked(job)
@@ -1249,8 +1241,8 @@ func (s *Service) applyTargetMutationLocked(job Job, agentID string, now time.Ti
 
 	prevStatus := job.Status
 	job.Status = deriveJobStatus(job.Targets)
-	if job.Status == StatusFailed && prevStatus != StatusFailed && s.onJobFailed != nil {
-		s.onJobFailed()
+	if job.Status == StatusFailed && prevStatus != StatusFailed {
+		s.metrics.ObserveJobFailed()
 	}
 	s.jobs[job.ID] = job
 	s.syncJobTargetsIndexLocked(job)
