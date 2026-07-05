@@ -883,6 +883,12 @@ func (s *Service) recomputeNextExpiryLocked() {
 // control plane cannot ship unbounded payloads to the UI (Q2.U-P-13).
 const DefaultListRecentLimit = 200
 
+// maxListRecentLimit is the hard upper bound on ListRecentWithContext's
+// caller-supplied limit. It bounds the heap/result allocation to a
+// constant so a hostile or buggy caller cannot drive an unbounded
+// allocation off a request parameter (CodeQL go/uncontrolled-allocation-size).
+const maxListRecentLimit = DefaultListRecentLimit * 5
+
 // jobRecency is the ordering key of one job for the top-K selection:
 // newest-first by CreatedAt, ties broken by ID descending (matches the
 // pre-P6 sort-ascending-then-reverse ordering exactly).
@@ -928,8 +934,13 @@ func (h *recencyHeap) Pop() any {
 // housekeeping is preserved: the same fast/slow escalation as
 // ListWithContext runs first.
 func (s *Service) ListRecentWithContext(ctx context.Context, limit int) []Job {
-	if limit <= 0 || limit > DefaultListRecentLimit*5 {
+	if limit <= 0 {
 		limit = DefaultListRecentLimit
+	}
+	// Hard upper bound so the make(recencyHeap, 0, limit) below allocates
+	// at most a constant, independent of the request parameter.
+	if limit > maxListRecentLimit {
+		limit = maxListRecentLimit
 	}
 
 	// Expiry pass — same contract as ListWithContext: RLock check, write
@@ -947,7 +958,12 @@ func (s *Service) ListRecentWithContext(ctx context.Context, limit int) []Job {
 	}
 
 	s.mu.RLock()
-	h := make(recencyHeap, 0, limit)
+	// Pre-size with a CONSTANT (not the request-derived limit) so the
+	// allocation cannot be driven by a caller parameter (CodeQL
+	// go/uncontrolled-allocation-size); the heap grows via heap.Push for
+	// the rare limit > DefaultListRecentLimit case, and the loop below
+	// still caps it at `limit` live elements.
+	h := make(recencyHeap, 0, DefaultListRecentLimit)
 	heap.Init(&h)
 	for id, job := range s.jobs {
 		key := jobRecency{createdAt: job.CreatedAt, id: id}
