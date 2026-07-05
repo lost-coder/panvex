@@ -281,6 +281,35 @@ type TelemetryStore interface {
 	GetTelemetryDiagnosticsCurrent(ctx context.Context, agentID string) (TelemetryDiagnosticsCurrentRecord, error)
 	PutTelemetrySecurityInventoryCurrent(ctx context.Context, record TelemetrySecurityInventoryCurrentRecord) error
 	GetTelemetrySecurityInventoryCurrent(ctx context.Context, agentID string) (TelemetrySecurityInventoryCurrentRecord, error)
+
+	// PutTelemetryRuntimeCurrentBulk upserts a batch of runtime JSON blobs
+	// in a single transaction (P6-6.1a, finding #10). Per-row semantics match
+	// PutTelemetryRuntimeCurrent; duplicate AgentIDs inside one batch
+	// collapse to last-wins on BOTH backends (Postgres cannot upsert the
+	// same conflict key twice in one statement, so implementations dedup
+	// before inserting).
+	PutTelemetryRuntimeCurrentBulk(ctx context.Context, records []TelemetryRuntimeCurrentRecord) error
+	// ReplaceTelemetryRuntimeDCsBulk applies the ReplaceTelemetryRuntimeDCs
+	// semantics for many agents in ONE transaction: every agent key present
+	// in byAgent has its DC rows deleted and re-inserted from the mapped
+	// slice (an empty slice clears the agent's rows). Agents absent from the
+	// map are untouched.
+	ReplaceTelemetryRuntimeDCsBulk(ctx context.Context, byAgent map[string][]TelemetryRuntimeDCRecord) error
+	// ReplaceTelemetryRuntimeUpstreamsBulk: see ReplaceTelemetryRuntimeDCsBulk.
+	ReplaceTelemetryRuntimeUpstreamsBulk(ctx context.Context, byAgent map[string][]TelemetryRuntimeUpstreamRecord) error
+	// AppendTelemetryRuntimeEventsBulk inserts/upserts runtime events for
+	// MANY agents in one transaction. Records carry their own AgentID.
+	// Conflict target (agent_id, sequence) matches the single-agent
+	// AppendTelemetryRuntimeEvents; duplicates within one batch collapse
+	// to last-wins.
+	AppendTelemetryRuntimeEventsBulk(ctx context.Context, records []TelemetryRuntimeEventRecord) error
+	// PutTelemetryDiagnosticsCurrentBulk upserts a batch of diagnostics
+	// snapshots in one transaction. Duplicate AgentIDs collapse last-wins.
+	PutTelemetryDiagnosticsCurrentBulk(ctx context.Context, records []TelemetryDiagnosticsCurrentRecord) error
+	// PutTelemetrySecurityInventoryCurrentBulk upserts a batch of security
+	// inventory snapshots in one transaction. Duplicate AgentIDs collapse
+	// last-wins.
+	PutTelemetrySecurityInventoryCurrentBulk(ctx context.Context, records []TelemetrySecurityInventoryCurrentRecord) error
 }
 
 // EnrollmentStore persists one-time agent enrollment tokens.
