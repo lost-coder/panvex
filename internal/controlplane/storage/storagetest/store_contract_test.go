@@ -884,6 +884,63 @@ func (s *memoryStore) GetTelemetrySecurityInventoryCurrent(_ context.Context, ag
 	return record, nil
 }
 
+func (s *memoryStore) PutTelemetryRuntimeCurrentBulk(_ context.Context, records []storage.TelemetryRuntimeCurrentRecord) error {
+	for _, r := range records {
+		s.telemetryRuntimeCurrent[r.AgentID] = r
+	}
+	return nil
+}
+
+func (s *memoryStore) ReplaceTelemetryRuntimeDCsBulk(_ context.Context, byAgent map[string][]storage.TelemetryRuntimeDCRecord) error {
+	for agentID, records := range byAgent {
+		s.telemetryRuntimeDCs[agentID] = append([]storage.TelemetryRuntimeDCRecord(nil), records...)
+	}
+	return nil
+}
+
+func (s *memoryStore) ReplaceTelemetryRuntimeUpstreamsBulk(_ context.Context, byAgent map[string][]storage.TelemetryRuntimeUpstreamRecord) error {
+	for agentID, records := range byAgent {
+		s.telemetryRuntimeUpstreams[agentID] = append([]storage.TelemetryRuntimeUpstreamRecord(nil), records...)
+	}
+	return nil
+}
+
+func (s *memoryStore) AppendTelemetryRuntimeEventsBulk(_ context.Context, records []storage.TelemetryRuntimeEventRecord) error {
+	// Upsert by (agent_id, sequence) so a duplicate sequence within one
+	// batch collapses to last-wins, matching the SQL backends' conflict
+	// target on (agent_id, sequence).
+	for _, r := range records {
+		events := s.telemetryRuntimeEvents[r.AgentID]
+		replaced := false
+		for i := range events {
+			if events[i].Sequence == r.Sequence {
+				events[i] = r
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			events = append(events, r)
+		}
+		s.telemetryRuntimeEvents[r.AgentID] = events
+	}
+	return nil
+}
+
+func (s *memoryStore) PutTelemetryDiagnosticsCurrentBulk(_ context.Context, records []storage.TelemetryDiagnosticsCurrentRecord) error {
+	for _, r := range records {
+		s.telemetryDiagnosticsCurrent[r.AgentID] = r
+	}
+	return nil
+}
+
+func (s *memoryStore) PutTelemetrySecurityInventoryCurrentBulk(_ context.Context, records []storage.TelemetrySecurityInventoryCurrentRecord) error {
+	for _, r := range records {
+		s.telemetrySecurityCurrent[r.AgentID] = r
+	}
+	return nil
+}
+
 func (s *memoryStore) PutClient(_ context.Context, client storage.ClientRecord) error {
 	s.clients[client.ID] = client
 	return nil

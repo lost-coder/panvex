@@ -50,4 +50,5 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 	// Bulk-write helpers (P3-PERF-01a) live in store_contract_bulk.go.
 	runTransactContract(t, open)
 	runBulkWriteContract(t, open)
+	runBulkTelemetryContract(t, open)
 }
