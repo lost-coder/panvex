@@ -10,7 +10,6 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
-	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 )
 
@@ -31,4 +30,3 @@ var _ uow.RepoSet = (*txRepoSet)(nil)
 
 func (r *txRepoSet) Clients() clients.Repository       { return NewClientsRepository(r.tx) }
 func (r *txRepoSet) Discovered() discovered.Repository { return NewDiscoveredRepository(r.tx) }
-func (r *txRepoSet) Jobs() jobs.Repository             { return NewJobsRepository(r.tx) }

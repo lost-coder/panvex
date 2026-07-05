@@ -20,7 +20,6 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
-	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 )
 
 // UnitOfWork opens a single database transaction and exposes the domain
@@ -41,5 +40,4 @@ type UnitOfWork interface {
 type RepoSet interface {
 	Clients() clients.Repository
 	Discovered() discovered.Repository
-	Jobs() jobs.Repository
 }

@@ -8,7 +8,6 @@ package sqlite
 import (
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
-	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 )
 
@@ -32,4 +31,3 @@ func (r *txRepoSet) Clients() clients.Repository {
 }
 
 func (r *txRepoSet) Discovered() discovered.Repository { return NewDiscoveredRepository(r.db) }
-func (r *txRepoSet) Jobs() jobs.Repository             { return NewJobsRepository(r.db) }

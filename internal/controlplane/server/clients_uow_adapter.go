@@ -20,14 +20,14 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
-	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 )
 
 // clientsUoWAdapter wraps a concrete uow.UnitOfWork and presents the
-// clients.ServiceUoW interface. uow.RepoSet is a superset of
-// clients.ClientsRepoSet (it adds Jobs()), so the inner fn can be forwarded
-// directly by passing the uow.RepoSet as a clients.ClientsRepoSet.
+// clients.ServiceUoW interface. uow.RepoSet structurally satisfies
+// clients.ClientsRepoSet (both expose Clients() and Discovered()), so the
+// inner fn can be forwarded directly by passing the uow.RepoSet as a
+// clients.ClientsRepoSet.
 //
 // When clientsOverride is non-nil, the adapter substitutes the override for
 // rs.Clients() inside the tx callback. Used by failure-injection tests
@@ -67,8 +67,7 @@ func (a *clientsUoWAdapter) Do(ctx context.Context, fn func(rs clients.ClientsRe
 
 // overrideClientsRepoSet satisfies clients.ClientsRepoSet by delegating
 // Discovered to the underlying tx-bound RepoSet, while returning the
-// override Repository from Clients(). Jobs() is also forwarded so the type
-// still satisfies the broader uow.RepoSet shape if anything inspects it.
+// override Repository from Clients().
 type overrideClientsRepoSet struct {
 	inner   uow.RepoSet
 	clients clients.Repository
@@ -76,4 +75,3 @@ type overrideClientsRepoSet struct {
 
 func (s *overrideClientsRepoSet) Clients() clients.Repository       { return s.clients }
 func (s *overrideClientsRepoSet) Discovered() discovered.Repository { return s.inner.Discovered() }
-func (s *overrideClientsRepoSet) Jobs() jobs.Repository             { return s.inner.Jobs() }
