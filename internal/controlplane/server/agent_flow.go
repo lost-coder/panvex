@@ -426,11 +426,11 @@ func (s *Server) mergeClientUsageBatch(ctx context.Context, agentID, agentBootID
 }
 
 // persistClientUsageRecords write-throughs the merged usage state to storage
-// (when configured). The batch flushes in a single transaction via
-// UpsertClientUsageBulk — the singular UpsertClientUsage is the slow path and
-// is not used here. P-1 (sprint S-23 perf-critical): a 500-clients x 50-agents
-// tick was issuing 25k single-row Exec calls; the bulk variant collapses
-// that to a handful of multi-row INSERTs in one transaction.
+// (when configured). The batch flushes via clients.Service.UpsertUsageBulk
+// (clients.Repository), which chunks it into multi-row INSERT ... ON CONFLICT
+// in one transaction. P-1 (sprint S-23 perf-critical): a 500-clients x
+// 50-agents tick was issuing 25k single-row Exec calls; the bulk path
+// collapses that to a handful of multi-row INSERTs.
 //
 // On error the whole batch is logged once. ON CONFLICT (client_id, agent_id)
 // DO UPDATE preserves the per-row last-write-wins semantics the old loop had —
