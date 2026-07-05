@@ -11,28 +11,12 @@ import {
   localizeReason,
   type ServerListItem,
 } from "@/ui";
-
-// formatTrafficBytes picks the largest unit that yields a non-zero
-// integer-ish number. Returning "0" for anything below 1 MB lets a
-// freshly-deployed fleet still show a meaningful column without the
-// "always 0 GB" rounding artefact the legacy implementation produced.
-function formatTrafficBytes(bytes: number): string {
-  if (bytes <= 0) return "0";
-  const TB = 1024 ** 4;
-  const GB = 1024 ** 3;
-  const MB = 1024 ** 2;
-  const KB = 1024;
-  if (bytes >= TB) return `${(bytes / TB).toFixed(2)} TB`;
-  if (bytes >= GB) return `${(bytes / GB).toFixed(2)} GB`;
-  if (bytes >= MB) return `${(bytes / MB).toFixed(1)} MB`;
-  if (bytes >= KB) return `${Math.round(bytes / KB)} KB`;
-  return `${bytes} B`;
-}
+import { formatBytes } from "@/ui/lib/format";
 
 export function TrafficCell({ bytes }: Readonly<{ bytes: number }>) {
   return (
     <span className="text-sm font-mono text-fg-muted">
-      {formatTrafficBytes(bytes)}
+      {formatBytes(bytes)}
     </span>
   );
 }

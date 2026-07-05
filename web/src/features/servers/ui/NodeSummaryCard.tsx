@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NodeStateBadge, nodeStatePresentation, type NodeState } from "@/ui";
 import { cn } from "@/ui/lib/cn";
+import { formatBytes } from "@/ui/lib/format";
 import type { Status } from "@/ui/tokens/colors";
 
 export interface NodeDcInfo {
@@ -41,13 +42,6 @@ const dcLed = {
   warn: "bg-status-warn",
   error: "bg-status-error animate-led-blink",
 } as const;
-
-function formatTraffic(bytes: number): string {
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  if (bytes < 1024 ** 4) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-  return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
-}
 
 function hasIssues(dcs: NodeDcInfo[]): boolean {
   return dcs.some((d) => d.status !== "ok");
@@ -171,7 +165,7 @@ export function NodeSummaryCard({
             <span className="text-fg">{connections.toLocaleString()}</span> {t("list.card.connections")}
           </span>
           <span className="text-fg-muted">
-            <span className="text-fg">{formatTraffic(trafficBytes)}</span>
+            <span className="text-fg">{formatBytes(trafficBytes)}</span>
           </span>
           <span className="text-fg-muted">
             {"cpu "}<span className={pctColor(cpuPct)}>{cpuPct}%</span>
@@ -193,7 +187,7 @@ export function NodeSummaryCard({
               <span className="text-fg">{connections.toLocaleString()}</span> {t("list.card.connections")}
             </span>
             <span className="text-fg-muted">
-              <span className="text-fg">{formatTraffic(trafficBytes)}</span>
+              <span className="text-fg">{formatBytes(trafficBytes)}</span>
             </span>
             <span className="text-fg-muted">
               {"cpu "}<span className={pctColor(cpuPct)}>{cpuPct}%</span>

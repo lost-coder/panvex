@@ -21,12 +21,18 @@ export function formatDateTime(input: number | string | Date): string {
  * the single canonical byte formatter for the whole dashboard; do not
  * reimplement it per feature. Tiers: B < 1 KB ≤ KB < 1 MB ≤ MB < 1 GB ≤ GB.
  */
+export function formatBytesParts(bytes: number): { value: string; unit: string } {
+  if (bytes <= 0) return { value: "0", unit: "B" };
+  if (bytes > 1e12) return { value: (bytes / 1e12).toFixed(2), unit: "TB" };
+  if (bytes > 1e9) return { value: (bytes / 1e9).toFixed(1), unit: "GB" };
+  if (bytes > 1e6) return { value: (bytes / 1e6).toFixed(1), unit: "MB" };
+  if (bytes > 1e3) return { value: (bytes / 1e3).toFixed(1), unit: "KB" };
+  return { value: String(bytes), unit: "B" };
+}
+
 export function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "0 B";
-  if (bytes > 1e9) return (bytes / 1e9).toFixed(1) + " GB";
-  if (bytes > 1e6) return (bytes / 1e6).toFixed(1) + " MB";
-  if (bytes > 1e3) return (bytes / 1e3).toFixed(1) + " KB";
-  return bytes + " B";
+  const { value, unit } = formatBytesParts(bytes);
+  return `${value} ${unit}`;
 }
 
 /**
