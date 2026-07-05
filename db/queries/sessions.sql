@@ -13,9 +13,6 @@ SELECT id, user_id, created_at, last_seen_at
 FROM sessions
 ORDER BY created_at DESC;
 
--- name: TouchSessionLastSeen :exec
-UPDATE sessions SET last_seen_at = $2 WHERE id = $1;
-
 -- name: DeleteExpiredSessions :exec
 DELETE FROM sessions WHERE created_at < $1;
 

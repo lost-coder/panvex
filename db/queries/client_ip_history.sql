@@ -19,5 +19,3 @@ VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (agent_id, client_id, ip_address) DO UPDATE
 SET last_seen = EXCLUDED.last_seen;
 
--- name: PruneClientIPHistory :execrows
-DELETE FROM client_ip_history WHERE last_seen < $1;

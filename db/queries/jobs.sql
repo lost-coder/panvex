@@ -4,6 +4,3 @@ FROM jobs
 ORDER BY created_at ASC, id ASC;
 
 
--- name: CreateJob :exec
-INSERT INTO jobs (id, action, idempotency_key, actor_id, status, created_at, ttl_nanos, payload_json)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8);

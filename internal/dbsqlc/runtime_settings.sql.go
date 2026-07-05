@@ -30,40 +30,6 @@ func (q *Queries) GetRuntimeSetting(ctx context.Context, name string) (RuntimeSe
 	return i, err
 }
 
-const listRuntimeSettings = `-- name: ListRuntimeSettings :many
-SELECT name, value_json, updated_at, updated_by
-  FROM runtime_settings
- ORDER BY name
-`
-
-func (q *Queries) ListRuntimeSettings(ctx context.Context) ([]RuntimeSetting, error) {
-	rows, err := q.db.QueryContext(ctx, listRuntimeSettings)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []RuntimeSetting
-	for rows.Next() {
-		var i RuntimeSetting
-		if err := rows.Scan(
-			&i.Name,
-			&i.ValueJson,
-			&i.UpdatedAt,
-			&i.UpdatedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const upsertRuntimeSetting = `-- name: UpsertRuntimeSetting :exec
 INSERT INTO runtime_settings (name, value_json, updated_at, updated_by)
 VALUES ($1, $2, $3, $4)

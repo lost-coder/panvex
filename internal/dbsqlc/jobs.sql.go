@@ -7,38 +7,7 @@ package dbsqlc
 
 import (
 	"context"
-	"time"
 )
-
-const createJob = `-- name: CreateJob :exec
-INSERT INTO jobs (id, action, idempotency_key, actor_id, status, created_at, ttl_nanos, payload_json)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-`
-
-type CreateJobParams struct {
-	ID             string
-	Action         string
-	IdempotencyKey string
-	ActorID        string
-	Status         string
-	CreatedAt      time.Time
-	TtlNanos       int64
-	PayloadJson    string
-}
-
-func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) error {
-	_, err := q.db.ExecContext(ctx, createJob,
-		arg.ID,
-		arg.Action,
-		arg.IdempotencyKey,
-		arg.ActorID,
-		arg.Status,
-		arg.CreatedAt,
-		arg.TtlNanos,
-		arg.PayloadJson,
-	)
-	return err
-}
 
 const listJobs = `-- name: ListJobs :many
 SELECT id, action, idempotency_key, actor_id, status, created_at, ttl_nanos, payload_json

@@ -60,18 +60,6 @@ func (q *Queries) ListClientIPHistory(ctx context.Context, arg ListClientIPHisto
 	return items, nil
 }
 
-const pruneClientIPHistory = `-- name: PruneClientIPHistory :execrows
-DELETE FROM client_ip_history WHERE last_seen < $1
-`
-
-func (q *Queries) PruneClientIPHistory(ctx context.Context, lastSeen time.Time) (int64, error) {
-	result, err := q.db.ExecContext(ctx, pruneClientIPHistory, lastSeen)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 const upsertClientIPHistory = `-- name: UpsertClientIPHistory :exec
 INSERT INTO client_ip_history (agent_id, client_id, ip_address, first_seen, last_seen)
 VALUES ($1, $2, $3, $4, $5)

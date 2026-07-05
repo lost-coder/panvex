@@ -1,17 +1,6 @@
 -- R-Q-03: client_usage — per-(client, agent) usage counters reported
 -- back from agents.
 
--- name: ListClientUsageForClient :many
--- Column order matches the physical table (quota_* appended by 0043,
--- watermark by 0057, last_seq dropped by 0058) so sqlc maps the row
--- straight onto dbsqlc.ClientUsage.
-SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
-       active_tcp_conns, active_unique_ips, observed_at,
-       quota_used_bytes, quota_last_reset_unix, agent_boot_id,
-       last_total_bytes
-FROM client_usage
-WHERE client_id = $1;
-
 -- name: ListAllClientUsage :many
 SELECT client_id, agent_id, traffic_used_bytes, unique_ips_used,
        active_tcp_conns, active_unique_ips, observed_at,
