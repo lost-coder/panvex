@@ -215,7 +215,6 @@ func (s *Server) routes() http.Handler {
 					operator.With(sensitive).Post("/agents/enrollment-tokens", oapi.CreateEnrollmentToken)
 					operator.With(sensitive).Post("/agents/enrollment-tokens/{value}/revoke", oapi.RevokeEnrollmentToken)
 					operator.With(sensitive).Post("/agents/{id}/update", oapi.DispatchAgentUpdate)
-					operator.Get("/agent/update/binary", s.handleAgentBinaryProxy())
 				})
 
 				authenticated.Group(func(admin chi.Router) {

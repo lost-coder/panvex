@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -601,104 +599,4 @@ func (s *Server) lookupAgentForUpdate(w http.ResponseWriter, agentID string) (Ag
 		return Agent{}, false
 	}
 	return agent, true
-}
-
-// allowedAgentArches constrains the arch query parameter on the agent
-// binary proxy to known-safe values before it is interpolated into the
-// GitHub release URL. Arbitrary values would let a caller fetch unexpected
-// release assets or attempt path-like constructs in the URL.
-var allowedAgentArches = map[string]struct{}{
-	"amd64": {},
-	"arm64": {},
-}
-
-func (s *Server) handleAgentBinaryProxy() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		version, arch, ok := parseAgentBinaryQuery(w, r)
-		if !ok {
-			return
-		}
-
-		s.settingsMu.RLock()
-		settings := s.updateSettings
-		s.settingsMu.RUnlock()
-
-		rawURL, ok := buildAgentBinaryDownloadURL(w, settings, version, arch)
-		if !ok {
-			return
-		}
-
-		req, ok := buildAgentBinaryRequest(w, r, rawURL, settings.GitHubToken)
-		if !ok {
-			return
-		}
-
-		updatehosts.WarnIfNonDefault(r.Context(), s.logger, "agent binary proxy", rawURL)
-
-		// secureDownloadClient restricts redirects to the GitHub allow-list so
-		// a rogue release asset cannot steer us toward an attacker host.
-		resp, err := secureDownloadClient().Do(req) //nolint:gosec // URL validated via validateUpdateHost + allow-list CheckRedirect
-		if err != nil {
-			writeError(w, http.StatusBadGateway, "failed to download from GitHub")
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			writeError(w, resp.StatusCode, "GitHub returned an error")
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/octet-stream")
-		if resp.ContentLength > 0 {
-			w.Header().Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
-		}
-		w.WriteHeader(http.StatusOK)
-		io.Copy(w, resp.Body) //nolint:errcheck
-	}
-}
-
-func parseAgentBinaryQuery(w http.ResponseWriter, r *http.Request) (string, string, bool) {
-	version := r.URL.Query().Get("version")
-	arch := r.URL.Query().Get("arch")
-	if version == "" || arch == "" {
-		writeError(w, http.StatusBadRequest, "version and arch query parameters required")
-		return "", "", false
-	}
-	if _, ok := allowedAgentArches[arch]; !ok {
-		writeError(w, http.StatusBadRequest, "unsupported arch; allowed: amd64, arm64")
-		return "", "", false
-	}
-	return version, arch, true
-}
-
-func buildAgentBinaryDownloadURL(w http.ResponseWriter, settings UpdateSettings, version, arch string) (string, bool) {
-	// Re-validate the stored repo before interpolating it into the URL,
-	// in case an earlier code path bypassed handlePutUpdateSettings' check.
-	if err := validateGitHubRepo(settings.GitHubRepo); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid github_repo configured")
-		return "", false
-	}
-
-	assetName := fmt.Sprintf("panvex-agent-linux-%s", arch)
-	rawURL := fmt.Sprintf("https://github.com/%s/releases/download/agent/v%s/%s",
-		settings.GitHubRepo, strings.TrimPrefix(version, "v"), assetName)
-	if err := checkDownloadURL(rawURL); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid download URL")
-		return "", false
-	}
-	return rawURL, true
-}
-
-func buildAgentBinaryRequest(w http.ResponseWriter, r *http.Request, rawURL, token string) (*http.Request, bool) {
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, rawURL, nil) //nolint:gosec // URL validated via validateUpdateHost + allow-list CheckRedirect
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create request")
-		return nil, false
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	req.Header.Set("Accept", "application/octet-stream")
-	return req, true
 }
