@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -19,6 +20,39 @@ func (s *Store) AppendAuditEvent(ctx context.Context, event storage.AuditEventRe
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, event.ID, event.ActorID, event.Action, event.TargetID, toUnix(event.CreatedAt), detailsJSON, event.PrevHash, event.EventHash)
 	return err
+}
+
+// AppendAuditEventsBulk inserts a batch of audit rows in one transaction
+// (P6-6.1b). Same column set as AppendAuditEvent; `details` goes through
+// encodeJSON per row. Chunked via runBulkChunks like every other bulk
+// method in this package.
+func (s *Store) AppendAuditEventsBulk(ctx context.Context, events []storage.AuditEventRecord) error {
+	if len(events) == 0 {
+		return nil
+	}
+	const cols = 8
+	return s.execInTx(ctx, func(exec dbExecutor) error {
+		return runBulkChunks(ctx, exec, len(events), cols,
+			func(placeholders string) string {
+				return fmt.Sprintf(`
+					INSERT INTO audit_events (id, actor_id, action, target_id, created_at_unix, details, prev_hash, event_hash)
+					VALUES %s`, placeholders)
+			},
+			func(start, end int) ([]any, error) {
+				args := make([]any, 0, (end-start)*cols)
+				for _, event := range events[start:end] {
+					detailsJSON, err := encodeJSON(event.Details)
+					if err != nil {
+						return nil, err
+					}
+					args = append(args,
+						event.ID, event.ActorID, event.Action, event.TargetID,
+						toUnix(event.CreatedAt), detailsJSON, event.PrevHash, event.EventHash)
+				}
+				return args, nil
+			},
+		)
+	})
 }
 
 // LatestAuditChainHash returns the EventHash of the most recently

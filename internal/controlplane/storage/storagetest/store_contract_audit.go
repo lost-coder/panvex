@@ -15,6 +15,52 @@ import (
 func runAuditContract(t *testing.T, open OpenStore) {
 	t.Helper()
 
+	t.Run("AppendAuditEventsBulk persists batch preserving order and chain", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		ts := time.Date(2026, time.July, 2, 12, 0, 0, 0, time.UTC)
+		batch := []storage.AuditEventRecord{
+			{ID: "audit-1", ActorID: "u1", Action: "clients.create", TargetID: "c1", CreatedAt: ts, Details: map[string]any{"k": "v1"}, PrevHash: "", EventHash: "h1"},
+			{ID: "audit-2", ActorID: "u1", Action: "clients.update", TargetID: "c1", CreatedAt: ts.Add(time.Second), Details: map[string]any{"k": "v2"}, PrevHash: "h1", EventHash: "h2"},
+			{ID: "audit-3", ActorID: "u2", Action: "agents.deregister", TargetID: "a1", CreatedAt: ts.Add(2 * time.Second), Details: nil, PrevHash: "h2", EventHash: "h3"},
+		}
+		if err := store.AppendAuditEventsBulk(ctx, batch); err != nil {
+			t.Fatalf("AppendAuditEventsBulk: %v", err)
+		}
+		events, err := store.ListAuditEvents(ctx, 10)
+		if err != nil {
+			t.Fatalf("ListAuditEvents: %v", err)
+		}
+		if len(events) != 3 {
+			t.Fatalf("len(events) = %d, want 3", len(events))
+		}
+		// ListAuditEvents returns ascending order.
+		for i, wantID := range []string{"audit-1", "audit-2", "audit-3"} {
+			if events[i].ID != wantID {
+				t.Fatalf("events[%d].ID = %q, want %q", i, events[i].ID, wantID)
+			}
+		}
+		// Chain tail must be the LAST batch row.
+		tail, err := store.LatestAuditChainHash(ctx)
+		if err != nil {
+			t.Fatalf("LatestAuditChainHash: %v", err)
+		}
+		if tail != "h3" {
+			t.Fatalf("chain tail = %q, want h3", tail)
+		}
+	})
+
+	t.Run("AppendAuditEventsBulk empty batch is a no-op", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		if err := store.AppendAuditEventsBulk(context.Background(), nil); err != nil {
+			t.Fatalf("AppendAuditEventsBulk(nil): %v", err)
+		}
+	})
+
 	t.Run("audit append and list round trip", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
