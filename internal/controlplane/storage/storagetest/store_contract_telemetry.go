@@ -12,9 +12,8 @@ import (
 // seedAgentForTelemetry inserts the fleet group + agent row that
 // telemt_runtime_current's FK requires, so a runtime-current sub-test can
 // Put a row for agentID. Mirrors the inline seeding the other blocks do.
-func seedAgentForTelemetry(t *testing.T, store storage.Store, agentID string) {
+func seedAgentForTelemetry(ctx context.Context, t *testing.T, store storage.Store, agentID string) {
 	t.Helper()
-	ctx := context.Background()
 	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{
 		ID:        testFleetGroupID,
 		Name:      "Default",
@@ -454,7 +453,7 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		store := open(t)
 		defer store.Close()
 		ctx := context.Background()
-		seedAgentForTelemetry(t, store, "agent-json")
+		seedAgentForTelemetry(ctx, t, store, "agent-json")
 
 		observed := time.Date(2026, time.July, 2, 10, 0, 0, 0, time.UTC)
 		rec := storage.TelemetryRuntimeCurrentRecord{
@@ -484,7 +483,7 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		store := open(t)
 		defer store.Close()
 		ctx := context.Background()
-		seedAgentForTelemetry(t, store, "agent-upsert")
+		seedAgentForTelemetry(ctx, t, store, "agent-upsert")
 
 		first := storage.TelemetryRuntimeCurrentRecord{
 			AgentID:     "agent-upsert",

@@ -20,8 +20,8 @@ func runBulkTelemetryContract(t *testing.T, open OpenStore) {
 	t.Run("PutTelemetryRuntimeCurrentBulk upserts and dedups last-wins", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
-		seedAgentForTelemetry(t, store, "agent-a")
-		seedAgentForTelemetry(t, store, "agent-b")
+		seedAgentForTelemetry(ctx, t, store, "agent-a")
+		seedAgentForTelemetry(ctx, t, store, "agent-b")
 
 		// Duplicate agent in one batch: the LAST occurrence must win on
 		// both backends (Postgres would otherwise fail with SQLSTATE 21000).
@@ -58,8 +58,8 @@ func runBulkTelemetryContract(t *testing.T, open OpenStore) {
 	t.Run("ReplaceTelemetryRuntimeDCsBulk replaces per agent, empty slice clears", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
-		seedAgentForTelemetry(t, store, "agent-a")
-		seedAgentForTelemetry(t, store, "agent-b")
+		seedAgentForTelemetry(ctx, t, store, "agent-a")
+		seedAgentForTelemetry(ctx, t, store, "agent-b")
 
 		seed := func(agentID string, dc int) storage.TelemetryRuntimeDCRecord {
 			return storage.TelemetryRuntimeDCRecord{
@@ -102,7 +102,7 @@ func runBulkTelemetryContract(t *testing.T, open OpenStore) {
 	t.Run("ReplaceTelemetryRuntimeUpstreamsBulk replaces per agent", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
-		seedAgentForTelemetry(t, store, "agent-a")
+		seedAgentForTelemetry(ctx, t, store, "agent-a")
 
 		up := func(agentID string, id int) storage.TelemetryRuntimeUpstreamRecord {
 			return storage.TelemetryRuntimeUpstreamRecord{
@@ -132,8 +132,8 @@ func runBulkTelemetryContract(t *testing.T, open OpenStore) {
 	t.Run("AppendTelemetryRuntimeEventsBulk mixes agents, upserts on (agent,seq)", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
-		seedAgentForTelemetry(t, store, "agent-a")
-		seedAgentForTelemetry(t, store, "agent-b")
+		seedAgentForTelemetry(ctx, t, store, "agent-a")
+		seedAgentForTelemetry(ctx, t, store, "agent-b")
 
 		batch := []storage.TelemetryRuntimeEventRecord{
 			{AgentID: "agent-a", Sequence: 1, ObservedAt: ts, Timestamp: ts, EventType: "dc_down", Context: "dc=2", Severity: "warn"},
@@ -163,7 +163,7 @@ func runBulkTelemetryContract(t *testing.T, open OpenStore) {
 	t.Run("PutTelemetryDiagnosticsCurrentBulk upserts with dedup", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
-		seedAgentForTelemetry(t, store, "agent-a")
+		seedAgentForTelemetry(ctx, t, store, "agent-a")
 
 		batch := []storage.TelemetryDiagnosticsCurrentRecord{
 			{AgentID: "agent-a", ObservedAt: ts, State: "ok", SystemInfoJSON: `{"cpu":1}`},
@@ -184,7 +184,7 @@ func runBulkTelemetryContract(t *testing.T, open OpenStore) {
 	t.Run("PutTelemetrySecurityInventoryCurrentBulk upserts with dedup", func(t *testing.T) {
 		store := open(t)
 		defer store.Close()
-		seedAgentForTelemetry(t, store, "agent-a")
+		seedAgentForTelemetry(ctx, t, store, "agent-a")
 
 		batch := []storage.TelemetrySecurityInventoryCurrentRecord{
 			{AgentID: "agent-a", ObservedAt: ts, State: "ok", Enabled: true, EntriesTotal: 1, EntriesJSON: `[1]`},
