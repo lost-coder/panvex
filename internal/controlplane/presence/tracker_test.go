@@ -1,6 +1,8 @@
 package presence
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -80,4 +82,57 @@ func (t *Tracker) TrackedCount() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return len(t.agentTimestamps)
+}
+
+func TestEvaluateStableStateIsIdempotent(t *testing.T) {
+	tr := NewTracker(30*time.Second, 2*time.Minute)
+	base := time.Date(2026, time.July, 2, 12, 0, 0, 0, time.UTC)
+	tr.MarkConnected("a1", base)
+
+	// Первый Evaluate устанавливает baseline online.
+	if got := tr.Evaluate("a1", base.Add(time.Second)); got != StateOnline {
+		t.Fatalf("Evaluate = %v, want online", got)
+	}
+	// 100 повторных Evaluate в том же state — ответ стабилен.
+	for i := 0; i < 100; i++ {
+		if got := tr.Evaluate("a1", base.Add(2*time.Second)); got != StateOnline {
+			t.Fatalf("iteration %d: Evaluate = %v, want online", i, got)
+		}
+	}
+	// Реальный переход по-прежнему детектится и фиксируется.
+	if got := tr.Evaluate("a1", base.Add(time.Minute)); got != StateDegraded {
+		t.Fatalf("Evaluate after 60s idle = %v, want degraded", got)
+	}
+	// И новый state снова стабилен.
+	if got := tr.Evaluate("a1", base.Add(61*time.Second)); got != StateDegraded {
+		t.Fatalf("Evaluate = %v, want degraded (cached transition)", got)
+	}
+}
+
+func TestEvaluateConcurrentReadersNoRace(t *testing.T) {
+	tr := NewTracker(30*time.Second, 2*time.Minute)
+	base := time.Now().UTC()
+	for i := 0; i < 50; i++ {
+		tr.MarkConnected(fmt.Sprintf("a%d", i), base)
+	}
+	var wg sync.WaitGroup
+	for w := 0; w < 8; w++ {
+		wg.Add(1)
+		go func(off int) {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				// Смесь стабильных вызовов и переходов (растущий now).
+				tr.Evaluate(fmt.Sprintf("a%d", (i+off)%50), base.Add(time.Duration(i)*40*time.Millisecond))
+			}
+		}(w)
+	}
+	// Параллельные heartbeat'ы — контендер за write lock.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 1000; i++ {
+			tr.Heartbeat(fmt.Sprintf("a%d", i%50), base.Add(time.Duration(i)*40*time.Millisecond))
+		}
+	}()
+	wg.Wait()
 }
