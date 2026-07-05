@@ -18,8 +18,17 @@ import (
 const (
 	// jobDispatchRetryAfter bounds how long a sent command can remain unacknowledged before redelivery.
 	jobDispatchRetryAfter = 30 * time.Second
-	// jobDispatchRetryInterval defines how often the dispatcher checks for unacknowledged commands.
-	jobDispatchRetryInterval = 5 * time.Second
+	// jobDispatchRetryInterval is the SAFETY-NET cadence at which the
+	// per-agent dispatch loop re-checks for unacknowledged commands. The
+	// primary delivery mechanism is the session Wake channel — every job
+	// enqueue/state change calls notifyAgentSession, which wakes the loop
+	// immediately. The ticker only covers lost wakes and stale-sent
+	// retries, so it does not need to be tight: at a 2000-agent fleet a
+	// 5s tick meant 400 idle PendingForAgent scans/s against the jobs
+	// RWMutex (P6-6.3g, finding #14). 45s keeps the safety net while
+	// cutting that background load ~9x. Job delivery latency is
+	// unaffected (Wake path).
+	jobDispatchRetryInterval = 45 * time.Second
 	// discoveryRefreshInterval is how often the panel re-requests a full client
 	// list from each connected agent, so a Telemt that recovered without a stream
 	// reconnect (and any other drift) is reconciled within one interval even if
