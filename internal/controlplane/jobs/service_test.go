@@ -117,7 +117,7 @@ func TestJobsKeysEvictionViaExpiredJobs(t *testing.T) {
 
 	// Advance past job TTL so ExpireStale(context.Background()) moves it to Expired.
 	now = start.Add(2 * time.Minute)
-	service.ExpireStale(context.Background())
+	service.ListWithContext(context.Background())
 
 	// Now advance past the key eviction TTL.
 	now = start.Add(25 * time.Hour)
@@ -1008,7 +1008,7 @@ func TestExpiryWatermarkTracksEnqueueAndExpiry(t *testing.T) {
 	}
 
 	current = base.Add(61 * time.Second)
-	service.ExpireStale(context.Background())
+	service.ListWithContext(context.Background())
 
 	got, ok := service.Get(shortJob.ID)
 	if !ok || got.Status != StatusExpired {
@@ -1040,7 +1040,7 @@ func TestExpiryWatermarkClearedWhenNothingCanExpire(t *testing.T) {
 		t.Fatalf("enqueue: %v", err)
 	}
 	current = base.Add(2 * time.Minute)
-	service.ExpireStale(context.Background())
+	service.ListWithContext(context.Background())
 
 	service.mu.RLock()
 	defer service.mu.RUnlock()

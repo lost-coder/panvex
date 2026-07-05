@@ -85,27 +85,6 @@ type Deployment struct {
 	LastResetEpochSecs uint64
 }
 
-// DiscoveredRecord describes a proxy client seen on an agent that the
-// panel is NOT currently managing. The operator adopts, ignores, or
-// re-discovers these via the discovery flow.
-type DiscoveredRecord struct {
-	ID                 string
-	AgentID            string
-	ClientName         string
-	Secret             string
-	Status             string
-	TotalOctets        uint64
-	CurrentConnections int
-	ActiveUniqueIPs    int
-	ConnectionLinks    []string
-	MaxTCPConns        int
-	MaxUniqueIPs       int
-	DataQuotaBytes     int64
-	Expiration         string
-	DiscoveredAt       time.Time
-	UpdatedAt          time.Time
-}
-
 // UsageSnapshot is the per-(client, agent) live-counter snapshot that
 // the usage aggregator accumulates. Mirrors the internal
 // clientUsageSnapshot struct on controlplane/server.Server but is

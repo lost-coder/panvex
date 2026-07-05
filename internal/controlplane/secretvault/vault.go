@@ -319,13 +319,3 @@ func IsLegacyEncrypted(value string) bool {
 	return strings.HasPrefix(value, Prefix1) || strings.HasPrefix(value, Prefix2)
 }
 
-// NewHKDFSalt mints a fresh per-install HKDF salt suitable for
-// persistence in cp_secrets and subsequent reuse via NewWithSalt. The
-// salt size matches HKDFSaltBytes.
-func NewHKDFSalt() ([]byte, error) {
-	salt := make([]byte, HKDFSaltBytes)
-	if _, err := rand.Read(salt); err != nil {
-		return nil, err
-	}
-	return salt, nil
-}

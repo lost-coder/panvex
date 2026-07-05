@@ -169,19 +169,6 @@ func (t *LockoutTracker) SetRedactor(fn func(string) string) {
 	t.redactor = fn
 }
 
-// redact returns a privacy-preserving identifier for username. Falls
-// back to a sha256 prefix when no redactor is wired so unwired callers
-// (tests, embedded usage) never leak raw values either.
-func (t *LockoutTracker) redact(username string) string {
-	t.mu.Lock()
-	fn := t.redactor
-	t.mu.Unlock()
-	if fn != nil {
-		return fn(username)
-	}
-	return defaultRedact(username)
-}
-
 // redactLocked is the variant of redact callable while the caller
 // already holds t.mu — used by persistLocked / deletePersistedLocked
 // in their store-error log paths. Reading t.redactor without

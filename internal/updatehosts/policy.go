@@ -17,7 +17,7 @@ type HostPolicy struct {
 
 // PolicyFromEnv builds a HostPolicy from EnvAllowedHosts:
 //   - "*"           -> disabled (any https host accepted)
-//   - unset/empty   -> the default GitHubHosts() set
+//   - unset/empty   -> the default githubHosts set
 //   - "a.com,b.io"  -> exactly those hosts (trimmed, lower-cased)
 //
 // A lone "*" disables; a "*" token mixed into a list is ignored (the list is
