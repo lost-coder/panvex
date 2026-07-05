@@ -10,6 +10,7 @@ package eventbus
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -28,6 +29,28 @@ type Event struct {
 	// envelope serialises this verbatim; the dashboard reacts to gaps with
 	// a broad query refetch.
 	Seq uint64 `json:"seq"`
+	// Raw is the pre-marshaled JSON envelope {"type","data","seq"},
+	// assigned by Publish AFTER Seq so every subscriber ships identical
+	// bytes without re-marshaling per connection (P6-6.3b, finding #14).
+	// Excluded from json.Marshal so marshaling an Event still yields the
+	// same envelope. Consumers treat empty Raw as "marshal yourself"
+	// (fallback for test backends that do not pre-marshal).
+	Raw []byte `json:"-"`
+}
+
+// eventEncodingFailedEnvelope is the fallback payload used when an
+// event's Data cannot be marshaled. Mirrors the former server-side
+// mustJSON fallback byte-for-byte.
+var eventEncodingFailedEnvelope = []byte(`{"type":"server.error","data":{"error":"event encoding failed"}}`)
+
+// marshalEnvelope serialises the full event envelope once. Returns the
+// fallback error envelope when Data is not marshalable.
+func marshalEnvelope(evt Event) []byte {
+	data, err := json.Marshal(evt) // Raw is json:"-", so this is the plain envelope
+	if err != nil {
+		return eventEncodingFailedEnvelope
+	}
+	return data
 }
 
 // Hub is the process-local pub/sub fan-out every server-side caller uses.
@@ -217,6 +240,7 @@ func (h *memoryBackend) Subscribe() (<-chan Event, func()) {
 // dashboard that a resync is required.
 func (h *memoryBackend) Publish(evt Event) {
 	evt.Seq = h.pubSeq.Add(1)
+	evt.Raw = marshalEnvelope(evt)
 	snap := h.subs.Load()
 	if snap == nil {
 		return

@@ -110,8 +110,14 @@ func (s *Server) handleEvents() http.HandlerFunc {
 					return
 				}
 
+				payload := event.Raw
+				if len(payload) == 0 {
+					// Fallback for backends that do not pre-marshal
+					// (test fakes wired via NewHubWithBackend).
+					payload = mustJSON(event)
+				}
 				writeCtx, cancelWrite := context.WithTimeout(ctx, wsWriteTimeout)
-				err := conn.Write(writeCtx, websocket.MessageText, mustJSON(event))
+				err := conn.Write(writeCtx, websocket.MessageText, payload)
 				cancelWrite()
 				if err != nil {
 					// Either a normal close, a slow reader hitting our
