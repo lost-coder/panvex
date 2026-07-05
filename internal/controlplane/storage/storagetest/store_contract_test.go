@@ -1106,6 +1106,11 @@ func (s *memoryStore) AppendAuditEvent(_ context.Context, event storage.AuditEve
 	return nil
 }
 
+func (s *memoryStore) AppendAuditEventsBulk(_ context.Context, events []storage.AuditEventRecord) error {
+	s.auditEvents = append(s.auditEvents, events...)
+	return nil
+}
+
 func (s *memoryStore) LatestAuditChainHash(_ context.Context) (string, error) {
 	if len(s.auditEvents) == 0 {
 		return "", nil

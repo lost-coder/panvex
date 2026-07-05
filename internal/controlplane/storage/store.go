@@ -211,6 +211,12 @@ type JobStore interface {
 // AuditStore persists immutable operator and security events.
 type AuditStore interface {
 	AppendAuditEvent(ctx context.Context, event AuditEventRecord) error
+	// AppendAuditEventsBulk inserts a batch of audit events in one
+	// transaction (P6-6.1b, finding #10). Rows are inserted in slice
+	// order; hash-chain fields (PrevHash/EventHash) are computed by the
+	// producer BEFORE buffering, so bulk insertion does not affect chain
+	// integrity. IDs are unique — no conflict clause.
+	AppendAuditEventsBulk(ctx context.Context, events []AuditEventRecord) error
 	// ListAuditEvents returns the most recent audit events in ascending
 	// chronological order. limit caps the number of rows returned; values
 	// <= 0 fall back to a hard maximum of 1024.
