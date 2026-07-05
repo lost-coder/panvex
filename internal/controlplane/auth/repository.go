@@ -29,16 +29,10 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
-// UserStore is the subset of storage.UserStore the auth Service uses for
-// local-account persistence. auth calls every method of storage.UserStore,
-// so this is a verbatim restatement co-located with the consumer.
-type UserStore interface {
-	PutUser(ctx context.Context, user storage.UserRecord) error
-	DeleteUser(ctx context.Context, userID string) error
-	GetUserByID(ctx context.Context, userID string) (storage.UserRecord, error)
-	GetUserByUsername(ctx context.Context, username string) (storage.UserRecord, error)
-	ListUsers(ctx context.Context) ([]storage.UserRecord, error)
-}
+// Note: there is no local UserStore narrowing — auth calls every method of
+// storage.UserStore, so the Service uses storage.UserStore directly (a
+// package-local restatement would be verbatim, adding no narrowing). Only
+// SessionStore and ConsumedTotpStore below are genuine subsets.
 
 // SessionStore is the subset of storage.SessionStore the auth Service uses.
 // It omits GetSession: auth.GetSession serves reads from the in-memory

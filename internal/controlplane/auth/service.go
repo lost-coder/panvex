@@ -123,7 +123,7 @@ type Service struct {
 	sessions          map[string]Session
 	pendingTotpSetup  map[string]pendingTotpSetup
 	consumedTotp      map[totpUseKey]time.Time
-	userStore         UserStore
+	userStore         storage.UserStore
 	sessionStore      SessionStore
 	consumedTotpStore storage.ConsumedTotpStore
 	vault             *secretvault.Vault
@@ -229,7 +229,7 @@ func NewService() *Service {
 }
 
 // NewServiceWithStore constructs an auth service that persists users through the shared store.
-func NewServiceWithStore(userStore UserStore) *Service {
+func NewServiceWithStore(userStore storage.UserStore) *Service {
 	return &Service{
 		users:            make(map[string]User),
 		usersByID:        make(map[string]User),
