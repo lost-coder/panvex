@@ -10,18 +10,6 @@ export interface NodeOption {
   fleetGroup: string;
 }
 
-export interface FleetGroupChipsProps {
-  groups: FleetGroupOption[];
-  selected: string[];
-  onChange: (selected: string[]) => void;
-}
-
-export interface NodeSelectorProps {
-  nodes: NodeOption[];
-  selectedNodeIds: string[];
-  onChange: (ids: string[]) => void;
-}
-
 export interface ClientFormData {
   name: string;
   userAdTag: string;
@@ -59,18 +47,6 @@ export interface ClientFormSheetProps {
   fleetGroups?: FleetGroupOption[] | undefined;
   /** Agents available for explicit assignment. Omitted → selector hidden. */
   agents?: ClientAgentOption[] | undefined;
-}
-
-export interface ClientAccessSheetProps {
-  fleetGroups: FleetGroupOption[];
-  nodes: NodeOption[];
-  selectedFleetGroupIds: string[];
-  selectedNodeIds: string[];
-  onFleetGroupsChange: (ids: string[]) => void;
-  onNodesChange: (ids: string[]) => void;
-  onSubmit: () => void;
-  onCancel: () => void;
-  loading?: boolean | undefined;
 }
 
 export interface SecretRevealProps {
