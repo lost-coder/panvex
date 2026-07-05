@@ -112,6 +112,12 @@ type Service struct {
 	mirrorAssignments map[ClientID][]Assignment
 	mirrorDeployments map[ClientID]map[string]Deployment // outer=ClientID, inner=AgentID
 	mirrorUsage       map[ClientID]map[string]usageMirror
+	// mirrorNamesIndex maps a client display name to the set of client IDs
+	// carrying that name (P6-6.2a, finding #12). Client names are unique
+	// only within an assignment scope, hence a set. Maintained by
+	// setMirrorClientLocked/deleteMirrorClientLocked — every mirrorClients
+	// mutation MUST go through those helpers.
+	mirrorNamesIndex map[string]map[ClientID]struct{}
 }
 
 // ServiceConfig carries the dependencies for NewService: a
@@ -145,6 +151,44 @@ func NewService(cfg ServiceConfig) *Service {
 		mirrorAssignments: make(map[ClientID][]Assignment),
 		mirrorDeployments: make(map[ClientID]map[string]Deployment),
 		mirrorUsage:       make(map[ClientID]map[string]usageMirror),
+		mirrorNamesIndex:  make(map[string]map[ClientID]struct{}),
+	}
+}
+
+// setMirrorClientLocked writes the client into mirrorClients and keeps
+// mirrorNamesIndex consistent, including name changes (the old name's
+// entry is removed first). Caller must hold s.mu (write).
+func (s *Service) setMirrorClientLocked(c Client) {
+	if prev, ok := s.mirrorClients[c.ID]; ok && prev.Name != c.Name {
+		s.removeNameIndexLocked(prev.Name, c.ID)
+	}
+	s.mirrorClients[c.ID] = c
+	ids := s.mirrorNamesIndex[c.Name]
+	if ids == nil {
+		ids = make(map[ClientID]struct{}, 1)
+		s.mirrorNamesIndex[c.Name] = ids
+	}
+	ids[c.ID] = struct{}{}
+}
+
+// deleteMirrorClientLocked evicts the client from mirrorClients and the
+// name index. Caller must hold s.mu (write).
+func (s *Service) deleteMirrorClientLocked(id ClientID) {
+	if prev, ok := s.mirrorClients[id]; ok {
+		s.removeNameIndexLocked(prev.Name, id)
+	}
+	delete(s.mirrorClients, id)
+}
+
+// removeNameIndexLocked drops one (name, id) pair, deleting the empty set.
+func (s *Service) removeNameIndexLocked(name string, id ClientID) {
+	ids, ok := s.mirrorNamesIndex[name]
+	if !ok {
+		return
+	}
+	delete(ids, id)
+	if len(ids) == 0 {
+		delete(s.mirrorNamesIndex, name)
 	}
 }
 
@@ -248,6 +292,7 @@ func (s *Service) Restore(ctx context.Context) error {
 	s.mirrorAssignments = make(map[ClientID][]Assignment, len(list))
 	s.mirrorDeployments = make(map[ClientID]map[string]Deployment, len(list))
 	s.mirrorUsage = make(map[ClientID]map[string]usageMirror)
+	s.mirrorNamesIndex = make(map[string]map[ClientID]struct{}, len(list))
 
 	for _, c := range list {
 		// The Repository always stores the secret encrypted
@@ -263,7 +308,7 @@ func (s *Service) Restore(ctx context.Context) error {
 			return fmt.Errorf("clients.Service.Restore: decrypt secret for %s: %w", c.ID, err)
 		}
 		c.Secret = plaintext
-		s.mirrorClients[c.ID] = c
+		s.setMirrorClientLocked(c)
 
 		assigns, err := s.repo.ListAssignments(ctx, c.ID)
 		if err != nil {
@@ -499,7 +544,7 @@ func (s *Service) Save(ctx context.Context, c Client) error {
 
 	// Mirror holds plaintext (handler-facing).
 	s.mu.Lock()
-	s.mirrorClients[c.ID] = c
+	s.setMirrorClientLocked(c)
 	s.mu.Unlock()
 	return nil
 }
@@ -531,7 +576,7 @@ func (s *Service) SaveState(ctx context.Context, c Client, assignments []Assignm
 	}
 
 	s.mu.Lock()
-	s.mirrorClients[c.ID] = c
+	s.setMirrorClientLocked(c)
 	s.mirrorAssignments[c.ID] = append([]Assignment(nil), assignments...)
 	dmap := make(map[string]Deployment, len(deployments))
 	for _, d := range deployments {
@@ -551,7 +596,7 @@ func (s *Service) Delete(ctx context.Context, id ClientID) error {
 		return err
 	}
 	s.mu.Lock()
-	delete(s.mirrorClients, id)
+	s.deleteMirrorClientLocked(id)
 	delete(s.mirrorAssignments, id)
 	delete(s.mirrorDeployments, id)
 	delete(s.mirrorUsage, id)
@@ -926,21 +971,22 @@ func (s *Service) MirrorIdentifiersForAgent(agentID string) (names, secrets map[
 	return names, secrets
 }
 
-// MirrorResolveIDByName resolves a panel client ID from the mirror's
-// client + assignment maps. Mirror-side counterpart of the server's
-// resolveClientIDByName.
+// MirrorResolveIDByName resolves a panel client ID from the mirror.
+// O(candidates-with-that-name) via mirrorNamesIndex (P6-6.2a, finding
+// #12) — the previous implementation copied BOTH mirror maps per call,
+// which the snapshot conversion loops invoked once per usage/IP row.
+// Semantics match the pure ResolveIDByName: tombstoned (DeletedAt)
+// clients are NOT filtered, and ties between same-name candidates
+// resolve nondeterministically (map iteration), as before.
 func (s *Service) MirrorResolveIDByName(agentID, agentFleetGroupID, clientName string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	clientsByID := make(map[string]Client, len(s.mirrorClients))
-	assignmentsByClient := make(map[string][]Assignment, len(s.mirrorAssignments))
-	for id, c := range s.mirrorClients {
-		clientsByID[string(id)] = c
+	for id := range s.mirrorNamesIndex[clientName] {
+		if assignmentMatchesAgent(s.mirrorAssignments[id], agentID, agentFleetGroupID) {
+			return string(id)
+		}
 	}
-	for id, as := range s.mirrorAssignments {
-		assignmentsByClient[string(id)] = as
-	}
-	return ResolveIDByName(clientsByID, assignmentsByClient, agentID, agentFleetGroupID, clientName)
+	return ""
 }
 
 // MirrorAssignmentsAndDeployments returns defensive copies of the
@@ -968,7 +1014,7 @@ func (s *Service) MirrorReplaceInMemory(client Client, assignments []Assignment,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cid := client.ID
-	s.mirrorClients[cid] = client
+	s.setMirrorClientLocked(client)
 	s.mirrorAssignments[cid] = append([]Assignment(nil), assignments...)
 	next := make(map[string]Deployment, len(deployments))
 	for _, d := range deployments {
