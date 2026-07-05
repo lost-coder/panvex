@@ -221,6 +221,12 @@ func (s *Server) purgeAgentInMemory(agentID string) {
 	// wiring was missing). ReachabilityTracker has its own lock and never calls
 	// back into the server, so calling it under s.mu preserves lock ordering.
 	s.telemtReach.Forget(agentID)
+	// Drop the agent's runtime-events ring (P6-6.3e): without this the
+	// per-agent ring leaks after deregistration and a reused agentID
+	// would resurrect stale events.
+	if s.runtimeEvents != nil {
+		s.runtimeEvents.Remove(agentID)
+	}
 	s.revokedAgentIDs[agentID] = struct{}{}
 	s.mu.Unlock()
 }

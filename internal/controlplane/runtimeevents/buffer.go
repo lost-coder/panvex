@@ -31,10 +31,17 @@ type Buffer struct {
 	rings            map[string]*ring
 }
 
+// ring is a fixed-capacity circular buffer (P6-6.3e, finding #14). items
+// grows up to cap once and is then reused in place: head is the index of
+// the OLDEST live element, count the number of live elements. Append is
+// O(1) — the previous implementation memmoved the whole slice
+// (copy(items, items[1:])) on every append once full.
 type ring struct {
 	mu    sync.Mutex
 	items []Event
 	cap   int
+	head  int
+	count int
 	// lastSeq/lastTs form the reconnect-replay watermark (audit #9b):
 	// an event with seq and ts both at-or-below the watermark is a
 	// replay. A genuine agent restart rewinds seq but carries a newer
@@ -63,11 +70,18 @@ func (r *ring) appendLocked(ev Event) bool {
 		r.lastSeq = ev.Seq
 		r.lastTs = ev.Ts
 	}
-	if len(r.items) >= r.cap {
-		copy(r.items, r.items[1:])
-		r.items = r.items[:len(r.items)-1]
+	if r.count < r.cap {
+		if len(r.items) < r.cap {
+			r.items = append(r.items, ev)
+		} else {
+			r.items[(r.head+r.count)%r.cap] = ev
+		}
+		r.count++
+		return true
 	}
-	r.items = append(r.items, ev)
+	// Full: overwrite the oldest slot and advance head.
+	r.items[r.head] = ev
+	r.head = (r.head + 1) % r.cap
 	return true
 }
 
@@ -104,8 +118,10 @@ func (b *Buffer) Snapshot(agentID string, levels []string, limit int) []Event {
 		return nil
 	}
 	r.mu.Lock()
-	snapshot := make([]Event, len(r.items))
-	copy(snapshot, r.items)
+	snapshot := make([]Event, r.count)
+	for i := 0; i < r.count; i++ {
+		snapshot[i] = r.items[(r.head+i)%r.cap]
+	}
 	r.mu.Unlock()
 
 	levelSet := levelSetOf(levels)
@@ -121,6 +137,15 @@ func (b *Buffer) Snapshot(agentID string, levels []string, limit int) []Event {
 		}
 	}
 	return out
+}
+
+// Remove drops the agent's ring entirely. Called from the deregistration
+// path (purgeAgentInMemory) so per-agent rings do not leak after an agent
+// is removed, and a reused agentID starts from an empty ring.
+func (b *Buffer) Remove(agentID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.rings, agentID)
 }
 
 func (b *Buffer) getOrCreate(agentID string) *ring {

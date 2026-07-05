@@ -132,3 +132,69 @@ func TestAppendBatchAdmitsAgentRestart(t *testing.T) {
 		t.Fatalf("ring holds %d events, want 4", got)
 	}
 }
+
+func TestRingEvictionKeepsNewestInOrder(t *testing.T) {
+	b := runtimeevents.New(3)
+	base := time.Date(2026, time.July, 2, 12, 0, 0, 0, time.UTC)
+	// 7 событий в ринг ёмкостью 3 → живут 5, 6, 7 (три обёртки head'а).
+	for i := 1; i <= 7; i++ {
+		b.Append("a1", runtimeevents.Event{Ts: base.Add(time.Duration(i) * time.Second), Level: "info", Message: fmt.Sprintf("m%d", i)})
+	}
+	got := b.Snapshot("a1", nil, 0)
+	want := []string{"m7", "m6", "m5"} // newest first
+	if len(got) != len(want) {
+		t.Fatalf("snapshot len = %d, want %d (%+v)", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i].Message != w {
+			t.Fatalf("snapshot[%d] = %q, want %q (full: %+v)", i, got[i].Message, w, got)
+		}
+	}
+}
+
+func TestRingSnapshotFiltersAndLimitsAcrossWrap(t *testing.T) {
+	b := runtimeevents.New(4)
+	for i := 1; i <= 10; i++ {
+		level := "info"
+		if i%2 == 0 {
+			level = "error"
+		}
+		b.Append("a1", runtimeevents.Event{Level: level, Message: fmt.Sprintf("m%d", i)})
+	}
+	// Живут m7..m10; error среди них — m8, m10; newest-first + limit 1.
+	got := b.Snapshot("a1", []string{"error"}, 1)
+	if len(got) != 1 || got[0].Message != "m10" {
+		t.Fatalf("filtered snapshot = %+v, want single m10", got)
+	}
+}
+
+func TestRemoveDropsAgentRing(t *testing.T) {
+	b := runtimeevents.New(3)
+	b.Append("a1", runtimeevents.Event{Message: "m1"})
+	b.Append("a2", runtimeevents.Event{Message: "n1"})
+
+	b.Remove("a1")
+
+	if got := b.Snapshot("a1", nil, 0); len(got) != 0 {
+		t.Fatalf("a1 snapshot after Remove = %+v, want empty", got)
+	}
+	if got := b.Snapshot("a2", nil, 0); len(got) != 1 {
+		t.Fatalf("a2 snapshot = %+v, want untouched", got)
+	}
+	// Повторный Append после Remove создаёт свежий ринг (нет «воскресших»).
+	b.Append("a1", runtimeevents.Event{Message: "fresh"})
+	if got := b.Snapshot("a1", nil, 0); len(got) != 1 || got[0].Message != "fresh" {
+		t.Fatalf("a1 snapshot after re-append = %+v, want single fresh", got)
+	}
+}
+
+func BenchmarkAppendFullRing(b *testing.B) {
+	buf := runtimeevents.New(256)
+	for i := 0; i < 256; i++ {
+		buf.Append("a1", runtimeevents.Event{Message: "warm"})
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		buf.Append("a1", runtimeevents.Event{Message: "x"})
+	}
+}
