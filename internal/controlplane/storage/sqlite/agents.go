@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -93,6 +94,22 @@ func (s *Store) GetAgentCertPin(ctx context.Context, agentID string) ([]byte, er
 		return nil, err
 	}
 	return pin, nil
+}
+
+// EarliestAgentCertExpiry returns MIN(cert_expires_at_unix) or nil when
+// no agent carries an expiry (P6-6.3f).
+func (s *Store) EarliestAgentCertExpiry(ctx context.Context) (*time.Time, error) {
+	var earliest sql.NullInt64
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT MIN(cert_expires_at_unix) FROM agents`,
+	).Scan(&earliest); err != nil {
+		return nil, err
+	}
+	if !earliest.Valid {
+		return nil, nil
+	}
+	t := fromUnix(earliest.Int64)
+	return &t, nil
 }
 
 func (s *Store) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {

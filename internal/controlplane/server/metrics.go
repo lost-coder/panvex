@@ -817,7 +817,8 @@ func (s *Server) refreshPolledMetrics(ctx context.Context) {
 // Unlike the rest of refreshPolledMetrics this touches the store, so it
 // is throttled to once per minute (the poller ticks every 5s). Only
 // called from the single poller goroutine — no locking on the
-// timestamp field.
+// timestamp field. P6-6.3f: a single MIN query replaced the previous
+// full ListAgents scan (O(fleet) rows over the wire per refresh).
 func (s *Server) refreshAgentCertExpiry(ctx context.Context) {
 	if s.obs == nil || s.store == nil {
 		return
@@ -829,25 +830,16 @@ func (s *Server) refreshAgentCertExpiry(ctx context.Context) {
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	agents, err := s.store.ListAgents(ctx)
+	earliest, err := s.store.EarliestAgentCertExpiry(ctx)
 	if err != nil {
 		// Don't advance the throttle stamp on a transient store error —
 		// retry on the next poller tick instead of blacking out the gauge
 		// for a full minute.
-		slog.Warn("metrics: list agents for cert expiry failed", "err", err)
+		slog.Warn("metrics: earliest agent cert expiry query failed", "err", err)
 		return
 	}
 	s.agentCertExpiryRefreshedAt = now
-	var earliest time.Time
-	for _, a := range agents {
-		if a.CertExpiresAt == nil {
-			continue
-		}
-		if earliest.IsZero() || a.CertExpiresAt.Before(earliest) {
-			earliest = *a.CertExpiresAt
-		}
-	}
-	if earliest.IsZero() {
+	if earliest == nil {
 		s.obs.agentCertEarliestExpiryTimestamp.Set(0)
 		return
 	}

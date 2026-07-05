@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -57,6 +58,22 @@ func agentRecordToUpsertParams(agent storage.AgentRecord) dbsqlc.UpsertAgentPara
 // storage.AgentRecord shape lives in agentRecordFromRow below; if a
 // future query gets migrated, that helper stays the only place that
 // knows about the SQL → domain mapping.
+// EarliestAgentCertExpiry returns MIN(cert_expires_at) or nil when no
+// agent carries an expiry (P6-6.3f).
+func (s *Store) EarliestAgentCertExpiry(ctx context.Context) (*time.Time, error) {
+	var earliest sql.NullTime
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT MIN(cert_expires_at) FROM agents`,
+	).Scan(&earliest); err != nil {
+		return nil, err
+	}
+	if !earliest.Valid {
+		return nil, nil
+	}
+	t := earliest.Time.UTC()
+	return &t, nil
+}
+
 func (s *Store) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {
 	rows, err := dbsqlc.New(s.db).ListAgents(ctx)
 	if err != nil {
