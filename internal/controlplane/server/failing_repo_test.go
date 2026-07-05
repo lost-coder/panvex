@@ -15,8 +15,13 @@ package server
 
 import (
 	"context"
+	"database/sql"
+	"testing"
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/discovered"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 )
 
 // failingClientsRepository wraps a real clients.Repository and can inject
@@ -72,4 +77,42 @@ func (r *failingClientsRepository) UpsertUsage(ctx context.Context, u clients.Us
 
 func (r *failingClientsRepository) UpsertUsageBulk(ctx context.Context, batch []clients.Usage) error {
 	return r.upsertUsageBulkErr
+}
+
+// testOverrideUoW reproduces the removed production ClientsRepoOverride seam
+// on the test side: rs.Clients() inside a UoW callback returns the swapped
+// (usually failing) repository, while Discovered() stays the real tx-bound
+// one. P5 moved this out of production wiring (audit #19).
+type testOverrideUoW struct {
+	inner   uow.UnitOfWork
+	clients clients.Repository
+}
+
+func (a *testOverrideUoW) Do(ctx context.Context, fn func(rs clients.ClientsRepoSet) error) error {
+	return a.inner.Do(ctx, func(rs uow.RepoSet) error {
+		return fn(&testOverrideRepoSet{inner: rs, clients: a.clients})
+	})
+}
+
+type testOverrideRepoSet struct {
+	inner   uow.RepoSet
+	clients clients.Repository
+}
+
+func (s *testOverrideRepoSet) Clients() clients.Repository       { return s.clients }
+func (s *testOverrideRepoSet) Discovered() discovered.Repository { return s.inner.Discovered() }
+
+// swapClientsRepoForTests rebuilds s.clientsSvc so both the direct Repo and
+// rs.Clients() inside the UoW point at repo. Call right after constructing the
+// server, before generating load. rawDB is the *sql.DB the test's store wraps
+// (failingStore wraps a real SQLite store).
+func swapClientsRepoForTests(t *testing.T, s *Server, rawDB *sql.DB, repo clients.Repository) {
+	t.Helper()
+	s.clientsSvc = clients.NewService(clients.ServiceConfig{
+		Repo:           repo,
+		DiscoveredRepo: sqlite.NewDiscoveredRepository(rawDB),
+		UoW:            &testOverrideUoW{inner: sqlite.NewUoW(rawDB), clients: repo},
+		Vault:          s.secretVault,
+		Now:            s.now,
+	})
 }

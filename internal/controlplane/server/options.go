@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
-	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
@@ -96,11 +95,4 @@ type Options struct {
 	// cp_secrets at boot). The factory closes over the *sql.DB and
 	// gets the decrypter when the vault is ready.
 	WebhookStorageFactory func(decrypt webhooks.SecretDecrypter) webhooks.Storage
-	// ClientsRepoOverride, when non-nil, replaces the clients.Repository
-	// that would normally be built from the concrete store type in
-	// initStoreBackedSubsystems. Intended exclusively for failure-injection
-	// tests that wrap a real SQLite store in a failingStore test double
-	// (which is not a *sqlite.Store, so the type switch cannot select it).
-	// Production wiring must leave this field nil.
-	ClientsRepoOverride clients.Repository
 }

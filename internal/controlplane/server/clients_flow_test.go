@@ -52,12 +52,12 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	}
 
 	server := mustNew(t, Options{
-		LoginTimingFloor:    -1,
-		Now:                 func() time.Time { return now },
-		Store:               failing,
-		ClientsRepoOverride: failingRepo,
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            failing,
 	})
 	defer server.Close()
+	swapClientsRepoForTests(t, server, baseStore.DB(), failingRepo)
 
 	// Seed in-memory state directly: a live client assigned to the agent.
 	clientID := "client-1"

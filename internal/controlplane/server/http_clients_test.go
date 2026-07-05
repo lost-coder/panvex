@@ -683,20 +683,20 @@ func TestHTTPClientsCreateReturnsInternalErrorWhenPersistenceFails(t *testing.T)
 	store := &failingStore{MigrationStore: sqliteStore}
 	// After Wave 4.2 the production path is clientsSvc.SaveState →
 	// uow.Do → clients.Repository.Save, not s.store.PutClient. Failure is
-	// injected at the Repository layer via failingClientsRepository and
-	// wired through Options.ClientsRepoOverride. The saveErr is set after
-	// server construction (same timing as the old store.putClientErr) so
-	// that setup writes (fleet group, agent seed) still succeed.
+	// injected at the Repository layer via failingClientsRepository, swapped
+	// into s.clientsSvc right after construction (swapClientsRepoForTests).
+	// The saveErr is set after server construction (same timing as the old
+	// store.putClientErr) so setup writes (fleet group, agent seed) succeed.
 	failingRepo := &failingClientsRepository{
 		Repository: sqlite.NewClientsRepository(sqliteStore.DB()),
 	}
 	server := mustNew(t, Options{
-		LoginTimingFloor:    -1,
-		Now:                 func() time.Time { return now },
-		Store:               store,
-		ClientsRepoOverride: failingRepo,
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
 	})
 	defer server.Close()
+	swapClientsRepoForTests(t, server, sqliteStore.DB(), failingRepo)
 	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
 		Username: "admin",
 		Password: "Admin1password",
