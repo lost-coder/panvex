@@ -391,33 +391,6 @@ type ClientStore interface {
 	DeleteClientUsageByClient(ctx context.Context, clientID string) error
 }
 
-// DiscoveredClientStore persists discovered clients via the raw storage layer.
-//
-// Deprecated: Wave 4.2 replaced direct Store access with discovered.Repository.
-// The Transact-based persistAdoptedClient path is now fully migrated to UnitOfWork.
-// No longer embedded in the Store aggregate (AC#10). Retained as a standalone interface
-// for MigrationStore (migrate-schema CLI) and storagetest Transact contract tests.
-type DiscoveredClientStore interface {
-	PutDiscoveredClient(ctx context.Context, record DiscoveredClientRecord) error
-	ListDiscoveredClients(ctx context.Context) ([]DiscoveredClientRecord, error)
-	ListDiscoveredClientsByAgent(ctx context.Context, agentID string) ([]DiscoveredClientRecord, error)
-	GetDiscoveredClient(ctx context.Context, id string) (DiscoveredClientRecord, error)
-	// GetDiscoveredClientByAgentAndName looks up a discovered_clients row by
-	// its natural key (agent_id, client_name). Returns ErrNotFound when no
-	// row exists. Used by the reconcile path to dedupe repeated FULL_SNAPSHOT
-	// reports from an agent so the pending-review list does not grow unbounded
-	// (see P2-LOG-02, finding L-10 / M-C4).
-	GetDiscoveredClientByAgentAndName(ctx context.Context, agentID string, clientName string) (DiscoveredClientRecord, error)
-	UpdateDiscoveredClientStatus(ctx context.Context, id string, status string, updatedAt time.Time) error
-	// UpdateDiscoveredClientStatusBulk flips the status for every ID in
-	// the slice in a single SQL statement (Q2.U-P-10). Empty slice is a
-	// no-op. The bulk variant exists so the duplicate-secret adoption
-	// flow does not issue N sequential UPDATEs as the discovered table
-	// grows.
-	UpdateDiscoveredClientStatusBulk(ctx context.Context, ids []string, status string, updatedAt time.Time) error
-	DeleteDiscoveredClient(ctx context.Context, id string) error
-}
-
 // TimeseriesStore persists historical metric points for server load, DC health, and client IPs.
 type TimeseriesStore interface {
 	AppendServerLoadPoint(ctx context.Context, record ServerLoadPointRecord) error
@@ -600,9 +573,10 @@ type ConfigApplyBatchStore interface {
 
 // MigrationStore is the full storage surface required by the
 // migrate-schema CLI subcommand and storagetest Transact contract tests.
-// It composes Store with the legacy row-level client and discovered-client
-// interfaces so migration code can iterate every table without needing to
-// assemble per-domain Repositories.
+// It composes Store with the legacy row-level client interface so migration
+// code can iterate every table without needing to assemble per-domain
+// Repositories. discovered_clients is copied as raw rows (no typed method),
+// so no discovered-client interface is embedded here.
 //
 // Production code MUST NOT accept or return MigrationStore — it exists
 // only for offline migration tooling and low-level storage contract tests.
@@ -610,7 +584,6 @@ type ConfigApplyBatchStore interface {
 type MigrationStore interface {
 	Store
 	ClientStore
-	DiscoveredClientStore
 }
 
 // TxFn is the callback invoked by Store.Transact. The tx argument

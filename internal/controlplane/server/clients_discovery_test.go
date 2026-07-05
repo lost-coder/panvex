@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"sync"
@@ -12,6 +13,58 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
+
+// discoveredSeed carries the discovered_clients columns a test plants
+// directly. The typed PutDiscoveredClient store method was removed in the P5
+// ballast cleanup, so tests seed rows via raw SQL through store.DB(). Columns
+// not listed here (max_tcp_conns, max_unique_ips, data_quota_bytes,
+// expiration) rely on their schema defaults.
+type discoveredSeed struct {
+	id, agentID, clientName, secret, status string
+	totalOctets                             uint64
+	currentConnections, activeUniqueIPs     int
+	connectionLinks                         []string
+	discoveredAt, updatedAt                 time.Time
+}
+
+// seedDiscoveredClient inserts one discovered_clients row directly (SQLite
+// dialect: ? placeholders, discovered_at_unix/updated_at_unix columns, JSON
+// connection_links).
+func seedDiscoveredClient(t *testing.T, store *sqlite.Store, s discoveredSeed) {
+	t.Helper()
+	links := "[]"
+	if len(s.connectionLinks) > 0 {
+		b, err := json.Marshal(s.connectionLinks)
+		if err != nil {
+			t.Fatalf("marshal connection_links: %v", err)
+		}
+		links = string(b)
+	}
+	if _, err := store.DB().ExecContext(context.Background(), `
+		INSERT INTO discovered_clients (
+			id, agent_id, client_name, secret, status,
+			total_octets, current_connections, active_unique_ips,
+			connection_links, discovered_at_unix, updated_at_unix
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, s.id, s.agentID, s.clientName, s.secret, s.status,
+		s.totalOctets, s.currentConnections, s.activeUniqueIPs,
+		links, s.discoveredAt.UTC().Unix(), s.updatedAt.UTC().Unix()); err != nil {
+		t.Fatalf("seed discovered_clients: %v", err)
+	}
+}
+
+// discoveredStatus reads a discovered_clients row's status column via raw SQL,
+// replacing the removed GetDiscoveredClient store method.
+func discoveredStatus(t *testing.T, store *sqlite.Store, id string) string {
+	t.Helper()
+	var status string
+	if err := store.DB().QueryRowContext(context.Background(), `
+		SELECT status FROM discovered_clients WHERE id = ?
+	`, id).Scan(&status); err != nil {
+		t.Fatalf("read discovered status for %q: %v", id, err)
+	}
+	return status
+}
 
 // TestUpsertDiscoveredClientDedupes verifies that repeated FULL_SNAPSHOT
 // observations of the same (agent_id, client_name) produce exactly one
@@ -203,8 +256,10 @@ func TestUpsertDiscoveredClientPreservesIgnoredStatus(t *testing.T) {
 	if len(existing) != 1 {
 		t.Fatalf("precondition: want 1 discovered client, got %d", len(existing))
 	}
-	if err := store.UpdateDiscoveredClientStatus(ctx, existing[0].ID, discoveredClientStatusIgnored, now); err != nil {
-		t.Fatalf("UpdateDiscoveredClientStatus() error = %v", err)
+	if _, err := store.DB().ExecContext(ctx, `
+		UPDATE discovered_clients SET status = ?, updated_at_unix = ? WHERE id = ?
+	`, discoveredClientStatusIgnored, now.UTC().Unix(), existing[0].ID); err != nil {
+		t.Fatalf("update discovered status: %v", err)
 	}
 
 	// Another reconcile pass arrives with the same (agent, name). The upsert
@@ -260,17 +315,15 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 	defer server.Close()
 
 	discoveredID := "discovered-1"
-	if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
-		ID:           discoveredID,
-		AgentID:      agentID,
-		ClientName:   "external-charlie",
-		Secret:       "3333333333333333cccccccccccccccc",
-		Status:       discoveredClientStatusPendingReview,
-		DiscoveredAt: now,
-		UpdatedAt:    now,
-	}); err != nil {
-		t.Fatalf("PutDiscoveredClient() error = %v", err)
-	}
+	seedDiscoveredClient(t, store, discoveredSeed{
+		id:           discoveredID,
+		agentID:      agentID,
+		clientName:   "external-charlie",
+		secret:       "3333333333333333cccccccccccccccc",
+		status:       discoveredClientStatusPendingReview,
+		discoveredAt: now,
+		updatedAt:    now,
+	})
 
 	const workers = 5
 	var (
@@ -330,12 +383,8 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 	}
 
 	// Discovered record must be in adopted status.
-	dc, err := store.GetDiscoveredClient(ctx, discoveredID)
-	if err != nil {
-		t.Fatalf("GetDiscoveredClient() error = %v", err)
-	}
-	if dc.Status != discoveredClientStatusAdopted {
-		t.Fatalf("discovered status = %q, want %q", dc.Status, discoveredClientStatusAdopted)
+	if status := discoveredStatus(t, store, discoveredID); status != discoveredClientStatusAdopted {
+		t.Fatalf("discovered status = %q, want %q", status, discoveredClientStatusAdopted)
 	}
 }
 
@@ -418,17 +467,15 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 		{discoveredA, agentA},
 		{discoveredB, agentB},
 	} {
-		if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
-			ID:           tc.id,
-			AgentID:      tc.agentID,
-			ClientName:   clientName,
-			Secret:       clientSecret,
-			Status:       discoveredClientStatusPendingReview,
-			DiscoveredAt: now,
-			UpdatedAt:    now,
-		}); err != nil {
-			t.Fatalf("PutDiscoveredClient(%q) error = %v", tc.id, err)
-		}
+		seedDiscoveredClient(t, store, discoveredSeed{
+			id:           tc.id,
+			agentID:      tc.agentID,
+			clientName:   clientName,
+			secret:       clientSecret,
+			status:       discoveredClientStatusPendingReview,
+			discoveredAt: now,
+			updatedAt:    now,
+		})
 	}
 
 	// Fire the two merges concurrently.
@@ -502,12 +549,8 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 	// Both discovered records flipped to adopted (winner by direct
 	// update, loser by markDuplicateDiscoveredClientsAdopted).
 	for _, id := range []string{discoveredA, discoveredB} {
-		dc, err := store.GetDiscoveredClient(ctx, id)
-		if err != nil {
-			t.Fatalf("GetDiscoveredClient(%q) error = %v", id, err)
-		}
-		if dc.Status != discoveredClientStatusAdopted {
-			t.Fatalf("discovered %q status = %q, want %q", id, dc.Status, discoveredClientStatusAdopted)
+		if status := discoveredStatus(t, store, id); status != discoveredClientStatusAdopted {
+			t.Fatalf("discovered %q status = %q, want %q", id, status, discoveredClientStatusAdopted)
 		}
 	}
 }
@@ -612,20 +655,18 @@ func TestRestoreStoredClients_RehydratesUsageFromDiscovered(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("PutClientAssignment() error = %v", err)
 	}
-	if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
-		ID:                 "discovered-rehydrate-1",
-		AgentID:            agentID,
-		ClientName:         "external-delta",
-		Secret:             "4444444444444444dddddddddddddddd",
-		Status:             discoveredClientStatusAdopted,
-		TotalOctets:        9001,
-		CurrentConnections: 2,
-		ActiveUniqueIPs:    3,
-		DiscoveredAt:       now.Add(-time.Hour),
-		UpdatedAt:          now.Add(-time.Minute),
-	}); err != nil {
-		t.Fatalf("PutDiscoveredClient() error = %v", err)
-	}
+	seedDiscoveredClient(t, store, discoveredSeed{
+		id:                 "discovered-rehydrate-1",
+		agentID:            agentID,
+		clientName:         "external-delta",
+		secret:             "4444444444444444dddddddddddddddd",
+		status:             discoveredClientStatusAdopted,
+		totalOctets:        9001,
+		currentConnections: 2,
+		activeUniqueIPs:    3,
+		discoveredAt:       now.Add(-time.Hour),
+		updatedAt:          now.Add(-time.Minute),
+	})
 
 	// Fresh Server simulates a panel restart: the in-memory clientUsage
 	// map is empty. restoreStoredClients must repopulate it from the
@@ -716,18 +757,16 @@ func TestRestoreStoredClients_PrefersPersistedUsage(t *testing.T) {
 
 	// Stale discovered snapshot — would be picked up by the fallback,
 	// but persisted usage should take precedence.
-	if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
-		ID:           "discovered-persisted-1",
-		AgentID:      agentID,
-		ClientName:   "external-echo",
-		Secret:       "5555555555555555eeeeeeeeeeeeeeee",
-		Status:       discoveredClientStatusAdopted,
-		TotalOctets:  111, // drifted — must be ignored
-		DiscoveredAt: now.Add(-time.Hour),
-		UpdatedAt:    now.Add(-time.Hour),
-	}); err != nil {
-		t.Fatalf("PutDiscoveredClient() error = %v", err)
-	}
+	seedDiscoveredClient(t, store, discoveredSeed{
+		id:           "discovered-persisted-1",
+		agentID:      agentID,
+		clientName:   "external-echo",
+		secret:       "5555555555555555eeeeeeeeeeeeeeee",
+		status:       discoveredClientStatusAdopted,
+		totalOctets:  111, // drifted — must be ignored
+		discoveredAt: now.Add(-time.Hour),
+		updatedAt:    now.Add(-time.Hour),
+	})
 
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
@@ -784,18 +823,16 @@ func TestAdoptDiscoveredClientGeneratesSubscriptionToken(t *testing.T) {
 	defer server.Close()
 
 	discoveredID := "discovered-token-1"
-	if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
-		ID:              discoveredID,
-		AgentID:         agentID,
-		ClientName:      "imported-dave",
-		Secret:          "4444444444444444dddddddddddddddd",
-		Status:          discoveredClientStatusPendingReview,
-		ConnectionLinks: []string{"https://t.me/proxy?server=nl1.example.com&port=443&secret=ee44"},
-		DiscoveredAt:    now,
-		UpdatedAt:       now,
-	}); err != nil {
-		t.Fatalf("PutDiscoveredClient() error = %v", err)
-	}
+	seedDiscoveredClient(t, store, discoveredSeed{
+		id:              discoveredID,
+		agentID:         agentID,
+		clientName:      "imported-dave",
+		secret:          "4444444444444444dddddddddddddddd",
+		status:          discoveredClientStatusPendingReview,
+		connectionLinks: []string{"https://t.me/proxy?server=nl1.example.com&port=443&secret=ee44"},
+		discoveredAt:    now,
+		updatedAt:       now,
+	})
 
 	client, err := server.adoptDiscoveredClient(ctx, discoveredID, "operator-1", now)
 	if err != nil {

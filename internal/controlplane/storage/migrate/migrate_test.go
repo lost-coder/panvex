@@ -494,16 +494,16 @@ func populateExtraTables(t *testing.T, store storage.MigrationStore, fleetGroupI
 	}); err != nil {
 		t.Fatalf("PutClient() error = %v", err)
 	}
-	if err := store.PutDiscoveredClient(ctx, storage.DiscoveredClientRecord{
-		ID:           "disc-000001",
-		AgentID:      "agent-000001",
-		ClientName:   "found-1",
-		Secret:       "found-secret",
-		Status:       "pending_review",
-		DiscoveredAt: now,
-		UpdatedAt:    now,
-	}); err != nil {
-		t.Fatalf("PutDiscoveredClient() error = %v", err)
+	// discovered_clients is migrated as raw rows (no typed store method), so
+	// the source fixture is seeded via raw SQL. The migrate source is always
+	// SQLite (Run rejects non-SQLite sources), hence the discovered_at_unix/
+	// updated_at_unix column names and ? placeholders.
+	if _, err := store.(rawDBStore).DB().ExecContext(ctx, `
+		INSERT INTO discovered_clients
+			(id, agent_id, client_name, secret, status, discovered_at_unix, updated_at_unix)
+		VALUES (?, ?, ?, ?, 'pending_review', ?, ?)
+	`, "disc-000001", "agent-000001", "found-1", "found-secret", now.UTC().Unix(), now.UTC().Unix()); err != nil {
+		t.Fatalf("insert discovered_clients: %v", err)
 	}
 	if err := store.PutAgentRevocation(ctx, storage.AgentRevocationRecord{
 		AgentID:       "agent-000001",

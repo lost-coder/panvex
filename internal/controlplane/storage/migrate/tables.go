@@ -34,7 +34,6 @@ var migratedTables = map[string]string{
 	"client_deployments":                "typed: ListClientDeployments → PutClientDeployment",
 	"panel_settings":                    "typed singleton: GetPanelSettings → PutPanelSettings",
 	"certificate_authority":             "typed singleton: GetCertificateAuthority → PutCertificateAuthority",
-	"discovered_clients":                "typed: ListDiscoveredClients → PutDiscoveredClient",
 
 	// --- typed Store-method copies (Tier 1 + Tier 2, finding L-5) ---
 	"agent_revocations":        "typed: ListAgentRevocations → PutAgentRevocation",
@@ -49,9 +48,10 @@ var migratedTables = map[string]string{
 	"cp_secrets":               "typed (raw bytes): ListCPSecrets → PutCPSecret",
 
 	// --- raw row-copy (ciphertext / out-of-MigrationStore registries) ---
-	"webhook_endpoints": "raw row-copy: ciphertext column copied verbatim, no encrypt/decrypt",
-	"webhook_outbox":    "raw row-copy: payload copied verbatim",
-	"runtime_settings":  "raw row-copy: settings registry kv table copied verbatim",
+	"webhook_endpoints":  "raw row-copy: ciphertext column copied verbatim, no encrypt/decrypt",
+	"webhook_outbox":     "raw row-copy: payload copied verbatim",
+	"runtime_settings":   "raw row-copy: settings registry kv table copied verbatim",
+	"discovered_clients": "raw row-copy: SQLite discovered_at_unix vs Postgres discovered_at, dynamic SELECT * → INSERT",
 
 	// --- Telemt config targets (operator-desired config per scope) ---
 	"agent_config_targets": "typed: ListAgentConfigTargets → UpsertAgentConfigTarget",
