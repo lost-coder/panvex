@@ -1,12 +1,11 @@
-// Package eventbus provides an in-process audit/event pub/sub facade with a
-// pluggable Backend interface. The current implementation is an in-memory
-// broadcast hub extracted from internal/controlplane/server (event_hub.go)
-// by P3-ARCH-01e as preparation for P3-ARCH-02 where a NATS- or Redis-backed
-// Backend will be plugged in for HA control-plane deployments.
+// Package eventbus provides an in-process audit/event pub/sub facade. It is
+// an in-memory broadcast hub extracted from internal/controlplane/server
+// (event_hub.go) by P3-ARCH-01e. Single-instance by design — the panel does
+// not scale horizontally (owner decision) — so the former pluggable Backend
+// seam was collapsed into the concrete memoryBackend (P5, audit #19).
 //
 // The Hub type is the public facade callers interact with. Publish and
-// Subscribe are the only two operations application code needs; Backend is
-// the seam for transport-specific implementations.
+// Subscribe are the only two operations application code needs.
 package eventbus
 
 import (
@@ -31,49 +30,17 @@ type Event struct {
 	Seq uint64 `json:"seq"`
 }
 
-// Backend is the pluggable transport seam. The default in-process
-// implementation is memoryBackend (returned by NewHub); a future
-// NATS/Redis-backed implementation for P3-ARCH-02 will satisfy the same
-// interface so the Server can swap transports without touching call sites.
-//
-// Implementations MUST be safe for concurrent use. Publish must be
-// non-blocking for slow subscribers — a stuck consumer must not stall any
-// publisher or other consumer. Subscribe returns a receive-only channel and
-// a cancel func the caller must invoke to release resources (typically via
-// defer).
-//
-// Implementations MUST assign Event.Seq from a backend-global monotonic
-// counter before fan-out.
-type Backend interface {
-	Publish(evt Event)
-	Subscribe() (<-chan Event, func())
-	// SubscriberCount returns the current number of active subscribers.
-	// Used by the metrics subsystem.
-	SubscriberCount() int
-	// SetDropHook installs a callback invoked every time an event is dropped
-	// for a slow subscriber. The hook MUST be non-blocking; it runs outside
-	// any backend lock. Passing nil disables the hook.
-	SetDropHook(fn func())
-}
-
-// Hub is the concrete facade every server-side caller uses. It delegates to
-// the configured Backend but keeps a stable type the Server struct can
-// depend on without importing the concrete backend package(s).
+// Hub is the process-local pub/sub fan-out every server-side caller uses.
+// Single-instance by design (the panel does not scale horizontally), so it
+// holds the concrete in-memory backend directly (P5, audit #19).
 type Hub struct {
-	backend Backend
+	backend *memoryBackend
 }
 
-// NewHub returns a Hub backed by the default in-process memoryBackend. This
-// matches the behaviour of the former server.newEventHub() prior to
-// P3-ARCH-01e.
+// NewHub returns a Hub backed by the in-process memoryBackend. This matches
+// the behaviour of the former server.newEventHub() prior to P3-ARCH-01e.
 func NewHub() *Hub {
 	return &Hub{backend: newMemoryBackend()}
-}
-
-// NewHubWithBackend wraps an arbitrary Backend. Intended for P3-ARCH-02 and
-// for tests that want to swap in a fake/mock transport.
-func NewHubWithBackend(b Backend) *Hub {
-	return &Hub{backend: b}
 }
 
 // Publish broadcasts one event to every current subscriber.
