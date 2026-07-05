@@ -796,26 +796,30 @@ func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.C
 // classification + metrics observations, and — crucially for P7-R6 — the
 // audit-specific alert key ("alert=audit_persist_failed") surfaces via
 // streamAlerts[audit] when a row cannot be persisted.
+// flushAuditEvents persists queued audit events as ONE multi-row insert
+// (P6-6.1b, finding #10) via AppendAuditEventsBulk, replacing the previous
+// per-row loop. Hash-chain integrity is unaffected: PrevHash/EventHash are
+// assigned at enqueue time (audit_trail.go: chainAuditRecordLocked) and the
+// bulk insert preserves slice order.
+//
+// A4 dead-letter semantics: audit is CRITICAL — a permanent store failure
+// must not lose events. If the bulk insert ultimately fails, the WHOLE
+// batch is spooled to the on-disk JSONL dead-letter file in order. This is
+// coarser than the previous per-row spool (one poisoned row now drags its
+// batch-mates into the spool instead of the DB) but nothing is ever
+// silently dropped, and batches are small (audit flush threshold = 50).
 func (w *storeBatchWriter) flushAuditEvents(ctx context.Context, items []storage.AuditEventRecord) {
+	if len(items) == 0 {
+		return
+	}
 	slog.Debug(logBatchFlush, "domain", "audit", "count", len(items))
+	persisted := w.flushItemTracked("audit", []any{"count", len(items)}, func() error {
+		return w.store.AppendAuditEventsBulk(ctx, items)
+	})
+	if persisted {
+		return
+	}
 	for _, item := range items {
-		item := item
-		persisted := w.flushItemTracked("audit", []any{
-			"audit_id", item.ID,
-			"action", item.Action,
-			"actor_id", item.ActorID,
-		}, func() error {
-			return w.store.AppendAuditEvent(ctx, item)
-		})
-		if persisted {
-			continue
-		}
-		// A4: audit is CRITICAL — a permanent store failure must not lose the
-		// event. Spool the record to the on-disk dead-letter file (JSONL) so it
-		// can be replayed/reconciled later. flushItemTracked already emitted the
-		// alert=audit_persist_failed log line + persistent metric; here we add
-		// the durable fallback. If the spool itself fails there is nowhere left
-		// to put the row, so we log at error with an explicit marker.
 		if err := w.writeDeadLetter(item); err != nil {
 			slog.Error("audit dead-letter write failed",
 				"domain", "audit",

@@ -877,3 +877,79 @@ func TestFlushTelemetryNilPartsProduceNoCalls(t *testing.T) {
 		t.Fatalf("calls = %v, want none for all-nil unit", rec.calls)
 	}
 }
+
+// failingAuditBulkStore always fails AppendAuditEventsBulk with a persistent
+// error. The embedded nil Store is never dereferenced (flushAuditEvents only
+// calls the bulk method).
+type failingAuditBulkStore struct {
+	storage.Store
+	err error
+}
+
+func (s *failingAuditBulkStore) AppendAuditEventsBulk(context.Context, []storage.AuditEventRecord) error {
+	return s.err
+}
+
+// countingAuditBulkStore records how many bulk vs single-row audit calls it saw
+// and how many rows the bulk path carried.
+type countingAuditBulkStore struct {
+	storage.Store
+	bulkCalls   int
+	singleCalls int
+	rows        int
+}
+
+func (s *countingAuditBulkStore) AppendAuditEventsBulk(_ context.Context, events []storage.AuditEventRecord) error {
+	s.bulkCalls++
+	s.rows += len(events)
+	return nil
+}
+
+func (s *countingAuditBulkStore) AppendAuditEvent(context.Context, storage.AuditEventRecord) error {
+	s.singleCalls++
+	return nil
+}
+
+func TestFlushAuditEventsBulkDeadLettersWholeBatchOnPersistentFailure(t *testing.T) {
+	st := &failingAuditBulkStore{err: errors.New("NOT NULL constraint failed: audit_events.action")}
+	w := newStoreBatchWriter(st, nil, nil)
+	var spooled []storage.AuditEventRecord
+	w.writeDeadLetter = func(item storage.AuditEventRecord) error {
+		spooled = append(spooled, item)
+		return nil
+	}
+
+	batch := []storage.AuditEventRecord{
+		{ID: "audit-1", Action: "a", CreatedAt: time.Now()},
+		{ID: "audit-2", Action: "b", CreatedAt: time.Now()},
+	}
+	w.flushAuditEvents(context.Background(), batch)
+
+	if len(spooled) != 2 {
+		t.Fatalf("dead-lettered = %d, want 2 (whole batch)", len(spooled))
+	}
+	if spooled[0].ID != "audit-1" || spooled[1].ID != "audit-2" {
+		t.Fatalf("dead-letter order broken: %+v", spooled)
+	}
+}
+
+func TestFlushAuditEventsBulkSingleStoreCall(t *testing.T) {
+	st := &countingAuditBulkStore{}
+	w := newStoreBatchWriter(st, nil, nil)
+
+	batch := make([]storage.AuditEventRecord, 50)
+	for i := range batch {
+		batch[i] = storage.AuditEventRecord{ID: fmt.Sprintf("audit-%d", i), CreatedAt: time.Now()}
+	}
+	w.flushAuditEvents(context.Background(), batch)
+
+	if st.bulkCalls != 1 {
+		t.Fatalf("bulk calls = %d, want 1", st.bulkCalls)
+	}
+	if st.singleCalls != 0 {
+		t.Fatalf("single-row calls = %d, want 0", st.singleCalls)
+	}
+	if st.rows != 50 {
+		t.Fatalf("rows = %d, want 50", st.rows)
+	}
+}
