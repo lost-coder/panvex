@@ -240,3 +240,75 @@ func BenchmarkEventHubPublish100Subscribers(b *testing.B) {
 		hub.Publish(evt)
 	}
 }
+
+// BenchmarkBatchWriterTelemetryDrain2000 models one flush tick of a
+// 2000-agent fleet: every agent contributed one telemetryWriteUnit with a
+// runtime blob, 3 DC rows, 2 upstreams and 1 event. Measures the wall
+// cost of drainAll against a real on-disk SQLite store (P6, finding #10).
+//
+// Before/after comparison:
+//
+//	cp internal/controlplane/server/batch_writer_bench_test.go \
+//	   ../../.worktrees/p6-bench-main/internal/controlplane/server/
+//	(cd ../../.worktrees/p6-bench-main && go test -run '^$' \
+//	   -bench BenchmarkBatchWriterTelemetryDrain2000 -benchtime=5x -count=5 \
+//	   ./internal/controlplane/server/) > /tmp/bw-main.txt
+//	go test -run '^$' -bench BenchmarkBatchWriterTelemetryDrain2000 \
+//	   -benchtime=5x -count=5 ./internal/controlplane/server/ > /tmp/bw-p6.txt
+//	benchstat /tmp/bw-main.txt /tmp/bw-p6.txt
+func BenchmarkBatchWriterTelemetryDrain2000(b *testing.B) {
+	store, err := sqlite.Open(filepath.Join(b.TempDir(), "bench.db"))
+	if err != nil {
+		b.Fatalf("open sqlite: %v", err)
+	}
+	defer store.Close()
+
+	const fleet = 2000
+	ts := time.Date(2026, time.July, 2, 12, 0, 0, 0, time.UTC)
+
+	// Seed the fleet group + agents once: the telemt_* tables carry a FK
+	// to agents, so without this every telemetry insert would fail the
+	// foreign-key check and the benchmark would time the error path.
+	ctx := context.Background()
+	if err := store.PutFleetGroup(ctx, storage.FleetGroupRecord{ID: "fg-bench", Name: "bench", CreatedAt: ts}); err != nil {
+		b.Fatalf("seed fleet group: %v", err)
+	}
+	agents := make([]storage.AgentRecord, fleet)
+	for a := 0; a < fleet; a++ {
+		agentID := fmt.Sprintf("agent-%04d", a)
+		agents[a] = storage.AgentRecord{ID: agentID, NodeName: agentID, FleetGroupID: "fg-bench", Version: "dev", LastSeenAt: ts}
+	}
+	if err := store.PutAgentsBulk(ctx, agents); err != nil {
+		b.Fatalf("seed agents: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		w := newStoreBatchWriter(store, nil, nil)
+		for a := 0; a < fleet; a++ {
+			agentID := fmt.Sprintf("agent-%04d", a)
+			unit := telemetryWriteUnit{
+				agentID: agentID,
+				runtime: &storage.TelemetryRuntimeCurrentRecord{
+					AgentID: agentID, ObservedAt: ts, RuntimeJSON: `{"state":"ok","cpu":42.5}`,
+				},
+				dcs: []storage.TelemetryRuntimeDCRecord{
+					{AgentID: agentID, DC: 1, ObservedAt: ts, CoveragePct: 100},
+					{AgentID: agentID, DC: 2, ObservedAt: ts, CoveragePct: 98},
+					{AgentID: agentID, DC: 3, ObservedAt: ts, CoveragePct: 97},
+				},
+				upstreams: []storage.TelemetryRuntimeUpstreamRecord{
+					{AgentID: agentID, UpstreamID: 1, ObservedAt: ts, Healthy: true},
+					{AgentID: agentID, UpstreamID: 2, ObservedAt: ts, Healthy: true},
+				},
+				events: []storage.TelemetryRuntimeEventRecord{
+					{AgentID: agentID, Sequence: int64(i*fleet + a), ObservedAt: ts, Timestamp: ts, EventType: "tick"},
+				},
+			}
+			w.telemetry.Enqueue(unit)
+		}
+		b.StartTimer()
+		w.drainAll(context.Background())
+	}
+}

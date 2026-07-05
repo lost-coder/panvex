@@ -923,39 +923,85 @@ func (w *storeBatchWriter) EnqueueFallbackDelete(agentID string) {
 	w.fallbackState.Enqueue(fallbackStateOp{agentID: agentID, op: "delete"})
 }
 
+// flushTelemetry groups the batch by telemetry part and issues at most SIX
+// bulk store calls per drain tick (P6-6.1a, finding #10) instead of up to
+// 6×len(items) sequential single-row calls. Part semantics:
+//
+//   - runtime/diagnostics/security: nil pointer = no update; multiple units
+//     for one agent collapse last-wins (bulk methods dedup by agent).
+//   - dcs/upstreams: nil slice = no update, non-nil (incl. empty) = replace;
+//     the LAST non-nil slice per agent in the batch wins.
+//   - events: flat append; the (agent_id, sequence) upsert absorbs dups.
+//
+// Error semantics: one flushItem per PART (not per unit) — a persistent
+// error drops that part for the whole batch and records a single
+// ObservePersistRetry observation, matching the other bulk streams.
 func (w *storeBatchWriter) flushTelemetry(ctx context.Context, items []telemetryWriteUnit) {
+	if len(items) == 0 {
+		return
+	}
 	slog.Debug(logBatchFlush, "domain", "telemetry", "count", len(items))
+
+	var runtimes []storage.TelemetryRuntimeCurrentRecord
+	var dcsByAgent map[string][]storage.TelemetryRuntimeDCRecord
+	var upstreamsByAgent map[string][]storage.TelemetryRuntimeUpstreamRecord
+	var events []storage.TelemetryRuntimeEventRecord
+	var diagnostics []storage.TelemetryDiagnosticsCurrentRecord
+	var security []storage.TelemetrySecurityInventoryCurrentRecord
+
 	for _, unit := range items {
-		unit := unit
 		if unit.runtime != nil {
-			w.flushItem("telemetry", []any{"part", "runtime", "agent_id", unit.agentID}, func() error {
-				return w.store.PutTelemetryRuntimeCurrent(ctx, *unit.runtime)
-			})
+			runtimes = append(runtimes, *unit.runtime)
 		}
 		if unit.dcs != nil {
-			w.flushItem("telemetry", []any{"part", "dcs", "agent_id", unit.agentID}, func() error {
-				return w.store.ReplaceTelemetryRuntimeDCs(ctx, unit.agentID, unit.dcs)
-			})
+			if dcsByAgent == nil {
+				dcsByAgent = make(map[string][]storage.TelemetryRuntimeDCRecord)
+			}
+			dcsByAgent[unit.agentID] = unit.dcs
 		}
 		if unit.upstreams != nil {
-			w.flushItem("telemetry", []any{"part", "upstreams", "agent_id", unit.agentID}, func() error {
-				return w.store.ReplaceTelemetryRuntimeUpstreams(ctx, unit.agentID, unit.upstreams)
-			})
+			if upstreamsByAgent == nil {
+				upstreamsByAgent = make(map[string][]storage.TelemetryRuntimeUpstreamRecord)
+			}
+			upstreamsByAgent[unit.agentID] = unit.upstreams
 		}
-		if unit.events != nil {
-			w.flushItem("telemetry", []any{"part", "events", "agent_id", unit.agentID}, func() error {
-				return w.store.AppendTelemetryRuntimeEvents(ctx, unit.agentID, unit.events)
-			})
-		}
+		events = append(events, unit.events...)
 		if unit.diagnostics != nil {
-			w.flushItem("telemetry", []any{"part", "diagnostics", "agent_id", unit.agentID}, func() error {
-				return w.store.PutTelemetryDiagnosticsCurrent(ctx, *unit.diagnostics)
-			})
+			diagnostics = append(diagnostics, *unit.diagnostics)
 		}
 		if unit.security != nil {
-			w.flushItem("telemetry", []any{"part", "security", "agent_id", unit.agentID}, func() error {
-				return w.store.PutTelemetrySecurityInventoryCurrent(ctx, *unit.security)
-			})
+			security = append(security, *unit.security)
 		}
+	}
+
+	if len(runtimes) > 0 {
+		w.flushItem("telemetry", []any{"part", "runtime", "count", len(runtimes)}, func() error {
+			return w.store.PutTelemetryRuntimeCurrentBulk(ctx, runtimes)
+		})
+	}
+	if len(dcsByAgent) > 0 {
+		w.flushItem("telemetry", []any{"part", "dcs", "agents", len(dcsByAgent)}, func() error {
+			return w.store.ReplaceTelemetryRuntimeDCsBulk(ctx, dcsByAgent)
+		})
+	}
+	if len(upstreamsByAgent) > 0 {
+		w.flushItem("telemetry", []any{"part", "upstreams", "agents", len(upstreamsByAgent)}, func() error {
+			return w.store.ReplaceTelemetryRuntimeUpstreamsBulk(ctx, upstreamsByAgent)
+		})
+	}
+	if len(events) > 0 {
+		w.flushItem("telemetry", []any{"part", "events", "count", len(events)}, func() error {
+			return w.store.AppendTelemetryRuntimeEventsBulk(ctx, events)
+		})
+	}
+	if len(diagnostics) > 0 {
+		w.flushItem("telemetry", []any{"part", "diagnostics", "count", len(diagnostics)}, func() error {
+			return w.store.PutTelemetryDiagnosticsCurrentBulk(ctx, diagnostics)
+		})
+	}
+	if len(security) > 0 {
+		w.flushItem("telemetry", []any{"part", "security", "count", len(security)}, func() error {
+			return w.store.PutTelemetrySecurityInventoryCurrentBulk(ctx, security)
+		})
 	}
 }
