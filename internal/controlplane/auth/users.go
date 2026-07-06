@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -419,6 +420,56 @@ func (s *Service) BootstrapUser(ctx context.Context, input BootstrapInput, now t
 	s.mu.Unlock()
 
 	return user, "", nil
+}
+
+// ListUsers returns every local account with sensitive fields (password hash,
+// TOTP secret) elided. It reads from the persistent user store when one is
+// wired (NewServiceWithStore), sorting by CreatedAt then ID for a stable
+// admin view; without a store it falls back to the in-memory snapshot.
+// (Moved out of the server package by P8.2h — was server.listUsersWithContext.)
+func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
+	if s.userStore == nil {
+		users := s.SnapshotUsers()
+		sortUsers(users)
+		elideSensitive(users)
+		return users, nil
+	}
+
+	records, err := s.userStore.ListUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	users := make([]User, 0, len(records))
+	for _, record := range records {
+		users = append(users, User{
+			ID:          record.ID,
+			Username:    record.Username,
+			Role:        Role(record.Role),
+			TotpEnabled: record.TotpEnabled,
+			CreatedAt:   record.CreatedAt.UTC(),
+		})
+	}
+	elideSensitive(users)
+	return users, nil
+}
+
+// sortUsers orders users by CreatedAt then ID (stable admin view).
+func sortUsers(users []User) {
+	sort.Slice(users, func(left, right int) bool {
+		if users[left].CreatedAt.Equal(users[right].CreatedAt) {
+			return users[left].ID < users[right].ID
+		}
+		return users[left].CreatedAt.Before(users[right].CreatedAt)
+	})
+}
+
+// elideSensitive zeroes the password hash and TOTP secret on every user so
+// list/get responses never carry credential material.
+func elideSensitive(users []User) {
+	for i := range users {
+		users[i].PasswordHash = ""
+		users[i].TotpSecret = ""
+	}
 }
 
 // SnapshotUsers returns a copy of the current local-account state.
