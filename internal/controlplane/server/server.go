@@ -19,6 +19,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
 	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/configtargets"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
@@ -186,6 +187,11 @@ type Server struct {
 	// checks, and multi-table reassignment transactions stay in one
 	// place. See internal/controlplane/fleet.
 	fleetSvc *fleet.Service
+	// configTargets owns the persistence + read semantics of per-scope agent
+	// config targets (P8.2f exemplar). HTTP handlers keep request decoding,
+	// editable-section validation, and the drift view; the store round-trips
+	// go through this service. See internal/controlplane/configtargets.
+	configTargets *configtargets.Service
 	// adoptMu serializes adopt/merge-adopt of discovered clients. It closes
 	// the TOCTOU window between reading a discovered record's status,
 	// checking it, creating/updating the managed client, and marking the
