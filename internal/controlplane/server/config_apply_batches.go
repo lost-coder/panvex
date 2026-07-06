@@ -184,7 +184,7 @@ func (s *Server) advanceConfigApplyBatch(ctx context.Context, batch storage.Conf
 	for _, tgt := range targets {
 		status := tgt.Status
 		if !isTerminalConfigApplyTargetStatus(status) {
-			derived, message := s.configApplyJobStatus(tgt.JobID, tgt.AgentID)
+			derived, message := s.configApplyJobStatus(ctx, tgt.JobID, tgt.AgentID)
 			if derived != status || message != tgt.Message {
 				if err := s.store.UpdateConfigApplyBatchTargetStatus(ctx, batch.ID, tgt.AgentID, derived, message); err != nil {
 					return fmt.Errorf("update config-apply batch %s target %s status: %w", batch.ID, tgt.AgentID, err)

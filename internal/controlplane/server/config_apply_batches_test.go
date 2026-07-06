@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -176,11 +177,15 @@ func TestConfigApplyBatchAdvanceNonTerminalStaysRunning(t *testing.T) {
 // TestConfigApplyBatchAdvanceJobEvictedBeforePersistFinalizesFailed is the
 // regression test for audit 2026-07-02 #2: a config.apply job that failed
 // and was then evicted from the in-memory jobs store (terminal-key TTL,
-// jobs.Service.PruneKeys) BEFORE the batch poll-worker persisted the
-// terminal status used to be resolved as succeeded by
-// configApplyJobStatus's missing-job default — finalizing a failed rollout
-// as a successful batch. A lost job for a non-terminal target must resolve
-// to failed with an explicit reason instead.
+// jobs.Service.PruneKeys) BEFORE the batch poll-worker updated the batch
+// target row used to be resolved as succeeded by configApplyJobStatus's
+// missing-job default — finalizing a failed rollout as a successful batch.
+// The batch must finalize FAILED. P8.1 (audit #24): with durable history
+// the evicted job is read back from the jobs table (its terminal FAILED row
+// outlives the in-memory eviction), so the target now carries the agent's
+// REAL failure reason ("health check failed") instead of the generic
+// job-lost fallback — the fallback fires only when the row is absent from
+// BOTH memory and store.
 func TestConfigApplyBatchAdvanceJobEvictedBeforePersistFinalizesFailed(t *testing.T) {
 	srv, _ := newConfigTargetTestServer(t)
 	groupID := seedTestFleetGroup(t, srv.store, "advance-evicted-group", time.Time{})
@@ -232,7 +237,65 @@ func TestConfigApplyBatchAdvanceJobEvictedBeforePersistFinalizesFailed(t *testin
 	if len(gotTargets) != 1 || gotTargets[0].Status != storage.ConfigApplyTargetStatusFailed {
 		t.Fatalf("target = %+v, want status %q", gotTargets, storage.ConfigApplyTargetStatusFailed)
 	}
-	if gotTargets[0].Message != configApplyMsgJobLost {
-		t.Fatalf("target message = %q, want %q", gotTargets[0].Message, configApplyMsgJobLost)
+	// P8.1: durable history surfaces the agent's real failure reason read
+	// back from the jobs table, not the generic job-lost fallback.
+	if gotTargets[0].Message != "health check failed" {
+		t.Fatalf("target message = %q, want the agent's real reason %q", gotTargets[0].Message, "health check failed")
+	}
+}
+
+// evictedRestoreJobStore simulates "rows are durable, memory is cold": a
+// jobs.Service constructed over it restores NOTHING into memory (ListJobs /
+// ListAllJobTargets are empty) while point reads (GetJob / ListJobTargets)
+// hit the real store. This is exactly the state after PruneKeys evicted a
+// terminal job, without having to manipulate the service clock.
+type evictedRestoreJobStore struct{ storage.JobStore }
+
+func (evictedRestoreJobStore) ListJobs(context.Context) ([]storage.JobRecord, error) {
+	return nil, nil
+}
+
+func (evictedRestoreJobStore) ListAllJobTargets(context.Context) ([]storage.JobTargetRecord, error) {
+	return nil, nil
+}
+
+// TestConfigApplyJobStatusReadsEvictedJobFromStore: P8.1 — a config.apply
+// job whose terminal result reached the store but which is no longer
+// resident in memory must resolve to its REAL outcome, not to the P1
+// job-lost fallback.
+func TestConfigApplyJobStatusReadsEvictedJobFromStore(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "status-store-group", time.Time{})
+	const agentID = "agent-status-store"
+	srv.seedLiveAgent(Agent{ID: agentID, FleetGroupID: groupID})
+	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+
+	ctx := context.Background()
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID})
+	if err != nil {
+		t.Fatalf("createConfigApplyBatch() error = %v", err)
+	}
+	_, targets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
+	if err != nil {
+		t.Fatalf("GetConfigApplyBatch(%s): %v", batchID, err)
+	}
+	if !srv.jobs.RecordResult(ctx, agentID, targets[0].JobID, false, "agent exploded", "", time.Now()) {
+		t.Fatal("RecordResult returned false")
+	}
+
+	// «Рестарт с холодной памятью»: свежий сервис поверх того же store.
+	srv.jobs = jobs.NewServiceWithStore(ctx, evictedRestoreJobStore{JobStore: srv.store})
+	if _, ok := srv.jobs.Get(targets[0].JobID); ok {
+		t.Fatal("job unexpectedly resident in memory")
+	}
+
+	status, message := srv.configApplyJobStatus(ctx, targets[0].JobID, agentID)
+	if status != applyStatusFailed {
+		t.Fatalf("status = %q, want %q", status, applyStatusFailed)
+	}
+	if message != "agent exploded" {
+		t.Fatalf("message = %q, want the agent's own result text, not %q", message, configApplyMsgJobLost)
 	}
 }
