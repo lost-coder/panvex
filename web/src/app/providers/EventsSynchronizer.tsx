@@ -14,6 +14,7 @@ import { SESSION_EXPIRED_EVENT } from "@/shared/api/http";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { eventEnvelopeSchema, type EventEnvelope } from "@/shared/api/schemas/events";
 import { invalidateTelemetryQueries } from "@/shared/events/telemetry-query-invalidation";
+import { createCoalescer } from "@/shared/events/invalidation-coalescer";
 import { buildEventsURL, resolveConfiguredRootPath } from "@/shared/lib/runtime-path";
 import {
   type EventInvalidation,
@@ -160,23 +161,47 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
         void queryClient.invalidateQueries();
       }, 500);
     };
-    const applyInvalidation = async (invalidation: EventInvalidation) => {
-      for (const key of invalidation.keys) {
-        // Q-10: queryKey was previously typed via `key as unknown[]`. The
-        // input is `readonly unknown[]` from our own EventInvalidation map
-        // (not runtime data), but TanStack expects a mutable `unknown[]` —
-        // copy into a fresh array instead of an unchecked cast.
+    // 7.4 (#web-8): шторм однотипных событий (agents.* на N узлов) раньше
+    // давал N немедленных рефетчей одних и тех же ключей. Ключи копятся в
+    // Map (дедуп по JSON-форме) и сбрасываются коалесцером: первое событие
+    // в тихом окне — немедленно (leading, оператор видит результат своего
+    // действия сразу), шторм — одним рефетчем на trailing-краю.
+    const pendingKeys = new Map<string, readonly unknown[]>();
+    let pendingClientDetailSweep = false;
+    const keyCoalescer = createCoalescer({
+      trailingMs: 2_000,
+      maxWaitMs: 10_000,
+      leading: true,
+    });
+    const flushKeyInvalidations = async () => {
+      const keys = [...pendingKeys.values()];
+      const sweepClientDetails = pendingClientDetailSweep;
+      pendingKeys.clear();
+      pendingClientDetailSweep = false;
+      for (const key of keys) {
+        // Q-10: copy readonly key into a fresh mutable array for TanStack.
         await queryClient.invalidateQueries({ queryKey: [...key] });
+      }
+      if (sweepClientDetails) {
         // "clients" sweep also refreshes per-client detail queries
         // (["client", id]) so the detail view updates in-flight.
+        await queryClient.invalidateQueries({
+          predicate: (query) => query.queryKey[0] === "client",
+        });
+      }
+    };
+    const applyInvalidation = (invalidation: EventInvalidation) => {
+      for (const key of invalidation.keys) {
+        pendingKeys.set(JSON.stringify(key), key);
         if (key[0] === "clients") {
-          await queryClient.invalidateQueries({
-            predicate: (query) => query.queryKey[0] === "client",
-          });
+          pendingClientDetailSweep = true;
         }
       }
       if (invalidation.telemetry) {
         invalidateTelemetryQueries(queryClient, invalidation.telemetryAgentID);
+      }
+      if (pendingKeys.size > 0) {
+        keyCoalescer.schedule(() => void flushKeyInvalidations());
       }
     };
     const scheduleReconnect = () => {
@@ -252,7 +277,7 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
         // 7.1: вместо setState — emit в store; провайдер и статус-подписчики
         // не ре-рендерятся, подписчики таймстампа получают уведомление.
         lastEventStore.emit(Date.now());
-        void applyInvalidation(invalidationsForEvent(event));
+        applyInvalidation(invalidationsForEvent(event));
       };
       socket.onerror = () => { socket?.close(); };
       // Q3.U-Q-22: check session validity before reconnecting. On expiration
@@ -277,6 +302,7 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
     connect();
     return () => {
       stopped = true;
+      keyCoalescer.cancel();
       if (reconnectTimerID !== null) { globalThis.clearTimeout(reconnectTimerID); }
       if (resyncTimerID !== null) { globalThis.clearTimeout(resyncTimerID); }
       if (socket !== null && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
