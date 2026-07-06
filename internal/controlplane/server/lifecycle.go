@@ -196,6 +196,7 @@ func (s *Server) initWebhookSubsystem(options Options, vault *secretvault.Vault)
 	s.webhookStorage = options.WebhookStorageFactory(decrypt)
 	if s.webhookStorage != nil {
 		s.webhookProducer = webhooks.NewProducer(s.webhookStorage)
+		s.webhooksAdmin = webhooks.NewAdminService(s.webhookStorage, s.encryptWebhookSecret, s.now)
 	}
 }
 
