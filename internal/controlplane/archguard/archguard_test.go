@@ -60,7 +60,6 @@ var storeAccessAllowlist = map[string]bool{
 	"http_enrollment.go":         true,
 	"http_fleet_groups.go":       true,
 	"http_health.go":             true,
-	"http_history.go":            true,
 	"http_inventory.go":          true,
 	"http_jobs.go":               true,
 	"http_provision_outbound.go": true,

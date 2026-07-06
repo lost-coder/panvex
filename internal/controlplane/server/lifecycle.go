@@ -23,6 +23,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/fleet/integrations"
 	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
+	"github.com/lost-coder/panvex/internal/controlplane/history"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/metrics"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
@@ -162,6 +163,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		clientsSvc:       clients.NewService(clients.ServiceConfig{Vault: vault, Now: now}),
 		fleetSvc:         fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
 		configTargets:    configtargets.NewService(options.Store, now),
+		historySvc:       history.NewService(options.Store),
 		intervals:        options.Intervals.withDefaults(),
 		sqlitePath:       options.SQLitePath,
 		bootstrap:        options.Bootstrap,
