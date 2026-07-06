@@ -24,6 +24,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/metrics"
@@ -34,7 +35,6 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
-	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 const (
@@ -75,7 +75,11 @@ const (
 
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
 type Server struct {
-	gatewayrpc.UnimplementedAgentGatewayServer
+	// gateway hosts the agent-facing gRPC surface (Connect stream, unary
+	// cert renewal, enrollment-step ingestion). Extracted to
+	// controlplane/gateway (P8.2d); *Server implements gateway.Deps for the
+	// cross-domain callbacks (see gateway_deps.go).
+	gateway       *gateway.Gateway
 	auth          *auth.Service
 	store         storage.Store
 	uiFiles       fs.FS
@@ -458,6 +462,18 @@ func (s *Server) PanelClientCertificate() tls.Certificate {
 // returns 503 until a non-nil handler is provided.
 func (s *Server) SetInstallCommandHandler(h *bootstrap.InstallCommandHandler) {
 	s.installCommandHandler.Store(h)
+}
+
+// Gateway returns the agent gRPC gateway, for serve.go registration and
+// tests that exercise the Connect/RenewCertificate/ReportEnrollmentSteps
+// surface via the full Server.
+func (s *Server) Gateway() *gateway.Gateway { return s.gateway }
+
+// RunAgentSession is the SessionHandler entry point invoked by
+// agenttransport.Manager for outbound (panel-dialed) sessions. It delegates
+// to the gateway, which runs the direction-agnostic agent protocol.
+func (s *Server) RunAgentSession(ctx context.Context, sess agenttransport.AgentSession, meta agenttransport.NodeMeta) error {
+	return s.gateway.RunAgentSession(ctx, sess, meta)
 }
 
 // SetAgentTransportManager wires the agenttransport.Manager so the

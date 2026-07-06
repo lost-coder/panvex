@@ -49,7 +49,7 @@ func TestReportEnrollmentStepsAppendsTimeline(t *testing.T) {
 		},
 	}
 
-	if _, err := srv.ReportEnrollmentSteps(context.Background(), req); err != nil {
+	if _, err := srv.Gateway().ReportEnrollmentSteps(context.Background(), req); err != nil {
 		t.Fatalf("ReportEnrollmentSteps: %v", err)
 	}
 
@@ -73,7 +73,7 @@ func TestReportEnrollmentStepsNoOpInputs(t *testing.T) {
 	srv, _, _ := newEnrollmentRecorderTestServer(t, now)
 
 	// Empty attempt_id → no-op.
-	if _, err := srv.ReportEnrollmentSteps(context.Background(), &gatewayrpc.ReportEnrollmentStepsRequest{}); err != nil {
+	if _, err := srv.Gateway().ReportEnrollmentSteps(context.Background(), &gatewayrpc.ReportEnrollmentStepsRequest{}); err != nil {
 		t.Fatalf("empty attempt_id should not error: %v", err)
 	}
 
@@ -82,7 +82,7 @@ func TestReportEnrollmentStepsNoOpInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if _, err := srv.ReportEnrollmentSteps(context.Background(), &gatewayrpc.ReportEnrollmentStepsRequest{
+	if _, err := srv.Gateway().ReportEnrollmentSteps(context.Background(), &gatewayrpc.ReportEnrollmentStepsRequest{
 		AttemptId: attemptID,
 	}); err != nil {
 		t.Fatalf("empty events should not error: %v", err)

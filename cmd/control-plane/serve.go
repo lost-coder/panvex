@@ -186,7 +186,7 @@ func runServe(args []string) error {
 	}
 
 	grpcServer := newControlPlaneGRPCServer(api.GRPCTLSConfig())
-	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api)
+	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api.Gateway())
 
 	// Шов 1 & 2: obtain *dbsqlc.Queries from the concrete store so the
 	// agenttransport.Manager, bootstrap.InstallCommandHandler, and

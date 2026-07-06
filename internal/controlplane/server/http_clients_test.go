@@ -106,7 +106,7 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 		t.Fatalf("len(jobs[0].TargetAgentIDs) = %d, want %d", len(enqueuedJobs[0].TargetAgentIDs), 2)
 	}
 
-	server.recordJobResult(context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
+	recordJobResultForTest(server, context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
 	detailResponse := performJSONRequest(t, server, http.MethodGet, "/api/clients/"+created.ID, nil, cookies)
 	if detailResponse.Code != http.StatusOK {
@@ -492,7 +492,7 @@ func TestHTTPClientsListingReflectsDeploymentAndUsage(t *testing.T) {
 	if len(enqueuedJobs) != 1 {
 		t.Fatalf("len(server.jobs.List()) = %d, want %d", len(enqueuedJobs), 1)
 	}
-	server.recordJobResult(context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
+	recordJobResultForTest(server, context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
 		AgentID:     "agent-000001",
@@ -605,7 +605,7 @@ func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
 	if len(createJobs) != 1 {
 		t.Fatalf("len(create jobs) = %d, want 1", len(createJobs))
 	}
-	server.recordJobResult(context.Background(), "agent-000001", createJobs[0].ID, true, "applied",
+	recordJobResultForTest(server, context.Background(), "agent-000001", createJobs[0].ID, true, "applied",
 		`{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
 	// (2) Usage-snapshot write-path: apply a live usage tick.
@@ -645,7 +645,7 @@ func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
 		t.Fatal("no client.reset_quota job enqueued")
 	}
 	const resetEpoch = 1748682000 // arbitrary epoch newer than zero
-	server.recordJobResult(context.Background(), "agent-000001", resetJobID, true, "reset",
+	recordJobResultForTest(server, context.Background(), "agent-000001", resetJobID, true, "reset",
 		`{"last_reset_epoch_secs":1748682000}`, now.Add(2*time.Minute))
 
 	// Assert the Service mirror reflects all three write-paths.

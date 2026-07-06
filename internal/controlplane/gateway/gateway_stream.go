@@ -1,4 +1,4 @@
-package server
+package gateway
 
 import (
 	"context"
@@ -24,7 +24,7 @@ type agentStreamChannels struct {
 	priorityAuditEffects  chan auditEffect
 	priorityResultEffects chan jobResultEffect
 	regularInbound        chan *gatewayrpc.ConnectClientMessage
-	regularSnapshots      chan agentSnapshot
+	regularSnapshots      chan AgentSnapshot
 	receiveErrors         chan error
 	dispatchErrors        chan error
 	processErrors         chan error
@@ -36,7 +36,7 @@ func newAgentStreamChannels() *agentStreamChannels {
 		priorityAuditEffects:  make(chan auditEffect, priorityAuditQueueCapacity),
 		priorityResultEffects: make(chan jobResultEffect, priorityResultEffectQueueCapacity),
 		regularInbound:        make(chan *gatewayrpc.ConnectClientMessage, 64),
-		regularSnapshots:      make(chan agentSnapshot, regularSnapshotQueueCapacity),
+		regularSnapshots:      make(chan AgentSnapshot, regularSnapshotQueueCapacity),
 		receiveErrors:         make(chan error, 1),
 		dispatchErrors:        make(chan error, 1),
 		processErrors:         make(chan error, 1),
@@ -55,13 +55,13 @@ func nonBlockingSend(ch chan<- error, err error) {
 
 // startReceiveLoop reads messages off the gRPC stream and routes them into
 // the priority/regular inbound queues until the stream errors out.
-func (s *Server) startReceiveLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, ch *agentStreamChannels) {
+func (g *Gateway) startReceiveLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, ch *agentStreamChannels) {
 	var dropCounter prometheus.Counter
-	if s.obs != nil {
-		dropCounter = s.obs.AgentInboundDropsTotal
+	if g.obs != nil {
+		dropCounter = g.obs.AgentInboundDropsTotal
 	}
 	go func() {
-		defer s.recoverAgentStreamGoroutine(agentID, "receive", cancel)
+		defer g.recoverAgentStreamGoroutine(agentID, "receive", cancel)
 		for {
 			message, err := sess.Recv()
 			if err != nil {
@@ -78,10 +78,10 @@ func (s *Server) startReceiveLoop(ctx context.Context, cancel context.CancelFunc
 // startPriorityInboundWorkers spawns priorityInboundWorkerCount goroutines
 // that drain the priority queue and route the messages through
 // processPriorityAgentMessageAsync.
-func (s *Server) startPriorityInboundWorkers(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels, processErr func(error)) {
+func (g *Gateway) startPriorityInboundWorkers(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels, processErr func(error)) {
 	for workerIndex := 0; workerIndex < priorityInboundWorkerCount; workerIndex++ {
 		go func() {
-			defer s.recoverAgentStreamGoroutine(agentID, "priority-inbound", cancel)
+			defer g.recoverAgentStreamGoroutine(agentID, "priority-inbound", cancel)
 			for {
 				select {
 				case <-ctx.Done():
@@ -90,7 +90,7 @@ func (s *Server) startPriorityInboundWorkers(ctx context.Context, cancel context
 					if message == nil {
 						continue
 					}
-					if err := s.processPriorityAgentMessageAsync(ctx, ch.priorityResultEffects, ch.priorityAuditEffects, agentID, message); err != nil {
+					if err := g.processPriorityAgentMessageAsync(ctx, ch.priorityResultEffects, ch.priorityAuditEffects, agentID, message); err != nil {
 						processErr(err)
 						return
 					}
@@ -103,9 +103,9 @@ func (s *Server) startPriorityInboundWorkers(ctx context.Context, cancel context
 // startAuditEffectsLoop drains audit effects published from the priority
 // path. On shutdown it flushes any pending effects with a Background ctx so
 // the audit trail survives stream cancellation.
-func (s *Server) startAuditEffectsLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels) {
+func (g *Gateway) startAuditEffectsLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels) {
 	go func() {
-		defer s.recoverAgentStreamGoroutine(agentID, "audit-effects", cancel)
+		defer g.recoverAgentStreamGoroutine(agentID, "audit-effects", cancel)
 		for {
 			select {
 			case <-ctx.Done():
@@ -113,14 +113,14 @@ func (s *Server) startAuditEffectsLoop(ctx context.Context, cancel context.Cance
 				// would immediately abort the audit flush. Background()
 				// is the intentional detachment for the shutdown path.
 				drainPriorityAuditEffects(ch.priorityAuditEffects, func(actorID string, action string, targetID string, details map[string]any) { //nolint:contextcheck
-					s.appendAuditWithContext(context.Background(), actorID, action, targetID, details)
+					g.deps.AppendAudit(context.Background(), actorID, action, targetID, details)
 				})
 				return
 			case effect := <-ch.priorityAuditEffects:
 				if effect.action == "" {
 					continue
 				}
-				s.appendAuditWithContext(ctx, effect.actorID, effect.action, effect.targetID, effect.details)
+				g.deps.AppendAudit(ctx, effect.actorID, effect.action, effect.targetID, effect.details)
 			}
 		}
 	}()
@@ -128,21 +128,21 @@ func (s *Server) startAuditEffectsLoop(ctx context.Context, cancel context.Cance
 
 // startResultEffectsLoop drains job-result effects published from the
 // priority path. Mirrors startAuditEffectsLoop's shutdown drain semantics.
-func (s *Server) startResultEffectsLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels) {
+func (g *Gateway) startResultEffectsLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels) {
 	go func() {
-		defer s.recoverAgentStreamGoroutine(agentID, "result-effects", cancel)
+		defer g.recoverAgentStreamGoroutine(agentID, "result-effects", cancel)
 		for {
 			select {
 			case <-ctx.Done():
 				drainPriorityResultEffects(ch.priorityResultEffects, func(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) { //nolint:contextcheck
-					s.recordClientJobResultWithContext(context.Background(), agentID, jobID, success, message, resultJSON, observedAt)
+					g.deps.RecordClientJobResult(context.Background(), agentID, jobID, success, message, resultJSON, observedAt)
 				})
 				return
 			case effect := <-ch.priorityResultEffects:
 				if effect.jobID == "" {
 					continue
 				}
-				s.recordClientJobResultWithContext(
+				g.deps.RecordClientJobResult(
 					ctx,
 					effect.agentID,
 					effect.jobID,
@@ -158,21 +158,21 @@ func (s *Server) startResultEffectsLoop(ctx context.Context, cancel context.Canc
 
 // startSnapshotApplyLoop drains agent runtime snapshots and applies them
 // against in-memory + batch-write state. Drains pending items on shutdown.
-func (s *Server) startSnapshotApplyLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels, processErr func(error)) {
+func (g *Gateway) startSnapshotApplyLoop(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels, processErr func(error)) {
 	go func() {
-		defer s.recoverAgentStreamGoroutine(agentID, "snapshot-apply", cancel)
+		defer g.recoverAgentStreamGoroutine(agentID, "snapshot-apply", cancel)
 		for {
 			select {
 			case <-ctx.Done():
-				drainRegularSnapshots(ch.regularSnapshots, func(snapshot agentSnapshot) error { //nolint:contextcheck
-					return s.applyAgentSnapshot(context.Background(), snapshot)
+				drainRegularSnapshots(ch.regularSnapshots, func(snapshot AgentSnapshot) error { //nolint:contextcheck
+					return g.deps.ApplyAgentSnapshot(context.Background(), snapshot)
 				})
 				return
 			case snapshot := <-ch.regularSnapshots:
 				if snapshot.AgentID == "" {
 					continue
 				}
-				if err := s.applyAgentSnapshot(ctx, snapshot); err != nil {
+				if err := g.deps.ApplyAgentSnapshot(ctx, snapshot); err != nil {
 					processErr(err)
 					return
 				}
@@ -183,9 +183,9 @@ func (s *Server) startSnapshotApplyLoop(ctx context.Context, cancel context.Canc
 
 // startRegularInboundLoop drains regular-priority inbound messages and
 // dispatches them through processRegularAgentMessage.
-func (s *Server) startRegularInboundLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, ch *agentStreamChannels, processErr func(error)) {
+func (g *Gateway) startRegularInboundLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, ch *agentStreamChannels, processErr func(error)) {
 	go func() {
-		defer s.recoverAgentStreamGoroutine(agentID, "regular-inbound", cancel)
+		defer g.recoverAgentStreamGoroutine(agentID, "regular-inbound", cancel)
 		for {
 			select {
 			case <-ctx.Done():
@@ -194,7 +194,7 @@ func (s *Server) startRegularInboundLoop(ctx context.Context, cancel context.Can
 				if message == nil {
 					continue
 				}
-				if err := s.processRegularAgentMessage(ctx, agentID, sess, ch.regularSnapshots, message); err != nil {
+				if err := g.processRegularAgentMessage(ctx, agentID, sess, ch.regularSnapshots, message); err != nil {
 					processErr(err)
 					return
 				}
@@ -208,22 +208,22 @@ func (s *Server) startRegularInboundLoop(ctx context.Context, cancel context.Can
 // serializes them via sendMu. It runs an initial dispatch + discovery
 // request and then ticks until the session is woken (new job ready) or the
 // retry interval fires.
-func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, agentSess *agents.Session, ch *agentStreamChannels) {
+func (g *Gateway) startJobDispatchLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, agentSess *agents.Session, ch *agentStreamChannels) {
 	go func() {
-		defer s.recoverAgentStreamGoroutine(agentID, "job-dispatch", cancel)
+		defer g.recoverAgentStreamGoroutine(agentID, "job-dispatch", cancel)
 		retryTicker := time.NewTicker(jobDispatchRetryInterval)
 		defer retryTicker.Stop()
 		discoveryTicker := time.NewTicker(discoveryRefreshInterval)
 		defer discoveryTicker.Stop()
 
 		sendDiscovery := func(reason string) {
-			reqID := fmt.Sprintf("discovery-%s-%s-%d", reason, agentID, s.now().UnixNano())
+			reqID := fmt.Sprintf("discovery-%s-%s-%d", reason, agentID, g.now().UnixNano())
 			if err := sendClientDataRequest(sess, reqID); err != nil {
-				s.logger.ErrorContext(ctx, "client discovery request failed", "agent_id", agentID, "reason", reason, "error", err)
+				g.logger.ErrorContext(ctx, "client discovery request failed", "agent_id", agentID, "reason", reason, "error", err)
 			}
 		}
 
-		if err := s.dispatchPendingJobs(ctx, sess, agentID); err != nil {
+		if err := g.dispatchPendingJobs(ctx, sess, agentID); err != nil {
 			nonBlockingSend(ch.dispatchErrors, err)
 			return
 		}
@@ -246,7 +246,7 @@ func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.Cancel
 			if agentSess.TakeRediscovery() {
 				sendDiscovery("on-demand")
 			}
-			if err := s.dispatchPendingJobs(ctx, sess, agentID); err != nil {
+			if err := g.dispatchPendingJobs(ctx, sess, agentID); err != nil {
 				nonBlockingSend(ch.dispatchErrors, err)
 				return
 			}
@@ -257,23 +257,23 @@ func (s *Server) startJobDispatchLoop(ctx context.Context, cancel context.Cancel
 // awaitAgentStreamShutdown blocks until one of the dispatch / process /
 // receive error channels delivers, then cancels the connection ctx and
 // returns the operator-visible error code.
-func (s *Server) awaitAgentStreamShutdown(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels) error {
+func (g *Gateway) awaitAgentStreamShutdown(ctx context.Context, cancel context.CancelFunc, agentID string, ch *agentStreamChannels) error {
 	select {
 	case err := <-ch.dispatchErrors:
 		cancel()
-		s.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "dispatch_error", "error", err)
+		g.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "dispatch_error", "error", err)
 		return err
 	case err := <-ch.processErrors:
 		cancel()
-		s.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "process_error", "error", err)
+		g.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "process_error", "error", err)
 		return status.Error(codes.Internal, err.Error())
 	case err := <-ch.receiveErrors:
 		cancel()
 		if errors.Is(err, io.EOF) {
-			s.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "eof")
+			g.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "eof")
 			return nil
 		}
-		s.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "receive_error", "error", err)
+		g.logger.InfoContext(ctx, logAgentStreamClosed, "agent_id", agentID, "reason", "receive_error", "error", err)
 		return err
 	}
 }
@@ -282,12 +282,26 @@ func (s *Server) awaitAgentStreamShutdown(ctx context.Context, cancel context.Ca
 // every goroutine spawned for a Connect() session. Logs the panic with the
 // goroutine's name, bumps the panicRecoveredTotal counter (Q3.U-Q-15) and
 // cancels the connection so the rest of the pipeline tears down cleanly.
-func (s *Server) recoverAgentStreamGoroutine(agentID, name string, cancel context.CancelFunc) {
+func (g *Gateway) recoverAgentStreamGoroutine(agentID, name string, cancel context.CancelFunc) {
 	if r := recover(); r != nil {
 		slog.Error("goroutine panic recovered", "agent_id", agentID, "goroutine", name, "panic", r)
-		if s.obs != nil && s.obs.PanicRecoveredTotal != nil {
-			s.obs.PanicRecoveredTotal.WithLabelValues(name).Inc()
+		if g.obs != nil && g.obs.PanicRecoveredTotal != nil {
+			g.obs.PanicRecoveredTotal.WithLabelValues(name).Inc()
 		}
 		cancel()
 	}
+}
+
+// sendClientDataRequest sends a FULL_SNAPSHOT request to the agent stream.
+// Moved from server/clients_discovery.go (its only caller is the gateway
+// dispatch loop).
+func sendClientDataRequest(sess agenttransport.AgentSession, requestID string) error {
+	return sess.Send(&gatewayrpc.ConnectServerMessage{
+		Body: &gatewayrpc.ConnectServerMessage_ClientDataRequest{
+			ClientDataRequest: &gatewayrpc.ClientDataRequest{
+				Type:      gatewayrpc.ClientDataRequest_FULL_SNAPSHOT,
+				RequestId: requestID,
+			},
+		},
+	})
 }

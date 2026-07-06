@@ -1,11 +1,14 @@
-package server
+package gateway
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
+	"github.com/lost-coder/panvex/internal/controlplane/runtimeevents"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -20,24 +23,23 @@ import (
 //  2. the events bus emits exactly ONE "runtime.events" batch payload
 //     carrying all records (D6a)
 //
-// Using processRegularAgentMessage matches the style of the existing
-// grpc_gateway_test.go tests which exercise the heartbeat / job-result
-// paths the same way.
+// Using processRegularAgentMessage matches the style of the grpc_gateway_test.go
+// tests which exercise the heartbeat / job-result paths the same way.
 func TestHandleRuntimeEventsBatchPopulatesBufferAndPublishes(t *testing.T) {
 	currentTime := time.Date(2026, time.May, 14, 10, 0, 0, 0, time.UTC)
-	srv := mustNew(t, Options{
-		LoginTimingFloor: -1,
-		Now:              func() time.Time { return currentTime },
-	})
-	if srv.runtimeEvents == nil {
-		t.Fatal("runtimeEvents buffer not wired in test fixture")
+	g := &Gateway{
+		deps:          stubDeps{},
+		logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		runtimeEvents: runtimeevents.New(500),
+		events:        eventbus.NewHub(),
+		now:           func() time.Time { return currentTime },
 	}
 
 	// Subscribe BEFORE dispatching so the Publish calls land in our
 	// channel. The hub fans out to active subscribers only — late
 	// subscribers will miss the emit and the assertion below would
 	// flake.
-	subCh, unsub := srv.events.Subscribe()
+	subCh, unsub := g.events.Subscribe()
 	defer unsub()
 
 	eventTs := currentTime.Add(time.Second)
@@ -62,14 +64,14 @@ func TestHandleRuntimeEventsBatchPopulatesBufferAndPublishes(t *testing.T) {
 		},
 	}
 
-	regularSnapshots := make(chan agentSnapshot, 1)
-	if err := srv.processRegularAgentMessage(context.Background(), "agent-x", nil, regularSnapshots, msg); err != nil {
+	regularSnapshots := make(chan AgentSnapshot, 1)
+	if err := g.processRegularAgentMessage(context.Background(), "agent-x", nil, regularSnapshots, msg); err != nil {
 		t.Fatalf("processRegularAgentMessage() error = %v", err)
 	}
 
 	// Buffer side effect — Snapshot returns newest first; no filter, no
 	// limit so we get every record we just inserted.
-	snap := srv.runtimeEvents.Snapshot("agent-x", nil, 0)
+	snap := g.runtimeEvents.Snapshot("agent-x", nil, 0)
 	if len(snap) != 2 {
 		t.Fatalf("snapshot len = %d, want 2", len(snap))
 	}

@@ -944,10 +944,10 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 		t.Fatalf("json.Unmarshal(job) error = %v", err)
 	}
 
-	first.markJobDelivered(context.Background(), agentOne.AgentID, createdJob.ID)
-	first.markJobDelivered(context.Background(), agentTwo.AgentID, createdJob.ID)
-	first.recordJobResult(context.Background(), agentOne.AgentID, createdJob.ID, true, "ok", "", now.Add(15*time.Second))
-	first.recordJobResult(context.Background(), agentTwo.AgentID, createdJob.ID, false, "reload failed", "", now.Add(16*time.Second))
+	markJobDeliveredForTest(first, context.Background(), agentOne.AgentID, createdJob.ID)
+	markJobDeliveredForTest(first, context.Background(), agentTwo.AgentID, createdJob.ID)
+	recordJobResultForTest(first, context.Background(), agentOne.AgentID, createdJob.ID, true, "ok", "", now.Add(15*time.Second))
+	recordJobResultForTest(first, context.Background(), agentTwo.AgentID, createdJob.ID, false, "reload failed", "", now.Add(16*time.Second))
 
 	first.Close()
 

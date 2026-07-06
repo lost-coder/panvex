@@ -1,4 +1,4 @@
-package server
+package gateway
 
 import (
 	"context"
@@ -9,24 +9,24 @@ import (
 )
 
 // handleSnapshotMessage translates the wire-format snapshot into the internal
-// agentSnapshot and enqueues it for the regular processor goroutine. Splitting
+// AgentSnapshot and enqueues it for the regular processor goroutine. Splitting
 // this out keeps processRegularAgentMessage's CC under threshold by isolating
 // the per-client and per-clientIP loops behind named helpers.
-func (s *Server) handleSnapshotMessage(connectionCtx context.Context, agentID string, regularSnapshots chan agentSnapshot, snap *gatewayrpc.Snapshot) {
-	s.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "snapshot")
+func (g *Gateway) handleSnapshotMessage(connectionCtx context.Context, agentID string, regularSnapshots chan AgentSnapshot, snap *gatewayrpc.Snapshot) {
+	g.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "snapshot")
 	observedAt := time.Unix(snap.ObservedAtUnix, 0).UTC()
 
 	instances := convertInstanceSnapshots(snap.Instances)
-	clients, usageResolved, usageSkipped := s.convertClientUsageSnapshots(agentID, snap.Clients, observedAt)
+	clients, usageResolved, usageSkipped := g.convertClientUsageSnapshots(agentID, snap.Clients, observedAt)
 	if len(snap.Clients) > 0 {
-		s.logger.InfoContext(connectionCtx, "client usage snapshot received", "agent_id", agentID, "total", len(snap.Clients), "resolved", usageResolved, "skipped", usageSkipped)
+		g.logger.InfoContext(connectionCtx, "client usage snapshot received", "agent_id", agentID, "total", len(snap.Clients), "resolved", usageResolved, "skipped", usageSkipped)
 	}
-	clientIPs, ipResolved, ipSkipped := s.convertClientIPSnapshots(agentID, snap.ClientIps)
+	clientIPs, ipResolved, ipSkipped := g.convertClientIPSnapshots(agentID, snap.ClientIps)
 	if len(snap.ClientIps) > 0 {
-		s.logger.InfoContext(connectionCtx, "client ip snapshot received", "agent_id", agentID, "total", len(snap.ClientIps), "resolved", ipResolved, "skipped", ipSkipped)
+		g.logger.InfoContext(connectionCtx, "client ip snapshot received", "agent_id", agentID, "total", len(snap.ClientIps), "resolved", ipResolved, "skipped", ipSkipped)
 	}
 
-	enqueueRegularSnapshot(connectionCtx, regularSnapshots, agentSnapshot{
+	enqueueRegularSnapshot(connectionCtx, regularSnapshots, AgentSnapshot{
 		AgentID:                  agentID,
 		AgentBootID:              snap.AgentBootId,
 		NodeName:                 snap.NodeName,
@@ -49,10 +49,10 @@ func (s *Server) handleSnapshotMessage(connectionCtx context.Context, agentID st
 }
 
 // convertInstanceSnapshots maps wire instances to the internal type.
-func convertInstanceSnapshots(in []*gatewayrpc.InstanceSnapshot) []instanceSnapshot {
-	instances := make([]instanceSnapshot, 0, len(in))
+func convertInstanceSnapshots(in []*gatewayrpc.InstanceSnapshot) []InstanceSnapshot {
+	instances := make([]InstanceSnapshot, 0, len(in))
 	for _, instance := range in {
-		instances = append(instances, instanceSnapshot{
+		instances = append(instances, InstanceSnapshot{
 			ID:                instance.Id,
 			Name:              instance.Name,
 			Version:           instance.Version,
@@ -69,13 +69,13 @@ func convertInstanceSnapshots(in []*gatewayrpc.InstanceSnapshot) []instanceSnaps
 // convertClientUsageSnapshots translates wire client usage rows into
 // inbound usage reports, resolving missing client_ids by name. Returns
 // the converted slice plus resolved/skipped counters for logging.
-func (s *Server) convertClientUsageSnapshots(agentID string, in []*gatewayrpc.ClientUsageSnapshot, observedAt time.Time) ([]clients.UsageReport, int, int) {
+func (g *Gateway) convertClientUsageSnapshots(agentID string, in []*gatewayrpc.ClientUsageSnapshot, observedAt time.Time) ([]clients.UsageReport, int, int) {
 	result := make([]clients.UsageReport, 0, len(in))
 	var resolved, skipped int
 	for _, client := range in {
 		clientID := client.ClientId
 		if clientID == "" && client.ClientName != "" {
-			clientID = s.resolveClientIDByName(agentID, client.ClientName)
+			clientID = g.deps.ResolveClientIDByName(agentID, client.ClientName)
 		}
 		if clientID == "" {
 			skipped++
@@ -102,20 +102,20 @@ func (s *Server) convertClientUsageSnapshots(agentID string, in []*gatewayrpc.Cl
 // convertClientIPSnapshots translates wire client-IP rows, resolving missing
 // client_ids by name. Returns the converted slice plus resolved/skipped
 // counters for logging.
-func (s *Server) convertClientIPSnapshots(agentID string, in []*gatewayrpc.ClientIPSnapshot) ([]clientIPSnapshot, int, int) {
-	clientIPs := make([]clientIPSnapshot, 0, len(in))
+func (g *Gateway) convertClientIPSnapshots(agentID string, in []*gatewayrpc.ClientIPSnapshot) ([]ClientIPSnapshot, int, int) {
+	clientIPs := make([]ClientIPSnapshot, 0, len(in))
 	var resolved, skipped int
 	for _, clientIP := range in {
 		ipClientID := clientIP.ClientId
 		if ipClientID == "" && clientIP.ClientName != "" {
-			ipClientID = s.resolveClientIDByName(agentID, clientIP.ClientName)
+			ipClientID = g.deps.ResolveClientIDByName(agentID, clientIP.ClientName)
 		}
 		if ipClientID == "" {
 			skipped++
 			continue
 		}
 		resolved++
-		clientIPs = append(clientIPs, clientIPSnapshot{
+		clientIPs = append(clientIPs, ClientIPSnapshot{
 			ClientID:  ipClientID,
 			ActiveIPs: append([]string(nil), clientIP.ActiveIps...),
 		})

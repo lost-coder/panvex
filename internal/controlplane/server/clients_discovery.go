@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -765,18 +764,6 @@ func (s *Server) ignoreDiscoveredClient(ctx context.Context, id, actorID string,
 
 	s.appendAuditWithContext(ctx, actorID, "clients.discovery_ignored", id, nil)
 	return nil
-}
-
-// sendClientDataRequest sends a FULL_SNAPSHOT request to the agent stream.
-func sendClientDataRequest(sess agenttransport.AgentSession, requestID string) error {
-	return sess.Send(&gatewayrpc.ConnectServerMessage{
-		Body: &gatewayrpc.ConnectServerMessage_ClientDataRequest{
-			ClientDataRequest: &gatewayrpc.ClientDataRequest{
-				Type:      gatewayrpc.ClientDataRequest_FULL_SNAPSHOT,
-				RequestId: requestID,
-			},
-		},
-	})
 }
 
 // discoveredClientFromDomain converts a discovered.DiscoveredClient domain value
