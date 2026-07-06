@@ -24,7 +24,7 @@
 // job, because the success-toast message differs between the per-agent
 // and fan-out flows and the hook should stay agnostic of strings.
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient, type Job } from "@/shared/api/api";
@@ -150,13 +150,12 @@ export function useResetQuota(
   const resolversRef = useRef<
     Map<string, (outcome: ResetOutcome) => void>
   >(new Map());
-  // Tracks (jobId, agentId) pairs whose success toast has already
-  // fired. Necessary because TanStack Query intentionally invokes
-  // queryFn twice in React.StrictMode dev mode to surface impurities,
-  // which made processJobs fire the toast twice without this guard.
-  // Production runs are unaffected (queryFn fires once per tick), but
-  // the dedup is cheap and protects against any future retry-on-error
-  // path that could replay the same terminal target.
+  // Tracks (jobId, agentId) pairs whose success toast has already fired.
+  // 7.6: side-effect ушёл из queryFn в useEffect(query.data), но дедуп
+  // всё ещё обязателен — StrictMode в dev дважды прогоняет эффекты при
+  // монтировании, и эффект перезапускается при пересоздании processJobs
+  // (deps: watched) с теми же данными. Оба реплея без дедупа тостили бы
+  // повторно.
   const toastedTargetsRef = useRef<Set<string>>(new Set());
   // Fan-out callers wait on the whole job, not individual targets;
   // store one resolver per active fan-out job so we can hand back the
@@ -168,6 +167,27 @@ export function useResetQuota(
     new Map(),
   );
 
+  // 7.6: при анмаунте сеттлим висящие промисы resetOnAgent/resetEverywhere,
+  // иначе await-еры (DeployLinksCard) держат замыкания навсегда. Исход
+  // "cancelled" никем не рендерится (компонент уже размонтирован) — цель
+  // только освободить промисы.
+  useEffect(() => {
+    const resolvers = resolversRef.current;
+    const fanOutResolvers = fanOutResolversRef.current;
+    const fanOutOutcomes = fanOutOutcomesRef.current;
+    return () => {
+      for (const resolve of resolvers.values()) {
+        resolve({ kind: "failed", error: "cancelled" });
+      }
+      resolvers.clear();
+      for (const resolve of fanOutResolvers.values()) {
+        resolve({});
+      }
+      fanOutResolvers.clear();
+      fanOutOutcomes.clear();
+    };
+  }, []);
+
   const hasWatchers = watched.length > 0;
 
   // Poll /api/jobs while at least one watched job is still in flight.
@@ -175,16 +195,13 @@ export function useResetQuota(
   // is not real-time and a tighter loop would hammer the panel without
   // improving the UX (Telemt's reset round-trip is dominated by the
   // gRPC + Telemt-side latency, not panel polling).
-  useQuery({
+  // 7.6: queryFn чистый — только фетч. Side-effect (processJobs: setState,
+  // тосты, сеттл резолверов) живёт в useEffect по query.data ниже.
+  const jobsQuery = useQuery({
     queryKey: ["clients", clientId, "reset-quota-jobs"],
-    queryFn: async () => {
-      const jobs = await apiClient.jobs();
-      processJobs(jobs);
-      return jobs;
-    },
+    queryFn: ({ signal }) => apiClient.jobs({ signal }),
     enabled: hasWatchers,
     refetchInterval: hasWatchers ? 2000 : false,
-    // Don't keep the result around — we only care about side-effects.
     staleTime: 0,
     gcTime: 0,
   });
@@ -290,6 +307,18 @@ export function useResetQuota(
     },
     [watched, qc, clientId, onSuccessToast],
   );
+
+  // 7.6: обработка результатов поллинга. Эффект перезапускается и на новые
+  // данные, и на пересоздание processJobs (deps: watched) — processJobs
+  // идемпотентен по watched/pendingAgentIds, а повтор тостов гасит
+  // toastedTargetsRef (см. комментарий у рефа).
+  useEffect(() => {
+    if (!jobsQuery.data) return;
+    // Канонический «прокинуть результат query в состояние» паттерн: сам
+    // processJobs делает setState (тот же случай, что useWsUpdateFlash).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    processJobs(jobsQuery.data);
+  }, [jobsQuery.data, processJobs]);
 
   const fanOutPending = useMemo(
     () => watched.some((w) => w.scope === "all"),
