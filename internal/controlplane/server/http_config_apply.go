@@ -352,17 +352,14 @@ func (s *Server) handleGetActiveGroupApplyBatch() http.HandlerFunc {
 	}
 }
 
-// aggregateGroupApplyBatchStatus folds a batch's persisted target rows into
-// the status response. A target already in a terminal state
-// (succeeded/failed/skipped) uses its persisted Status/Message verbatim —
-// this is what survives job eviction and makes the view resumable. A target
-// still pending/running falls back to the live job via configApplyJobStatus
-// for a fresher read (the persisted row is only refreshed periodically by
-// advanceConfigApplyBatch); a job already evicted at that point reads as
-// failed/configApplyMsgJobLost, matching what the worker will persist. Done mirrors the
-// batch's own persisted status rather than being re-derived from the
-// targets, so it agrees exactly with when advanceConfigApplyBatch finalizes
-// the batch.
+// aggregateGroupApplyBatchStatus folds a batch's target rows into the status
+// response. A target already terminal in the store (succeeded/failed/skipped
+// — persisted once, at finalization) uses its row verbatim; a target still
+// pending/running is derived LIVE from its job via configApplyJobStatus
+// (memory or store — P8.1 durable history), so the view is always fresh even
+// though advanceConfigApplyBatch no longer persists intermediate statuses.
+// Done mirrors the batch's own persisted status so it flips exactly when the
+// finalizer runs.
 func (s *Server) aggregateGroupApplyBatchStatus(ctx context.Context, batch storage.ConfigApplyBatchRecord, targets []storage.ConfigApplyBatchTargetRecord) groupApplyBatchStatusResponse {
 	resp := groupApplyBatchStatusResponse{
 		BatchID: batch.ID,

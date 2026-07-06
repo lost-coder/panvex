@@ -299,3 +299,72 @@ func TestConfigApplyJobStatusReadsEvictedJobFromStore(t *testing.T) {
 		t.Fatalf("message = %q, want the agent's own result text, not %q", message, configApplyMsgJobLost)
 	}
 }
+
+// TestConfigApplyBatchFinalizesAfterRestartMidRollout: the panel dies after
+// both agents reported results (persisted to the jobs table) but BEFORE the
+// batch worker finalized the batch. After "restart" the jobs are not in
+// memory (simulated via evictedRestoreJobStore); the worker's first tick
+// must still finalize the batch from the durable job rows with the agents'
+// REAL outcomes — not configApplyMsgJobLost, and not a stuck running batch.
+func TestConfigApplyBatchFinalizesAfterRestartMidRollout(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "restart-mid-rollout-group", time.Time{})
+	const agentA = "agent-restart-a"
+	const agentB = "agent-restart-b"
+	srv.seedLiveAgent(Agent{ID: agentA, FleetGroupID: groupID})
+	srv.seedLiveAgent(Agent{ID: agentB, FleetGroupID: groupID})
+	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+
+	ctx := context.Background()
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA, agentB})
+	if err != nil {
+		t.Fatalf("createConfigApplyBatch() error = %v", err)
+	}
+	_, targets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
+	if err != nil {
+		t.Fatalf("GetConfigApplyBatch(%s): %v", batchID, err)
+	}
+	jobByAgent := map[string]string{}
+	for _, tgt := range targets {
+		jobByAgent[tgt.AgentID] = tgt.JobID
+	}
+	if !srv.jobs.RecordResult(ctx, agentA, jobByAgent[agentA], true, "ok", "", time.Now()) {
+		t.Fatalf("RecordResult(%s) returned false", agentA)
+	}
+	if !srv.jobs.RecordResult(ctx, agentB, jobByAgent[agentB], false, "agent exploded", "", time.Now()) {
+		t.Fatalf("RecordResult(%s) returned false", agentB)
+	}
+
+	// «Рестарт» mid-rollout: батч ещё running в store, джобы — только в store.
+	srv.jobs = jobs.NewServiceWithStore(ctx, evictedRestoreJobStore{JobStore: srv.store})
+
+	// Первый тик воркера после рестарта.
+	srv.pollConfigApplyBatches(ctx)
+
+	gotBatch, gotTargets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
+	if err != nil {
+		t.Fatalf("GetConfigApplyBatch(%s) after poll: %v", batchID, err)
+	}
+	if gotBatch.Status != storage.ConfigApplyBatchStatusFailed {
+		t.Fatalf("batch status = %q, want %q (one target failed)", gotBatch.Status, storage.ConfigApplyBatchStatusFailed)
+	}
+	for _, tgt := range gotTargets {
+		switch tgt.AgentID {
+		case agentA:
+			if tgt.Status != storage.ConfigApplyTargetStatusSucceeded {
+				t.Fatalf("target %s status = %q, want succeeded", agentA, tgt.Status)
+			}
+		case agentB:
+			if tgt.Status != storage.ConfigApplyTargetStatusFailed {
+				t.Fatalf("target %s status = %q, want failed", agentB, tgt.Status)
+			}
+			if tgt.Message != "agent exploded" {
+				t.Fatalf("target %s message = %q, want the real result text, not %q", agentB, tgt.Message, configApplyMsgJobLost)
+			}
+		default:
+			t.Fatalf("unexpected target %s", tgt.AgentID)
+		}
+	}
+}
