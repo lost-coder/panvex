@@ -1,5 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { authApi } from "@/shared/api/auth";
 import { SESSION_EXPIRED_EVENT } from "@/shared/api/http";
@@ -17,32 +25,72 @@ import {
 // surface a reconnection banner and a subtle flash when data arrives via WS.
 export type WsStatus = "connecting" | "open" | "reconnecting" | "closed";
 
-export interface WsContextValue {
+// 7.1 (аудит #web-1): контекст разнесён. Статус меняется редко и живёт в
+// обычном контексте; lastEventAt меняется на КАЖДОЕ событие и живёт во
+// внешнем store с подпиской через useSyncExternalStore — ре-рендерятся
+// только реальные подписчики таймстампа (useWsUpdateFlash), а не все
+// 16+ потребителей useWsStatus().
+export interface WsStatusValue {
   status: WsStatus;
-  /** Timestamp (ms) of the most recent inbound relevant event. */
-  lastEventAt: number | null;
   /** Attempt count for the current reconnect loop (0 while healthy). */
   reconnectAttempts: number;
 }
 
-const WsContext = createContext<WsContextValue>({
+interface LastEventStore {
+  subscribe: (onChange: () => void) => () => void;
+  getSnapshot: () => number | null;
+  emit: (ts: number) => void;
+}
+
+function createLastEventStore(): LastEventStore {
+  let lastEventAt: number | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    subscribe(onChange) {
+      listeners.add(onChange);
+      return () => {
+        listeners.delete(onChange);
+      };
+    },
+    getSnapshot() {
+      return lastEventAt;
+    },
+    emit(ts) {
+      lastEventAt = ts;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+const WsStatusContext = createContext<WsStatusValue>({
   status: "connecting",
-  lastEventAt: null,
   reconnectAttempts: 0,
 });
 
+// Default-store: код вне провайдера (тесты, storybook-подобные рендеры)
+// получает рабочий, но «немой» store вместо падения на undefined.
+const WsLastEventContext = createContext<LastEventStore>(createLastEventStore());
+
 // R-Q-24: provider co-locates the hook by convention; see AppearanceProvider.
 // eslint-disable-next-line react-refresh/only-export-components
-export function useWsStatus(): WsContextValue {
-  return useContext(WsContext);
+export function useWsStatus(): WsStatusValue {
+  return useContext(WsStatusContext);
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useWsLastEventAt(): number | null {
+  const store = useContext(WsLastEventContext);
+  return useSyncExternalStore(store.subscribe, store.getSnapshot);
 }
 
 export function EventsSynchronizer({ children }: Readonly<{ children?: React.ReactNode }>) {
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
   const [status, setStatus] = useState<WsStatus>("connecting");
-  const [lastEventAt, setLastEventAt] = useState<number | null>(null);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  // Store создаётся один раз на инстанс провайдера (useState-инициализатор
+  // вместо useRef — чистая инициализация без мутаций в рендере).
+  const [lastEventStore] = useState<LastEventStore>(createLastEventStore);
   // Refs so the long-lived effect doesn't depend on state and re-subscribe.
   const attemptsRef = useRef(0);
   // D6c: last seen hub sequence number for the current socket. null until
@@ -157,7 +205,7 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
             // D6c: the hub dropped frames for this subscriber (slow tab or
             // event burst) — per-event invalidation can no longer be
             // trusted, so refetch everything once and resync.
-            setLastEventAt(Date.now());
+            lastEventStore.emit(Date.now());
             scheduleFullResync();
             return;
           }
@@ -165,7 +213,9 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
         if (!isKnownEventType(event.type) && console !== undefined) {
           console.debug("events: unknown event type, falling back to broad sweep", event.type);
         }
-        setLastEventAt(Date.now());
+        // 7.1: вместо setState — emit в store; провайдер и статус-подписчики
+        // не ре-рендерятся, подписчики таймстампа получают уведомление.
+        lastEventStore.emit(Date.now());
         void applyInvalidation(invalidationsForEvent(event));
       };
       socket.onerror = () => { socket?.close(); };
@@ -201,17 +251,19 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
       // "disconnected" banner before the fresh socket reconnects.
       setStatus("connecting");
     };
-  }, [queryClient, isAuthenticated]);
+  }, [queryClient, isAuthenticated, lastEventStore]);
 
-  const value = useMemo<WsContextValue>(
-    () => ({ status, lastEventAt, reconnectAttempts }),
-    [status, lastEventAt, reconnectAttempts],
+  const statusValue = useMemo<WsStatusValue>(
+    () => ({ status, reconnectAttempts }),
+    [status, reconnectAttempts],
   );
 
-  // Back-compat: when rendered without children, behave like the old
-  // null-returning version (some bootstrap code still uses that form).
-  if (children === undefined) {
-    return <WsContext.Provider value={value}>{null}</WsContext.Provider>;
-  }
-  return <WsContext.Provider value={value}>{children}</WsContext.Provider>;
+  const body = children === undefined ? null : children;
+  return (
+    <WsStatusContext.Provider value={statusValue}>
+      <WsLastEventContext.Provider value={lastEventStore}>
+        {body}
+      </WsLastEventContext.Provider>
+    </WsStatusContext.Provider>
+  );
 }

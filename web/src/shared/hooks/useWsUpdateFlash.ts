@@ -10,12 +10,14 @@
 
 import { useEffect, useState } from "react";
 
-import { useWsStatus } from "@/app/providers/EventsSynchronizer";
+import { useWsLastEventAt } from "@/app/providers/EventsSynchronizer";
 
 const FLASH_DURATION_MS = 1_200;
 
 export function useWsUpdateFlash(): boolean {
-  const { lastEventAt } = useWsStatus();
+  // 7.1: единственный настоящий подписчик lastEventAt — читает store через
+  // useSyncExternalStore-хук, а не общий контекст.
+  const lastEventAt = useWsLastEventAt();
   const [flashing, setFlashing] = useState(false);
 
   useEffect(() => {
