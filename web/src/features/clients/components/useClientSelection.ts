@@ -1,8 +1,11 @@
 // R-Q-08: page-scoped multi-select helper extracted from ClientsPage.tsx.
 // Owns the selected-set + toggle/toggleAll/clear bookkeeping so the host
 // just consumes the returned helpers and selection config.
+//
+// 7.2 (#web-3): хендлеры обёрнуты в useCallback — колонки таблицы в
+// ClientsPage мемоизируются на их identity.
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 export interface ClientSelectionApi {
   selected: Set<string>;
@@ -22,23 +25,25 @@ export function useClientSelection(pageIds: string[]): ClientSelectionApi {
     return { allSelected: all, someSelected: onPage.length > 0 && !all };
   }, [pageIds, selected]);
 
-  const toggleOne = (id: string) =>
+  const toggleOne = useCallback((id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  }, []);
 
-  const toggleAllOnPage = () =>
+  const toggleAllOnPage = useCallback(() => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (allSelected) pageIds.forEach((id) => next.delete(id));
       else pageIds.forEach((id) => next.add(id));
       return next;
     });
+  }, [allSelected, pageIds]);
 
-  const clear = () => setSelected(new Set());
+  const clear = useCallback(() => setSelected(new Set()), []);
 
   return { selected, allSelected, someSelected, toggleOne, toggleAllOnPage, clear };
 }
