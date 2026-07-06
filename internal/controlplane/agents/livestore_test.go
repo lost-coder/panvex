@@ -3,57 +3,41 @@ package agents
 import (
 	"sort"
 	"testing"
+	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/api"
 )
 
-// testAgent and testInstance stand in for the server's presentation Agent /
-// Instance. They carry the reference-type fields (slice, map, pointer) that
-// the real AgentRuntime / Instance have, so the deep-copy-isolation tests
-// exercise the same aliasing hazards the server types would.
-type testAgent struct {
-	ID     string
-	Name   string
-	Events []string
-	Tags   map[string]int
-	Note   *string
-}
-
-type testInstance struct {
-	ID      string
-	AgentID string
-	Scopes  []string
-}
-
-func cloneTestAgent(a testAgent) testAgent {
+// deepCopyAgent stands in for the server's cloneAgentForMirror. It clones the
+// reference-type fields the isolation tests exercise — the Runtime.RecentEvents
+// slice and the CertIssuedAt pointer — so the store's deep-copy guarantee is
+// under test. The store only needs the caller's clone to be deep for fields a
+// handler might mutate.
+func deepCopyAgent(a api.Agent) api.Agent {
 	out := a
-	out.Events = append([]string(nil), a.Events...)
-	if a.Tags != nil {
-		out.Tags = make(map[string]int, len(a.Tags))
-		for k, v := range a.Tags {
-			out.Tags[k] = v
-		}
-	}
-	if a.Note != nil {
-		n := *a.Note
-		out.Note = &n
+	out.Runtime.RecentEvents = append([]api.RuntimeEvent(nil), a.Runtime.RecentEvents...)
+	if a.CertIssuedAt != nil {
+		t := *a.CertIssuedAt
+		out.CertIssuedAt = &t
 	}
 	return out
 }
 
-func cloneTestInstance(i testInstance) testInstance {
-	out := i
-	out.Scopes = append([]string(nil), i.Scopes...)
-	return out
-}
+// copyInstance is a plain struct copy: api.Instance has only scalar fields, so
+// a value copy is already a deep copy. (This is why there is no instance
+// deep-copy-isolation test below — the aliasing hazard the old generic test
+// covered does not exist for the concrete presentation type.)
+func copyInstance(i api.Instance) api.Instance { return i }
 
-func newTestStore() *LiveStore[testAgent, testInstance] {
+func newTestStore() *LiveStore {
 	return NewLiveStore(
-		cloneTestAgent,
-		cloneTestInstance,
-		func(i testInstance) string { return i.ID },
+		deepCopyAgent,
+		copyInstance,
+		func(i api.Instance) string { return i.ID },
 	)
 }
 
-func instanceIDs(insts []testInstance) []string {
+func instanceIDs(insts []api.Instance) []string {
 	out := make([]string, 0, len(insts))
 	for _, i := range insts {
 		out = append(out, i.ID)
@@ -63,19 +47,19 @@ func instanceIDs(insts []testInstance) []string {
 }
 
 func TestLiveStoreNewLiveStorePanicsOnNilFuncs(t *testing.T) {
-	ok := func(i testInstance) string { return "" }
+	ok := func(i api.Instance) string { return "" }
 	cases := []struct {
 		name string
-		mk   func() *LiveStore[testAgent, testInstance]
+		mk   func() *LiveStore
 	}{
-		{"cloneAgent", func() *LiveStore[testAgent, testInstance] {
-			return NewLiveStore[testAgent, testInstance](nil, cloneTestInstance, ok)
+		{"cloneAgent", func() *LiveStore {
+			return NewLiveStore(nil, copyInstance, ok)
 		}},
-		{"cloneInstance", func() *LiveStore[testAgent, testInstance] {
-			return NewLiveStore[testAgent, testInstance](cloneTestAgent, nil, ok)
+		{"cloneInstance", func() *LiveStore {
+			return NewLiveStore(deepCopyAgent, nil, ok)
 		}},
-		{"instanceID", func() *LiveStore[testAgent, testInstance] {
-			return NewLiveStore[testAgent, testInstance](cloneTestAgent, cloneTestInstance, nil)
+		{"instanceID", func() *LiveStore {
+			return NewLiveStore(deepCopyAgent, copyInstance, nil)
 		}},
 	}
 	for _, tc := range cases {
@@ -92,14 +76,14 @@ func TestLiveStoreNewLiveStorePanicsOnNilFuncs(t *testing.T) {
 
 func TestLiveStoreApplySnapshotStoresAgentAndInstances(t *testing.T) {
 	s := newTestStore()
-	s.ApplySnapshot("a1", testAgent{ID: "a1", Name: "alpha"}, []testInstance{
+	s.ApplySnapshot("a1", api.Agent{ID: "a1", NodeName: "alpha"}, []api.Instance{
 		{ID: "i1", AgentID: "a1"},
 		{ID: "i2", AgentID: "a1"},
 	})
 
 	got, ok := s.Get("a1")
-	if !ok || got.Name != "alpha" {
-		t.Fatalf("Get(a1) = %+v ok=%v, want Name=alpha", got, ok)
+	if !ok || got.NodeName != "alpha" {
+		t.Fatalf("Get(a1) = %+v ok=%v, want NodeName=alpha", got, ok)
 	}
 	if ids := instanceIDs(s.InstancesForAgent("a1")); len(ids) != 2 || ids[0] != "i1" || ids[1] != "i2" {
 		t.Fatalf("InstancesForAgent(a1) = %v, want [i1 i2]", ids)
@@ -111,13 +95,13 @@ func TestLiveStoreApplySnapshotStoresAgentAndInstances(t *testing.T) {
 
 func TestLiveStoreApplySnapshotReplacesAndPrunesInstances(t *testing.T) {
 	s := newTestStore()
-	s.ApplySnapshot("a1", testAgent{ID: "a1"}, []testInstance{
+	s.ApplySnapshot("a1", api.Agent{ID: "a1"}, []api.Instance{
 		{ID: "i1", AgentID: "a1"},
 		{ID: "i2", AgentID: "a1"},
 		{ID: "i3", AgentID: "a1"},
 	})
 	// Second snapshot drops i2 and i3, adds i4. i2/i3 must be pruned.
-	s.ApplySnapshot("a1", testAgent{ID: "a1"}, []testInstance{
+	s.ApplySnapshot("a1", api.Agent{ID: "a1"}, []api.Instance{
 		{ID: "i1", AgentID: "a1"},
 		{ID: "i4", AgentID: "a1"},
 	})
@@ -128,10 +112,10 @@ func TestLiveStoreApplySnapshotReplacesAndPrunesInstances(t *testing.T) {
 
 func TestLiveStoreApplySnapshotDoesNotPruneOtherAgents(t *testing.T) {
 	s := newTestStore()
-	s.ApplySnapshot("a1", testAgent{ID: "a1"}, []testInstance{{ID: "i1", AgentID: "a1"}})
-	s.ApplySnapshot("a2", testAgent{ID: "a2"}, []testInstance{{ID: "i2", AgentID: "a2"}})
+	s.ApplySnapshot("a1", api.Agent{ID: "a1"}, []api.Instance{{ID: "i1", AgentID: "a1"}})
+	s.ApplySnapshot("a2", api.Agent{ID: "a2"}, []api.Instance{{ID: "i2", AgentID: "a2"}})
 	// Re-snapshot a1 with an empty instance set: a2's instance must survive.
-	s.ApplySnapshot("a1", testAgent{ID: "a1"}, nil)
+	s.ApplySnapshot("a1", api.Agent{ID: "a1"}, nil)
 
 	if ids := instanceIDs(s.InstancesForAgent("a1")); len(ids) != 0 {
 		t.Fatalf("InstancesForAgent(a1) = %v, want empty", ids)
@@ -146,14 +130,14 @@ func TestLiveStoreApplySnapshotDoesNotPruneOtherAgents(t *testing.T) {
 
 func TestLiveStoreSetInstancesReplacesWithoutTouchingAgent(t *testing.T) {
 	s := newTestStore()
-	s.ApplySnapshot("a1", testAgent{ID: "a1", Name: "alpha"}, []testInstance{
+	s.ApplySnapshot("a1", api.Agent{ID: "a1", NodeName: "alpha"}, []api.Instance{
 		{ID: "i1", AgentID: "a1"},
 		{ID: "i2", AgentID: "a1"},
 	})
-	s.SetInstances("a1", []testInstance{{ID: "i1", AgentID: "a1"}})
+	s.SetInstances("a1", []api.Instance{{ID: "i1", AgentID: "a1"}})
 
 	// Agent value unchanged.
-	if got, _ := s.Get("a1"); got.Name != "alpha" {
+	if got, _ := s.Get("a1"); got.NodeName != "alpha" {
 		t.Fatalf("agent value changed by SetInstances: %+v", got)
 	}
 	// i2 pruned.
@@ -164,8 +148,8 @@ func TestLiveStoreSetInstancesReplacesWithoutTouchingAgent(t *testing.T) {
 
 func TestLiveStoreRemoveEvictsAgentAndItsInstances(t *testing.T) {
 	s := newTestStore()
-	s.ApplySnapshot("a1", testAgent{ID: "a1"}, []testInstance{{ID: "i1", AgentID: "a1"}})
-	s.ApplySnapshot("a2", testAgent{ID: "a2"}, []testInstance{{ID: "i2", AgentID: "a2"}})
+	s.ApplySnapshot("a1", api.Agent{ID: "a1"}, []api.Instance{{ID: "i1", AgentID: "a1"}})
+	s.ApplySnapshot("a2", api.Agent{ID: "a2"}, []api.Instance{{ID: "i2", AgentID: "a2"}})
 
 	s.Remove("a1")
 
@@ -187,39 +171,36 @@ func TestLiveStoreGetMissingReturnsZeroFalse(t *testing.T) {
 	}
 }
 
-// TestLiveStoreGetDeepCopyIsolation mutates every reference-type field of a
-// value returned by Get and asserts the mirror is untouched — the core
-// concurrency-safety guarantee.
+// TestLiveStoreGetDeepCopyIsolation mutates the reference-type fields of a
+// value returned by Get (the Runtime.RecentEvents slice and the CertIssuedAt
+// pointer) and asserts the mirror is untouched — the core concurrency-safety
+// guarantee.
 func TestLiveStoreGetDeepCopyIsolation(t *testing.T) {
 	s := newTestStore()
-	note := "original"
-	s.ApplySnapshot("a1", testAgent{
-		ID:     "a1",
-		Name:   "alpha",
-		Events: []string{"e1", "e2"},
-		Tags:   map[string]int{"k": 1},
-		Note:   &note,
+	issued := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	s.ApplySnapshot("a1", api.Agent{
+		ID:           "a1",
+		NodeName:     "alpha",
+		CertIssuedAt: &issued,
+		Runtime: api.AgentRuntime{
+			RecentEvents: []api.RuntimeEvent{{EventType: "e1"}, {EventType: "e2"}},
+		},
 	}, nil)
 
 	got, _ := s.Get("a1")
-	got.Name = "MUTATED"
-	got.Events[0] = "MUTATED"
-	got.Tags["k"] = 999
-	got.Tags["new"] = 7
-	*got.Note = "MUTATED"
+	got.NodeName = "MUTATED"
+	got.Runtime.RecentEvents[0].EventType = "MUTATED"
+	*got.CertIssuedAt = time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	fresh, _ := s.Get("a1")
-	if fresh.Name != "alpha" {
-		t.Fatalf("Name mutated via returned copy: %q", fresh.Name)
+	if fresh.NodeName != "alpha" {
+		t.Fatalf("NodeName mutated via returned copy: %q", fresh.NodeName)
 	}
-	if fresh.Events[0] != "e1" {
-		t.Fatalf("Events slice mutated via returned copy: %v", fresh.Events)
+	if fresh.Runtime.RecentEvents[0].EventType != "e1" {
+		t.Fatalf("RecentEvents slice mutated via returned copy: %v", fresh.Runtime.RecentEvents)
 	}
-	if fresh.Tags["k"] != 1 || len(fresh.Tags) != 1 {
-		t.Fatalf("Tags map mutated via returned copy: %v", fresh.Tags)
-	}
-	if *fresh.Note != "original" {
-		t.Fatalf("Note pointer mutated via returned copy: %q", *fresh.Note)
+	if !fresh.CertIssuedAt.Equal(issued) {
+		t.Fatalf("CertIssuedAt pointer mutated via returned copy: %v", *fresh.CertIssuedAt)
 	}
 }
 
@@ -227,58 +208,35 @@ func TestLiveStoreGetDeepCopyIsolation(t *testing.T) {
 // AFTER ApplySnapshot returns does not corrupt the mirror (clone-on-write).
 func TestLiveStoreApplySnapshotInputAliasing(t *testing.T) {
 	s := newTestStore()
-	agent := testAgent{ID: "a1", Events: []string{"e1"}, Tags: map[string]int{"k": 1}}
-	insts := []testInstance{{ID: "i1", AgentID: "a1", Scopes: []string{"s1"}}}
-	s.ApplySnapshot("a1", agent, insts)
+	issued := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// want is a value copy: mutating *agent.CertIssuedAt below also rewrites
+	// the `issued` variable it points at, so we compare against this snapshot.
+	want := issued
+	agent := api.Agent{
+		ID:           "a1",
+		CertIssuedAt: &issued,
+		Runtime:      api.AgentRuntime{RecentEvents: []api.RuntimeEvent{{EventType: "e1"}}},
+	}
+	s.ApplySnapshot("a1", agent, []api.Instance{{ID: "i1", AgentID: "a1"}})
 
 	// Mutate the caller-retained args.
-	agent.Events[0] = "MUTATED"
-	agent.Tags["k"] = 999
-	insts[0].Scopes[0] = "MUTATED"
+	agent.Runtime.RecentEvents[0].EventType = "MUTATED"
+	*agent.CertIssuedAt = time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	got, _ := s.Get("a1")
-	if got.Events[0] != "e1" || got.Tags["k"] != 1 {
+	if got.Runtime.RecentEvents[0].EventType != "e1" || !got.CertIssuedAt.Equal(want) {
 		t.Fatalf("mirror agent aliased to input args: %+v", got)
-	}
-	gotInst := s.InstancesForAgent("a1")
-	if len(gotInst) != 1 || gotInst[0].Scopes[0] != "s1" {
-		t.Fatalf("mirror instance aliased to input args: %+v", gotInst)
-	}
-}
-
-// TestLiveStoreInstanceListDeepCopyIsolation mutates a returned instance's
-// slice field and asserts the mirror is untouched.
-func TestLiveStoreInstanceListDeepCopyIsolation(t *testing.T) {
-	s := newTestStore()
-	s.ApplySnapshot("a1", testAgent{ID: "a1"}, []testInstance{
-		{ID: "i1", AgentID: "a1", Scopes: []string{"s1", "s2"}},
-	})
-
-	for _, getter := range []func() []testInstance{
-		func() []testInstance { return s.InstancesForAgent("a1") },
-		func() []testInstance { return s.AllInstances() },
-	} {
-		got := getter()
-		if len(got) != 1 {
-			t.Fatalf("getter returned %d instances, want 1", len(got))
-		}
-		got[0].Scopes[0] = "MUTATED"
-
-		fresh := s.InstancesForAgent("a1")
-		if fresh[0].Scopes[0] != "s1" {
-			t.Fatalf("mirror instance Scopes mutated via returned copy: %v", fresh[0].Scopes)
-		}
 	}
 }
 
 func TestLiveStoreReplaceIsScopedToOneAgent(t *testing.T) {
 	s := newTestStore()
-	s.ApplySnapshot("a1", testAgent{ID: "a1"}, []testInstance{{ID: "i1", AgentID: "a1"}, {ID: "i2", AgentID: "a1"}})
-	s.ApplySnapshot("a2", testAgent{ID: "a2"}, []testInstance{{ID: "j1", AgentID: "a2"}})
+	s.ApplySnapshot("a1", api.Agent{ID: "a1"}, []api.Instance{{ID: "i1", AgentID: "a1"}, {ID: "i2", AgentID: "a1"}})
+	s.ApplySnapshot("a2", api.Agent{ID: "a2"}, []api.Instance{{ID: "j1", AgentID: "a2"}})
 
 	// Replace агента a1 новым набором: его старые инстансы уходят,
 	// чужие остаются нетронутыми.
-	s.SetInstances("a1", []testInstance{{ID: "i3", AgentID: "a1"}})
+	s.SetInstances("a1", []api.Instance{{ID: "i3", AgentID: "a1"}})
 
 	a1 := s.InstancesForAgent("a1")
 	if len(a1) != 1 || a1[0].ID != "i3" {

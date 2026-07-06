@@ -142,7 +142,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		// so reads return isolated copies (see live_clone.go). instanceID
 		// projects the instance key; the owning agent is the outer key of
 		// the two-level index (P6-6.2b).
-		live: agents.NewLiveStore[Agent, Instance](
+		live: agents.NewLiveStore(
 			cloneAgentForMirror,
 			cloneInstanceForMirror,
 			func(i Instance) string { return i.ID },
