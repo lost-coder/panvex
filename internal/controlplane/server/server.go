@@ -35,6 +35,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
+	"github.com/lost-coder/panvex/internal/controlplane/updates"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
 )
 
@@ -262,7 +263,11 @@ type Server struct {
 	panelSettings  PanelSettings
 	updateSettings UpdateSettings
 	updateState    UpdateState
-	retention      RetentionSettings
+	// updatesSvc owns the persistence of updateSettings/updateState (P8.2i).
+	// Nil exactly when no store is wired; the self-update orchestration and
+	// the periodic check worker stay in server. See internal/controlplane/updates.
+	updatesSvc *updates.Service
+	retention  RetentionSettings
 	// retentionDisabledWarned tracks which retention series (by table name)
 	// have already had their "retention disabled, table will grow unbounded"
 	// warning logged, so a steady-state disabled setting does not spam the

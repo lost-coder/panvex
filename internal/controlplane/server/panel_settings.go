@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -10,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/updates"
 )
 
 const (
@@ -202,65 +202,35 @@ func (s *Server) restoreStoredPanelSettings() error {
 	return nil
 }
 
-// UpdateSettings controls how the panel checks for and applies updates.
-type UpdateSettings struct {
-	CheckIntervalHours  int    `json:"check_interval_hours"`
-	AutoUpdatePanel     bool   `json:"auto_update_panel"`
-	AutoUpdateAgents    bool   `json:"auto_update_agents"`
-	GitHubRepo          string `json:"github_repo"`
-	GitHubToken         string `json:"github_token,omitempty"`
-	AgentDownloadSource string `json:"agent_download_source"`
-}
-
-func defaultUpdateSettings() UpdateSettings {
-	return UpdateSettings{
-		CheckIntervalHours:  6,
-		AutoUpdatePanel:     false,
-		AutoUpdateAgents:    false,
-		GitHubRepo:          "lost-coder/panvex",
-		AgentDownloadSource: "github",
-	}
-}
-
-// UpdateState caches the latest known versions from GitHub.
-type UpdateState struct {
-	LatestPanelVersion string `json:"latest_panel_version"`
-	LatestAgentVersion string `json:"latest_agent_version"`
-	PanelDownloadURL   string `json:"panel_download_url"`
-	PanelChecksumURL   string `json:"panel_checksum_url"`
-	PanelChangelog     string `json:"panel_changelog"`
-	AgentChangelog     string `json:"agent_changelog"`
-	LastCheckedAt      int64  `json:"last_checked_at"`
-	// LastCheckError holds the operator-readable reason the most recent update
-	// check failed (e.g. a GitHub rate-limit message). Empty after a
-	// successful check. Surfaced in the dashboard so a failed check is visible,
-	// not silent.
-	LastCheckError string `json:"last_check_error,omitempty"`
-}
+// UpdateSettings / UpdateState moved to internal/controlplane/updates with the
+// updates.Service extraction (P8.2i). server keeps aliases so its call sites
+// (panel_settings.go, http_updates.go, update_checker.go, tests) compile
+// unchanged.
+type (
+	UpdateSettings = updates.Settings
+	UpdateState    = updates.State
+)
 
 func (s *Server) restoreUpdateSettings() error {
+	// updatesSvc is nil exactly when no persistent store is wired; the
+	// no-store path keeps the defaults stamped in newServerFromOptions.
+	if s.updatesSvc == nil {
+		return nil
+	}
 	// ctx is the boot-time lifecycle context (s.serverCtx) so a Close()
 	// during a slow update-settings/state read aborts the read instead of
 	// holding the constructor open (Plan 3 / BP-01).
 	ctx := s.Context()
-	data, err := s.store.GetUpdateSettings(ctx)
+	settings, err := s.updatesSvc.LoadSettings(ctx)
 	if err != nil {
 		return err
 	}
-	if data != nil {
-		if err := json.Unmarshal(data, &s.updateSettings); err != nil {
-			return err
-		}
-	}
-	data, err = s.store.GetUpdateState(ctx)
+	state, err := s.updatesSvc.LoadState(ctx)
 	if err != nil {
 		return err
 	}
-	if data != nil {
-		if err := json.Unmarshal(data, &s.updateState); err != nil {
-			return err
-		}
-	}
+	s.updateSettings = settings
+	s.updateState = state
 	return nil
 }
 
