@@ -220,7 +220,12 @@ type Server struct {
 	// uses, so callers don't have to nil-check at every site.
 	webhookStorage  webhooks.Storage
 	webhookProducer *webhooks.Producer
-	metricSeq       uint64
+	// webhooksAdmin routes the operator endpoint-CRUD handlers through the
+	// webhooks domain service (P8.2g), which owns the encrypt-before-persist
+	// invariant. Nil exactly when webhookStorage is nil, so the handlers'
+	// disabled-subsystem branch keys off it.
+	webhooksAdmin *webhooks.AdminService
+	metricSeq     uint64
 	// revokedAgentIDs tracks deregistered agent IDs whose mTLS certificates
 	// may still be cryptographically valid. The set is checked during gRPC
 	// Connect to deny access. It is not persisted: on restart the set is

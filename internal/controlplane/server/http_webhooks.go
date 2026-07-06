@@ -66,11 +66,11 @@ type webhookUpdateRequest struct {
 
 func (s *Server) handleListWebhookEndpoints() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.webhookStorage == nil {
+		if s.webhooksAdmin == nil {
 			writeErrorWithCode(w, http.StatusServiceUnavailable, msgWebhookSubsystemDisabled, "webhooks_disabled")
 			return
 		}
-		eps, err := s.webhookStorage.ListEndpointMeta(r.Context())
+		eps, err := s.webhooksAdmin.List(r.Context())
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "webhook endpoints list", "error", err)
 			writeErrorWithCode(w, http.StatusInternalServerError, "failed to list endpoints", "internal_error")
@@ -86,12 +86,12 @@ func (s *Server) handleListWebhookEndpoints() http.HandlerFunc {
 
 func (s *Server) handleGetWebhookEndpoint() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.webhookStorage == nil {
+		if s.webhooksAdmin == nil {
 			writeErrorWithCode(w, http.StatusServiceUnavailable, msgWebhookSubsystemDisabled, "webhooks_disabled")
 			return
 		}
 		id := chi.URLParam(r, "id")
-		ep, err := s.webhookStorage.GetEndpointMeta(r.Context(), id)
+		ep, err := s.webhooksAdmin.Get(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, webhooks.ErrNotFound) {
 				writeErrorWithCode(w, http.StatusNotFound, msgWebhookEndpointNotFound, "not_found")
@@ -107,7 +107,7 @@ func (s *Server) handleGetWebhookEndpoint() http.HandlerFunc {
 
 func (s *Server) handleCreateWebhookEndpoint() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.webhookStorage == nil {
+		if s.webhooksAdmin == nil {
 			writeErrorWithCode(w, http.StatusServiceUnavailable, msgWebhookSubsystemDisabled, "webhooks_disabled")
 			return
 		}
@@ -120,23 +120,16 @@ func (s *Server) handleCreateWebhookEndpoint() http.HandlerFunc {
 			writeErrorWithCode(w, http.StatusBadRequest, err.Error(), "invalid_input")
 			return
 		}
-		ciphertext, err := s.encryptWebhookSecret(req.Secret)
-		if err != nil {
-			s.logger.ErrorContext(r.Context(), "webhook secret encrypt", "error", err)
-			writeErrorWithCode(w, http.StatusInternalServerError, "failed to encrypt secret", "internal_error")
-			return
-		}
 		id := newWebhookEndpointID()
-		now := s.now().UTC()
-		if err := s.webhookStorage.CreateEndpoint(r.Context(), webhooks.EndpointInput{
-			ID:               id,
-			Name:             req.Name,
-			URL:              req.URL,
-			SecretCiphertext: ciphertext,
-			EventFilter:      req.EventFilter,
-			AllowPrivate:     req.AllowPrivate,
-			Enabled:          req.Enabled,
-		}, now); err != nil {
+		if err := s.webhooksAdmin.Create(r.Context(), webhooks.EndpointForm{
+			ID:           id,
+			Name:         req.Name,
+			URL:          req.URL,
+			Secret:       req.Secret,
+			EventFilter:  req.EventFilter,
+			AllowPrivate: req.AllowPrivate,
+			Enabled:      req.Enabled,
+		}); err != nil {
 			s.logger.ErrorContext(r.Context(), "webhook endpoint create", "name", req.Name, "error", err)
 			writeErrorWithCode(w, http.StatusInternalServerError, "failed to create endpoint", "internal_error")
 			return
@@ -154,7 +147,7 @@ func (s *Server) handleCreateWebhookEndpoint() http.HandlerFunc {
 
 func (s *Server) handleUpdateWebhookEndpoint() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.webhookStorage == nil {
+		if s.webhooksAdmin == nil {
 			writeErrorWithCode(w, http.StatusServiceUnavailable, msgWebhookSubsystemDisabled, "webhooks_disabled")
 			return
 		}
@@ -168,26 +161,15 @@ func (s *Server) handleUpdateWebhookEndpoint() http.HandlerFunc {
 			writeErrorWithCode(w, http.StatusBadRequest, err.Error(), "invalid_input")
 			return
 		}
-		var ciphertext string
-		if req.Secret != "" {
-			ct, err := s.encryptWebhookSecret(req.Secret)
-			if err != nil {
-				s.logger.ErrorContext(r.Context(), "webhook secret encrypt", "error", err)
-				writeErrorWithCode(w, http.StatusInternalServerError, "failed to encrypt secret", "internal_error")
-				return
-			}
-			ciphertext = ct
-		}
-		now := s.now().UTC()
-		err := s.webhookStorage.UpdateEndpoint(r.Context(), webhooks.EndpointInput{
-			ID:               id,
-			Name:             req.Name,
-			URL:              req.URL,
-			SecretCiphertext: ciphertext,
-			EventFilter:      req.EventFilter,
-			AllowPrivate:     req.AllowPrivate,
-			Enabled:          req.Enabled,
-		}, now)
+		err := s.webhooksAdmin.Update(r.Context(), webhooks.EndpointForm{
+			ID:           id,
+			Name:         req.Name,
+			URL:          req.URL,
+			Secret:       req.Secret,
+			EventFilter:  req.EventFilter,
+			AllowPrivate: req.AllowPrivate,
+			Enabled:      req.Enabled,
+		})
 		if err != nil {
 			if errors.Is(err, webhooks.ErrNotFound) {
 				writeErrorWithCode(w, http.StatusNotFound, msgWebhookEndpointNotFound, "not_found")
@@ -211,12 +193,12 @@ func (s *Server) handleUpdateWebhookEndpoint() http.HandlerFunc {
 
 func (s *Server) handleDeleteWebhookEndpoint() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.webhookStorage == nil {
+		if s.webhooksAdmin == nil {
 			writeErrorWithCode(w, http.StatusServiceUnavailable, msgWebhookSubsystemDisabled, "webhooks_disabled")
 			return
 		}
 		id := chi.URLParam(r, "id")
-		if err := s.webhookStorage.DeleteEndpoint(r.Context(), id); err != nil {
+		if err := s.webhooksAdmin.Delete(r.Context(), id); err != nil {
 			if errors.Is(err, webhooks.ErrNotFound) {
 				writeErrorWithCode(w, http.StatusNotFound, msgWebhookEndpointNotFound, "not_found")
 				return
