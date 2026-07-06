@@ -98,7 +98,7 @@ func initSecrets(bootCtx context.Context, options Options) (func() time.Time, *c
 // newServerFromOptions populates the Server struct literal. Pure data plumbing
 // — no I/O, no error paths.
 func newServerFromOptions(options Options, now func() time.Time, csrfManager *csrf.Manager, vault *secretvault.Vault) *Server {
-	return &Server{
+	s := &Server{
 		auth:          auth.NewService(),
 		store:         options.Store,
 		uiFiles:       options.UIFiles,
@@ -161,6 +161,10 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		bootstrap:        options.Bootstrap,
 		bootstrapSources: options.BootstrapSources,
 	}
+	// P8.1: клиентское правило supersession живёт в clients-слое; jobs.Service
+	// получает его инъекцией и сам домена клиентов не знает.
+	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
+	return s
 }
 
 // initWebhookSubsystem builds the outbox storage + producer once
@@ -210,6 +214,11 @@ func (s *Server) trySetStartupErr(fn func() error) {
 func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.Vault) {
 	store := options.Store
 	s.jobs = jobs.NewServiceWithStore(s.serverCtx, store)
+	// P8.1: the store-backed service is created fresh here, replacing the one
+	// built in newServerFromOptions — re-attach the clients supersede rule
+	// before background workers start (satisfies SetSupersedeKeyFunc's boot
+	// contract).
+	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
 	s.auth = auth.NewServiceWithStore(store)
 	// Wire the injected clock onto the freshly-constructed services BEFORE any
 	// restore runs. RestoreSessions -> restoreConsumedTotp (below, via line

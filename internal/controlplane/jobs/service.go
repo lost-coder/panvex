@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -206,6 +205,13 @@ type Service struct {
 	startupErr              error
 	now                     func() time.Time
 	metrics                 MetricsSink
+	// supersedeKey maps a job to its supersede group: at enqueue time a new
+	// job whose key is non-empty terminates still-pending targets of older
+	// jobs with the SAME key (D4 — full-state payloads go stale). Nil means
+	// supersession is disabled. Injected by the composition root
+	// (clients.JobSupersedeKey via SetSupersedeKeyFunc) so this package
+	// stays free of the clients domain (P8.1, audit #24).
+	supersedeKey func(action Action, payloadJSON string) string
 }
 
 // MetricsSink receives job observability signals (C3). Implemented by
@@ -232,6 +238,26 @@ func (s *Service) SetMetricsSink(sink MetricsSink) {
 		sink = noopMetricsSink{}
 	}
 	s.metrics = sink
+}
+
+// SetSupersedeKeyFunc registers the domain rule that maps a job to its
+// supersede group (see the supersedeKey field). Call during boot, before
+// background traffic starts (same contract as SetMetricsSink); fn must be
+// pure and cheap — it runs under s.mu for every resident job on enqueue.
+// Nil disables supersession (the default for bare NewService callers).
+func (s *Service) SetSupersedeKeyFunc(fn func(action Action, payloadJSON string) string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.supersedeKey = fn
+}
+
+// supersedeKeyLocked evaluates the injected rule; "" when none is set.
+// Caller must hold s.mu.
+func (s *Service) supersedeKeyLocked(action Action, payloadJSON string) string {
+	if s.supersedeKey == nil {
+		return ""
+	}
+	return s.supersedeKey(action, payloadJSON)
 }
 
 // Store is the subset of the storage layer that the jobs Service depends on
@@ -543,13 +569,13 @@ func (s *Service) Enqueue(ctx context.Context, input CreateJobInput, now time.Ti
 	s.jobVersion[job.ID] = s.updateSeq
 	s.noteJobExpiryLocked(job)
 
-	// D4: a client.* payload is frozen at enqueue and carries the FULL
-	// desired state of its client (the agent applies it as an upsert).
-	// Any older still-pending client.* job for the same client therefore
-	// holds stale data that a retryAfter redelivery would clobber newer
-	// state with — terminate those targets before the dispatch loop can
-	// re-send them.
-	supersededCandidates := s.supersedePendingClientJobsLocked(job, now.UTC())
+	// D4/P8.1: jobs sharing a non-empty supersede key carry the FULL desired
+	// state of one domain object (in production the clients layer keys
+	// client.* payloads by client_id — clients.JobSupersedeKey). Any older
+	// still-pending job with the same key holds stale data that a retryAfter
+	// redelivery would clobber newer state with — terminate those targets
+	// before the dispatch loop can re-send them.
+	supersededCandidates := s.supersedePendingJobsLocked(job, now.UTC())
 
 	slog.InfoContext(ctx, "job dispatched",
 		"job_id", job.ID,
@@ -622,39 +648,16 @@ func (s *Service) GetWithContext(ctx context.Context, jobID string) (Job, bool, 
 	return buildJobWithTargets(record, targets), true, nil
 }
 
-// clientIDFromPayload returns the Telemt client_id embedded in a client.*
-// job's PayloadJSON, or "" if the action is not a client action or the
-// payload is malformed. Decoupling this here keeps the index-maintenance
-// path inside the jobs package without leaking the controlplane/server
-// payload type into this lower-level package.
-func clientIDFromPayload(action Action, payloadJSON string) string {
-	switch action {
-	case ActionClientCreate, ActionClientUpdate, ActionClientDelete, ActionClientRotateSecret:
-	default:
-		return ""
-	}
-	if payloadJSON == "" {
-		return ""
-	}
-	var probe struct {
-		ClientID string `json:"client_id"`
-	}
-	if err := json.Unmarshal([]byte(payloadJSON), &probe); err != nil {
-		return ""
-	}
-	return probe.ClientID
-}
-
-// supersedePendingClientJobsLocked terminates still-pending targets of older
-// client.* jobs for the same client_id when a newer client.* job is enqueued.
+// supersedePendingJobsLocked terminates still-pending targets of older jobs
+// that share the new job's supersede key.
 //
 // Why supersede instead of desired-state reconciliation: rendering payloads
-// from the clients store at DISPATCH time would make stale payloads
+// from the owning store at DISPATCH time would make stale payloads
 // impossible by construction, but requires reworking the whole dispatch path
 // (frozen PayloadJSON, idempotency, job history) — deferred follow-up. This
-// fix closes the actual incident path (lost result of update#1 + completed
+// closes the actual incident path (lost result of update#1 + completed
 // newer #2 + redelivered #1) inside the existing queue model, relying on the
-// already-true property that a client.* payload is a full-state upsert.
+// domain rule's promise that same-key payloads are full-state upserts.
 //
 // Per-target semantics: only targets on agents the NEW job covers are
 // superseded — an agent outside the new target set still needs the older
@@ -662,24 +665,30 @@ func clientIDFromPayload(action Action, payloadJSON string) string {
 // new enum: that would cascade through the wire format, deriveJobStatus and
 // the dashboard) with ResultText carrying the precise reason.
 //
+// P8.1 (audit #24): the key is computed by the injected supersedeKey rule
+// (clients.JobSupersedeKey in production) — this package no longer parses
+// client_id or special-cases client.* actions. Keys are evaluated from the
+// persisted payload on BOTH sides, so jobs restored after a panel restart
+// participate exactly like freshly-enqueued ones.
+//
 // Caller must hold s.mu (write). Returns persist candidates for the
 // post-unlock fan-out, same contract as applyTargetMutationLocked.
-func (s *Service) supersedePendingClientJobsLocked(newJob Job, now time.Time) []persistCandidate {
-	clientID := clientIDFromPayload(newJob.Action, newJob.PayloadJSON)
-	if clientID == "" {
+func (s *Service) supersedePendingJobsLocked(newJob Job, now time.Time) []persistCandidate {
+	key := s.supersedeKeyLocked(newJob.Action, newJob.PayloadJSON)
+	if key == "" {
 		return nil
 	}
 	newTargets := targetAgentSet(newJob)
 
 	var candidates []persistCandidate
 	for jobID, job := range s.jobs {
-		if !supersededByNewer(jobID, job, newJob, clientID) {
+		if !s.supersededByNewerLocked(jobID, job, newJob, key) {
 			continue
 		}
 		if !expireCoveredTargets(job.Targets, newTargets, newJob.ID, now) {
 			continue
 		}
-		if c := s.applySupersededJob(jobID, job, newJob.ID, clientID, now); c != nil {
+		if c := s.applySupersededJob(jobID, job, newJob.ID, key, now); c != nil {
 			candidates = append(candidates, *c)
 		}
 	}
@@ -695,11 +704,12 @@ func targetAgentSet(job Job) map[string]struct{} {
 	return set
 }
 
-// supersededByNewer reports whether `job` is an older, still-pending job for
-// the same client that the incoming `newJob` should supersede. A job is NOT
-// superseded by itself, by an older/younger sibling, once it has left the
-// queued/running states, or when it belongs to a different client.
-func supersededByNewer(jobID string, job, newJob Job, clientID string) bool {
+// supersededByNewerLocked reports whether `job` is an older, still-pending
+// job in the same supersede group that the incoming `newJob` should
+// supersede. A job is NOT superseded by itself, by an older/younger sibling,
+// once it has left the queued/running states, or when its own key differs.
+// Caller must hold s.mu.
+func (s *Service) supersededByNewerLocked(jobID string, job, newJob Job, key string) bool {
 	if jobID == newJob.ID {
 		return false
 	}
@@ -712,7 +722,7 @@ func supersededByNewer(jobID string, job, newJob Job, clientID string) bool {
 	if job.Status != StatusQueued && job.Status != StatusRunning {
 		return false
 	}
-	return clientIDFromPayload(job.Action, job.PayloadJSON) == clientID
+	return s.supersedeKeyLocked(job.Action, job.PayloadJSON) == key
 }
 
 // expireCoveredTargets marks every still-active target that `newTargets` also
@@ -741,7 +751,7 @@ func expireCoveredTargets(targets []JobTarget, newTargets map[string]struct{}, s
 // persists the in-memory mutation + indexes, and returns a persist candidate
 // for the post-unlock fan-out (nil when no store is wired). Caller must hold
 // s.mu (write).
-func (s *Service) applySupersededJob(jobID string, job Job, supersederID, clientID string, now time.Time) *persistCandidate {
+func (s *Service) applySupersededJob(jobID string, job Job, supersederID, supersedeKey string, now time.Time) *persistCandidate {
 	prevStatus := job.Status
 	job.Status = deriveJobStatus(job.Targets)
 	if job.Status == StatusFailed && prevStatus != StatusFailed {
@@ -752,10 +762,10 @@ func (s *Service) applySupersededJob(jobID string, job Job, supersederID, client
 	if isTerminalStatus(job.Status) {
 		s.markKeyTerminalLocked(job.IdempotencyKey, now)
 	}
-	slog.Info("job target superseded by newer client job",
+	slog.Info("job targets superseded by newer job in the same supersede group",
 		"superseded_job_id", jobID,
 		"new_job_id", supersederID,
-		"client_id", clientID,
+		"supersede_key", supersedeKey,
 	)
 	if s.jobStore == nil {
 		return nil
