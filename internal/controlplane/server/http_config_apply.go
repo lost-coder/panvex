@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -189,18 +190,29 @@ func (s *Server) handleApplyGroupConfig() http.HandlerFunc {
 const configApplyMsgJobLost = "job lost before terminal status was persisted"
 
 // configApplyJobStatus resolves a single config.apply job/agent pair to a
-// per-agent apply status (applyStatus* consts) and message. A job absent
-// from the store resolves to failed with configApplyMsgJobLost: the only
-// callers pass job ids for targets that are not yet persisted as terminal,
-// so "missing" means the terminal outcome was lost, not that it succeeded
-// (audit 2026-07-02 #2 — the old succeeded default finalized failed
-// rollouts as successful batches). Failed/expired targets surface the
-// agent's own ResultText. Shared by the legacy job-id status endpoint
-// (aggregateGroupApplyStatus) and the persistent-batch orchestrator
-// (advanceConfigApplyBatch in config_apply_batches.go) so the two status
-// paths cannot drift out of sync (DRY).
-func (s *Server) configApplyJobStatus(jobID, agentID string) (status, message string) {
-	job, ok := s.jobs.Get(jobID)
+// per-agent apply status (applyStatus* consts) and message.
+//
+// P8.1 (audit #24): the job is looked up memory-first with a store fallback
+// (jobs.Service.GetWithContext), so a terminal job evicted from the
+// in-memory maps still yields its real outcome. From there, three cases:
+//   - store read error → the outcome is UNKNOWN: report still-running and
+//     let the caller's next poll retry, instead of finalizing a wrong state;
+//   - absent from BOTH memory and store → failed with configApplyMsgJobLost
+//     (P1, audit 2026-07-02 #2): with durable history this only happens when
+//     the enqueue-time persist failed or retention pruned the row before the
+//     batch finalized — pipeline failures, so failing loudly is correct;
+//   - found → fold the matching target's status as before.
+//
+// Shared by the batch read view (aggregateGroupApplyBatchStatus) and the
+// finalizer (advanceConfigApplyBatch in config_apply_batches.go) so the
+// status paths cannot drift out of sync (DRY).
+func (s *Server) configApplyJobStatus(ctx context.Context, jobID, agentID string) (status, message string) {
+	job, ok, err := s.jobs.GetWithContext(ctx, jobID)
+	if err != nil {
+		slog.WarnContext(ctx, "config-apply: job store lookup failed; reporting still-running for retry",
+			"job_id", jobID, "agent_id", agentID, "error", err)
+		return applyStatusRunning, ""
+	}
 	if !ok {
 		return applyStatusFailed, configApplyMsgJobLost
 	}
@@ -297,7 +309,7 @@ func (s *Server) handleGetGroupApplyBatchStatus() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgConfigApplyBatchNotFound)
 			return
 		}
-		writeJSON(w, http.StatusOK, s.aggregateGroupApplyBatchStatus(batch, targets))
+		writeJSON(w, http.StatusOK, s.aggregateGroupApplyBatchStatus(ctx, batch, targets))
 	}
 }
 
@@ -351,7 +363,7 @@ func (s *Server) handleGetActiveGroupApplyBatch() http.HandlerFunc {
 // batch's own persisted status rather than being re-derived from the
 // targets, so it agrees exactly with when advanceConfigApplyBatch finalizes
 // the batch.
-func (s *Server) aggregateGroupApplyBatchStatus(batch storage.ConfigApplyBatchRecord, targets []storage.ConfigApplyBatchTargetRecord) groupApplyBatchStatusResponse {
+func (s *Server) aggregateGroupApplyBatchStatus(ctx context.Context, batch storage.ConfigApplyBatchRecord, targets []storage.ConfigApplyBatchTargetRecord) groupApplyBatchStatusResponse {
 	resp := groupApplyBatchStatusResponse{
 		BatchID: batch.ID,
 		Mode:    batch.Mode,
@@ -363,7 +375,7 @@ func (s *Server) aggregateGroupApplyBatchStatus(batch storage.ConfigApplyBatchRe
 	for _, tgt := range targets {
 		status, message := tgt.Status, tgt.Message
 		if !isTerminalConfigApplyTargetStatus(status) {
-			status, message = s.configApplyJobStatus(tgt.JobID, tgt.AgentID)
+			status, message = s.configApplyJobStatus(ctx, tgt.JobID, tgt.AgentID)
 		}
 		switch status {
 		case storage.ConfigApplyTargetStatusSucceeded:
@@ -476,6 +488,6 @@ func (s *Server) handleGetAgentApplyBatchStatus() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgConfigApplyBatchNotFound)
 			return
 		}
-		writeJSON(w, http.StatusOK, s.aggregateGroupApplyBatchStatus(batch, targets))
+		writeJSON(w, http.StatusOK, s.aggregateGroupApplyBatchStatus(ctx, batch, targets))
 	}
 }
