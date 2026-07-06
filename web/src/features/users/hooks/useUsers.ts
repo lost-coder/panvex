@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { UserListItem } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
@@ -24,7 +25,11 @@ export function useUsers() {
     refetchInterval,
   });
 
-  const users: UserListItem[] = query.data ? transformUsers(query.data) : [];
+  // Q3.U-P-06: memoise derivations on query.data identity (#web-2).
+  const users: UserListItem[] = useMemo(
+    () => (query.data ? transformUsers(query.data) : []),
+    [query.data],
+  );
 
   const createUser = useMutation({
     mutationFn: (data: { username: string; password: string; role: string }) =>
