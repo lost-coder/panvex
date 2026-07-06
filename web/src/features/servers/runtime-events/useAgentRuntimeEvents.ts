@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/api";
+import { useWsEvents, useWsStatus } from "@/app/providers/EventsSynchronizer";
 import { runtimeEventsBusFrameSchema } from "@/shared/api/schemas/runtime-events";
 import type { RuntimeEvent } from "@/shared/api/types-runtime-events";
-import {
-  buildEventsURL,
-  resolveConfiguredRootPath,
-} from "@/shared/lib/runtime-path";
 
 // MAX_EVENTS caps the in-memory ring so an agent that spams warnings
 // cannot grow the React state unboundedly. Matches the server-side
@@ -16,9 +13,7 @@ import {
 const MAX_EVENTS = 500;
 
 // LIVE_DECAY_MS is how long the "Live" badge stays lit after the most
-// recent runtime event arrived. Picked at 2s so a steady trickle of
-// agent events keeps the badge on continuously while a quiescent
-// agent's UI returns to "idle" within a couple of seconds.
+// recent runtime event arrived.
 const LIVE_DECAY_MS = 2_000;
 const LIVE_DECAY_TICK_MS = 500;
 
@@ -31,18 +26,19 @@ interface UseAgentRuntimeEventsResult {
 
 /**
  * useAgentRuntimeEvents merges the HTTP backlog from
- * /api/agents/{id}/runtime-events with the live `runtime.events` batch
- * frames published on the /events WebSocket, returning a single
- * newest-first list capped at MAX_EVENTS. The hook intentionally
- * owns its own WebSocket rather than piggybacking on the panel-wide
- * EventsSynchronizer because runtime events are noisy and per-agent —
- * routing every frame through the global invalidation pipeline would
- * thrash React Query keys unrelated to the open detail page.
+ * /api/agents/{id}/runtime-events with live `runtime.events` batch
+ * frames, returning a single newest-first list capped at MAX_EVENTS.
  *
- * The hook also tracks an `isLive` flag that toggles on whenever a
- * frame arrives and decays back to false after LIVE_DECAY_MS of
- * silence. Consumers can use it to render a small "Live" indicator
- * next to the events list.
+ * 7.4 (#web-6): the hook used to own a SECOND WebSocket to /events with
+ * no onclose/onerror/reconnect — a dropped connection silently killed
+ * the live feed. The server broadcasts the whole event bus to every
+ * /events subscriber (no per-topic subscription exists), so the second
+ * socket duplicated traffic for nothing. The hook now subscribes to the
+ * panel-wide EventsSynchronizer socket via useWsEvents() and filters
+ * `runtime.events` frames by agent_id client-side; reconnect/backoff/
+ * session-probe come for free. On every reconnect (status transition
+ * → "open") the HTTP backlog query is invalidated so records missed
+ * while the socket was down are recovered.
  */
 export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsResult {
   const initial = useQuery({
@@ -50,6 +46,10 @@ export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsRes
     queryFn: () => apiClient.listRuntimeEvents(agentId, { limit: MAX_EVENTS }),
     enabled: !!agentId,
   });
+
+  const { subscribe } = useWsEvents();
+  const { status } = useWsStatus();
+  const queryClient = useQueryClient();
 
   const [events, setEvents] = useState<RuntimeEvent[]>([]);
   const lastEventAtRef = useRef<number>(0);
@@ -61,42 +61,18 @@ export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsRes
   // the response would also be present in the new payload.
   useEffect(() => {
     if (!initial.data) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- канонический sync-from-query паттерн, был здесь и до 7.4
     setEvents(initial.data.items);
   }, [initial.data]);
 
   useEffect(() => {
     if (!agentId) return;
-    let socket: WebSocket | null = null;
-    try {
-      const rootPath = resolveConfiguredRootPath();
-      const url = buildEventsURL(
-        globalThis.location.protocol,
-        globalThis.location.host,
-        rootPath,
-      );
-      socket = new WebSocket(url);
-    } catch {
-      // Defensive: hostile/old browsers may throw on construction.
-      // We swallow here so the HTTP-backed list still renders.
-      return;
-    }
-
-    socket.onmessage = (msg) => {
-      // M13 (audit): the frame used to be coerced via
-      // `JSON.parse(...) as BusMessage` with only an `Array.isArray`
-      // guard on `events` — a malformed element (e.g. `events: [null]`)
-      // flowed straight into `.map(record => record.ts ...)` and threw
-      // a TypeError inside this synchronous handler, crashing the
-      // server-detail live-events section. Mirror EventsSynchronizer's
-      // `eventEnvelopeSchema.safeParse` pattern: parse defensively, drop
-      // the whole frame on any shape mismatch, never throw.
-      let raw: unknown;
-      try {
-        raw = JSON.parse(msg.data as string);
-      } catch {
-        return;
-      }
-      const result = runtimeEventsBusFrameSchema.safeParse(raw);
+    return subscribe((envelope) => {
+      if (envelope.type !== "runtime.events") return;
+      // M13: конверт уже прошёл eventEnvelopeSchema в провайдере, но
+      // data для runtime-кадров читается глубоко (data.events[].ts) —
+      // валидируем полную форму, малформед-кадр дропаем целиком.
+      const result = runtimeEventsBusFrameSchema.safeParse(envelope);
       if (!result.success) {
         if (
           import.meta !== undefined &&
@@ -108,9 +84,6 @@ export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsRes
       }
       const data = result.data.data;
       if (data.agent_id !== agentId) return;
-      // Schema already validated ts/level/message/fields — the zod parse
-      // above guarantees `record` matches RuntimeEvent's shape exactly,
-      // so no defaulting/normalisation is needed here anymore.
       const incoming: RuntimeEvent[] = data.events;
       if (incoming.length === 0) return;
       setEvents((prev) => {
@@ -121,16 +94,24 @@ export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsRes
       });
       lastEventAtRef.current = Date.now();
       setIsLive(true);
-    };
+    });
+  }, [agentId, subscribe]);
 
-    return () => {
-      socket?.close();
-    };
-  }, [agentId]);
+  // Reconnect → refetch backlog: кадры, отправленные пока сокет лежал,
+  // потеряны навсегда (bus не реиграет) — их закрывает только HTTP-бэклог.
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = status;
+    if (!agentId) return;
+    if (status === "open" && prev !== "open") {
+      void queryClient.invalidateQueries({
+        queryKey: ["runtime-events", "by-agent", agentId],
+      });
+    }
+  }, [status, agentId, queryClient]);
 
-  // Decay the "live" indicator after a period of silence. Polling once
-  // every LIVE_DECAY_TICK_MS keeps the UI responsive without a render
-  // on every animation frame.
+  // Decay the "live" indicator after a period of silence.
   useEffect(() => {
     if (!isLive) return;
     const id = globalThis.setInterval(() => {
