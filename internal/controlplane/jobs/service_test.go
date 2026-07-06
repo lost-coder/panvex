@@ -9,11 +9,75 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
 	"time"
 )
+
+// testClientSupersedeKey mirrors clients.JobSupersedeKey. It cannot be
+// imported here: these tests are white-box (package jobs), and clients
+// imports jobs — importing it back would create an import cycle.
+// Behavioural equivalence with the production rule is pinned by
+// TestJobSupersedeKey in internal/controlplane/clients/jobsupersede_test.go,
+// which uses the same fixtures (client.* actions keyed by client_id).
+func testClientSupersedeKey(action Action, payloadJSON string) string {
+	switch action {
+	case ActionClientCreate, ActionClientUpdate, ActionClientDelete, ActionClientRotateSecret:
+	default:
+		return ""
+	}
+	if payloadJSON == "" {
+		return ""
+	}
+	var probe struct {
+		ClientID string `json:"client_id"`
+	}
+	if err := json.Unmarshal([]byte(payloadJSON), &probe); err != nil {
+		return ""
+	}
+	return probe.ClientID
+}
+
+// TestEnqueueWithoutSupersedeKeyFuncDoesNotSupersede pins the P8.1 default:
+// a bare Service has NO supersede rule, so even classic client.* payload
+// pairs coexist. Production behaviour is preserved by the lifecycle wiring
+// (SetSupersedeKeyFunc(clients.JobSupersedeKey)), which has its own test
+// via the server package's config-apply suites.
+func TestEnqueueWithoutSupersedeKeyFuncDoesNotSupersede(t *testing.T) {
+	base := time.Date(2026, time.July, 3, 12, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return base })
+
+	older, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "nokeyfn-1",
+		PayloadJSON:    `{"client_id":"c-1","max_tcp_conns":1}`,
+	}, base)
+	if err != nil {
+		t.Fatalf("enqueue older: %v", err)
+	}
+	if _, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            10 * time.Minute,
+		IdempotencyKey: "nokeyfn-2",
+		PayloadJSON:    `{"client_id":"c-1","max_tcp_conns":5}`,
+	}, base.Add(time.Second)); err != nil {
+		t.Fatalf("enqueue newer: %v", err)
+	}
+
+	got, ok := service.Get(older.ID)
+	if !ok {
+		t.Fatal("older job disappeared")
+	}
+	if got.Targets[0].Status != TargetStatusQueued {
+		t.Fatalf("older target status = %s, want queued (no supersession without a key func)", got.Targets[0].Status)
+	}
+}
 
 // TestJobsKeysEviction verifies P2-PERF-03: completed jobs have their
 // idempotency keys evicted by PruneKeys once older than the TTL, preventing
@@ -956,6 +1020,7 @@ func TestEnqueueSupersedesOlderPendingClientJobs(t *testing.T) {
 	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
 	service := NewService()
 	service.SetNow(func() time.Time { return base })
+	service.SetSupersedeKeyFunc(testClientSupersedeKey)
 
 	older, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionClientUpdate,
@@ -1068,6 +1133,7 @@ func TestEnqueueDoesNotSupersedeNonClientActions(t *testing.T) {
 	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
 	service := NewService()
 	service.SetNow(func() time.Time { return base })
+	service.SetSupersedeKeyFunc(testClientSupersedeKey)
 
 	reload, err := service.Enqueue(context.Background(), CreateJobInput{
 		Action:         ActionRuntimeReload,
