@@ -42,5 +42,5 @@ export function useDashboardData() {
     [query.data],
   );
 
-  return { overview, timeline, agentVersions, isLoading: query.isLoading, error: query.error };
+  return { overview, timeline, agentVersions, isLoading: query.isLoading, error: query.error, refetch: query.refetch };
 }

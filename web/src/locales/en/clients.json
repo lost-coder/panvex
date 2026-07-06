@@ -360,5 +360,9 @@
       "success": "Re-discovery requested on {{count}} server(s)",
       "error": "Failed to request re-discovery"
     }
+  },
+  "error": {
+    "loadClients": "Failed to load clients",
+    "fallbackDescription": "The server did not return a readable error. Try again."
   }
 }

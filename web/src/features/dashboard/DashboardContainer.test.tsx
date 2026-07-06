@@ -32,6 +32,12 @@ vi.mock("@/features/dashboard/DashboardPage", () => ({
   ),
 }));
 
+vi.mock("@/components/ErrorState", () => ({
+  ErrorState: ({ title, description }: { title?: string; description?: string }) => (
+    <div data-testid="error">{description ?? title}</div>
+  ),
+}));
+
 const useDashboardDataMock = vi.fn();
 vi.mock("@/features/dashboard/hooks/useDashboardData", () => ({
   useDashboardData: () => useDashboardDataMock(),
@@ -77,6 +83,24 @@ describe("DashboardContainer", () => {
 
     render(<DashboardContainer />);
     expect(screen.getByTestId("skeleton-rows")).toBeInTheDocument();
+  });
+
+  it("renders ErrorState (not eternal skeleton) when the query fails", () => {
+    useDashboardDataMock.mockReturnValue({
+      overview: undefined,
+      timeline: undefined,
+      agentVersions: {},
+      isLoading: false,
+      error: new Error("boom"),
+      refetch: vi.fn(),
+    });
+    useDiscoveredClientsMock.mockReturnValue({ groupCounts: { pending: 0 } });
+    useUpdatesMock.mockReturnValue({ query: { data: undefined } });
+
+    render(<DashboardContainer />);
+
+    expect(screen.getByTestId("error")).toHaveTextContent("boom");
+    expect(screen.queryByTestId("skeleton-rows")).not.toBeInTheDocument();
   });
 
   it("renders dashboard with enriched update flags", () => {

@@ -1,6 +1,8 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { SkeletonRows } from "@/ui";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
+import { ErrorState } from "@/components/ErrorState";
 import { useDashboardData } from "./hooks/useDashboardData";
 import { useDiscoveredClients } from "@/features/clients/hooks/useDiscoveredClients";
 import { useClientCreate } from "@/features/clients/hooks/useClientCreate";
@@ -8,7 +10,8 @@ import { useUpdates } from "@/shared/hooks/useUpdates";
 import { useNavigate } from "@tanstack/react-router";
 
 export function DashboardContainer() {
-  const { overview, timeline, agentVersions, isLoading } = useDashboardData();
+  const { t } = useTranslation("dashboard");
+  const { overview, timeline, agentVersions, isLoading, error, refetch } = useDashboardData();
   const { groupCounts: discoveredGroupCounts } = useDiscoveredClients();
   const createMutation = useClientCreate();
   const { query: updatesQuery } = useUpdates();
@@ -34,6 +37,19 @@ export function DashboardContainer() {
       healthyNodes: enrichNodes(overview.healthyNodes),
     };
   }, [overview, latestAgentVersion, agentVersions]);
+
+  // 7.3 (#web-14): раньше query-ошибка оставляла дашборд в вечном
+  // скелетоне (isLoading=false, overview=undefined). Ошибка проверяется
+  // ДО скелетон-ветки — образец ServersContainer.
+  if (error) {
+    return (
+      <ErrorState
+        title={t("error.loadDashboard")}
+        description={error.message || t("error.fallbackDescription")}
+        onRetry={() => void refetch()}
+      />
+    );
+  }
 
   if (isLoading || !enrichedOverview || !timeline) {
     return (

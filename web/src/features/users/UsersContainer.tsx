@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { type UserFormData, type UserFormSheetProps } from "@/ui";
 import { SkeletonRows } from "@/ui";
 import { UsersManagementPage } from "./UsersManagementPage";
+import { ErrorState } from "@/components/ErrorState";
 import { useUsers } from "./hooks/useUsers";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
 
@@ -15,7 +16,7 @@ const emptyForm: UserFormData = { username: "", password: "", role: "viewer" };
 
 export function UsersContainer() {
   const { t } = useTranslation("users");
-  const { users, isLoading, createUser, updateUser, deleteUser, resetTotp } = useUsers();
+  const { users, isLoading, error, refetch, createUser, updateUser, deleteUser, resetTotp } = useUsers();
   const confirm = useConfirm();
   const [sheet, setSheet] = useState<SheetState>({ mode: "closed" });
   const [formData, setFormData] = useState<UserFormData>(emptyForm);
@@ -102,6 +103,16 @@ export function UsersContainer() {
       <div className="px-4 md:px-8 py-8">
         <SkeletonRows count={6} />
       </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <ErrorState
+        title={t("error.loadUsers")}
+        description={error.message || t("error.fallbackDescription")}
+        onRetry={() => void refetch()}
+      />
     );
   }
 

@@ -84,5 +84,9 @@
     "ips_one": "{{count}} IP",
     "ips_few": "{{count}} IP",
     "ips_many": "{{count}} IP"
+  },
+  "error": {
+    "loadUsers": "Не удалось загрузить пользователей",
+    "fallbackDescription": "Сервер не вернул понятную ошибку. Попробуйте ещё раз."
   }
 }

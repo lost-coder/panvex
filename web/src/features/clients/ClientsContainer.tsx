@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
 import { type BulkClientAction, type ViewMode } from "@/ui";
 import { ClientsPage } from "@/features/clients/ClientsPage";
 import { SkeletonRows } from "@/ui";
+import { ErrorState } from "@/components/ErrorState";
 import { useClientsList } from "./hooks/useClientsList";
 import { useDiscoveredClients } from "./hooks/useDiscoveredClients";
 import { useClientCreate } from "./hooks/useClientCreate";
@@ -17,7 +19,8 @@ import { useWsUpdateFlash } from "@/shared/hooks/useWsUpdateFlash";
 import { apiClient } from "@/shared/api/api";
 
 export function ClientsContainer() {
-  const { clients, isLoading } = useClientsList();
+  const { t } = useTranslation("clients");
+  const { clients, isLoading, error, refetch } = useClientsList();
   const { groupCounts: discoveredGroupCounts } = useDiscoveredClients();
   const createMutation = useClientCreate();
   const { fleetGroups } = useFleetGroups();
@@ -99,6 +102,16 @@ export function ClientsContainer() {
       <div className="p-4">
         <SkeletonRows count={6} />
       </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <ErrorState
+        title={t("error.loadClients")}
+        description={error.message || t("error.fallbackDescription")}
+        onRetry={() => void refetch()}
+      />
     );
   }
 
