@@ -88,4 +88,32 @@ describe("useClientsList", () => {
     expect((result.current.error as Error).message).toBe("network down");
     expect(result.current.clients).toEqual([]);
   });
+
+  it("keeps the clients array identity stable across re-renders (Q3.U-P-06)", async () => {
+    (apiClient.clients as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: "c1",
+        name: "alpha",
+        enabled: true,
+        assigned_nodes_count: 2,
+        expiration_rfc3339: "2030-01-01T00:00:00Z",
+        traffic_used_bytes: 1024,
+        unique_ips_used: 3,
+        active_tcp_conns: 7,
+        data_quota_bytes: 10_000,
+        last_deploy_status: "applied",
+      },
+    ]);
+
+    const { result, rerender } = renderHook(() => useClientsList(), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    const first = result.current.clients;
+    rerender();
+    expect(result.current.clients).toBe(first); // toBe — та же ссылка
+  });
 });

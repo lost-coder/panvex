@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ClientListItem } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
@@ -14,9 +15,12 @@ export function useClientsList() {
     refetchInterval,
   });
 
-  const clients: ClientListItem[] = query.data
-    ? transformClientList(query.data)
-    : [];
+  // Q3.U-P-06: memoise derivations on query.data identity (образец —
+  // useServersList/useDashboardData; #web-2).
+  const clients: ClientListItem[] = useMemo(
+    () => (query.data ? transformClientList(query.data) : []),
+    [query.data],
+  );
 
   return { clients, isLoading: query.isLoading, error: query.error };
 }

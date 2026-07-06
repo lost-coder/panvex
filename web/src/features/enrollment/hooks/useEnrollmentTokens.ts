@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { EnrollmentTokenData } from "@/shared/api/types-pages/pages";
 import { apiClient } from "@/shared/api/api";
@@ -33,7 +34,11 @@ export function useEnrollmentTokens() {
     refetchInterval,
   });
 
-  const tokens: EnrollmentTokenData[] = query.data ? transformTokens(query.data) : [];
+  // Q3.U-P-06: memoise derivations on query.data identity (#web-2).
+  const tokens: EnrollmentTokenData[] = useMemo(
+    () => (query.data ? transformTokens(query.data) : []),
+    [query.data],
+  );
 
   const createToken = useMutation({
     mutationFn: (payload: { fleet_group_id: string; ttl_seconds: number }) =>
