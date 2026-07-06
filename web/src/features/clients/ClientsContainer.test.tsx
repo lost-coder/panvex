@@ -88,6 +88,12 @@ vi.mock("@/features/clients/ClientsPage", () => ({
   ),
 }));
 
+vi.mock("@/components/ErrorState", () => ({
+  ErrorState: ({ title, description }: { title?: string; description?: string }) => (
+    <div data-testid="error">{description ?? title}</div>
+  ),
+}));
+
 const useClientsListMock = vi.fn();
 vi.mock("@/features/clients/hooks/useClientsList", () => ({
   useClientsList: () => useClientsListMock(),
@@ -173,5 +179,22 @@ describe("ClientsContainer", () => {
       to: "/clients/$clientId",
       params: { clientId: "c42" },
     });
+  });
+
+  it("renders ErrorState (not an empty table) when the query fails (#web-14)", () => {
+    useClientsListMock.mockReturnValue({
+      clients: [],
+      isLoading: false,
+      error: new Error("boom"),
+      refetch: vi.fn(),
+    });
+    useDiscoveredClientsMock.mockReturnValue({
+      discoveredClients: [],
+      groupCounts: { all: 0, pending: 0, adopted: 0, ignored: 0, conflicts: 0 },
+    });
+
+    render(<ClientsContainer />);
+    expect(screen.getByTestId("error")).toHaveTextContent("boom");
+    expect(screen.queryByTestId("count")).not.toBeInTheDocument();
   });
 });

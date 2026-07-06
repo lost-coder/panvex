@@ -53,5 +53,5 @@ export function useUsers() {
     onSuccess: () => qc.invalidateQueries({ queryKey: usersKeys.all }),
   });
 
-  return { users, isLoading: query.isLoading, createUser, updateUser, deleteUser, resetTotp };
+  return { users, isLoading: query.isLoading, error: query.error, refetch: query.refetch, createUser, updateUser, deleteUser, resetTotp };
 }

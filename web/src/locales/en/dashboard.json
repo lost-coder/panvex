@@ -46,5 +46,9 @@
       "network": "Network",
       "traffic": "Traffic"
     }
+  },
+  "error": {
+    "loadDashboard": "Failed to load the dashboard",
+    "fallbackDescription": "The server did not return a readable error. Try again."
   }
 }

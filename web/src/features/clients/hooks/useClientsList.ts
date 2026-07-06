@@ -22,5 +22,5 @@ export function useClientsList() {
     [query.data],
   );
 
-  return { clients, isLoading: query.isLoading, error: query.error };
+  return { clients, isLoading: query.isLoading, error: query.error, refetch: query.refetch };
 }
