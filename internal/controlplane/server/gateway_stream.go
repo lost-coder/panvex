@@ -58,7 +58,7 @@ func nonBlockingSend(ch chan<- error, err error) {
 func (s *Server) startReceiveLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, ch *agentStreamChannels) {
 	var dropCounter prometheus.Counter
 	if s.obs != nil {
-		dropCounter = s.obs.agentInboundDropsTotal
+		dropCounter = s.obs.AgentInboundDropsTotal
 	}
 	go func() {
 		defer s.recoverAgentStreamGoroutine(agentID, "receive", cancel)
@@ -285,8 +285,8 @@ func (s *Server) awaitAgentStreamShutdown(ctx context.Context, cancel context.Ca
 func (s *Server) recoverAgentStreamGoroutine(agentID, name string, cancel context.CancelFunc) {
 	if r := recover(); r != nil {
 		slog.Error("goroutine panic recovered", "agent_id", agentID, "goroutine", name, "panic", r)
-		if s.obs != nil && s.obs.panicRecoveredTotal != nil {
-			s.obs.panicRecoveredTotal.WithLabelValues(name).Inc()
+		if s.obs != nil && s.obs.PanicRecoveredTotal != nil {
+			s.obs.PanicRecoveredTotal.WithLabelValues(name).Inc()
 		}
 		cancel()
 	}

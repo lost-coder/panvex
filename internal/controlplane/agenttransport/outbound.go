@@ -418,7 +418,7 @@ type outboundSupervisorEntry struct {
 
 // SupervisorGaugeDelta is called by outboundTransport whenever a supervisor
 // is added (+1) or removed (-1). The concrete wiring is
-// (*metricsCollectors).AddOutboundSupervisor in package server; tests can
+// metrics.Collectors.AddOutboundSupervisor in package metrics; tests can
 // supply a simple closure. A nil value is treated as a no-op.
 type SupervisorGaugeDelta func(delta float64)
 

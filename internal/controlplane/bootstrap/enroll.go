@@ -79,7 +79,7 @@ type CertPinWriter interface {
 
 // AttemptRecorder is called by EnrollDriver.Run at each terminal outcome to
 // record the result label. The concrete wiring is
-// (*metricsCollectors).ObserveBootstrapAttempt in package server. Bounded
+// metrics.Collectors.ObserveBootstrapAttempt in package metrics. Bounded
 // label values: "success", "expired", "mismatch", "agent_id_mismatch",
 // "misbehavior", "error". A nil value is treated as a no-op.
 type AttemptRecorder func(result string)

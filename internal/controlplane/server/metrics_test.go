@@ -52,7 +52,7 @@ func TestNewRegistersMetricsCollectorsWithoutPanic(t *testing.T) {
 	if srv.obs == nil {
 		t.Fatal("Server.obs is nil after New()")
 	}
-	if srv.obs.registry == nil {
+	if srv.obs.Registry == nil {
 		t.Fatal("metrics registry is nil after New()")
 	}
 }
@@ -166,28 +166,6 @@ func TestMetricsPathLabelUsesRoutePattern(t *testing.T) {
 	}
 }
 
-func TestStatusBucket(t *testing.T) {
-	cases := []struct {
-		code int
-		want string
-	}{
-		{200, "2xx"},
-		{204, "2xx"},
-		{301, "3xx"},
-		{404, "4xx"},
-		{429, "4xx"},
-		{500, "5xx"},
-		{503, "5xx"},
-		{100, "100"}, // falls outside 2xx-5xx; raw code kept so oddities are visible
-	}
-
-	for _, c := range cases {
-		if got := statusBucket(c.code); got != c.want {
-			t.Errorf("statusBucket(%d) = %q, want %q", c.code, got, c.want)
-		}
-	}
-}
-
 // TestReverseModeMetricsRegistered verifies that the two reverse-mode
 // Prometheus series are registered at startup and appear in the exposition
 // (even before any supervisor or enrollment event has occurred).
@@ -275,13 +253,13 @@ func TestCertExpiryGaugesRegisteredAndPopulated(t *testing.T) {
 	// The CA NotAfter is fixed+5yr ≈ 2031; the server cert NotAfter is
 	// fixed+1yr ≈ 2027. Both must be strictly after time.Now() (i.e. > 0
 	// and definitely after the fixed clock itself).
-	if v := testutil.ToFloat64(srv.obs.caCertExpiryTimestamp); v <= 0 {
+	if v := testutil.ToFloat64(srv.obs.CACertExpiryTimestamp); v <= 0 {
 		t.Errorf("ca expiry %v not positive", v)
 	}
-	if v := testutil.ToFloat64(srv.obs.serverCertExpiryTimestamp); v <= 0 {
+	if v := testutil.ToFloat64(srv.obs.ServerCertExpiryTimestamp); v <= 0 {
 		t.Errorf("server cert expiry %v not positive", v)
 	}
-	if v := testutil.ToFloat64(srv.obs.agentCertEarliestExpiryTimestamp); v != 0 {
+	if v := testutil.ToFloat64(srv.obs.AgentCertEarliestExpiryTimestamp); v != 0 {
 		t.Errorf("agent earliest expiry = %v, want 0 with no agents", v)
 	}
 }
@@ -291,7 +269,7 @@ func TestEventHubDropHookIncrementsCounter(t *testing.T) {
 
 	// Subscribe once but never drain, then overflow the channel (buf 64) so
 	// the drop hook fires. Publish more than the buffer capacity; each
-	// overflow call invokes srv.obs.eventHubDropTotal.Inc().
+	// overflow call invokes srv.obs.EventHubDropTotal.Inc().
 	_, cancel := srv.events.Subscribe()
 	defer cancel()
 

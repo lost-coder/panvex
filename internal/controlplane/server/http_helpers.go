@@ -74,6 +74,22 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorResponse{Error: scrubErrorMessage(message)})
 }
 
+// installStatusCapture remembers the first status code an inner handler writes
+// so handleAgentInstallCommand can emit its audit event only on a successful
+// response. A handler that writes a body without an explicit WriteHeader leaves
+// status at 0, which the caller treats as success (implicit 200).
+type installStatusCapture struct {
+	http.ResponseWriter
+	status int
+}
+
+func (c *installStatusCapture) WriteHeader(code int) {
+	if c.status == 0 {
+		c.status = code
+	}
+	c.ResponseWriter.WriteHeader(code)
+}
+
 // writeErrorLogged writes the operator-friendly message to the HTTP
 // response (identical to writeError) AND logs the original error with
 // request context. Use this anywhere the original err is meaningful to

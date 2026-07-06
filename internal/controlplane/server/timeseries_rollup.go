@@ -190,7 +190,7 @@ func (s *Server) runTimeseriesRollup(ctx context.Context) {
 	} else if pruned > 0 {
 		s.logger.InfoContext(ctx, "pruned rows by retention", "table", "agent_revocations", "count", pruned)
 		if s.obs != nil {
-			s.obs.retentionPrunedRowsTotal.WithLabelValues("agent_revocations").Add(float64(pruned))
+			s.obs.RetentionPrunedRowsTotal.WithLabelValues("agent_revocations").Add(float64(pruned))
 		}
 	}
 
@@ -305,7 +305,7 @@ func (s *Server) runRetentionPrune(
 		s.logger.InfoContext(ctx, "pruned rows by retention", "table", table, "count", pruned, "cutoff", cutoff.Format(time.RFC3339))
 	}
 	if s.obs != nil {
-		s.obs.retentionPrunedRowsTotal.WithLabelValues(table).Add(float64(pruned))
+		s.obs.RetentionPrunedRowsTotal.WithLabelValues(table).Add(float64(pruned))
 	}
 }
 

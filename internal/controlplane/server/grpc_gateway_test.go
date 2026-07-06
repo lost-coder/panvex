@@ -17,6 +17,7 @@ import (
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/metrics"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -258,15 +259,15 @@ func TestEnqueueInboundAgentMessageDoesNotIncrementOnSuccess(t *testing.T) {
 }
 
 // TestAgentInboundDropsTotalRegistered makes sure the production counter is
-// wired through newMetricsCollectors and surfaces on /metrics scrapes.
+// wired through metrics.NewCollectors and surfaces on /metrics scrapes.
 func TestAgentInboundDropsTotalRegistered(t *testing.T) {
-	mc := newMetricsCollectors()
-	if mc.agentInboundDropsTotal == nil {
-		t.Fatal("agentInboundDropsTotal is nil after newMetricsCollectors()")
+	mc := metrics.NewCollectors()
+	if mc.AgentInboundDropsTotal == nil {
+		t.Fatal("AgentInboundDropsTotal is nil after metrics.NewCollectors()")
 	}
-	mc.agentInboundDropsTotal.Inc()
-	if got := testutil.ToFloat64(mc.agentInboundDropsTotal); got != 1 {
-		t.Fatalf("agentInboundDropsTotal = %v, want 1", got)
+	mc.AgentInboundDropsTotal.Inc()
+	if got := testutil.ToFloat64(mc.AgentInboundDropsTotal); got != 1 {
+		t.Fatalf("AgentInboundDropsTotal = %v, want 1", got)
 	}
 }
 
