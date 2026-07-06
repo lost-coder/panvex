@@ -46,14 +46,14 @@ func (s *Server) routes() http.Handler {
 	// authenticated/operator/admin + sensitive middleware groups. We
 	// register the wrapper methods directly inside those groups below.
 	oapi := openapi.ServerInterfaceWrapper{Handler: newOapiAdapter(s)}
-	// metricsMiddleware must be the outermost user middleware so every
+	// The metrics Middleware must be the outermost user middleware so every
 	// response — including 401s from ipWhitelist, 429s from rate-limiters,
 	// and 404s from the UI fallback — is observed with its route pattern.
 	// requestIDMiddleware runs first so every downstream middleware (incl.
 	// metrics, logging, panics) can attribute its work to a stable
 	// correlation ID. The ID is also echoed on the response.
 	router.Use(requestIDMiddleware)
-	router.Use(s.metricsMiddleware)
+	router.Use(s.obs.Middleware)
 	router.Use(securityHeaders)
 	router.Use(maxBodySize)
 	// B8: per-request deadline for non-streaming handlers. Sits below
@@ -81,7 +81,7 @@ func (s *Server) routes() http.Handler {
 	// Prometheus does not need session cookies. It is bearer-token gated in
 	// handleMetrics; when no token is configured, the route is omitted.
 	if s.metricsScrapeToken != "" {
-		router.Method(http.MethodGet, "/metrics", s.handleScrapeMetrics(s.metricsScrapeToken))
+		router.Method(http.MethodGet, "/metrics", s.obs.ScrapeHandler(s.metricsScrapeToken))
 	}
 
 	panelPath := s.panelRuntime.HTTPRootPath
@@ -302,7 +302,7 @@ func (s *Server) routes() http.Handler {
 		// because /install-agent.sh is registered on the inner router and the
 		// outer NotFound only strips panelPath. Mirror the route here so the
 		// generated `curl <agent_root>/install-agent.sh` works end-to-end.
-		outer.With(requestIDMiddleware, s.metricsMiddleware, requestTimeoutMiddleware(defaultRequestTimeout)).
+		outer.With(requestIDMiddleware, s.obs.Middleware, requestTimeoutMiddleware(defaultRequestTimeout)).
 			Get(agentPath+"/install-agent.sh", s.handleInstallAgentScript())
 		if panelPath != "" {
 			outer.NotFound(stripRootPath(panelPath, router))

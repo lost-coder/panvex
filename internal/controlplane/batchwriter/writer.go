@@ -86,7 +86,7 @@ var retryBackoffs = []time.Duration{
 
 // MetricsSink is the narrow interface Writer needs from the
 // Prometheus collector bundle. Kept small so tests can inject a fake without
-// having to construct a full *metricsCollectors.
+// having to construct a full *metrics.Collectors.
 //
 // ObserveFlushError is incremented once per failed flush attempt, with type
 // == "transient" or "persistent".

@@ -26,6 +26,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/metrics"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/controlplane/runtimeevents"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
@@ -303,7 +304,7 @@ type Server struct {
 	// server is constructed without a scrape token — the /metrics route is
 	// not registered in that case, but the field is still nil-checked by the
 	// middleware so HTTP serving remains cheap.
-	obs                 *metricsCollectors
+	obs                 *metrics.Collectors
 	metricsScrapeToken  string
 	metricsPollerCancel context.CancelFunc
 	metricsPollerWG     sync.WaitGroup
@@ -529,7 +530,7 @@ func (s *Server) handleAgentInstallCommand() http.HandlerFunc {
 		}
 		// Wrap the response writer so we can detect a successful response and
 		// emit an audit event without touching the bootstrap package.
-		rw := &statusCapture{ResponseWriter: w}
+		rw := &installStatusCapture{ResponseWriter: w}
 		h.ServeHTTP(rw, r)
 		if rw.status == 0 || rw.status == http.StatusOK {
 			agentID := chi.URLParam(r, "id")

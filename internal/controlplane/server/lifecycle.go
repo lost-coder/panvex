@@ -22,6 +22,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/fleet/integrations"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/metrics"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/controlplane/runtimeevents"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
@@ -652,17 +653,18 @@ func New(options Options) (*Server, error) {
 	// the /metrics HTTP route is only registered when a scrape token is set.
 	// This keeps the in-process counters available for internal consumption
 	// (e.g. tests, future admin-only endpoints) without exposing them.
-	server.obs = newMetricsCollectors()
+	server.obs = metrics.NewCollectors()
+	server.obs.Now = server.now
 	server.metricsScrapeToken = options.MetricsScrapeToken
 	server.events.SetDropHook(func() {
-		server.obs.eventHubDropTotal.Inc()
+		server.obs.EventHubDropTotal.Inc()
 	})
 	server.handler = server.routes()
 	server.auth.SetNow(now)
 	server.jobs.SetNow(now)
 	// C3: surface write-behind job persist failures as a Prometheus
 	// counter. Must run after initStoreBackedSubsystems (which replaces
-	// s.jobs) and after newMetricsCollectors.
+	// s.jobs) and after metrics.NewCollectors.
 	// The sink also carries the F3 failed-job counter (ObserveJobFailed),
 	// which absorbed the former SetJobFailureHook.
 	server.jobs.SetMetricsSink(server.obs)
