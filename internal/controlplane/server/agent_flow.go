@@ -347,9 +347,14 @@ func (s *Server) persistDeploymentsAfterReset(ctx context.Context, deployments [
 //   - same boot, total < last       → delta = 0 + alert: a cumulative
 //     counter must never rewind within one epoch; clamp instead of
 //     accumulating garbage and adopt the new total so counting resumes.
-func (s *Server) mergeClientUsageBatch(ctx context.Context, agentID, agentBootID string, reports []clients.UsageReport) (map[string]struct{}, []storage.ClientUsageRecord) {
+//
+// P8.3: emits []clients.Usage directly — the former storage.ClientUsageRecord
+// intermediate was a field-for-field twin of clients.Usage that
+// persistClientUsageRecords converted right back (audit #23). The clients
+// Repository speaks domain types; the server hot path now does too.
+func (s *Server) mergeClientUsageBatch(ctx context.Context, agentID, agentBootID string, reports []clients.UsageReport) (map[string]struct{}, []clients.Usage) {
 	seen := make(map[string]struct{}, len(reports))
-	toPersist := make([]storage.ClientUsageRecord, 0, len(reports))
+	toPersist := make([]clients.Usage, 0, len(reports))
 	for _, report := range reports {
 		seen[string(report.ClientID)] = struct{}{}
 		current, exists := s.clientsSvc.MirrorUsageEntryFor(string(report.ClientID), agentID)
@@ -374,8 +379,8 @@ func (s *Server) mergeClientUsageBatch(ctx context.Context, agentID, agentBootID
 				"alert", "client_usage_total_rewind",
 			)
 		}
-		toPersist = append(toPersist, storage.ClientUsageRecord{
-			ClientID:           string(report.ClientID),
+		toPersist = append(toPersist, clients.Usage{
+			ClientID:           report.ClientID,
 			AgentID:            agentID,
 			TrafficUsedBytes:   current.TrafficUsedBytes + delta,
 			UniqueIPsUsed:      report.UniqueIPsUsed,
@@ -401,28 +406,12 @@ func (s *Server) mergeClientUsageBatch(ctx context.Context, agentID, agentBootID
 // On error the whole batch is logged once. ON CONFLICT (client_id, agent_id)
 // DO UPDATE preserves the per-row last-write-wins semantics the old loop had —
 // duplicates within one batch collapse to the trailing entry.
-func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []storage.ClientUsageRecord) {
+func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []clients.Usage) {
 	if len(toPersist) == 0 {
 		return
 	}
 	if s.clientsSvc == nil {
 		return // defensive — Server not fully wired (early init / test fixture)
-	}
-	batch := make([]clients.Usage, len(toPersist))
-	for i, r := range toPersist {
-		batch[i] = clients.Usage{
-			ClientID:           clients.ClientID(r.ClientID),
-			AgentID:            r.AgentID,
-			TrafficUsedBytes:   r.TrafficUsedBytes,
-			UniqueIPsUsed:      r.UniqueIPsUsed,
-			ActiveTCPConns:     r.ActiveTCPConns,
-			ActiveUniqueIPs:    r.ActiveUniqueIPs,
-			QuotaUsedBytes:     r.QuotaUsedBytes,
-			QuotaLastResetUnix: r.QuotaLastResetUnix,
-			AgentBootID:        r.AgentBootID,
-			LastTotalBytes:     r.LastTotalBytes,
-			ObservedAt:         r.ObservedAt,
-		}
 	}
 	// P4: usage rows are pure write-through of mirror-owned cumulative
 	// state — a failed persist self-heals on the next tick, because the
@@ -433,7 +422,7 @@ func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []stor
 	const maxUsagePersistAttempts = 3
 	var err error
 	for attempt := 1; ; attempt++ {
-		if err = s.clientsSvc.UpsertUsageBulk(ctx, batch); err == nil {
+		if err = s.clientsSvc.UpsertUsageBulk(ctx, toPersist); err == nil {
 			return
 		}
 		if attempt >= maxUsagePersistAttempts || batchwriter.ClassifyFlushError(err) == "persistent" || ctx.Err() != nil {
