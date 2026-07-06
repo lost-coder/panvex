@@ -202,15 +202,7 @@ type Service struct {
 	// each expiry pass. It can be stale-EARLY (job already terminal) — that
 	// costs one empty slow pass which then recomputes — never stale-late.
 	nextExpiryAt time.Time
-	// latestSucceededByClient maps a Telemt client_id (extracted from a
-	// client.* job's PayloadJSON) to the most recently observed succeeded
-	// job for that client. Updated under s.mu whenever a client.* job
-	// transitions into StatusSucceeded. This is the latest-succeeded-per-client
-	// index, read by tests via LatestSucceededWithContext; keeping it warm
-	// avoids an O(N) ListWithContext scan to recover a client's
-	// connection_links result (P-4).
-	latestSucceededByClient map[string]Job
-	jobStore                Store
+	jobStore     Store
 	startupErr              error
 	now                     func() time.Time
 	metrics                 MetricsSink
@@ -283,7 +275,6 @@ func NewService() *Service {
 		keys:                    make(map[string]string),
 		keyTerminalAt:           make(map[string]time.Time),
 		jobVersion:              make(map[string]uint64),
-		latestSucceededByClient: make(map[string]Job),
 		now:                     time.Now,
 		metrics:                 noopMetricsSink{},
 	}
@@ -300,7 +291,6 @@ func NewServiceWithStore(ctx context.Context, jobStore Store) *Service {
 		keys:                    make(map[string]string),
 		keyTerminalAt:           make(map[string]time.Time),
 		jobVersion:              make(map[string]uint64),
-		latestSucceededByClient: make(map[string]Job),
 		jobStore:                jobStore,
 		now:                     time.Now,
 		metrics:                 noopMetricsSink{},
@@ -372,15 +362,6 @@ func (s *Service) PruneKeys(olderThan time.Duration) int {
 		// storage layer owns long-term retention for /api/audit-style
 		// historical queries.
 		if jobID != "" {
-			// P-4: drop any latestSucceededByClient pointer that names
-			// this jobID so the index never references an evicted job.
-			if existingJob, ok := s.jobs[jobID]; ok {
-				if cid := clientIDFromPayload(existingJob.Action, existingJob.PayloadJSON); cid != "" {
-					if cur, has := s.latestSucceededByClient[cid]; has && cur.ID == jobID {
-						delete(s.latestSucceededByClient, cid)
-					}
-				}
-			}
 			delete(s.jobs, jobID)
 			delete(s.jobVersion, jobID)
 		}
@@ -664,28 +645,6 @@ func clientIDFromPayload(action Action, payloadJSON string) string {
 	return probe.ClientID
 }
 
-// indexLatestSucceededLocked records `job` as the most recent succeeded job
-// for its embedded client_id, if and only if it is a succeeded client.*
-// job. Caller must hold s.mu (write).
-func (s *Service) indexLatestSucceededLocked(job Job) {
-	if job.Status != StatusSucceeded {
-		return
-	}
-	clientID := clientIDFromPayload(job.Action, job.PayloadJSON)
-	if clientID == "" {
-		return
-	}
-	if existing, ok := s.latestSucceededByClient[clientID]; ok {
-		// Only overwrite if the new job is at least as recent as the
-		// existing one. This keeps the index monotone-by-CreatedAt even
-		// if results arrive out-of-order across agents.
-		if !existing.CreatedAt.Before(job.CreatedAt) {
-			return
-		}
-	}
-	s.latestSucceededByClient[clientID] = cloneJob(job)
-}
-
 // supersedePendingClientJobsLocked terminates still-pending targets of older
 // client.* jobs for the same client_id when a newer client.* job is enqueued.
 //
@@ -793,7 +752,6 @@ func (s *Service) applySupersededJob(jobID string, job Job, supersederID, client
 	if isTerminalStatus(job.Status) {
 		s.markKeyTerminalLocked(job.IdempotencyKey, now)
 	}
-	s.indexLatestSucceededLocked(job)
 	slog.Info("job target superseded by newer client job",
 		"superseded_job_id", jobID,
 		"new_job_id", supersederID,
@@ -1222,7 +1180,6 @@ func (s *Service) commitPrunedJobLocked(jobID string, job Job, now time.Time, ca
 	if isTerminalStatus(job.Status) {
 		s.markKeyTerminalLocked(job.IdempotencyKey, now)
 	}
-	s.indexLatestSucceededLocked(job)
 	s.noteJobExpiryLocked(job)
 	if s.jobStore == nil {
 		return candidates
@@ -1382,8 +1339,6 @@ func (s *Service) applyTargetMutationLocked(job Job, agentID string, now time.Ti
 	} else {
 		s.clearKeyTerminalLocked(job.IdempotencyKey)
 	}
-	// P-4: keep latestSucceededByClient in sync with the canonical job map.
-	s.indexLatestSucceededLocked(job)
 	s.noteJobExpiryLocked(job)
 
 	if s.jobStore == nil {
@@ -1580,10 +1535,6 @@ func (s *Service) installRestoredJob(job Job) {
 			s.keyTerminalAt[job.IdempotencyKey] = job.CreatedAt
 		}
 	}
-	// P-4: rebuild the per-client succeeded-job index from the restored
-	// state so LatestSucceededWithContext returns the correct entry after
-	// a control-plane restart.
-	s.indexLatestSucceededLocked(job)
 	s.sequence = maxJobSequence(s.sequence, job.ID)
 	s.updateSeq++
 	s.jobVersion[job.ID] = s.updateSeq
