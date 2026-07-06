@@ -233,7 +233,7 @@ type Server struct {
 	// RWMutex and never reaches back into s.mu, so the documented control-
 	// plane lock ordering (s.mu -> live internal lock) is preserved: callers
 	// that need both take s.mu first.
-	live                         *agents.LiveStore[Agent, Instance]
+	live                         *agents.LiveStore
 	detailBoosts                 map[string]time.Time
 	initializationWatchCooldowns map[string]time.Time
 	// fallback owns the in-memory mirror of agent_fallback_state (A2): the
