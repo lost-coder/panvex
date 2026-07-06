@@ -25,6 +25,7 @@ import {
   updateTotpRequestSchema,
   updateUserRequestSchema,
 } from "./index";
+import { CLIENT_NAME_REGEX } from "./clientMutationRequest";
 
 describe("loginRequestSchema", () => {
   it("accepts username + password without totp", () => {
@@ -537,5 +538,28 @@ describe("geoipSettingsRequestSchema", () => {
         city: { ...valid.city, enabled: "yes" },
       }),
     ).toThrow();
+  });
+});
+
+describe("clientMutationRequestSchema name rule (7.6)", () => {
+  const base = { name: "ok_name" };
+
+  it("принимает валидное имя", () => {
+    expect(clientMutationRequestSchema.safeParse({ ...base }).success).toBe(true);
+  });
+
+  it("отклоняет пробел и не-ASCII (правило Telemt/clients_flow.go)", () => {
+    expect(clientMutationRequestSchema.safeParse({ name: "bad name" }).success).toBe(false);
+    expect(clientMutationRequestSchema.safeParse({ name: "имя" }).success).toBe(false);
+  });
+
+  it("отклоняет имя длиннее 64 символов", () => {
+    expect(clientMutationRequestSchema.safeParse({ name: "a".repeat(65) }).success).toBe(false);
+    expect(clientMutationRequestSchema.safeParse({ name: "a".repeat(64) }).success).toBe(true);
+  });
+
+  it("экспортирует regex для форм", () => {
+    expect(CLIENT_NAME_REGEX.test("web-01.prod")).toBe(true);
+    expect(CLIENT_NAME_REGEX.test("bad name")).toBe(false);
   });
 });

@@ -289,7 +289,9 @@
         "nameTooLong": "Name must be 128 characters or fewer.",
         "urlScheme": "URL must start with http:// or https://.",
         "secretRequired": "Secret is required.",
-        "secretTooLong": "Secret must be 1024 characters or fewer."
+        "secretTooLong": "Secret must be 1024 characters or fewer.",
+        "filterInvalid": "Event filter entries must be dot-namespaced actions or 'prefix.*'",
+        "invalid": "Check the form fields and try again"
       }
     }
   }

@@ -1,7 +1,13 @@
 import { z } from "zod";
 
+// SYNC: internal/controlplane/server/clients_flow.go (clientNameRegex) и
+// username-ограничение Telemt. 7.6: единый источник правды для формы
+// (ClientFormSheet) и request-валидации (encodeRequest) — раньше форма
+// держала собственную копию, а схема разрешала max(256) без regex.
+export const CLIENT_NAME_REGEX = /^[A-Za-z0-9_.-]{1,64}$/;
+
 export const clientMutationRequestSchema = z.object({
-  name: z.string().min(1).max(256),
+  name: z.string().min(1).max(64).regex(CLIENT_NAME_REGEX),
   enabled: z.boolean().nullable().optional(),
   user_ad_tag: z.string().max(256).optional().default(""),
   // Tri-state flag: omitted/true → control-plane auto-generates a tag
