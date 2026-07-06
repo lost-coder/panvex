@@ -286,7 +286,7 @@ func TestSwitchTransportModeJobCarriesTTLAndPendingFlag(t *testing.T) {
 	}
 
 	// 4. markTransportSwitchResolved clears the flag.
-	srv.markTransportSwitchResolved("agent-tm-1")
+	srv.MarkTransportSwitchResolved("agent-tm-1")
 
 	listResp2 := performJSONRequest(t, srv, http.MethodGet, "/api/agents", nil, cookies)
 	if listResp2.Code != http.StatusOK {

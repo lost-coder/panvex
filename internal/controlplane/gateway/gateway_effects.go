@@ -1,4 +1,4 @@
-package server
+package gateway
 
 import (
 	"context"
@@ -108,8 +108,8 @@ func drainPriorityAuditEffects(
 
 func enqueueRegularSnapshot(
 	connectionCtx context.Context,
-	regularSnapshots chan agentSnapshot,
-	snapshot agentSnapshot,
+	regularSnapshots chan AgentSnapshot,
+	snapshot AgentSnapshot,
 ) bool {
 	if connectionCtx.Err() != nil {
 		return false
@@ -144,8 +144,8 @@ func enqueueRegularSnapshot(
 }
 
 func drainRegularSnapshots(
-	regularSnapshots <-chan agentSnapshot,
-	applyAgentSnapshot func(snapshot agentSnapshot) error,
+	regularSnapshots <-chan AgentSnapshot,
+	applyAgentSnapshot func(snapshot AgentSnapshot) error,
 ) {
 	for {
 		select {

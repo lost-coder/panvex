@@ -40,9 +40,10 @@ const (
 	msgClientLimitNegative   = "max_tcp_conns, max_unique_ips and data_quota_bytes must be >= 0"
 	msgClientReadOnlyTarget  = "job targets read-only telemt instance"
 
-	logAgentStreamClosed   = "agent stream closed"
-	logMessageReceived     = "message received"
-	auditJobsResult        = "jobs.result"
-	auditJobsAcknowledged  = "jobs.acknowledged"
+	// logAgentStreamClosed / logMessageReceived / auditJobsResult /
+	// auditJobsAcknowledged moved to the gateway package with the gRPC
+	// gateway extraction (P8.2d); the gateway keeps its own copies. Only
+	// auditAgentsCertRenewed stays here — its sole user
+	// (HandleInStreamRenewalRequest) is in server/gateway_deps.go.
 	auditAgentsCertRenewed = "agents.cert_renewed"
 )

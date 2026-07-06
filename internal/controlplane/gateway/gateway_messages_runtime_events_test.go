@@ -1,4 +1,4 @@
-package server
+package gateway
 
 import (
 	"testing"
@@ -12,11 +12,11 @@ import (
 // agent batch must produce exactly ONE bus event (type runtime.events)
 // carrying all records — not one publish per record.
 func TestHandleRuntimeEventsBatchPublishesOneBusEvent(t *testing.T) {
-	s := &Server{events: eventbus.NewHub(), runtimeEvents: runtimeevents.New(10)}
-	ch, cancel := s.events.Subscribe()
+	g := &Gateway{events: eventbus.NewHub(), runtimeEvents: runtimeevents.New(10)}
+	ch, cancel := g.events.Subscribe()
 	defer cancel()
 
-	s.handleRuntimeEventsBatch("agent-1", &gatewayrpc.RuntimeEventsBatch{
+	g.handleRuntimeEventsBatch("agent-1", &gatewayrpc.RuntimeEventsBatch{
 		Events: []*gatewayrpc.AgentRuntimeEvent{
 			{Level: "warn", Message: "m1"},
 			{Level: "info", Message: "m2"},

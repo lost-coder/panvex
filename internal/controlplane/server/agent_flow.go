@@ -12,8 +12,8 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
-	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -113,48 +113,14 @@ type agentEnrollmentResponse struct {
 	ExpiresAt      time.Time
 }
 
-type instanceSnapshot struct {
-	ID                string
-	Name              string
-	Version           string
-	ConfigFingerprint string
-	ManagedConfigHash string
-	ManagedConfigJSON string
-	Connections       int
-	ReadOnly          bool
-}
+// The agent-stream DTOs (instanceSnapshot / agentSnapshot) moved to the
+// gateway package with the gRPC gateway extraction (P8.2d). These aliases keep
+// the server-internal call sites (agent_snapshot.go, agent_telemetry.go,
+// tests) compiling unchanged. clientIPSnapshot has no server-side consumer
+// left — it is used only inside the gateway — so it keeps no alias here.
+type instanceSnapshot = gateway.InstanceSnapshot
 
-type agentSnapshot struct {
-	AgentID string
-	// AgentBootID scopes the cumulative usage totals in Clients to one
-	// agent process incarnation (P4). Empty only in unit tests that do
-	// not exercise the usage path.
-	AgentBootID              string
-	NodeName                 string
-	FleetGroupID             string
-	Version                  string
-	ReadOnly                 bool
-	Instances                []instanceSnapshot
-	Clients                  []clients.UsageReport
-	HasClients               bool
-	ClientIPs                []clientIPSnapshot
-	HasClientIPs             bool
-	Runtime                  *gatewayrpc.RuntimeSnapshot
-	HasRuntime               bool
-	RuntimeDiagnostics       *gatewayrpc.RuntimeDiagnosticsSnapshot
-	RuntimeSecurityInventory *gatewayrpc.RuntimeSecurityInventorySnapshot
-	Metrics                  map[string]uint64
-	ObservedAt               time.Time
-	// Partial=true when the agent could not collect a full telemt snapshot;
-	// the panel preserves last-known version/connections/read_only/uptime
-	// rather than overwriting them with blanks (IN-H6).
-	Partial bool
-}
-
-type clientIPSnapshot struct {
-	ClientID  string
-	ActiveIPs []string
-}
+type agentSnapshot = gateway.AgentSnapshot
 
 func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
 	// P3-OBS-01: agent enrollment is a low-volume, high-value path

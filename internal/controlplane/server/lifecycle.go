@@ -20,6 +20,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/fleet/integrations"
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/metrics"
@@ -725,6 +726,23 @@ func New(options Options) (*Server, error) {
 		}
 		server.batchWriter.Start(server.serverCtx)
 	}
+
+	// Construct the agent gRPC gateway once all its Config subsystems are
+	// ready (batchWriter is the last; it may be nil when there is no
+	// persistent store — the gateway's g.writer != nil guards handle that).
+	// *Server implements gateway.Deps (see gateway_deps.go).
+	server.gateway = gateway.New(gateway.Config{
+		Deps:          server,
+		Logger:        server.logger,
+		Store:         server.store,
+		Jobs:          server.jobs,
+		Writer:        server.batchWriter,
+		Events:        server.events,
+		RuntimeEvents: server.runtimeEvents,
+		Presence:      server.presence,
+		Obs:           server.obs,
+		Now:           server.now,
+	})
 
 	if updatehosts.PolicyFromEnv().Disabled() {
 		server.logger.WarnContext(bootCtx,
