@@ -14,7 +14,7 @@ export function useWebhooks() {
 
   const query = useQuery({
     queryKey: webhooksKeys.list(),
-    queryFn: () => apiClient.webhookEndpoints(),
+    queryFn: ({ signal }) => apiClient.webhookEndpoints({ signal }),
   });
 
   const endpoints: WebhookEndpoint[] = query.data?.endpoints ?? [];

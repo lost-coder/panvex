@@ -1,4 +1,4 @@
-import { api, apiBasePath, encodeRequest } from "./http";
+import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
   createEnrollmentTokenRequestSchema,
   enrollmentAttemptDetailSchema,
@@ -73,10 +73,10 @@ export const enrollmentApi = {
       },
       enrollmentTokenResponseSchema,
     ),
-  listEnrollmentTokens: () =>
+  listEnrollmentTokens: (opts?: RequestOpts) =>
     api<EnrollmentTokenListItem[]>(
       `${apiBasePath}/agents/enrollment-tokens`,
-      undefined,
+      { signal: opts?.signal },
       enrollmentTokenListSchema,
     ),
   revokeEnrollmentToken: (value: string) =>
@@ -92,7 +92,7 @@ export const enrollmentApi = {
   // response also gained `next_cursor` (null when there are no more
   // pages). Existing callers that only consume `.items` are
   // unaffected.
-  listEnrollmentAttempts: (filter: EnrollmentAttemptsFilter = {}) => {
+  listEnrollmentAttempts: (filter: EnrollmentAttemptsFilter = {}, opts?: RequestOpts) => {
     const params = new URLSearchParams();
     if (filter.token_id) params.set("token_id", filter.token_id);
     if (filter.agent_id) params.set("agent_id", filter.agent_id);
@@ -107,15 +107,15 @@ export const enrollmentApi = {
     const path = `${apiBasePath}/enrollment-attempts${qs ? "?" + qs : ""}`;
     return api<EnrollmentAttemptsPage>(
       path,
-      undefined,
+      { signal: opts?.signal },
       enrollmentAttemptListResponseSchema,
     );
   },
 
-  getEnrollmentAttempt: (id: string) =>
+  getEnrollmentAttempt: (id: string, opts?: RequestOpts) =>
     api<EnrollmentAttemptDetail>(
       `${apiBasePath}/enrollment-attempts/${encodeURIComponent(id)}`,
-      undefined,
+      { signal: opts?.signal },
       enrollmentAttemptDetailSchema,
     ),
 };

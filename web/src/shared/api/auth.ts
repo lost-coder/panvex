@@ -1,4 +1,4 @@
-import { api, apiBasePath, encodeRequest } from "./http";
+import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
   loginRequestSchema,
   loginResponseSchema,
@@ -28,7 +28,8 @@ export const authApi = {
     api<void>(`${apiBasePath}/auth/logout`, {
       method: "POST"
     }),
-  me: () => api<MeResponse>(`${apiBasePath}/auth/me`, undefined, meResponseSchema),
+  me: (opts?: RequestOpts) =>
+    api<MeResponse>(`${apiBasePath}/auth/me`, { signal: opts?.signal }, meResponseSchema),
   startTotpSetup: () =>
     api<TotpSetupResponse>(`${apiBasePath}/auth/totp/setup`, {
       method: "POST"

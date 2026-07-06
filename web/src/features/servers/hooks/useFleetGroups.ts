@@ -8,7 +8,7 @@ export function useFleetGroups() {
 
   const query = useQuery({
     queryKey: fleetGroupsKeys.list(),
-    queryFn: () => apiClient.fleetGroups(),
+    queryFn: ({ signal }) => apiClient.fleetGroups({ signal }),
     refetchInterval,
   });
 

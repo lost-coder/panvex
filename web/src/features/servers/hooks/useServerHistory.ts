@@ -8,7 +8,7 @@ export function useServerLoadHistory(agentID: string, from?: string, to?: string
 
   const query = useQuery({
     queryKey: telemetryKeys.serverLoadHistory(agentID, from, to),
-    queryFn: () => apiClient.serverLoadHistory(agentID, from, to),
+    queryFn: ({ signal }) => apiClient.serverLoadHistory(agentID, from, to, { signal }),
     enabled: !!agentID,
     refetchInterval,
   });
@@ -25,7 +25,7 @@ export function useDCHealthHistory(agentID: string, from?: string, to?: string) 
 
   const query = useQuery({
     queryKey: telemetryKeys.serverDCHistory(agentID, from, to),
-    queryFn: () => apiClient.dcHealthHistory(agentID, from, to),
+    queryFn: ({ signal }) => apiClient.dcHealthHistory(agentID, from, to, { signal }),
     enabled: !!agentID,
     refetchInterval,
   });

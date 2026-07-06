@@ -21,7 +21,7 @@ export function useUsers() {
 
   const query = useQuery({
     queryKey: usersKeys.list(),
-    queryFn: () => apiClient.users(),
+    queryFn: ({ signal }) => apiClient.users({ signal }),
     refetchInterval,
   });
 

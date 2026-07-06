@@ -11,7 +11,7 @@ export function useClientDetail(clientId: string) {
 
   const query = useQuery({
     queryKey: clientsKeys.detail(clientId),
-    queryFn: () => apiClient.client(clientId),
+    queryFn: ({ signal }) => apiClient.client(clientId, { signal }),
     refetchInterval,
     enabled: !!clientId,
   });

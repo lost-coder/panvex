@@ -1,4 +1,4 @@
-import { api, apiBasePath, encodeRequest } from "./http";
+import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
   createUserRequestSchema,
   updateUserRequestSchema,
@@ -30,7 +30,8 @@ export const usersApi = {
   // R-Q-20: response Zod-parse on every read; mutations parse the
   // returned record with the same schema so the cache write is also
   // guarded.
-  users: () => api<LocalUser[]>(`${apiBasePath}/users`, undefined, userListSchema),
+  users: (opts?: RequestOpts) =>
+    api<LocalUser[]>(`${apiBasePath}/users`, { signal: opts?.signal }, userListSchema),
   createUser: (payload: CreateUserInput) =>
     api<LocalUser>(
       `${apiBasePath}/users`,

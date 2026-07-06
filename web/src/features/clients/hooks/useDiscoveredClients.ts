@@ -46,7 +46,7 @@ export function useDiscoveredClients(options?: Readonly<{ pausePolling?: boolean
 
   const query = useQuery({
     queryKey: clientsKeys.discovered,
-    queryFn: () => apiClient.discoveredClients(),
+    queryFn: ({ signal }) => apiClient.discoveredClients({ signal }),
     refetchInterval,
   });
 

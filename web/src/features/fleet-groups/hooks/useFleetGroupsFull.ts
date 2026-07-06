@@ -28,7 +28,7 @@ export function useFleetGroupsList() {
 
   return useQuery({
     queryKey: fleetGroupsKeys.list(),
-    queryFn: () => apiClient.fleetGroups(),
+    queryFn: ({ signal }) => apiClient.fleetGroups({ signal }),
     refetchInterval: groupsInterval,
   });
 }
@@ -40,9 +40,9 @@ export function useFleetGroupDetail(id: string | undefined) {
 
   return useQuery({
     queryKey: fleetGroupsKeys.detail(id),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (!id) throw new Error("fleet group id is required");
-      return apiClient.fleetGroup(id);
+      return apiClient.fleetGroup(id, { signal });
     },
     enabled: !!id,
     refetchInterval: groupDetailInterval,
@@ -55,9 +55,9 @@ export function useFleetGroupDetail(id: string | undefined) {
 export function useFleetGroupDeletionPreview(id: string | undefined, enabled = true) {
   return useQuery({
     queryKey: fleetGroupsKeys.deletionPreview(id),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (!id) throw new Error("fleet group id is required");
-      return apiClient.fleetGroupDeletionPreview(id);
+      return apiClient.fleetGroupDeletionPreview(id, { signal });
     },
     enabled: !!id && enabled,
     // Preview is an operator-triggered read; no polling.
@@ -105,7 +105,7 @@ export function useFleetGroupMutations() {
 export function useIntegrationKinds() {
   return useQuery({
     queryKey: integrationKindsKeys.list(),
-    queryFn: () => apiClient.integrationKinds(),
+    queryFn: ({ signal }) => apiClient.integrationKinds({ signal }),
     // Kinds are registry-driven and change at control-plane boot
     // only; a 10-minute stale window keeps the hook well-behaved
     // without real-time refresh.
@@ -117,7 +117,7 @@ export function useIntegrationKinds() {
 export function useIntegrationProviderKinds() {
   return useQuery({
     queryKey: integrationProviderKindsKeys.list(),
-    queryFn: () => apiClient.integrationProviderKinds(),
+    queryFn: ({ signal }) => apiClient.integrationProviderKinds({ signal }),
     staleTime: 10 * 60 * 1000,
     refetchInterval: false,
   });
@@ -128,7 +128,7 @@ export function useIntegrationProvidersList() {
 
   return useQuery({
     queryKey: integrationProvidersKeys.list(),
-    queryFn: () => apiClient.integrationProviders(),
+    queryFn: ({ signal }) => apiClient.integrationProviders({ signal }),
     refetchInterval: providersInterval,
   });
 }

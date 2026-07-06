@@ -102,7 +102,7 @@ const NAV_SECONDARY_SPEC: NavSpec[] = [
 function ProtectedShell() {
   const { data: me } = useQuery({
     queryKey: authKeys.me(),
-    queryFn: () => authApi.me(),
+    queryFn: ({ signal }) => authApi.me({ signal }),
   });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -321,7 +321,7 @@ const shellRoute = createRoute({
     try {
       await context.queryClient.ensureQueryData({
         queryKey: authKeys.me(),
-        queryFn: () => authApi.me(),
+        queryFn: ({ signal }) => authApi.me({ signal }),
         staleTime: 30_000,
       });
     } catch {
@@ -342,7 +342,7 @@ const loginRoute = createRoute({
     try {
       await context.queryClient.ensureQueryData({
         queryKey: authKeys.me(),
-        queryFn: () => authApi.me(),
+        queryFn: ({ signal }) => authApi.me({ signal }),
         staleTime: 30_000,
       });
       throw redirect({ to: "/" });

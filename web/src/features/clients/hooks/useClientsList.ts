@@ -11,7 +11,7 @@ export function useClientsList() {
 
   const query = useQuery({
     queryKey: clientsKeys.list(),
-    queryFn: () => apiClient.clients(),
+    queryFn: ({ signal }) => apiClient.clients({ signal }),
     refetchInterval,
   });
 

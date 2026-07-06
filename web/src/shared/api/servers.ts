@@ -1,4 +1,4 @@
-import { api, apiBasePath, encodeRequest } from "./http";
+import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
   agentCertificateRecoveryGrantRequestSchema,
   agentCertificateRecoverySchema,
@@ -169,7 +169,8 @@ export type Instance = {
 
 export const serversApi = {
   // R-Q-20: Zod parse on every response that carries a body.
-  agents: () => api<Agent[]>(`${apiBasePath}/agents`, undefined, agentListSchema),
+  agents: (opts?: RequestOpts) =>
+    api<Agent[]>(`${apiBasePath}/agents`, { signal: opts?.signal }, agentListSchema),
   instances: () =>
     api<Instance[]>(`${apiBasePath}/instances`, undefined, instanceListSchema),
   renameAgent: (agentID: string, nodeName: string) =>

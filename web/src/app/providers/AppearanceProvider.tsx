@@ -72,7 +72,7 @@ export function AppearanceProvider(props: Readonly<{ children: ReactNode; userID
   const prefersDark = usePrefersDarkScheme();
   const appearanceQuery = useQuery({
     queryKey: getAppearanceQueryKey(props.userID),
-    queryFn: () => settingsApi.appearanceSettings(),
+    queryFn: ({ signal }) => settingsApi.appearanceSettings({ signal }),
     retry: false
   });
 

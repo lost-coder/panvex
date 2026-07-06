@@ -1,4 +1,4 @@
-import { api, apiBasePath, encodeRequest } from "./http";
+import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
   createWebhookEndpointRequestSchema,
   updateWebhookEndpointRequestSchema,
@@ -19,10 +19,10 @@ export type CreateWebhookEndpointInput = CreateWebhookEndpointRequest;
 export type UpdateWebhookEndpointInput = UpdateWebhookEndpointRequest;
 
 export const webhooksApi = {
-  webhookEndpoints: () =>
+  webhookEndpoints: (opts?: RequestOpts) =>
     api<WebhookEndpointListResponse>(
       `${apiBasePath}/webhook-endpoints`,
-      undefined,
+      { signal: opts?.signal },
       webhookEndpointListResponseSchema,
     ),
   createWebhookEndpoint: (payload: CreateWebhookEndpointInput) =>

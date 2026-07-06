@@ -31,18 +31,18 @@ export function useSettingsRegistry(): UseSettingsRegistryResult {
 
   const schemaQ = useQuery({
     queryKey: SCHEMA_KEY,
-    queryFn: () => apiClient.getSettingsSchema(),
+    queryFn: ({ signal }) => apiClient.getSettingsSchema({ signal }),
     staleTime: 5 * 60 * 1000,
   });
 
   const valuesQ = useQuery({
     queryKey: VALUES_KEY,
-    queryFn: () => apiClient.getSettingsValues(),
+    queryFn: ({ signal }) => apiClient.getSettingsValues({ signal }),
   });
 
   const restartQ = useQuery({
     queryKey: RESTART_KEY,
-    queryFn: () => apiClient.getRestartStatus(),
+    queryFn: ({ signal }) => apiClient.getRestartStatus({ signal }),
   });
 
   const [draft, setDraftState] = useState<Record<string, string>>({});

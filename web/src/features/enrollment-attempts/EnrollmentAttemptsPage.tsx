@@ -70,12 +70,15 @@ export function EnrollmentAttemptsPage() {
 
   const query = useInfiniteQuery({
     queryKey: enrollmentAttemptsKeys.page(filter),
-    queryFn: ({ pageParam }) =>
-      apiClient.listEnrollmentAttempts({
-        ...filter,
-        limit: PAGE_SIZE,
-        cursor: pageParam as string | undefined,
-      }),
+    queryFn: ({ pageParam, signal }) =>
+      apiClient.listEnrollmentAttempts(
+        {
+          ...filter,
+          limit: PAGE_SIZE,
+          cursor: pageParam as string | undefined,
+        },
+        { signal },
+      ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last: PageT) => last.next_cursor ?? undefined,
   });
@@ -88,7 +91,7 @@ export function EnrollmentAttemptsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const detail = useQuery({
     queryKey: enrollmentAttemptsKeys.detail(expanded!),
-    queryFn: () => apiClient.getEnrollmentAttempt(expanded!),
+    queryFn: ({ signal }) => apiClient.getEnrollmentAttempt(expanded!, { signal }),
     enabled: !!expanded,
   });
 
@@ -96,7 +99,7 @@ export function EnrollmentAttemptsPage() {
   // meaningless to a human and ate ~60% of the row width on mobile.
   const serversQuery = useQuery({
     queryKey: ["telemetry", "servers", "names"],
-    queryFn: () => apiClient.telemetryServers(),
+    queryFn: ({ signal }) => apiClient.telemetryServers({ signal }),
     staleTime: 60_000,
   });
   const nodeNames = useMemo(() => {

@@ -30,7 +30,7 @@ export function useEnrollmentTokens() {
 
   const query = useQuery({
     queryKey: enrollmentTokensKeys.list(),
-    queryFn: () => apiClient.listEnrollmentTokens(),
+    queryFn: ({ signal }) => apiClient.listEnrollmentTokens({ signal }),
     refetchInterval,
   });
 

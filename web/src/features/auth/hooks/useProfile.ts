@@ -6,7 +6,7 @@ import { authKeys } from "@/features/auth/queryKeys";
 export function useProfile() {
   const query = useQuery({
     queryKey: authKeys.me(),
-    queryFn: () => apiClient.me(),
+    queryFn: ({ signal }) => apiClient.me({ signal }),
   });
 
   const profile: MeResponse | undefined = query.data;

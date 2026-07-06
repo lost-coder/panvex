@@ -60,7 +60,7 @@ export function ResetQuotaHistory({ clientId, agentLabels }: Readonly<Props>) {
   // the implementation slim and avoids a new backend endpoint.
   const list = useQuery({
     queryKey: ["audit", "client-reset-quota", clientId],
-    queryFn: jobsApi.audit,
+    queryFn: ({ signal }) => jobsApi.audit({ signal }),
   });
 
   if (list.isLoading) {

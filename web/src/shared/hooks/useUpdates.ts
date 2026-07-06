@@ -9,7 +9,7 @@ export function useUpdates() {
 
   const query = useQuery({
     queryKey: updatesKeys.settings(),
-    queryFn: () => apiClient.getUpdateSettings(),
+    queryFn: ({ signal }) => apiClient.getUpdateSettings({ signal }),
     refetchInterval,
   });
 

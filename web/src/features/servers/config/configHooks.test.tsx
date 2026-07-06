@@ -77,7 +77,7 @@ describe("useGroupConfigApplyBatch", () => {
       { wrapper: wrapper() },
     );
     await waitFor(() => expect(result.current.data?.done).toBe(true));
-    expect(batchStatusMock).toHaveBeenCalledWith("fg-1", "batch-1");
+    expect(batchStatusMock).toHaveBeenCalledWith("fg-1", "batch-1", expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(result.current.data?.status).toBe("failed");
     expect(result.current.data?.agents[1]?.message).toBe("boom");
   });
@@ -100,7 +100,7 @@ describe("useAgentConfigApplyBatch", () => {
       { wrapper: wrapper() },
     );
     await waitFor(() => expect(result.current.data?.done).toBe(true));
-    expect(agentBatchStatusMock).toHaveBeenCalledWith("agent-1", "batch-1");
+    expect(agentBatchStatusMock).toHaveBeenCalledWith("agent-1", "batch-1", expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(result.current.data?.status).toBe("failed");
   });
 });
@@ -122,7 +122,7 @@ describe("useActiveGroupConfigApplyBatch", () => {
       { wrapper: wrapper() },
     );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(activeBatchMock).toHaveBeenCalledWith("fg-1");
+    expect(activeBatchMock).toHaveBeenCalledWith("fg-1", expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(result.current.data).toBeNull();
   });
 

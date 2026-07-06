@@ -13,7 +13,7 @@ export function useServerDetail(serverId: string) {
 
   const query = useQuery({
     queryKey: telemetryKeys.server(serverId),
-    queryFn: () => apiClient.telemetryServer(serverId),
+    queryFn: ({ signal }) => apiClient.telemetryServer(serverId, { signal }),
     refetchInterval,
     enabled: !!serverId,
   });

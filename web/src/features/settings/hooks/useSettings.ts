@@ -9,12 +9,12 @@ export function useSettings(swipeNavigation: boolean = false) {
 
   const panelQuery = useQuery({
     queryKey: settingsKeys.panel(),
-    queryFn: () => apiClient.panelSettings(),
+    queryFn: ({ signal }) => apiClient.panelSettings({ signal }),
   });
 
   const appearanceQuery = useQuery({
     queryKey: settingsKeys.appearance(),
-    queryFn: () => apiClient.appearanceSettings(),
+    queryFn: ({ signal }) => apiClient.appearanceSettings({ signal }),
   });
 
   const settings: Pick<

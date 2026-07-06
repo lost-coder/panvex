@@ -1,4 +1,4 @@
-import { api, apiBasePath } from "./http";
+import { api, apiBasePath, type RequestOpts } from "./http";
 import { runtimeEventsListResponseSchema } from "./schemas/runtime-events";
 import type {
   RuntimeEventLevel,
@@ -16,7 +16,7 @@ export const runtimeEventsApi = {
   // at 500) ordered newest-first. The WebSocket `runtime.event` frames
   // then deliver new records in real-time — see useAgentRuntimeEvents
   // for the combined initial-list + live-stream hook.
-  listRuntimeEvents: (agentId: string, filter?: RuntimeEventsFilter) => {
+  listRuntimeEvents: (agentId: string, filter?: RuntimeEventsFilter, opts?: RequestOpts) => {
     const params = new URLSearchParams();
     if (filter?.levels && filter.levels.length > 0) {
       params.set("level", filter.levels.join(","));
@@ -27,7 +27,7 @@ export const runtimeEventsApi = {
     const qs = params.toString();
     return api<RuntimeEventsListResponse>(
       `${apiBasePath}/agents/${encodeURIComponent(agentId)}/runtime-events${qs ? "?" + qs : ""}`,
-      undefined,
+      { signal: opts?.signal },
       runtimeEventsListResponseSchema,
     );
   },
