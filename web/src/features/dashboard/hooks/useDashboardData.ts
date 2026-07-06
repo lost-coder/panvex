@@ -19,7 +19,7 @@ export function useDashboardData() {
 
   const query = useQuery({
     queryKey: dashboardKeys.overview(),
-    queryFn: () => apiClient.telemetryDashboard(),
+    queryFn: ({ signal }) => apiClient.telemetryDashboard({ signal }),
     refetchInterval,
   });
 

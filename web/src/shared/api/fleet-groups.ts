@@ -1,4 +1,4 @@
-import { api, apiBasePath, encodeRequest } from "./http";
+import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
   createFleetGroupRequestSchema,
   createIntegrationProviderRequestSchema,
@@ -117,10 +117,10 @@ export type UpdateFleetGroupIntegrationRequest = {
 
 export const fleetGroupsApi = {
   // R-Q-20: Zod parse on every response that carries a body.
-  fleetGroups: () =>
-    api<FleetGroupEntry[]>(`${apiBasePath}/fleet-groups`, undefined, fleetGroupListSchema),
-  fleetGroup: (id: string) =>
-    api<FleetGroupEntry>(`${apiBasePath}/fleet-groups/${id}`, undefined, fleetGroupSchema),
+  fleetGroups: (opts?: RequestOpts) =>
+    api<FleetGroupEntry[]>(`${apiBasePath}/fleet-groups`, { signal: opts?.signal }, fleetGroupListSchema),
+  fleetGroup: (id: string, opts?: RequestOpts) =>
+    api<FleetGroupEntry>(`${apiBasePath}/fleet-groups/${id}`, { signal: opts?.signal }, fleetGroupSchema),
   createFleetGroup: (payload: CreateFleetGroupRequest) =>
     api<FleetGroupEntry>(
       `${apiBasePath}/fleet-groups`,
@@ -147,10 +147,10 @@ export const fleetGroupsApi = {
       },
       fleetGroupSchema,
     ),
-  fleetGroupDeletionPreview: (id: string) =>
+  fleetGroupDeletionPreview: (id: string, opts?: RequestOpts) =>
     api<FleetGroupDeletionPreview>(
       `${apiBasePath}/fleet-groups/${id}/deletion-preview`,
-      undefined,
+      { signal: opts?.signal },
       fleetGroupDeletionPreviewSchema,
     ),
   // reassignTo is required when the preview reports reassign_required;
@@ -164,22 +164,22 @@ export const fleetGroupsApi = {
       fleetGroupDeletionResultSchema,
     );
   },
-  integrationKinds: () =>
+  integrationKinds: (opts?: RequestOpts) =>
     api<IntegrationKind[]>(
       `${apiBasePath}/integration-kinds`,
-      undefined,
+      { signal: opts?.signal },
       integrationKindListSchema,
     ),
-  integrationProviderKinds: () =>
+  integrationProviderKinds: (opts?: RequestOpts) =>
     api<IntegrationProviderKind[]>(
       `${apiBasePath}/integration-provider-kinds`,
-      undefined,
+      { signal: opts?.signal },
       integrationProviderKindListSchema,
     ),
-  integrationProviders: () =>
+  integrationProviders: (opts?: RequestOpts) =>
     api<IntegrationProvider[]>(
       `${apiBasePath}/integration-providers`,
-      undefined,
+      { signal: opts?.signal },
       integrationProviderListSchema,
     ),
   integrationProvider: (id: string) =>

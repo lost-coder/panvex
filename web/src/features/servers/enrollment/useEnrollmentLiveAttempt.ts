@@ -34,7 +34,8 @@ interface LiveAttempt {
 export function useEnrollmentLiveAttempt(agentId: string | null): LiveAttempt {
   const list = useQuery({
     queryKey: enrollmentAttemptsKeys.byAgent(agentId!),
-    queryFn: () => apiClient.listEnrollmentAttempts({ agent_id: agentId!, limit: 1 }),
+    queryFn: ({ signal }) =>
+      apiClient.listEnrollmentAttempts({ agent_id: agentId!, limit: 1 }, { signal }),
     enabled: !!agentId,
     refetchInterval: LIST_POLL_MS,
   });

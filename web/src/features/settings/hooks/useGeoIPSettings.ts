@@ -15,7 +15,7 @@ export function useGeoIPSettings() {
 
   const query = useQuery<GeoIPResponseParsed>({
     queryKey: settingsKeys.geoip(),
-    queryFn: () => apiClient.getGeoIPSettings(),
+    queryFn: ({ signal }) => apiClient.getGeoIPSettings({ signal }),
   });
 
   const saveMutation = useMutation({

@@ -21,6 +21,14 @@ export class ApiError extends Error {
 }
 
 /**
+ * 7.5 (#web-9): опции read-методов api-слоя. queryFn React Query передаёт
+ * сюда свой AbortSignal, чтобы быстрая навигация отменяла медленные GET.
+ */
+export interface RequestOpts {
+  signal?: AbortSignal | undefined;
+}
+
+/**
  * Name of the CustomEvent dispatched on window when a response passes the
  * HTTP checks but fails our Zod schema (P2-FE-01 / DF-10). ToastProvider
  * (or any other boundary) can subscribe and surface a user-visible
@@ -331,7 +339,13 @@ function parseWithSchema<T>(path: string, schema: ZodType<T>, json: unknown): T 
  */
 export async function api<T>(
   path: string,
-  init?: RequestInit,
+  // 7.5 (#web-9): init.signal is threaded from React Query's queryFn via
+  // RequestOpts, whose signal is `AbortSignal | undefined`. The DOM's
+  // RequestInit types signal as `AbortSignal | null`, so under
+  // exactOptionalPropertyTypes an explicit `undefined` is rejected — swap
+  // the signal member for the RequestOpts one so read-method call sites can
+  // pass `{ signal: opts?.signal }` verbatim.
+  init?: Omit<RequestInit, "signal"> & RequestOpts,
   schema?: ZodType<T>,
 ): Promise<T> {
   // Q3.U-Q-23: invariant on path. Every API call must traverse the
@@ -368,14 +382,23 @@ export async function api<T>(
     }
   }
 
+  // 7.5 (#web-10): ...init идёт ДО сборки headers — заголовки мержатся
+  // ПОВЕРХ init.headers, поэтому вызов с собственными заголовками
+  // дополняет, а не затирает Content-Type/X-CSRF-Token. Инвариант:
+  // init.headers у нас всегда plain-object (Headers-инстансы не
+  // используются — их спред дал бы пустой объект).
   const response = await fetch(path, {
     credentials: "include",
+    ...init,
+    // Normalize the RequestOpts `AbortSignal | undefined` to the DOM's
+    // `AbortSignal | null` so the spread satisfies fetch's RequestInit
+    // under exactOptionalPropertyTypes (fetch treats null == absent).
+    signal: init?.signal ?? null,
     headers: {
       "Content-Type": "application/json",
       ...csrfHeaders,
-      ...(init?.headers ?? {})
+      ...(init?.headers ?? {}),
     },
-    ...init
   });
 
   if (response.status === 204) {

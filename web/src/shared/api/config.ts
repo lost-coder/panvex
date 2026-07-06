@@ -1,4 +1,4 @@
-import { api, apiBasePath, encodeRequest } from "./http";
+import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
   agentConfigSchema,
   applyAcceptedSchema,
@@ -26,8 +26,8 @@ export type {
 export const configApi = {
   // R-Q-20: Zod parse on every response that carries a body.
 
-  getAgentConfig: (id: string) =>
-    api<AgentConfig>(`${apiBasePath}/agents/${id}/config`, undefined, agentConfigSchema),
+  getAgentConfig: (id: string, opts?: RequestOpts) =>
+    api<AgentConfig>(`${apiBasePath}/agents/${id}/config`, { signal: opts?.signal }, agentConfigSchema),
 
   putAgentConfig: (id: string, sections: ConfigSections) =>
     api<void>(`${apiBasePath}/agents/${id}/config`, {
@@ -50,15 +50,15 @@ export const configApi = {
 
   // Persistent-batch aggregate of the single apply. Same JSON shape as the
   // group batch status — reuse groupApplyBatchStatusSchema.
-  getAgentConfigApplyBatch: (id: string, batchId: string) =>
+  getAgentConfigApplyBatch: (id: string, batchId: string, opts?: RequestOpts) =>
     api<GroupApplyBatchStatus>(
       `${apiBasePath}/agents/${id}/config/apply/batches/${batchId}`,
-      undefined,
+      { signal: opts?.signal },
       groupApplyBatchStatusSchema,
     ),
 
-  getGroupConfig: (id: string) =>
-    api<GroupConfig>(`${apiBasePath}/fleet-groups/${id}/config`, undefined, groupConfigSchema),
+  getGroupConfig: (id: string, opts?: RequestOpts) =>
+    api<GroupConfig>(`${apiBasePath}/fleet-groups/${id}/config`, { signal: opts?.signal }, groupConfigSchema),
 
   putGroupConfig: (id: string, sections: ConfigSections) =>
     api<void>(`${apiBasePath}/fleet-groups/${id}/config`, {
@@ -83,10 +83,10 @@ export const configApi = {
   // POST .../config/apply returned. Built entirely from the stored batch +
   // target rows, so it can be re-fetched after a browser reload or from a
   // different device — the whole point of Phase A persisting batches.
-  getGroupConfigApplyBatch: (id: string, batchId: string) =>
+  getGroupConfigApplyBatch: (id: string, batchId: string, opts?: RequestOpts) =>
     api<GroupApplyBatchStatus>(
       `${apiBasePath}/fleet-groups/${id}/config/apply/batches/${batchId}`,
-      undefined,
+      { signal: opts?.signal },
       groupApplyBatchStatusSchema,
     ),
 
@@ -97,10 +97,10 @@ export const configApi = {
   // Content (no body) when nothing is in flight; `api()` resolves that to
   // undefined before the schema is consulted, so the return type reflects
   // that honestly rather than lying about a guaranteed batch_id.
-  activeGroupConfigApplyBatch: (id: string): Promise<GroupApplyActiveBatch | undefined> =>
+  activeGroupConfigApplyBatch: (id: string, opts?: RequestOpts): Promise<GroupApplyActiveBatch | undefined> =>
     api(
       `${apiBasePath}/fleet-groups/${id}/config/apply/batches?active=1`,
-      undefined,
+      { signal: opts?.signal },
       groupApplyActiveBatchSchema,
     ),
 };

@@ -11,7 +11,7 @@ export function useRetentionSettings() {
 
   const query = useQuery({
     queryKey: settingsKeys.retention(),
-    queryFn: () => apiClient.getRetentionSettings(),
+    queryFn: ({ signal }) => apiClient.getRetentionSettings({ signal }),
   });
 
   const saveMutation = useMutation({

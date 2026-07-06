@@ -69,7 +69,7 @@ export function ClientDetailContainer() {
   // detail page. See backend-followup #5.
   const agentsQuery = useQuery({
     queryKey: agentsKeys.list(),
-    queryFn: () => apiClient.agents(),
+    queryFn: ({ signal }) => apiClient.agents({ signal }),
     staleTime: 30_000,
   });
   const agentLabels = useMemo(() => {

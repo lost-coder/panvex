@@ -64,13 +64,13 @@ export function useActivity() {
 
   const jobsQuery = useQuery({
     queryKey: jobsKeys.list(),
-    queryFn: () => apiClient.jobs(),
+    queryFn: ({ signal }) => apiClient.jobs({ signal }),
     refetchInterval,
   });
 
   const auditQuery = useQuery({
     queryKey: auditKeys.list(),
-    queryFn: () => apiClient.audit(),
+    queryFn: ({ signal }) => apiClient.audit({ signal }),
     refetchInterval,
   });
 
@@ -82,20 +82,20 @@ export function useActivity() {
   // drift between activity and the source feature's hooks).
   const usersQuery = useQuery({
     queryKey: usersKeys.list(),
-    queryFn: () => apiClient.users(),
+    queryFn: ({ signal }) => apiClient.users({ signal }),
     enabled: isAdmin,
     staleTime: 60_000,
   });
 
   const agentsQuery = useQuery({
     queryKey: agentsKeys.list(),
-    queryFn: () => apiClient.agents(),
+    queryFn: ({ signal }) => apiClient.agents({ signal }),
     staleTime: 30_000,
   });
 
   const clientsQuery = useQuery({
     queryKey: clientsKeys.list(),
-    queryFn: () => apiClient.clients(),
+    queryFn: ({ signal }) => apiClient.clients({ signal }),
     staleTime: 30_000,
   });
 

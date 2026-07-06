@@ -8,7 +8,7 @@ export function useClientIPHistory(clientID: string) {
 
   const query = useQuery({
     queryKey: clientsKeys.ipHistory(clientID),
-    queryFn: () => apiClient.clientIPHistory(clientID),
+    queryFn: ({ signal }) => apiClient.clientIPHistory(clientID, undefined, undefined, { signal }),
     enabled: !!clientID,
     refetchInterval,
   });

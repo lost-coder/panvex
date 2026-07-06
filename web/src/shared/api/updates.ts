@@ -1,4 +1,4 @@
-import { api, apiBasePath, encodeRequest } from "./http";
+import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
   agentUpdateRequestSchema,
   checkForUpdatesResponseSchema,
@@ -36,10 +36,10 @@ export interface UpdateSettingsResponse {
 export const updatesApi = {
   // R-Q-20: Zod parse on every read/write; response schemas mirror the
   // runtime types so the api<T>() overload accepts them.
-  getUpdateSettings: () =>
+  getUpdateSettings: (opts?: RequestOpts) =>
     api<UpdateSettingsResponse>(
       `${apiBasePath}/settings/updates`,
-      undefined,
+      { signal: opts?.signal },
       updateSettingsResponseSchema,
     ),
   putUpdateSettings: (settings: UpdateSettings) =>

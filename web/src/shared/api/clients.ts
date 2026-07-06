@@ -1,4 +1,4 @@
-import { api, apiBasePath, encodeRequest } from "./http";
+import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import type { Job } from "./jobs";
 import {
   adoptDiscoveredClientResponseSchema,
@@ -197,9 +197,10 @@ export type ResetQuotaResponse = {
 
 export const clientsApi = {
   // R-Q-20: Zod parse on every response that carries a body.
-  clients: () => api<ClientListItem[]>(`${apiBasePath}/clients`, undefined, clientListSchema),
-  client: (clientID: string) =>
-    api<Client>(`${apiBasePath}/clients/${clientID}`, undefined, clientSchema),
+  clients: (opts?: RequestOpts) =>
+    api<ClientListItem[]>(`${apiBasePath}/clients`, { signal: opts?.signal }, clientListSchema),
+  client: (clientID: string, opts?: RequestOpts) =>
+    api<Client>(`${apiBasePath}/clients/${clientID}`, { signal: opts?.signal }, clientSchema),
   createClient: (payload: ClientInput) =>
     api<Client>(
       `${apiBasePath}/clients`,
@@ -248,10 +249,10 @@ export const clientsApi = {
     api<void>(`${apiBasePath}/clients/${clientID}`, {
       method: "DELETE"
     }),
-  discoveredClients: () =>
+  discoveredClients: (opts?: RequestOpts) =>
     api<DiscoveredClient[]>(
       `${apiBasePath}/discovered-clients`,
-      undefined,
+      { signal: opts?.signal },
       discoveredClientListSchema,
     ),
   adoptDiscoveredClient: (id: string) =>
@@ -330,14 +331,14 @@ export const clientsApi = {
       { method: "POST" },
       resetQuotaResponseSchema,
     ),
-  clientIPHistory: (clientID: string, from?: string, to?: string) => {
+  clientIPHistory: (clientID: string, from?: string, to?: string, opts?: RequestOpts) => {
     const params = new URLSearchParams();
     if (from) params.set("from", from);
     if (to) params.set("to", to);
     const qs = params.toString();
     return api<ClientIPHistoryResponse>(
       `${apiBasePath}/clients/${clientID}/history/ips${qs ? "?" + qs : ""}`,
-      undefined,
+      { signal: opts?.signal },
       clientIPHistoryResponseSchema,
     );
   },

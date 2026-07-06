@@ -20,7 +20,7 @@ const GROUP_APPLY_POLL_MS = 1000;
 export function useAgentConfig(agentId: string) {
   return useQuery({
     queryKey: configKeys.agent(agentId),
-    queryFn: () => configApi.getAgentConfig(agentId),
+    queryFn: ({ signal }) => configApi.getAgentConfig(agentId, { signal }),
     enabled: !!agentId,
   });
 }
@@ -28,7 +28,7 @@ export function useAgentConfig(agentId: string) {
 export function useGroupConfig(groupId: string) {
   return useQuery({
     queryKey: configKeys.group(groupId),
-    queryFn: () => configApi.getGroupConfig(groupId),
+    queryFn: ({ signal }) => configApi.getGroupConfig(groupId, { signal }),
     enabled: !!groupId,
   });
 }
@@ -101,8 +101,8 @@ export function useAgentConfigApplyBatch(agentId: string, batchId: string | null
   const qc = useQueryClient();
   return useQuery({
     queryKey: configKeys.agentApplyBatch(agentId, batchId ?? ""),
-    queryFn: async () => {
-      const status = await configApi.getAgentConfigApplyBatch(agentId, batchId as string);
+    queryFn: async ({ signal }) => {
+      const status = await configApi.getAgentConfigApplyBatch(agentId, batchId as string, { signal });
       void qc.invalidateQueries({ queryKey: configKeys.agent(agentId) });
       return status;
     },
@@ -125,9 +125,9 @@ export function useGroupConfigApplyBatch(groupId: string, batchId: string | null
   const qc = useQueryClient();
   return useQuery({
     queryKey: configKeys.groupApplyBatch(groupId, batchId ?? ""),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       // `enabled` guards batchId being non-null before this ever runs.
-      const status = await configApi.getGroupConfigApplyBatch(groupId, batchId as string);
+      const status = await configApi.getGroupConfigApplyBatch(groupId, batchId as string, { signal });
       void qc.invalidateQueries({ queryKey: configKeys.group(groupId) });
       return status;
     },
@@ -152,7 +152,7 @@ export function useActiveGroupConfigApplyBatch(groupId: string) {
     // React Query rejects `undefined` as query data (it reads as "no data
     // fetched yet"), so the "no batch in flight" case is normalized to
     // `null` here rather than propagating the API's `undefined`.
-    queryFn: async () => (await configApi.activeGroupConfigApplyBatch(groupId)) ?? null,
+    queryFn: async ({ signal }) => (await configApi.activeGroupConfigApplyBatch(groupId, { signal })) ?? null,
     enabled: !!groupId,
   });
 }

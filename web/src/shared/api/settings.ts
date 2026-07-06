@@ -1,4 +1,4 @@
-import { api, apiBasePath, encodeRequest } from "./http";
+import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
   appearanceSettingsResponseSchema,
   geoipResponseSchema,
@@ -59,16 +59,16 @@ export type RetentionSettings = {
 export const settingsApi = {
   // R-Q-20: Zod parse on every read; the response schemas mirror the
   // runtime types so the api<T>() overload accepts them.
-  panelSettings: () =>
+  panelSettings: (opts?: RequestOpts) =>
     api<PanelSettingsResponse>(
       `${apiBasePath}/settings/panel`,
-      undefined,
+      { signal: opts?.signal },
       panelSettingsResponseSchema,
     ),
-  appearanceSettings: () =>
+  appearanceSettings: (opts?: RequestOpts) =>
     api<AppearanceSettingsResponse>(
       `${apiBasePath}/settings/appearance`,
-      undefined,
+      { signal: opts?.signal },
       appearanceSettingsResponseSchema,
     ),
   updateAppearanceSettings: (payload: {
@@ -111,10 +111,10 @@ export const settingsApi = {
       { method: "POST" },
       panelSettingsResponseSchema,
     ),
-  getRetentionSettings: () =>
+  getRetentionSettings: (opts?: RequestOpts) =>
     api<RetentionSettings>(
       `${apiBasePath}/settings/retention`,
-      undefined,
+      { signal: opts?.signal },
       retentionSettingsSchema,
     ),
   putRetentionSettings: (settings: RetentionSettings) =>
@@ -132,10 +132,10 @@ export const settingsApi = {
       },
       retentionSettingsSchema,
     ),
-  getGeoIPSettings: () =>
+  getGeoIPSettings: (opts?: RequestOpts) =>
     api<GeoIPResponseParsed>(
       `${apiBasePath}/settings/geoip`,
-      undefined,
+      { signal: opts?.signal },
       geoipResponseSchema,
     ),
   putGeoIPSettings: (settings: GeoIPSettingsParsed) =>
@@ -165,22 +165,22 @@ export const settingsApi = {
    * narrow via `isOperatorVersion(v)` from lib/schemas/version.
    */
   version: () => api<VersionParsed>(`${apiBasePath}/version`, undefined, versionSchema),
-  getSettingsSchema: () =>
+  getSettingsSchema: (opts?: RequestOpts) =>
     api<SchemaEntry[]>(
       `${apiBasePath}/settings/schema`,
-      undefined,
+      { signal: opts?.signal },
       schemaArraySchema,
     ),
-  getSettingsValues: () =>
+  getSettingsValues: (opts?: RequestOpts) =>
     api<ValuesResponse>(
       `${apiBasePath}/settings/values`,
-      undefined,
+      { signal: opts?.signal },
       valuesResponseSchema,
     ),
-  getRestartStatus: () =>
+  getRestartStatus: (opts?: RequestOpts) =>
     api<RestartStatus>(
       `${apiBasePath}/settings/restart-status`,
-      undefined,
+      { signal: opts?.signal },
       restartStatusSchema,
     ),
   putSettingsValues: (updates: Record<string, string | number | boolean>) =>

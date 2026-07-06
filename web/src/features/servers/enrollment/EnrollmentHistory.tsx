@@ -35,7 +35,8 @@ export function EnrollmentHistory({ agentId }: Readonly<Props>) {
   const { t } = useTranslation("enrollment");
   const list = useQuery({
     queryKey: enrollmentAttemptsKeys.byAgent(agentId),
-    queryFn: () => apiClient.listEnrollmentAttempts({ agent_id: agentId, limit: 5 }),
+    queryFn: ({ signal }) =>
+      apiClient.listEnrollmentAttempts({ agent_id: agentId, limit: 5 }, { signal }),
   });
 
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export function EnrollmentHistory({ agentId }: Readonly<Props>) {
 
   const detail = useQuery({
     queryKey: enrollmentAttemptsKeys.detail(expanded!),
-    queryFn: () => apiClient.getEnrollmentAttempt(expanded!),
+    queryFn: ({ signal }) => apiClient.getEnrollmentAttempt(expanded!, { signal }),
     enabled: !!expanded,
   });
 

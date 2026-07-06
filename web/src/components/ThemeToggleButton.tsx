@@ -36,13 +36,13 @@ export function ThemeToggleButton({ expanded = false }: Readonly<ThemeToggleButt
   const queryClient = useQueryClient();
   const meQuery = useQuery<MeResponse>({
     queryKey: authKeys.me(),
-    queryFn: () => apiClient.me(),
+    queryFn: ({ signal }) => apiClient.me({ signal }),
   });
   const userID = meQuery.data?.id ?? "";
 
   const appearanceQuery = useQuery({
     queryKey: getAppearanceQueryKey(userID),
-    queryFn: () => apiClient.appearanceSettings(),
+    queryFn: ({ signal }) => apiClient.appearanceSettings({ signal }),
     enabled: !!userID,
   });
 

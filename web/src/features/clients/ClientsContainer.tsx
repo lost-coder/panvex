@@ -32,7 +32,7 @@ export function ClientsContainer() {
   // surface invalidates which key.
   const agentsQuery = useQuery({
     queryKey: agentsKeys.list(),
-    queryFn: () => apiClient.agents(),
+    queryFn: ({ signal }) => apiClient.agents({ signal }),
     staleTime: 30_000,
   });
   const agentOptions = useMemo(

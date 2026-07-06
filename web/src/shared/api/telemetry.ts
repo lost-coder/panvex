@@ -1,5 +1,5 @@
 import type { Agent, AgentRuntime, RuntimeEvent } from "./servers";
-import { api, apiBasePath } from "./http";
+import { api, apiBasePath, type RequestOpts } from "./http";
 import type { AuditEvent } from "./jobs";
 import {
   controlRoomSchema,
@@ -203,18 +203,22 @@ export const telemetryApi = {
   // R-Q-20: Zod parse on every response that carries a body.
   controlRoom: () =>
     api<ControlRoomResponse>(`${apiBasePath}/control-room`, undefined, controlRoomSchema),
-  telemetryDashboard: () =>
-    api<TelemetryDashboardResponse>(`${apiBasePath}/telemetry/dashboard`, undefined, dashboardSchema),
-  telemetryServers: () =>
+  telemetryDashboard: (opts?: RequestOpts) =>
+    api<TelemetryDashboardResponse>(
+      `${apiBasePath}/telemetry/dashboard`,
+      { signal: opts?.signal },
+      dashboardSchema,
+    ),
+  telemetryServers: (opts?: RequestOpts) =>
     api<TelemetryServersResponse>(
       `${apiBasePath}/telemetry/servers`,
-      undefined,
+      { signal: opts?.signal },
       telemetryServersResponseSchema,
     ),
-  telemetryServer: (agentID: string) =>
+  telemetryServer: (agentID: string, opts?: RequestOpts) =>
     api<TelemetryServerDetailResponse>(
       `${apiBasePath}/telemetry/servers/${agentID}`,
-      undefined,
+      { signal: opts?.signal },
       telemetryServerDetailResponseSchema,
     ),
   activateTelemetryDetailBoost: (agentID: string) =>
@@ -233,25 +237,25 @@ export const telemetryApi = {
     api<FleetResponse>(`${apiBasePath}/fleet`, undefined, fleetResponseSchema),
   metrics: () =>
     api<MetricSnapshot[]>(`${apiBasePath}/metrics`, undefined, metricSnapshotListSchema),
-  serverLoadHistory: (agentID: string, from?: string, to?: string) => {
+  serverLoadHistory: (agentID: string, from?: string, to?: string, opts?: RequestOpts) => {
     const params = new URLSearchParams();
     if (from) params.set("from", from);
     if (to) params.set("to", to);
     const qs = params.toString();
     return api<ServerLoadHistoryResponse>(
       `${apiBasePath}/telemetry/servers/${agentID}/history/load${qs ? "?" + qs : ""}`,
-      undefined,
+      { signal: opts?.signal },
       serverLoadHistoryResponseSchema,
     );
   },
-  dcHealthHistory: (agentID: string, from?: string, to?: string) => {
+  dcHealthHistory: (agentID: string, from?: string, to?: string, opts?: RequestOpts) => {
     const params = new URLSearchParams();
     if (from) params.set("from", from);
     if (to) params.set("to", to);
     const qs = params.toString();
     return api<DCHealthHistoryResponse>(
       `${apiBasePath}/telemetry/servers/${agentID}/history/dc${qs ? "?" + qs : ""}`,
-      undefined,
+      { signal: opts?.signal },
       dcHealthHistoryResponseSchema,
     );
   },

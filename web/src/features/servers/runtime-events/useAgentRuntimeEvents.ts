@@ -43,7 +43,7 @@ interface UseAgentRuntimeEventsResult {
 export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsResult {
   const initial = useQuery({
     queryKey: ["runtime-events", "by-agent", agentId],
-    queryFn: () => apiClient.listRuntimeEvents(agentId, { limit: MAX_EVENTS }),
+    queryFn: ({ signal }) => apiClient.listRuntimeEvents(agentId, { limit: MAX_EVENTS }, { signal }),
     enabled: !!agentId,
   });
 
