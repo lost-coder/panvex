@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
+	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -333,14 +334,14 @@ func dcHealthPointsFromSnapshot(agent Agent, snapshot agentSnapshot) []storage.D
 
 // telemetryWriteUnitForRuntime assembles the telemetry payload for one agent
 // snapshot when runtime data is present. Returns the unit ready to enqueue.
-func telemetryWriteUnitForRuntime(agent Agent, snapshot agentSnapshot) telemetryWriteUnit {
+func telemetryWriteUnitForRuntime(agent Agent, snapshot agentSnapshot) batchwriter.TelemetryWriteUnit {
 	rec := runtimeCurrentRecordFromAgent(agent)
-	unit := telemetryWriteUnit{
-		agentID:   agent.ID,
-		runtime:   &rec,
-		dcs:       runtimeDCRecordsFromAgent(agent),
-		upstreams: runtimeUpstreamRecordsFromAgent(agent),
-		events:    runtimeEventRecordsFromAgent(agent),
+	unit := batchwriter.TelemetryWriteUnit{
+		AgentID:   agent.ID,
+		Runtime:   &rec,
+		DCs:       runtimeDCRecordsFromAgent(agent),
+		Upstreams: runtimeUpstreamRecordsFromAgent(agent),
+		Events:    runtimeEventRecordsFromAgent(agent),
 	}
 	if d := snapshot.RuntimeDiagnostics; d != nil && !diagnosticsCarriedForward(d) {
 		diag := storage.TelemetryDiagnosticsCurrentRecord{
@@ -355,7 +356,7 @@ func telemetryWriteUnitForRuntime(agent Agent, snapshot agentSnapshot) telemetry
 			MEPoolJSON:          d.MePoolJson,
 			DcsJSON:             d.DcsJson,
 		}
-		unit.diagnostics = &diag
+		unit.Diagnostics = &diag
 	}
 	if sec := snapshot.RuntimeSecurityInventory; sec != nil && !securityInventoryCarriedForward(sec) {
 		s := storage.TelemetrySecurityInventoryCurrentRecord{
@@ -367,7 +368,7 @@ func telemetryWriteUnitForRuntime(agent Agent, snapshot agentSnapshot) telemetry
 			EntriesTotal: int(sec.EntriesTotal),
 			EntriesJSON:  sec.EntriesJson,
 		}
-		unit.security = &s
+		unit.Security = &s
 	}
 	return unit
 }
@@ -404,10 +405,10 @@ func (s *Server) enqueueRuntimeBatchWrites(agent Agent, snapshot agentSnapshot) 
 	if !snapshot.HasRuntime || snapshot.Runtime == nil {
 		return
 	}
-	s.batchWriter.telemetry.Enqueue(telemetryWriteUnitForRuntime(agent, snapshot))
-	s.batchWriter.serverLoad.Enqueue(serverLoadPointFromSnapshot(agent, snapshot))
+	s.batchWriter.EnqueueTelemetry(telemetryWriteUnitForRuntime(agent, snapshot))
+	s.batchWriter.EnqueueServerLoad(serverLoadPointFromSnapshot(agent, snapshot))
 	for _, dcPoint := range dcHealthPointsFromSnapshot(agent, snapshot) {
-		s.batchWriter.dcHealth.Enqueue(dcPoint)
+		s.batchWriter.EnqueueDCHealth(dcPoint)
 	}
 }
 
@@ -421,7 +422,7 @@ func (s *Server) enqueueClientIPHistory(ctx context.Context, snapshot agentSnaps
 	var ipRecords int
 	for _, clientIP := range snapshot.ClientIPs {
 		for _, ip := range clientIP.ActiveIPs {
-			s.batchWriter.clientIPs.Enqueue(storage.ClientIPHistoryRecord{
+			s.batchWriter.EnqueueClientIP(storage.ClientIPHistoryRecord{
 				AgentID:   snapshot.AgentID,
 				ClientID:  clientIP.ClientID,
 				IPAddress: ip,
@@ -442,12 +443,12 @@ func (s *Server) enqueueAgentSnapshotBatchWrites(ctx context.Context, agent Agen
 	if s.batchWriter == nil {
 		return
 	}
-	s.batchWriter.agents.Enqueue(agentToRecord(agent))
+	s.batchWriter.EnqueueAgent(agentToRecord(agent))
 	for _, instance := range instances {
-		s.batchWriter.instances.Enqueue(instanceToRecord(instance))
+		s.batchWriter.EnqueueInstance(instanceToRecord(instance))
 	}
 	if metric != nil {
-		s.batchWriter.metricsBuf.Enqueue(metricSnapshotToRecord(*metric))
+		s.batchWriter.EnqueueMetric(metricSnapshotToRecord(*metric))
 	}
 	s.enqueueRuntimeBatchWrites(agent, snapshot)
 	s.enqueueClientIPHistory(ctx, snapshot)

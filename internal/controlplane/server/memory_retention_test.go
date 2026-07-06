@@ -66,7 +66,7 @@ func TestServerServesRecentMetricSnapshotsFromStore(t *testing.T) {
 
 	// Flush the async batch writer so every snapshot reaches the store, then
 	// read back through the same path /api/metrics uses.
-	server.batchWriter.metricsBuf.Drain(context.Background())
+	server.batchWriter.Flush(context.Background())
 	metrics, err := server.listMetricSnapshots(context.Background())
 	if err != nil {
 		t.Fatalf("listMetricSnapshots() error = %v", err)

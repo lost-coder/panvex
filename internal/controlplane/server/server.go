@@ -16,6 +16,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
 	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
@@ -296,7 +297,7 @@ type Server struct {
 	serverCloseOnce sync.Once
 	stopRollup      context.CancelFunc
 	rollupWg        sync.WaitGroup
-	batchWriter     *storeBatchWriter
+	batchWriter     *batchwriter.Writer
 
 	// obs holds the Prometheus collectors exposed at /metrics. Nil when the
 	// server is constructed without a scrape token — the /metrics route is
@@ -391,7 +392,6 @@ func (a enrollmentBusAdapter) Publish(t string, payload any) {
 	}
 	a.bus.Publish(eventbus.Event{Type: t, Data: payload})
 }
-
 
 // Context returns the Server's lifecycle context. The context is alive
 // between New() and Close(); Close() cancels it so long-lived workers can

@@ -1,4 +1,4 @@
-package server
+package batchwriter
 
 // P3-PERF-01b: chunk-size sweep for the bulk-insert path. This bench exists
 // only to answer "is bulkChunkSize = 500 the right knob?" and is intentionally
@@ -13,7 +13,7 @@ package server
 // of 500 tells us whether the constant should be lowered (less SQL string
 // build cost, fewer bind params) or raised (fewer statements per buffer drain).
 //
-// NOTE: we bypass the storeBatchWriter layer and call the Store bulk method
+// NOTE: we bypass the Writer layer and call the Store bulk method
 // directly so we isolate the INSERT cost from the retry/classify/metrics
 // wrappers. Each sub-benchmark opens its own SQLite tempdir so writes do not
 // compound across iterations.

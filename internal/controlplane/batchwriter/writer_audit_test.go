@@ -1,4 +1,4 @@
-package server
+package batchwriter
 
 import (
 	"bytes"
@@ -92,7 +92,7 @@ func TestAuditWriteIsAsync(t *testing.T) {
 	t.Cleanup(func() { _ = base.Close() })
 
 	slow := &slowAuditStore{Store: base, stall: 100 * time.Millisecond}
-	w := newStoreBatchWriter(slow, nil, nil)
+	w := New(slow, nil, nil)
 	// Do NOT Start(): we only want to prove Enqueue is cheap. Starting would
 	// race the test assertion against a background flush that is known to be
 	// slow.
@@ -126,7 +126,7 @@ func TestAuditBufferFlushesOnShutdown(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	w := newStoreBatchWriter(store, nil, nil)
+	w := New(store, nil, nil)
 	w.Start(t.Context())
 
 	const n = 100

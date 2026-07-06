@@ -217,7 +217,7 @@ type Service struct {
 // MetricsSink receives job observability signals (C3). Implemented by
 // server.metricsCollectors; the noop default keeps the store-less
 // NewService path and tests free of Prometheus wiring — same null-object
-// pattern as server.batchMetricsSink.
+// pattern as batchwriter.MetricsSink.
 type MetricsSink interface {
 	ObserveJobPersistFailure()
 	// ObserveJobFailed is invoked (under s.mu) every time a job transitions

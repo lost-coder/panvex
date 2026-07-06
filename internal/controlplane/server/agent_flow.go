@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
@@ -272,7 +273,7 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	s.live.ApplySnapshot(agentID, agent, nil)
 
 	if s.batchWriter != nil {
-		s.batchWriter.agents.Enqueue(agentToRecord(agent))
+		s.batchWriter.EnqueueAgent(agentToRecord(agent))
 	}
 
 	s.appendAuditWithContext(ctx, agentID, "agents.enrolled", agentID, map[string]any{
@@ -470,7 +471,7 @@ func (s *Server) persistClientUsageRecords(ctx context.Context, toPersist []stor
 		if err = s.clientsSvc.UpsertUsageBulk(ctx, batch); err == nil {
 			return
 		}
-		if attempt >= maxUsagePersistAttempts || classifyFlushError(err) == "persistent" || ctx.Err() != nil {
+		if attempt >= maxUsagePersistAttempts || batchwriter.ClassifyFlushError(err) == "persistent" || ctx.Err() != nil {
 			break
 		}
 		select {

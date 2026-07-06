@@ -265,7 +265,7 @@ func TestWebhookEndpointAuditFlow(t *testing.T) {
 
 	// A2: the audit trail is served from the store now. Drain the async
 	// batch writer, then read the first page back through the same path.
-	server.batchWriter.auditEvents.Drain(context.Background())
+	server.batchWriter.Flush(context.Background())
 	events, err := server.auditFirstPage(context.Background())
 	if err != nil {
 		t.Fatalf("auditFirstPage() error = %v", err)

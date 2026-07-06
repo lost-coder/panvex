@@ -3,6 +3,8 @@ package server
 import (
 	"testing"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
 )
 
 // runtimeFor builds a minimal AgentRuntime with the three flags the
@@ -32,14 +34,9 @@ func fallbackTestServer(t *testing.T) *Server {
 // drainPending returns and clears the pending fallback ops queued since the
 // last call. Each transition test step asserts on the delta produced by that
 // step, not the cumulative buffer contents.
-func drainPending(t *testing.T, w *storeBatchWriter) []fallbackStateOp {
+func drainPending(t *testing.T, w *batchwriter.Writer) []batchwriter.FallbackOp {
 	t.Helper()
-	w.fallbackState.mu.Lock()
-	defer w.fallbackState.mu.Unlock()
-	ops := make([]fallbackStateOp, len(w.fallbackState.items))
-	copy(ops, w.fallbackState.items)
-	w.fallbackState.items = w.fallbackState.items[:0]
-	return ops
+	return w.DrainPendingFallbackOps()
 }
 
 // fallback flag combinations used in the transition tests. The classifier
@@ -73,14 +70,14 @@ func TestApplyFallbackStateTransitionNoneToFallbackStampsAndEnqueues(t *testing.
 	if len(ops) != 1 {
 		t.Fatalf("pending fallback ops = %d, want 1", len(ops))
 	}
-	if ops[0].op != "put" {
-		t.Fatalf("op = %q, want %q", ops[0].op, "put")
+	if ops[0].Op != "put" {
+		t.Fatalf("op = %q, want %q", ops[0].Op, "put")
 	}
-	if ops[0].agentID != agentID {
-		t.Fatalf("op agentID = %q, want %q", ops[0].agentID, agentID)
+	if ops[0].AgentID != agentID {
+		t.Fatalf("op agentID = %q, want %q", ops[0].AgentID, agentID)
 	}
-	if !ops[0].enteredAt.Equal(stamped) {
-		t.Fatalf("op enteredAt = %v, want %v (matches in-memory stamp)", ops[0].enteredAt, stamped)
+	if !ops[0].EnteredAt.Equal(stamped) {
+		t.Fatalf("op enteredAt = %v, want %v (matches in-memory stamp)", ops[0].EnteredAt, stamped)
 	}
 }
 
@@ -137,7 +134,7 @@ func TestApplyFallbackStateTransitionFallbackToMEClearsAndEnqueuesDelete(t *test
 	if len(ops) != 1 {
 		t.Fatalf("pending fallback ops after fallback->ME = %d, want 1", len(ops))
 	}
-	if ops[0].op != "delete" || ops[0].agentID != agentID {
+	if ops[0].Op != "delete" || ops[0].AgentID != agentID {
 		t.Fatalf("op = %+v, want {op:delete, agentID:%s}", ops[0], agentID)
 	}
 }
@@ -166,7 +163,7 @@ func TestApplyFallbackStateTransitionFallbackToDirectClearsAndEnqueuesDelete(t *
 	if len(ops) != 1 {
 		t.Fatalf("pending fallback ops after fallback->direct = %d, want 1", len(ops))
 	}
-	if ops[0].op != "delete" {
+	if ops[0].Op != "delete" {
 		t.Fatalf("op = %+v, want delete", ops[0])
 	}
 }

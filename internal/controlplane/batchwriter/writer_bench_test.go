@@ -1,4 +1,4 @@
-package server
+package batchwriter
 
 // P2-PERF-05: microbenchmarks for the control-plane hot paths.
 //
@@ -40,7 +40,7 @@ func BenchmarkBatchWriterEnqueue(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = store.Close() })
 
-	w := newStoreBatchWriter(store, nil, nil)
+	w := New(store, nil, nil)
 
 	rec := storage.AgentRecord{
 		ID:         "agent-bench",
@@ -82,7 +82,7 @@ func BenchmarkBatchWriterFlush(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = store.Close() })
 
-	w := newStoreBatchWriter(store, nil, nil)
+	w := New(store, nil, nil)
 	w.sleep = func(time.Duration) {} // collapse retry backoff if any row fails
 
 	// Build unique records per iteration so the UNIQUE(id) constraint does
@@ -120,7 +120,7 @@ func BenchmarkBatchWriterMetricsFlush(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = store.Close() })
 
-	w := newStoreBatchWriter(store, nil, nil)
+	w := New(store, nil, nil)
 	w.sleep = func(time.Duration) {}
 
 	batchSize := batchSizeFor("metrics")
@@ -160,7 +160,7 @@ func BenchmarkBatchWriterAuditEnqueue(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = store.Close() })
 
-	w := newStoreBatchWriter(store, nil, nil)
+	w := New(store, nil, nil)
 
 	rec := storage.AuditEventRecord{
 		ID:        "audit-bench",
@@ -242,7 +242,7 @@ func BenchmarkEventHubPublish100Subscribers(b *testing.B) {
 }
 
 // BenchmarkBatchWriterTelemetryDrain2000 models one flush tick of a
-// 2000-agent fleet: every agent contributed one telemetryWriteUnit with a
+// 2000-agent fleet: every agent contributed one TelemetryWriteUnit with a
 // runtime blob, 3 DC rows, 2 upstreams and 1 event. Measures the wall
 // cost of drainAll against a real on-disk SQLite store (P6, finding #10).
 //
@@ -285,24 +285,24 @@ func BenchmarkBatchWriterTelemetryDrain2000(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		w := newStoreBatchWriter(store, nil, nil)
+		w := New(store, nil, nil)
 		for a := 0; a < fleet; a++ {
 			agentID := fmt.Sprintf("agent-%04d", a)
-			unit := telemetryWriteUnit{
-				agentID: agentID,
-				runtime: &storage.TelemetryRuntimeCurrentRecord{
+			unit := TelemetryWriteUnit{
+				AgentID: agentID,
+				Runtime: &storage.TelemetryRuntimeCurrentRecord{
 					AgentID: agentID, ObservedAt: ts, RuntimeJSON: `{"state":"ok","cpu":42.5}`,
 				},
-				dcs: []storage.TelemetryRuntimeDCRecord{
+				DCs: []storage.TelemetryRuntimeDCRecord{
 					{AgentID: agentID, DC: 1, ObservedAt: ts, CoveragePct: 100},
 					{AgentID: agentID, DC: 2, ObservedAt: ts, CoveragePct: 98},
 					{AgentID: agentID, DC: 3, ObservedAt: ts, CoveragePct: 97},
 				},
-				upstreams: []storage.TelemetryRuntimeUpstreamRecord{
+				Upstreams: []storage.TelemetryRuntimeUpstreamRecord{
 					{AgentID: agentID, UpstreamID: 1, ObservedAt: ts, Healthy: true},
 					{AgentID: agentID, UpstreamID: 2, ObservedAt: ts, Healthy: true},
 				},
-				events: []storage.TelemetryRuntimeEventRecord{
+				Events: []storage.TelemetryRuntimeEventRecord{
 					{AgentID: agentID, Sequence: int64(i*fleet + a), ObservedAt: ts, Timestamp: ts, EventType: "tick"},
 				},
 			}

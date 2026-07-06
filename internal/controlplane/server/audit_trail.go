@@ -61,7 +61,7 @@ func (s *Server) appendAuditWithContext(ctx context.Context, actorID string, act
 	// cancellation should abort once the record is enqueued.
 	_ = ctx
 	if s.batchWriter != nil {
-		s.batchWriter.auditEvents.Enqueue(record)
+		s.batchWriter.EnqueueAudit(record)
 	}
 
 	s.events.Publish(eventbus.Event{

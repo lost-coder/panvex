@@ -126,10 +126,10 @@ func TestTelemetryWriteUnitCarriesForwardHashGatedDiagnostics(t *testing.T) {
 	gated.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{ContentHash: "abc"}
 	gated.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{ContentHash: "def"}
 	unit := telemetryWriteUnitForRuntime(agent, gated)
-	if unit.diagnostics != nil {
+	if unit.Diagnostics != nil {
 		t.Fatal("hash-only diagnostics must not overwrite the stored row")
 	}
-	if unit.security != nil {
+	if unit.Security != nil {
 		t.Fatal("hash-only security inventory must not overwrite the stored row")
 	}
 
@@ -141,18 +141,18 @@ func TestTelemetryWriteUnitCarriesForwardHashGatedDiagnostics(t *testing.T) {
 		ContentHash: "def", State: "ok", Enabled: true, EntriesJson: `[]`,
 	}
 	unit = telemetryWriteUnitForRuntime(agent, full)
-	if unit.diagnostics == nil || unit.diagnostics.SystemInfoJSON != `{"cpu":4}` {
-		t.Fatalf("full-body diagnostics must persist, got %+v", unit.diagnostics)
+	if unit.Diagnostics == nil || unit.Diagnostics.SystemInfoJSON != `{"cpu":4}` {
+		t.Fatalf("full-body diagnostics must persist, got %+v", unit.Diagnostics)
 	}
-	if unit.security == nil || !unit.security.Enabled {
-		t.Fatalf("full-body security inventory must persist, got %+v", unit.security)
+	if unit.Security == nil || !unit.Security.Enabled {
+		t.Fatalf("full-body security inventory must persist, got %+v", unit.Security)
 	}
 
 	blank := base
 	blank.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{}
 	blank.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{}
 	unit = telemetryWriteUnitForRuntime(agent, blank)
-	if unit.diagnostics == nil || unit.security == nil {
+	if unit.Diagnostics == nil || unit.Security == nil {
 		t.Fatal("empty-hash blank record must keep the historical overwrite semantics")
 	}
 }

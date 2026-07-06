@@ -347,7 +347,7 @@ func (s *Server) handleInStreamRenewalRequest(ctx context.Context, agentID strin
 			a.CertSerial = newSerial
 		}
 	}); ok && s.batchWriter != nil {
-		s.batchWriter.agents.Enqueue(agentToRecord(agent))
+		s.batchWriter.EnqueueAgent(agentToRecord(agent))
 	}
 	s.mu.Unlock()
 
