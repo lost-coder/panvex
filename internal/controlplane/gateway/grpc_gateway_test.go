@@ -235,12 +235,12 @@ func TestEnqueueRegularSnapshotDropsStaleUpdateWhenQueueIsFull(t *testing.T) {
 	regularSnapshots := make(chan AgentSnapshot, 1)
 	stale := AgentSnapshot{
 		AgentID:    "agent-1",
-		NodeName:   "stale",
+		Snap:       &gatewayrpc.Snapshot{NodeName: "stale"},
 		ObservedAt: time.Unix(1, 0).UTC(),
 	}
 	latest := AgentSnapshot{
 		AgentID:    "agent-1",
-		NodeName:   "latest",
+		Snap:       &gatewayrpc.Snapshot{NodeName: "latest"},
 		ObservedAt: time.Unix(2, 0).UTC(),
 	}
 	regularSnapshots <- stale
@@ -252,8 +252,8 @@ func TestEnqueueRegularSnapshotDropsStaleUpdateWhenQueueIsFull(t *testing.T) {
 
 	select {
 	case received := <-regularSnapshots:
-		if received.NodeName != "latest" {
-			t.Fatalf("received.NodeName = %q, want %q", received.NodeName, "latest")
+		if received.Snap.NodeName != "latest" {
+			t.Fatalf("received.Snap.NodeName = %q, want %q", received.Snap.NodeName, "latest")
 		}
 	default:
 		t.Fatal("regularSnapshots = empty, want latest snapshot")
@@ -504,7 +504,7 @@ func TestDrainRegularSnapshotsProcessesQueuedSnapshots(t *testing.T) {
 	snapshots := make(chan AgentSnapshot, 2)
 	snapshots <- AgentSnapshot{
 		AgentID:    "agent-1",
-		NodeName:   "node-a",
+		Snap:       &gatewayrpc.Snapshot{NodeName: "node-a"},
 		ObservedAt: time.Unix(1, 0).UTC(),
 	}
 

@@ -21,15 +21,16 @@ func TestApplyAgentSnapshotPartialPreservesLastKnown(t *testing.T) {
 
 	// Full snapshot establishes the baseline.
 	full := agentSnapshot{
-		AgentID:  "agent-1",
-		NodeName: "node-a",
-		Version:  "2026.03",
-		ReadOnly: true,
-		Instances: []instanceSnapshot{
-			{ID: "telemt-primary", Name: "telemt-primary", Version: "2026.03", Connections: 42, ReadOnly: true},
+		AgentID: "agent-1",
+		Snap: &gatewayrpc.Snapshot{
+			NodeName: "node-a",
+			Version:  "2026.03",
+			ReadOnly: true,
+			Instances: []*gatewayrpc.InstanceSnapshot{
+				{Id: "telemt-primary", Name: "telemt-primary", Version: "2026.03", Connections: 42, ReadOnly: true},
+			},
+			Runtime: &gatewayrpc.RuntimeSnapshot{UptimeSeconds: 1000},
 		},
-		HasRuntime: true,
-		Runtime:    &gatewayrpc.RuntimeSnapshot{UptimeSeconds: 1000},
 		ObservedAt: now,
 	}
 	if err := server.applyAgentSnapshot(context.Background(), full); err != nil {
@@ -38,13 +39,14 @@ func TestApplyAgentSnapshotPartialPreservesLastKnown(t *testing.T) {
 
 	// Partial snapshot with blanked version / instances / uptime.
 	partial := agentSnapshot{
-		AgentID:    "agent-1",
-		Version:    "",
-		ReadOnly:   false,
-		Instances:  nil,
-		HasRuntime: true,
-		Runtime:    &gatewayrpc.RuntimeSnapshot{UptimeSeconds: 0},
-		Partial:    true,
+		AgentID: "agent-1",
+		Snap: &gatewayrpc.Snapshot{
+			Version:   "",
+			ReadOnly:  false,
+			Instances: nil,
+			Runtime:   &gatewayrpc.RuntimeSnapshot{UptimeSeconds: 0},
+			Partial:   true,
+		},
 		ObservedAt: now.Add(time.Minute),
 	}
 	if err := server.applyAgentSnapshot(context.Background(), partial); err != nil {

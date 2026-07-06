@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
 )
 
@@ -80,11 +81,13 @@ func TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext(t *testi
 
 	// Cancelled context should not prevent in-memory state update.
 	err = server.applyAgentSnapshot(ctx, agentSnapshot{
-		AgentID:      "agent-1",
-		NodeName:     "node-a",
-		FleetGroupID: "ams",
-		Version:      "1.0.1",
-		ObservedAt:   now,
+		AgentID: "agent-1",
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: "ams",
+			Version:      "1.0.1",
+		},
+		ObservedAt: now,
 	})
 	if err != nil {
 		t.Fatalf("applyAgentSnapshot() error = %v, want nil (async persistence)", err)

@@ -113,13 +113,12 @@ type agentEnrollmentResponse struct {
 	ExpiresAt      time.Time
 }
 
-// The agent-stream DTOs (instanceSnapshot / agentSnapshot) moved to the
-// gateway package with the gRPC gateway extraction (P8.2d). These aliases keep
-// the server-internal call sites (agent_snapshot.go, agent_telemetry.go,
-// tests) compiling unchanged. clientIPSnapshot has no server-side consumer
-// left — it is used only inside the gateway — so it keeps no alias here.
-type instanceSnapshot = gateway.InstanceSnapshot
-
+// The agent-stream envelope (agentSnapshot) lives in the gateway package
+// (moved with the gRPC gateway extraction, P8.2d). This alias keeps the
+// server-internal call sites (agent_snapshot.go, agent_telemetry.go, tests)
+// compiling unchanged. P8.3 collapsed it into a thin envelope over
+// *gatewayrpc.Snapshot, so the former instanceSnapshot copy-type and its
+// alias are gone; instances are read from snapshot.Snap.Instances directly.
 type agentSnapshot = gateway.AgentSnapshot
 
 func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {

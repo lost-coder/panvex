@@ -37,48 +37,20 @@ const (
 	auditJobsAcknowledged = "jobs.acknowledged"
 )
 
-// InstanceSnapshot is the internal view of a wire InstanceSnapshot.
-// Moved verbatim from server (fields already exported); server keeps an
-// alias (instanceSnapshot = gateway.InstanceSnapshot).
-type InstanceSnapshot struct {
-	ID                string
-	Name              string
-	Version           string
-	ConfigFingerprint string
-	ManagedConfigHash string
-	ManagedConfigJSON string
-	Connections       int
-	ReadOnly          bool
-}
-
-// AgentSnapshot is the internal representation of one agent runtime
-// snapshot/heartbeat applied against panel state. Moved verbatim from
-// server (agentSnapshot); server keeps an alias.
+// AgentSnapshot is a thin envelope around one inbound wire snapshot. It
+// deliberately does NOT mirror gatewayrpc.Snapshot fields — consumers read
+// them from Snap directly, so the single proto→domain mapping lives in
+// updateAgentRecordFromSnapshot / agentRuntimeFromSnapshot /
+// instancesFromSnapshot (P8.3, audit #23). The envelope carries only what the
+// gateway resolves at receive time before enqueueing to the drain goroutine:
+// ObservedAt (Snap.ObservedAtUnix parsed once) and Clients/ClientIPs (usage
+// and IP rows with client IDs resolved by name).
 type AgentSnapshot struct {
-	AgentID string
-	// AgentBootID scopes the cumulative usage totals in Clients to one
-	// agent process incarnation (P4). Empty only in unit tests that do
-	// not exercise the usage path.
-	AgentBootID              string
-	NodeName                 string
-	FleetGroupID             string
-	Version                  string
-	ReadOnly                 bool
-	Instances                []InstanceSnapshot
-	Clients                  []clients.UsageReport
-	HasClients               bool
-	ClientIPs                []ClientIPSnapshot
-	HasClientIPs             bool
-	Runtime                  *gatewayrpc.RuntimeSnapshot
-	HasRuntime               bool
-	RuntimeDiagnostics       *gatewayrpc.RuntimeDiagnosticsSnapshot
-	RuntimeSecurityInventory *gatewayrpc.RuntimeSecurityInventorySnapshot
-	Metrics                  map[string]uint64
-	ObservedAt               time.Time
-	// Partial=true when the agent could not collect a full telemt snapshot;
-	// the panel preserves last-known version/connections/read_only/uptime
-	// rather than overwriting them with blanks (IN-H6).
-	Partial bool
+	AgentID    string
+	Snap       *gatewayrpc.Snapshot
+	ObservedAt time.Time
+	Clients    []clients.UsageReport
+	ClientIPs  []ClientIPSnapshot
 }
 
 // ClientIPSnapshot is the internal view of a wire ClientIPSnapshot. Moved

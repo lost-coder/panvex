@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
 )
 
@@ -49,15 +50,16 @@ func TestServerServesRecentMetricSnapshotsFromStore(t *testing.T) {
 	totalSnapshots := testMaxInMemoryMetricSnapshots + 3
 	for index := 0; index < totalSnapshots; index++ {
 		if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-			AgentID:      identity.AgentID,
-			NodeName:     "node-a",
-			FleetGroupID: fleetGroupID,
-			Version:      "1.0.0",
-			Metrics: map[string]uint64{
-				"requests_total": uint64(index),
+			AgentID: identity.AgentID,
+			Snap: &gatewayrpc.Snapshot{
+				NodeName:     "node-a",
+				FleetGroupId: fleetGroupID,
+				Version:      "1.0.0",
+				Metrics: map[string]uint64{
+					"requests_total": uint64(index),
+				},
+				Runtime: gatewayRuntimeSnapshotForTest(),
 			},
-			Runtime:    gatewayRuntimeSnapshotForTest(),
-			HasRuntime: true,
 			ObservedAt: now.Add(time.Duration(index+10) * time.Second),
 		}); err != nil {
 			t.Fatalf("applyAgentSnapshot() error = %v", err)
