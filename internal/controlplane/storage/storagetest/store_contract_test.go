@@ -1043,6 +1043,14 @@ func (s *memoryStore) GetJobByIdempotencyKey(_ context.Context, idempotencyKey s
 	return s.jobs[jobID], nil
 }
 
+func (s *memoryStore) GetJob(_ context.Context, id string) (storage.JobRecord, error) {
+	job, ok := s.jobs[id]
+	if !ok {
+		return storage.JobRecord{}, storage.ErrNotFound
+	}
+	return job, nil
+}
+
 func (s *memoryStore) ListJobs(_ context.Context) ([]storage.JobRecord, error) {
 	result := make([]storage.JobRecord, 0, len(s.jobs))
 	for _, job := range s.jobs {
