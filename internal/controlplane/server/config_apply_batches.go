@@ -143,33 +143,32 @@ func isTerminalConfigApplyTargetStatus(status string) bool {
 	}
 }
 
-// advanceConfigApplyBatch re-derives each non-terminal target's status (and
-// message) from its config.apply job (via the shared configApplyJobStatus
-// helper — see http_config_apply.go) and persists any change. Persisting the
-// message here — not just the status — is what lets the batch-status
-// endpoints (handleGetGroupApplyBatchStatus) surface a failure reason after
-// the underlying job has rolled off the in-memory jobs store: the target row
-// becomes the durable record once it goes terminal. Once every target in the
-// batch's (only, for Phase A) wave is terminal, the batch itself is
-// finalized: succeeded if no target failed, failed otherwise.
+// advanceConfigApplyBatch finalizes a running batch once every target's
+// config.apply job has reached a terminal state, and does NOTHING before
+// that moment.
 //
-// The applyStatus* constants (pending/running/succeeded/failed) share their
-// string values 1:1 with the storage.ConfigApplyTargetStatus* constants
-// (pending/running/succeeded/failed), so configApplyJobStatus's return value
-// is used directly as the persisted target status — no separate mapping
-// table to keep in sync.
+// P8.1 (audit #24): the pre-P8.1 orchestrator re-derived and re-persisted
+// every non-terminal target's status on each 500ms tick — a status-copying
+// state machine that existed only because jobs used to be lost on in-memory
+// eviction. Jobs are durable now (jobs.Service.GetWithContext reads evicted
+// jobs back from the jobs table), so live views derive target statuses
+// directly (aggregateGroupApplyBatchStatus) and this function's only job is
+// the single durable hand-off at the end: write each target's terminal
+// status + message (the batch rows outlive the job rows —
+// retention.ConfigApplyBatchSeconds vs retention.JobsSeconds — so the
+// terminal outcome MUST be copied once) and flip the batch itself to
+// succeeded/failed. Skipped counts as terminal but not as failed, same as
+// before (Phase B wave-halt readiness).
 //
-// Idempotent: a batch that is already terminal (not Running) is a no-op, and
-// a target whose stored status AND message already match the job-derived
-// values is not re-written. This makes the function safe to call repeatedly
-// from the polling worker (startConfigApplyBatchWorker) without
-// double-transitioning an already-finalized batch, and safe to resume after
-// a panel restart — ListRunningConfigApplyBatches only ever hands back
-// batches that still need advancing.
+// A store read error inside configApplyJobStatus surfaces as a still-running
+// derived status, which keeps the batch running for the next tick — a
+// transient DB hiccup can only DELAY finalization, never mis-finalize.
 //
-// Phase B (rolling, multi-wave) will need to additionally decide whether to
-// enqueue the next wave here; Phase A's all_at_once mode has exactly one
-// wave, so "all targets terminal" always means "batch done".
+// Idempotent: a batch that is already terminal is a no-op, and re-running on
+// an already-finalized batch re-writes nothing. Safe to call repeatedly from
+// the polling worker (startConfigApplyBatchWorker) and safe to resume after
+// a panel restart — ListRunningConfigApplyBatches only hands back batches
+// that still need finalizing.
 func (s *Server) advanceConfigApplyBatch(ctx context.Context, batch storage.ConfigApplyBatchRecord) error {
 	if batch.Status != storage.ConfigApplyBatchStatusRunning {
 		return nil
@@ -179,30 +178,40 @@ func (s *Server) advanceConfigApplyBatch(ctx context.Context, batch storage.Conf
 		return fmt.Errorf("get config-apply batch %s: %w", batch.ID, err)
 	}
 
-	allTerminal := true
+	// Phase 1: derive, purely in memory. Bail out at the first non-terminal
+	// target — nothing is persisted until the WHOLE batch is done.
+	type derivedTarget struct {
+		agentID string
+		status  string
+		message string
+	}
+	pending := make([]derivedTarget, 0, len(targets))
 	anyFailed := false
 	for _, tgt := range targets {
-		status := tgt.Status
+		status, message := tgt.Status, tgt.Message
 		if !isTerminalConfigApplyTargetStatus(status) {
-			derived, message := s.configApplyJobStatus(ctx, tgt.JobID, tgt.AgentID)
-			if derived != status || message != tgt.Message {
-				if err := s.store.UpdateConfigApplyBatchTargetStatus(ctx, batch.ID, tgt.AgentID, derived, message); err != nil {
-					return fmt.Errorf("update config-apply batch %s target %s status: %w", batch.ID, tgt.AgentID, err)
-				}
-				status = derived
-			}
+			status, message = s.configApplyJobStatus(ctx, tgt.JobID, tgt.AgentID)
 		}
 		if !isTerminalConfigApplyTargetStatus(status) {
-			allTerminal = false
-			continue
+			return nil // still in flight — nothing to persist yet
 		}
 		if status == storage.ConfigApplyTargetStatusFailed {
 			anyFailed = true
 		}
+		if status != tgt.Status || message != tgt.Message {
+			pending = append(pending, derivedTarget{agentID: tgt.AgentID, status: status, message: message})
+		}
 	}
 
-	if !allTerminal {
-		return nil
+	// Phase 2: persist — targets first, then the batch flip. If a write
+	// fails midway the batch stays running and the next tick retries; the
+	// applyStatus* constants share their string values 1:1 with the
+	// storage.ConfigApplyTargetStatus* constants, so the derived status is
+	// persisted as-is (no mapping table to keep in sync).
+	for _, d := range pending {
+		if err := s.store.UpdateConfigApplyBatchTargetStatus(ctx, batch.ID, d.agentID, d.status, d.message); err != nil {
+			return fmt.Errorf("update config-apply batch %s target %s status: %w", batch.ID, d.agentID, err)
+		}
 	}
 	finalStatus := storage.ConfigApplyBatchStatusSucceeded
 	if anyFailed {
