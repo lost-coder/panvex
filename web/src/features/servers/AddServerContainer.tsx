@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { useNowSec } from "@/shared/hooks/useNowSec";
@@ -115,6 +116,11 @@ export function AddServerContainer() {
     EnrollmentWizardProps["connectedAgent"] | undefined
   >();
 
+  // 7.6: терминальный исход пробинга (агент подключился / токен протух /
+  // серия ошибок) выключает соответствующий useQuery через enabled.
+  const [inboundProbeDone, setInboundProbeDone] = useState(false);
+  const [outboundProbeDone, setOutboundProbeDone] = useState(false);
+
   const nowSec = useNowSec();
   const tokenExpiresInSecs =
     tokenExpiresAtUnix === null ? 0 : Math.max(0, tokenExpiresAtUnix - nowSec);
@@ -127,6 +133,15 @@ export function AddServerContainer() {
     setError(undefined);
     setPollEpoch((e) => e + 1);
   }, []);
+
+  useEffect(() => {
+    // R-Q-24: сброс терминальных флагов при явном рестарте поллинга
+    // (pollEpoch бампает обработчик retry) — одноразовый setState на
+    // смену эпохи, каскадный рендер здесь и задуман.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInboundProbeDone(false);
+    setOutboundProbeDone(false);
+  }, [pollEpoch]);
 
   useEffect(() => {
     const first = fleetGroups[0];
@@ -322,116 +337,124 @@ export function AddServerContainer() {
   }, []);
 
   // Inbound polling: watches enrollment-tokens + agents for the
-  // freshly-bootstrapped agent. Unchanged from the pre-PR-3b flow.
+  // freshly-bootstrapped agent. 7.6: ручной while-sleep-цикл заменён на
+  // useQuery({refetchInterval}); queryFn чистый (только фетч), решения —
+  // в эффектах ниже. failureCount у React Query сбрасывается при
+  // успешном фетче — это ровно прежняя семантика consecutiveFailures.
+  const inboundProbeEnabled =
+    step === 3 && mode === "inbound" && !!tokenValue && !inboundProbeDone;
+  const inboundProbe = useQuery({
+    queryKey: ["add-server", "inbound-probe", tokenValue, pollEpoch],
+    queryFn: async ({ signal }) => ({
+      agents: await apiClient.agents({ signal }),
+      tokens: await apiClient.listEnrollmentTokens({ signal }),
+    }),
+    enabled: inboundProbeEnabled,
+    refetchInterval: POLL_INTERVAL_MS,
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+  });
+
+  // Three-stage progression:
+  //   1. Bootstrap  → token consumed in the backend
+  //   2. Gateway    → agent record appears (presence != offline)
+  //   3. First data → presence_state === "online" with runtime telemetry
   useEffect(() => {
-    if (step !== 3 || mode !== "inbound" || !tokenValue) return;
-
-    let cancelled = false;
-    let consecutiveFailures = 0;
-
-    // Three-stage progression:
-    //   1. Bootstrap  → token consumed in the backend
-    //   2. Gateway    → agent record appears (presence != offline)
-    //   3. First data → presence_state === "online" with runtime telemetry
-    // Returns true when polling should stop.
-    const probeOnce = async (): Promise<boolean> => {
-      const agents: Agent[] = await apiClient.agents();
-      const match = agents.find((a) => a.node_name === nodeName);
-      if (match) return applyAgentStatus(match);
-
-      const tokens = await apiClient.listEnrollmentTokens();
-      const ourToken = tokens.find((tk) => tk.value === tokenValue);
-      const terminalKey = terminalTokenErrorKey(ourToken?.status);
-      if (terminalKey) {
-        setError(t(terminalKey));
-        return true;
+    if (!inboundProbeEnabled || !inboundProbe.data) return;
+    const { agents, tokens } = inboundProbe.data;
+    const match = agents.find((a) => a.node_name === nodeName);
+    if (match) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- data-driven прогресс-степпер, перенос прежнего probeOnce
+      if (applyAgentStatus(match)) setInboundProbeDone(true);
+      return;
+    }
+    const ourToken = tokens.find((tk) => tk.value === tokenValue);
+    const terminalKey = terminalTokenErrorKey(ourToken?.status);
+    if (terminalKey) {
+       
+      setError(t(terminalKey));
+      setInboundProbeDone(true);
+      return;
+    }
+    if (ourToken?.status === "consumed" && ourToken.consumed_at_unix) {
+      // Fallback: the agent didn't register under the node_name the
+      // operator typed (install script fell back to hostname, etc.).
+      const candidate = findFallbackAgent(agents, ourToken.consumed_at_unix);
+      if (candidate) {
+         
+        if (applyAgentStatus(candidate)) setInboundProbeDone(true);
+        return;
       }
-      if (ourToken?.status === "consumed" && ourToken.consumed_at_unix) {
-        // Fallback: the agent didn't register under the node_name the
-        // operator typed (install script fell back to hostname, etc.).
-        const candidate = findFallbackAgent(agents, ourToken.consumed_at_unix);
-        if (candidate) return applyAgentStatus(candidate);
-        // Token consumed, no agent match yet → bootstrap done, gateway waiting.
-        setConnectionStatus({ bootstrap: "done", grpcConnect: "waiting", firstData: "pending" });
-      }
-      return false;
-    };
+      // Token consumed, no agent match yet → bootstrap done, gateway waiting.
+       
+      setConnectionStatus({ bootstrap: "done", grpcConnect: "waiting", firstData: "pending" });
+    }
+  }, [inboundProbeEnabled, inboundProbe.data, nodeName, tokenValue, applyAgentStatus, t]);
 
-    // After MAX_CONSECUTIVE_FAILURES probes in a row we surface the backend
-    // error instead of silently polling forever. Transient glitches reset
-    // the counter as soon as a probe succeeds.
-    const poll = async () => {
-      while (!cancelled) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-        if (cancelled) break;
-        try {
-          if (await probeOnce()) return;
-          consecutiveFailures = 0;
-        } catch (err) {
-          consecutiveFailures++;
-          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-            const reason = err instanceof Error ? `: ${err.message}` : ".";
-            setError(t("error.probeFailed", { count: consecutiveFailures, reason }));
-            return;
-          }
-        }
-      }
-    };
-    void poll();
-    return () => {
-      cancelled = true;
-    };
-  }, [step, mode, tokenValue, nodeName, applyAgentStatus, t, pollEpoch]);
-
-  // Outbound polling: the agent_id is already known (we created it).
-  // We just wait for the panel's outbound supervisor to land a session
-  // — same three stages but bootstrap is "done" as soon as the agent
-  // record exists. Gateway/firstData fall out of `presence_state` and
-  // `runtime` the same way as inbound.
+  // After MAX_CONSECUTIVE_FAILURES probes in a row we surface the backend
+  // error instead of silently polling forever.
   useEffect(() => {
-    if (step !== 3 || mode !== "outbound" || !outboundData?.agent_id) return;
+    if (!inboundProbeEnabled) return;
+    if (inboundProbe.failureCount >= MAX_CONSECUTIVE_FAILURES) {
+      const reason =
+        inboundProbe.error instanceof Error ? `: ${inboundProbe.error.message}` : ".";
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setError(t("error.probeFailed", { count: inboundProbe.failureCount, reason }));
+      setInboundProbeDone(true);
+    }
+  }, [inboundProbeEnabled, inboundProbe.failureCount, inboundProbe.error, t]);
 
-    const targetId = outboundData.agent_id;
-    let cancelled = false;
-    let consecutiveFailures = 0;
+  // Outbound polling: the agent_id is already known (we created it) —
+  // bootstrap is "done" as soon as step 3 opens; gateway/firstData fall
+  // out of presence_state/runtime the same way as inbound.
+  const outboundProbeEnabled =
+    step === 3 && mode === "outbound" && !!outboundData?.agent_id && !outboundProbeDone;
 
+  useEffect(() => {
+    if (!outboundProbeEnabled) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- одноразовое data-driven семя степпера (было в старом эффекте)
     setConnectionStatus((prev) =>
       prev.bootstrap === "done" ? prev : { ...prev, bootstrap: "done" },
     );
+  }, [outboundProbeEnabled]);
 
-    const probeOnce = async (): Promise<boolean> => {
-      const agents: Agent[] = await apiClient.agents();
-      const match = agents.find((a) => a.id === targetId);
-      if (match) return applyAgentStatus(match);
-      // Row vanished mid-poll — only happens if the operator (or another
-      // admin) deregistered the agent while the wizard was watching.
-      // Surface as an error so the operator can restart.
-      setError(t("error.outboundMissing"));
-      return true;
-    };
+  const outboundProbe = useQuery({
+    queryKey: ["add-server", "outbound-probe", outboundData?.agent_id, pollEpoch],
+    queryFn: ({ signal }) => apiClient.agents({ signal }),
+    enabled: outboundProbeEnabled,
+    refetchInterval: POLL_INTERVAL_MS,
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+  });
 
-    const poll = async () => {
-      while (!cancelled) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-        if (cancelled) break;
-        try {
-          if (await probeOnce()) return;
-          consecutiveFailures = 0;
-        } catch (err) {
-          consecutiveFailures++;
-          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-            const reason = err instanceof Error ? `: ${err.message}` : ".";
-            setError(t("error.probeFailed", { count: consecutiveFailures, reason }));
-            return;
-          }
-        }
-      }
-    };
-    void poll();
-    return () => {
-      cancelled = true;
-    };
-  }, [step, mode, outboundData, applyAgentStatus, t, pollEpoch]);
+  useEffect(() => {
+    if (!outboundProbeEnabled || !outboundProbe.data) return;
+    const targetId = outboundData?.agent_id;
+    const match = outboundProbe.data.find((a) => a.id === targetId);
+    if (match) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (applyAgentStatus(match)) setOutboundProbeDone(true);
+      return;
+    }
+    // Row vanished mid-poll — only happens if the operator (or another
+    // admin) deregistered the agent while the wizard was watching.
+     
+    setError(t("error.outboundMissing"));
+    setOutboundProbeDone(true);
+  }, [outboundProbeEnabled, outboundProbe.data, outboundData, applyAgentStatus, t]);
+
+  useEffect(() => {
+    if (!outboundProbeEnabled) return;
+    if (outboundProbe.failureCount >= MAX_CONSECUTIVE_FAILURES) {
+      const reason =
+        outboundProbe.error instanceof Error ? `: ${outboundProbe.error.message}` : ".";
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setError(t("error.probeFailed", { count: outboundProbe.failureCount, reason }));
+      setOutboundProbeDone(true);
+    }
+  }, [outboundProbeEnabled, outboundProbe.failureCount, outboundProbe.error, t]);
 
   const fleetGroupOptions = fleetGroups.map((g) => ({
     id: g.id,
