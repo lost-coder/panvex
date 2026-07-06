@@ -57,7 +57,6 @@ var storeAccessAllowlist = map[string]bool{
 	"http_agents.go":             true,
 	"http_clients_helpers.go":    true,
 	"http_config_apply.go":       true,
-	"http_config_targets.go":     true,
 	"http_enrollment.go":         true,
 	"http_fleet_groups.go":       true,
 	"http_health.go":             true,

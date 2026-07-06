@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -87,37 +86,10 @@ func driftView(effective, observed map[string]any, hasObserved bool) configDrift
 	return configDriftView{Status: status, Fields: fields}
 }
 
-// loadConfigTargetSections fetches the stored sections for one scope,
-// returning an empty map when no target exists. A non-NotFound store
-// error is propagated to the caller.
-func (s *Server) loadConfigTargetSections(r *http.Request, scopeType, scopeID string) (map[string]any, error) {
-	return s.loadConfigTargetSectionsCtx(r.Context(), scopeType, scopeID)
-}
-
-// loadConfigTargetSectionsCtx is the context-only form of
-// loadConfigTargetSections, usable from non-HTTP-handler call sites (e.g.
-// the apply fan-out) that only have a context.
-func (s *Server) loadConfigTargetSectionsCtx(ctx context.Context, scopeType, scopeID string) (map[string]any, error) {
-	rec, err := s.store.GetAgentConfigTarget(ctx, scopeType, scopeID)
-	if err != nil {
-		if errors.Is(err, storage.ErrNotFound) {
-			return map[string]any{}, nil
-		}
-		return nil, err
-	}
-	sections := map[string]any{}
-	if rec.SectionsJSON != "" {
-		if err := json.Unmarshal([]byte(rec.SectionsJSON), &sections); err != nil {
-			return nil, err
-		}
-	}
-	return sections, nil
-}
-
-// upsertConfigTarget validates the requested sections against the
-// editable allowlist and persists them for the given scope, preserving
-// the original CreatedAt across updates. Shared by the group and agent
-// PUT handlers.
+// upsertConfigTarget validates the requested sections against the editable
+// allowlist and persists them for the given scope through the configtargets
+// service (which preserves the original CreatedAt across updates). Shared by
+// the group and agent PUT handlers.
 func (s *Server) upsertConfigTarget(w http.ResponseWriter, r *http.Request, scopeType, scopeID string) {
 	var request configTargetRequest
 	if err := decodeJSON(r, &request); err != nil {
@@ -131,28 +103,7 @@ func (s *Server) upsertConfigTarget(w http.ResponseWriter, r *http.Request, scop
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	encoded, err := json.Marshal(request.Sections)
-	if err != nil {
-		writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgInternalError, err)
-		return
-	}
-
-	now := s.now()
-	createdAt := now
-	if existing, err := s.store.GetAgentConfigTarget(r.Context(), scopeType, scopeID); err == nil {
-		createdAt = existing.CreatedAt
-	} else if !errors.Is(err, storage.ErrNotFound) {
-		writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
-		return
-	}
-
-	if err := s.store.UpsertAgentConfigTarget(r.Context(), storage.AgentConfigTargetRecord{
-		ScopeType:    scopeType,
-		ScopeID:      scopeID,
-		SectionsJSON: string(encoded),
-		CreatedAt:    createdAt,
-		UpdatedAt:    now,
-	}); err != nil {
+	if err := s.configTargets.Upsert(r.Context(), scopeType, scopeID, request.Sections); err != nil {
 		writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgInternalError, err)
 		return
 	}
@@ -185,7 +136,7 @@ func (s *Server) handleGetGroupConfigTarget() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 			return
 		}
-		sections, err := s.loadConfigTargetSections(r, storage.ConfigScopeGroup, id)
+		sections, err := s.configTargets.Sections(r.Context(), storage.ConfigScopeGroup, id)
 		if err != nil {
 			writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
 			return
@@ -209,7 +160,7 @@ func (s *Server) groupConfigNodeDrifts(r *http.Request, groupID string, groupSec
 		if agent.FleetGroupID != groupID {
 			continue
 		}
-		override, err := s.loadConfigTargetSections(r, storage.ConfigScopeAgent, agent.ID)
+		override, err := s.configTargets.Sections(r.Context(), storage.ConfigScopeAgent, agent.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -305,12 +256,12 @@ func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 func (s *Server) loadAgentEffectiveConfig(ctx context.Context, agentID, groupID string) (override, effective map[string]any, err error) {
 	groupSections := map[string]any{}
 	if groupID != "" {
-		groupSections, err = s.loadConfigTargetSectionsCtx(ctx, storage.ConfigScopeGroup, groupID)
+		groupSections, err = s.configTargets.Sections(ctx, storage.ConfigScopeGroup, groupID)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
-	override, err = s.loadConfigTargetSectionsCtx(ctx, storage.ConfigScopeAgent, agentID)
+	override, err = s.configTargets.Sections(ctx, storage.ConfigScopeAgent, agentID)
 	if err != nil {
 		return nil, nil, err
 	}

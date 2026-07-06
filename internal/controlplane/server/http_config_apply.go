@@ -80,11 +80,11 @@ func targetAgentID(tgt jobs.JobTarget) string {
 func (s *Server) effectiveConfigForAgent(ctx context.Context, agentID string) map[string]any {
 	groupSections := map[string]any{}
 	if existing, ok := s.live.Get(agentID); ok && existing.FleetGroupID != "" {
-		if sections, err := s.loadConfigTargetSectionsCtx(ctx, storage.ConfigScopeGroup, existing.FleetGroupID); err == nil {
+		if sections, err := s.configTargets.Sections(ctx, storage.ConfigScopeGroup, existing.FleetGroupID); err == nil {
 			groupSections = sections
 		}
 	}
-	overrideSections, err := s.loadConfigTargetSectionsCtx(ctx, storage.ConfigScopeAgent, agentID)
+	overrideSections, err := s.configTargets.Sections(ctx, storage.ConfigScopeAgent, agentID)
 	if err != nil {
 		overrideSections = map[string]any{}
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/config"
+	"github.com/lost-coder/panvex/internal/controlplane/configtargets"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
@@ -159,6 +160,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		// available (the only path that actually persists clients).
 		clientsSvc:       clients.NewService(clients.ServiceConfig{Vault: vault, Now: now}),
 		fleetSvc:         fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
+		configTargets:    configtargets.NewService(options.Store, now),
 		intervals:        options.Intervals.withDefaults(),
 		sqlitePath:       options.SQLitePath,
 		bootstrap:        options.Bootstrap,
