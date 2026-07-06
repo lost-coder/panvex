@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/updates"
@@ -11,7 +10,7 @@ import (
 // Task P3-ARCH-01d: the pure release-discovery helpers + DTOs now live
 // in controlplane/updates. The *Server-bound worker below still owns
 // orchestration because it reads s.updateSettings, writes s.updateState
-// through s.settingsMu, persists via s.store, and logs through
+// through s.settingsMu, persists via s.updatesSvc, and logs through
 // s.logger. Keeping it here is deliberate: the task is an
 // incremental split, not a full extraction.
 
@@ -145,15 +144,10 @@ func (s *Server) recordUpdateCheckError(ctx context.Context, checkErr error) {
 
 // persistUpdateState writes the cached update state to the store, if present.
 func (s *Server) persistUpdateState(ctx context.Context, state UpdateState) {
-	if s.store == nil {
+	if s.updatesSvc == nil {
 		return
 	}
-	data, err := json.Marshal(state)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "marshal update state failed", "error", err)
-		return
-	}
-	if putErr := s.store.PutUpdateState(ctx, data); putErr != nil {
-		s.logger.ErrorContext(ctx, "persist update state failed", "error", putErr)
+	if err := s.updatesSvc.SaveState(ctx, state); err != nil {
+		s.logger.ErrorContext(ctx, "persist update state failed", "error", err)
 	}
 }

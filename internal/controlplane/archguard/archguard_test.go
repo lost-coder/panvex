@@ -67,7 +67,6 @@ var storeAccessAllowlist = map[string]bool{
 	"http_recovery.go":           true,
 	"http_retention.go":          true,
 	"http_telemetry.go":          true,
-	"http_updates.go":            true,
 	"lifecycle.go":               true,
 	"metrics_poller.go":          true,
 	"panel_settings.go":          true,
@@ -75,7 +74,6 @@ var storeAccessAllowlist = map[string]bool{
 	"subscription_viewmodel.go":  true,
 	"telemetry_runtime.go":       true,
 	"timeseries_rollup.go":       true,
-	"update_checker.go":          true,
 	"user_appearance.go":         true,
 }
 

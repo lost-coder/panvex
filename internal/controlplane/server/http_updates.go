@@ -206,11 +206,10 @@ func (s *Server) applyUpdateSettings(req updateSettingsRequest) UpdateSettings {
 }
 
 func (s *Server) persistUpdateSettings(w http.ResponseWriter, r *http.Request, updated UpdateSettings) bool {
-	if s.store == nil {
+	if s.updatesSvc == nil {
 		return true
 	}
-	data, _ := json.Marshal(updated)
-	if err := s.store.PutUpdateSettings(r.Context(), data); err != nil {
+	if err := s.updatesSvc.SaveSettings(r.Context(), updated); err != nil {
 		s.logger.ErrorContext(r.Context(), "persist update settings failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return false

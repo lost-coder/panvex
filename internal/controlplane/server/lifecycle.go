@@ -34,6 +34,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
+	"github.com/lost-coder/panvex/internal/controlplane/updates"
 	"github.com/lost-coder/panvex/internal/controlplane/webhooks"
 	"github.com/lost-coder/panvex/internal/dbsqlc"
 	"github.com/lost-coder/panvex/internal/updatehosts"
@@ -226,6 +227,7 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	// contract).
 	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
 	s.auth = auth.NewServiceWithStore(store)
+	s.updatesSvc = updates.NewService(store)
 	// Wire the injected clock onto the freshly-constructed services BEFORE any
 	// restore runs. RestoreSessions -> restoreConsumedTotp (below, via line
 	// ~254) computes its 90s replay cutoff from the service clock; if the clock
@@ -597,7 +599,7 @@ func New(options Options) (*Server, error) {
 	}
 	server.loginLockout.SetRedactor(server.logUsername)
 	server.panelSettings = defaultPanelSettings()
-	server.updateSettings = defaultUpdateSettings()
+	server.updateSettings = updates.DefaultSettings()
 	server.retention = defaultRetentionSettings()
 
 	authority, err := loadOrCreateCertificateAuthority(server.serverCtx, options.Store, now(), options.EncryptionKey)
