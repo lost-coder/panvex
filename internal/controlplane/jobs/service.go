@@ -243,7 +243,7 @@ func (s *Service) SetMetricsSink(sink MetricsSink) {
 }
 
 // Store is the subset of the storage layer that the jobs Service depends on
-// (A6). It lists exactly the four methods the Service calls, narrowing the
+// (A6). It lists exactly the six methods the Service calls, narrowing the
 // historical dependency on the ~9-method storage.JobStore. storage.JobStore —
 // and therefore the concrete *sqlite.Store / *postgres.Store — satisfies it,
 // so wiring is unchanged; tests can supply a small fake covering just these
@@ -261,6 +261,12 @@ type Store interface {
 	// ListAllJobTargets returns every job_targets row in one round-trip,
 	// used by restore() to avoid the per-job N+1 SELECT pattern.
 	ListAllJobTargets(ctx context.Context) ([]storage.JobTargetRecord, error)
+	// GetJob returns one persisted job row by id, or storage.ErrNotFound.
+	// P8.1: read-back path for jobs evicted from the in-memory maps.
+	GetJob(ctx context.Context, id string) (storage.JobRecord, error)
+	// ListJobTargets returns the persisted target rows for one job,
+	// ordered by agent_id. Companion of GetJob on the read-back path.
+	ListJobTargets(ctx context.Context, jobID string) ([]storage.JobTargetRecord, error)
 }
 
 type persistCandidate struct {
@@ -599,6 +605,40 @@ func (s *Service) Get(jobID string) (Job, bool) {
 		return Job{}, false
 	}
 	return cloneJob(job), true
+}
+
+// GetWithContext returns a snapshot of the job identified by jobID.
+// The in-memory index is consulted first (same O(1) as Get); on a miss the
+// persistent store is read back, so a terminal job evicted by PruneKeys is
+// still resolvable until the retention worker deletes its row
+// (PruneTerminalJobs, retention.JobsSeconds). P8.1 (audit #24): this is what
+// makes in-memory eviction stop meaning "status lost".
+//
+// Contract:
+//   - (job, true, nil)  — found in memory or in the store;
+//   - (_, false, nil)   — definitively absent from both (never enqueued, or
+//     already pruned by retention);
+//   - (_, false, err)   — the store read failed; the outcome is UNKNOWN and
+//     callers must not treat the job as lost (retry on the next poll).
+func (s *Service) GetWithContext(ctx context.Context, jobID string) (Job, bool, error) {
+	if job, ok := s.Get(jobID); ok {
+		return job, true, nil
+	}
+	if s.jobStore == nil || jobID == "" {
+		return Job{}, false, nil
+	}
+	record, err := s.jobStore.GetJob(ctx, jobID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return Job{}, false, nil
+		}
+		return Job{}, false, err
+	}
+	targets, err := s.jobStore.ListJobTargets(ctx, jobID)
+	if err != nil {
+		return Job{}, false, err
+	}
+	return buildJobWithTargets(record, targets), true, nil
 }
 
 // clientIDFromPayload returns the Telemt client_id embedded in a client.*
