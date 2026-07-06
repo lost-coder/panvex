@@ -1014,3 +1014,66 @@ func TestServicePersistFailureNotifiesMetricsSink(t *testing.T) {
 		t.Fatalf("sink failures = %d, want >= 1 after persist failure", got)
 	}
 }
+
+// TestGetWithContextReadsEvictedJobFromStore pins the P8.1 durable-history
+// contract: PruneKeys drops a terminal job from the in-memory maps, but the
+// row is still in the jobs table (retention is much longer than the eviction
+// TTL) — GetWithContext must read it back with targets and result intact,
+// and must return (false, nil) — not an error — for a job that never existed.
+func TestGetWithContextReadsEvictedJobFromStore(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	base := time.Date(2026, time.July, 3, 12, 0, 0, 0, time.UTC)
+	svc := jobs.NewServiceWithStore(ctx, store)
+	if err := svc.StartupError(); err != nil {
+		t.Fatalf("StartupError: %v", err)
+	}
+	svc.SetNow(func() time.Time { return base })
+
+	job, err := svc.Enqueue(ctx, jobs.CreateJobInput{
+		Action:         jobs.ActionRuntimeReload,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Hour,
+		IdempotencyKey: "evict-then-read-1",
+		ActorID:        "user-1",
+	}, base)
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	svc.MarkDelivered(ctx, "agent-1", job.ID, base)
+	svc.MarkAcknowledged(ctx, "agent-1", job.ID, base)
+	if !svc.RecordResult(ctx, "agent-1", job.ID, false, "boom", "", base) {
+		t.Fatal("RecordResult = false, want true")
+	}
+
+	// Прыгаем часами за eviction-TTL и эвиктим терминальную джобу из памяти.
+	svc.SetNow(func() time.Time { return base.Add(48 * time.Hour) })
+	if evicted := svc.PruneKeys(24 * time.Hour); evicted != 1 {
+		t.Fatalf("PruneKeys = %d, want 1", evicted)
+	}
+	if _, ok := svc.Get(job.ID); ok {
+		t.Fatal("job still resident in memory after PruneKeys")
+	}
+
+	got, ok, err := svc.GetWithContext(ctx, job.ID)
+	if err != nil || !ok {
+		t.Fatalf("GetWithContext = (ok=%v, err=%v), want (true, nil)", ok, err)
+	}
+	if got.Status != jobs.StatusFailed {
+		t.Fatalf("restored status = %q, want %q", got.Status, jobs.StatusFailed)
+	}
+	if len(got.Targets) != 1 || got.Targets[0].AgentID != "agent-1" ||
+		got.Targets[0].Status != jobs.TargetStatusFailed || got.Targets[0].ResultText != "boom" {
+		t.Fatalf("restored targets = %+v, want one failed agent-1 target with result 'boom'", got.Targets)
+	}
+
+	// Джоба, которой не было никогда: определённое отсутствие, не ошибка.
+	if _, ok, err := svc.GetWithContext(ctx, "job-does-not-exist"); ok || err != nil {
+		t.Fatalf("missing job = (ok=%v, err=%v), want (false, nil)", ok, err)
+	}
+}
