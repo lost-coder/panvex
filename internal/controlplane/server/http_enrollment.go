@@ -150,14 +150,9 @@ type agentCertificateRecoveryGrantRequest struct {
 	TTLSeconds int `json:"ttl_seconds"`
 }
 
-type agentCertificateRecoveryGrantResponse struct {
-	AgentID       string `json:"agent_id"`
-	Status        string `json:"status"`
-	IssuedAtUnix  int64  `json:"issued_at_unix"`
-	ExpiresAtUnix int64  `json:"expires_at_unix"`
-	UsedAtUnix    *int64 `json:"used_at_unix,omitempty"`
-	RevokedAtUnix *int64 `json:"revoked_at_unix,omitempty"`
-}
+// agentCertificateRecoveryGrantResponse is aliased to api in types.go (it is
+// nested in the presentation Agent). Its storage<->view converter stays in
+// http_recovery.go.
 
 type enrollmentTokenResponse struct {
 	// Value is the raw token. Returned ONLY at creation (handleCreate*);
