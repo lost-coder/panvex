@@ -188,7 +188,7 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 	// A2: metric history now lives in the store, not an in-memory ring. Flush
 	// the async batch writer synchronously, then read back through the same
 	// store-backed path the /api/metrics handler uses.
-	server.batchWriter.metricsBuf.Drain(context.Background())
+	server.batchWriter.Flush(context.Background())
 	metrics, err := server.listMetricSnapshots(context.Background())
 	if err != nil {
 		t.Fatalf("listMetricSnapshots() error = %v", err)

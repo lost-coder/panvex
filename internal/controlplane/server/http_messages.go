@@ -40,7 +40,6 @@ const (
 	msgClientLimitNegative   = "max_tcp_conns, max_unique_ips and data_quota_bytes must be >= 0"
 	msgClientReadOnlyTarget  = "job targets read-only telemt instance"
 
-	logBatchFlush          = "batch flush"
 	logAgentStreamClosed   = "agent stream closed"
 	logMessageReceived     = "message received"
 	auditJobsResult        = "jobs.result"

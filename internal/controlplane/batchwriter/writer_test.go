@@ -1,4 +1,4 @@
-package server
+package batchwriter
 
 import (
 	"context"
@@ -108,7 +108,7 @@ func TestStoreBatchWriterStartAndStop(t *testing.T) {
 	}
 	defer store.Close()
 
-	w := newStoreBatchWriter(store, nil, nil)
+	w := New(store, nil, nil)
 	w.Start(t.Context())
 	_ = w.StopWithTimeout(t.Context(), 2*time.Second)
 }
@@ -151,7 +151,7 @@ func TestBatchSizeForUnknownStreamUsesDefault(t *testing.T) {
 	}
 }
 
-// TestStoreBatchWriterPerStreamBufferCapacities asserts that newStoreBatchWriter
+// TestStoreBatchWriterPerStreamBufferCapacities asserts that New
 // wires each typed buffer to its configured per-stream size. Catches regressions
 // where a new buffer is added but forgotten in batchSizeFor() or where the
 // constructor is changed back to a single global threshold.
@@ -162,7 +162,7 @@ func TestStoreBatchWriterPerStreamBufferCapacities(t *testing.T) {
 	}
 	defer store.Close()
 
-	w := newStoreBatchWriter(store, nil, nil)
+	w := New(store, nil, nil)
 
 	cases := []struct {
 		name string
@@ -245,7 +245,7 @@ func TestBatchBufferAuditFlushesAt50(t *testing.T) {
 // P2-REL-06: batch_writer error classification + retry + metrics tests.
 // -----------------------------------------------------------------------
 
-// recordingSink is a minimal batchMetricsSink that tallies every observation
+// recordingSink is a minimal MetricsSink that tallies every observation
 // so tests can assert on per-stream/per-type counts without wiring a real
 // Prometheus registry.
 type recordingSink struct {
@@ -329,12 +329,12 @@ func (s *recordingSink) retryCount(stream, outcome string) int {
 	return s.persistRetries[stream+"|"+outcome]
 }
 
-// newTestBatchWriter builds a storeBatchWriter wired up for fast, deterministic
+// newTestBatchWriter builds a Writer wired up for fast, deterministic
 // unit tests: real sleep calls are replaced with a no-op so the full retry
 // schedule completes in microseconds, and the passed metrics sink captures
 // every observation.
-func newTestBatchWriter(store storage.Store, sink *recordingSink) *storeBatchWriter {
-	w := newStoreBatchWriter(store, sink, nil)
+func newTestBatchWriter(store storage.Store, sink *recordingSink) *Writer {
+	w := New(store, sink, nil)
 	w.sleep = func(time.Duration) {} // collapse the backoff to zero
 	return w
 }
@@ -456,8 +456,8 @@ func TestClassifyFlushError_Transient(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			if got := classifyFlushError(tc.err); got != "transient" {
-				t.Fatalf("classifyFlushError(%v) = %q, want transient", tc.err, got)
+			if got := ClassifyFlushError(tc.err); got != "transient" {
+				t.Fatalf("ClassifyFlushError(%v) = %q, want transient", tc.err, got)
 			}
 		})
 	}
@@ -478,8 +478,8 @@ func TestClassifyFlushError_Persistent(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			if got := classifyFlushError(tc.err); got != "persistent" {
-				t.Fatalf("classifyFlushError(%v) = %q, want persistent", tc.err, got)
+			if got := ClassifyFlushError(tc.err); got != "persistent" {
+				t.Fatalf("ClassifyFlushError(%v) = %q, want persistent", tc.err, got)
 			}
 		})
 	}
@@ -687,7 +687,7 @@ func TestStoreBatchWriterDrainsOnStop(t *testing.T) {
 	}
 	defer store.Close()
 
-	w := newStoreBatchWriter(store, nil, nil)
+	w := New(store, nil, nil)
 	w.Start(t.Context())
 
 	now := time.Now().UTC()
@@ -825,28 +825,28 @@ func (r *telemetryBulkRecorder) PutTelemetrySecurityInventoryCurrentBulk(_ conte
 
 func TestFlushTelemetryGroupsPartsIntoBulkCalls(t *testing.T) {
 	rec := &telemetryBulkRecorder{}
-	w := newStoreBatchWriter(rec, nil, nil)
+	w := New(rec, nil, nil)
 
 	ts := time.Date(2026, time.July, 2, 12, 0, 0, 0, time.UTC)
-	units := []telemetryWriteUnit{
+	units := []TelemetryWriteUnit{
 		{
-			agentID: "a1",
-			runtime: &storage.TelemetryRuntimeCurrentRecord{AgentID: "a1", ObservedAt: ts, RuntimeJSON: `{"v":1}`},
-			dcs:     []storage.TelemetryRuntimeDCRecord{{AgentID: "a1", DC: 1, ObservedAt: ts}},
-			events:  []storage.TelemetryRuntimeEventRecord{{AgentID: "a1", Sequence: 1, ObservedAt: ts, Timestamp: ts, EventType: "x"}},
+			AgentID: "a1",
+			Runtime: &storage.TelemetryRuntimeCurrentRecord{AgentID: "a1", ObservedAt: ts, RuntimeJSON: `{"v":1}`},
+			DCs:     []storage.TelemetryRuntimeDCRecord{{AgentID: "a1", DC: 1, ObservedAt: ts}},
+			Events:  []storage.TelemetryRuntimeEventRecord{{AgentID: "a1", Sequence: 1, ObservedAt: ts, Timestamp: ts, EventType: "x"}},
 		},
 		{
-			agentID:     "a2",
-			runtime:     &storage.TelemetryRuntimeCurrentRecord{AgentID: "a2", ObservedAt: ts, RuntimeJSON: `{"v":2}`},
-			upstreams:   []storage.TelemetryRuntimeUpstreamRecord{{AgentID: "a2", UpstreamID: 1, ObservedAt: ts}},
-			diagnostics: &storage.TelemetryDiagnosticsCurrentRecord{AgentID: "a2", ObservedAt: ts},
-			security:    &storage.TelemetrySecurityInventoryCurrentRecord{AgentID: "a2", ObservedAt: ts},
+			AgentID:     "a2",
+			Runtime:     &storage.TelemetryRuntimeCurrentRecord{AgentID: "a2", ObservedAt: ts, RuntimeJSON: `{"v":2}`},
+			Upstreams:   []storage.TelemetryRuntimeUpstreamRecord{{AgentID: "a2", UpstreamID: 1, ObservedAt: ts}},
+			Diagnostics: &storage.TelemetryDiagnosticsCurrentRecord{AgentID: "a2", ObservedAt: ts},
+			Security:    &storage.TelemetrySecurityInventoryCurrentRecord{AgentID: "a2", ObservedAt: ts},
 		},
 		// Второй unit агента a1 в том же батче: replace-часть dcs должна
 		// перезаписаться (побеждает последний non-nil слайс).
 		{
-			agentID: "a1",
-			dcs:     []storage.TelemetryRuntimeDCRecord{{AgentID: "a1", DC: 5, ObservedAt: ts}},
+			AgentID: "a1",
+			DCs:     []storage.TelemetryRuntimeDCRecord{{AgentID: "a1", DC: 5, ObservedAt: ts}},
 		},
 	}
 
@@ -877,9 +877,9 @@ func TestFlushTelemetryGroupsPartsIntoBulkCalls(t *testing.T) {
 
 func TestFlushTelemetryNilPartsProduceNoCalls(t *testing.T) {
 	rec := &telemetryBulkRecorder{}
-	w := newStoreBatchWriter(rec, nil, nil)
+	w := New(rec, nil, nil)
 
-	w.flushTelemetry(context.Background(), []telemetryWriteUnit{{agentID: "a1"}})
+	w.flushTelemetry(context.Background(), []TelemetryWriteUnit{{AgentID: "a1"}})
 
 	if len(rec.calls) != 0 {
 		t.Fatalf("calls = %v, want none for all-nil unit", rec.calls)
@@ -920,7 +920,7 @@ func (s *countingAuditBulkStore) AppendAuditEvent(context.Context, storage.Audit
 
 func TestFlushAuditEventsBulkDeadLettersWholeBatchOnPersistentFailure(t *testing.T) {
 	st := &failingAuditBulkStore{err: errors.New("NOT NULL constraint failed: audit_events.action")}
-	w := newStoreBatchWriter(st, nil, nil)
+	w := New(st, nil, nil)
 	var spooled []storage.AuditEventRecord
 	w.writeDeadLetter = func(item storage.AuditEventRecord) error {
 		spooled = append(spooled, item)
@@ -943,7 +943,7 @@ func TestFlushAuditEventsBulkDeadLettersWholeBatchOnPersistentFailure(t *testing
 
 func TestFlushAuditEventsBulkSingleStoreCall(t *testing.T) {
 	st := &countingAuditBulkStore{}
-	w := newStoreBatchWriter(st, nil, nil)
+	w := New(st, nil, nil)
 
 	batch := make([]storage.AuditEventRecord, 50)
 	for i := range batch {
@@ -1060,15 +1060,15 @@ func TestFallbackStateFlushNotBlockedBySlowTelemetry(t *testing.T) {
 			}
 		},
 	}
-	w := newStoreBatchWriter(st, nil, nil)
+	w := New(st, nil, nil)
 	w.flushInterval = 20 * time.Millisecond
 	w.Start(context.Background())
 	defer func() { _ = w.StopWithTimeout(context.Background(), 5*time.Second) }()
 
 	// Забить телеметрию, дождаться начала её flush'а...
-	w.telemetry.Enqueue(telemetryWriteUnit{
-		agentID: "a1",
-		runtime: &storage.TelemetryRuntimeCurrentRecord{AgentID: "a1", RuntimeJSON: "{}"},
+	w.telemetry.Enqueue(TelemetryWriteUnit{
+		AgentID: "a1",
+		Runtime: &storage.TelemetryRuntimeCurrentRecord{AgentID: "a1", RuntimeJSON: "{}"},
 	})
 	<-telemetryStarted
 	// ...и только теперь поставить fallback-op. При общей горутине он ждал бы
@@ -1086,7 +1086,7 @@ func TestFallbackStateFlushNotBlockedBySlowTelemetry(t *testing.T) {
 
 func TestAuditBufferOverflowSpoolsToDeadLetter(t *testing.T) {
 	st := &countingAuditBulkStore{}
-	w := newStoreBatchWriter(st, nil, nil)
+	w := New(st, nil, nil)
 	var spooled []storage.AuditEventRecord
 	w.writeDeadLetter = func(item storage.AuditEventRecord) error {
 		spooled = append(spooled, item)

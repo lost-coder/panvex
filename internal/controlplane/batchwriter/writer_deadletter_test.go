@@ -1,4 +1,4 @@
-package server
+package batchwriter
 
 import (
 	"bufio"
@@ -30,11 +30,11 @@ func (s alwaysFailAuditStore) AppendAuditEventsBulk(context.Context, []storage.A
 	return s.err
 }
 
-// newDeadLetterTestWriter builds a storeBatchWriter wired to a store whose
+// newDeadLetterTestWriter builds a Writer wired to a store whose
 // audit writes always fail persistently, with the dead-letter dir pointed at a
 // throwaway temp directory.
-func newDeadLetterTestWriter(dir string) *storeBatchWriter {
-	w := &storeBatchWriter{
+func newDeadLetterTestWriter(dir string) *Writer {
+	w := &Writer{
 		store:         alwaysFailAuditStore{err: errors.New("simulated persistent audit failure")},
 		metrics:       noopMetricsSink{},
 		done:          make(chan struct{}),

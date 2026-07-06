@@ -510,7 +510,7 @@ func (mc *metricsCollectors) addPoolCounterDeltas(prev, curr sql.DBStats) {
 	}
 }
 
-// ObserveFlushError satisfies batchMetricsSink. It increments both the legacy
+// ObserveFlushError satisfies batchwriter.MetricsSink. It increments both the legacy
 // panvex_batch_flush_errors_total series and the spec-mandated
 // panvex_batch_persist_errors_total so operators can migrate dashboards
 // without losing history.
@@ -522,7 +522,7 @@ func (mc *metricsCollectors) ObserveFlushError(buffer, errorType string) {
 	mc.batchPersistErrorsTotal.WithLabelValues(buffer, errorType).Inc()
 }
 
-// ObserveBufferDrop satisfies batchMetricsSink (P6-6.1c).
+// ObserveBufferDrop satisfies batchwriter.MetricsSink (P6-6.1c).
 func (mc *metricsCollectors) ObserveBufferDrop(buffer string, n int) {
 	if mc == nil {
 		return
@@ -547,7 +547,7 @@ func (mc *metricsCollectors) ObserveJobFailed() {
 	mc.jobFailuresTotal.Inc()
 }
 
-// SetQueueDepth satisfies batchMetricsSink.
+// SetQueueDepth satisfies batchwriter.MetricsSink.
 func (mc *metricsCollectors) SetQueueDepth(buffer string, depth float64) {
 	if mc == nil {
 		return

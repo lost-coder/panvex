@@ -77,7 +77,7 @@ func (s *Server) RenewCertificate(ctx context.Context, request *gatewayrpc.Renew
 		a.CertExpiresAt = &certExpiresAt
 		a.CertSerial = issued.Serial
 	}); ok && s.batchWriter != nil {
-		s.batchWriter.agents.Enqueue(agentToRecord(agent))
+		s.batchWriter.EnqueueAgent(agentToRecord(agent))
 	}
 	s.mu.Unlock()
 	// Q4.U-S-04: pin the new serial so the in-flight stream (and any

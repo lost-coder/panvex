@@ -11,6 +11,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/config"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
@@ -713,9 +714,11 @@ func New(options Options) (*Server, error) {
 		// Pass the Prometheus bundle as the metrics sink so batch writer
 		// errors surface to operators (P2-REL-06 / H14). obs is always set
 		// earlier in New(); nil would fall back to the no-op sink.
-		server.batchWriter = newStoreBatchWriter(server.store, server.obs, server.now)
+		// obs is always constructed earlier in New() (never a typed-nil), so
+		// the interface nil-check inside batchwriter.New sees a genuine sink.
+		server.batchWriter = batchwriter.New(server.store, server.obs, server.now)
 		if server.settings != nil {
-			server.batchWriter.flushInterval = server.settings.StorageBatchFlushInterval()
+			server.batchWriter.SetFlushInterval(server.settings.StorageBatchFlushInterval())
 			server.batchWriter.SetBufferCap(server.settings.StorageBatchBufferCap())
 		}
 		server.batchWriter.Start(server.serverCtx)

@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
 )
 
 // restoreStoredState rehydrates the in-memory inventory from the storage
@@ -131,11 +133,11 @@ func (s *Server) restoreMetricSeq(ctx context.Context) error {
 // only affects the duration-bucket boundary used by severity escalation.
 //
 // Hydrate failures share the same alert key as runtime flush failures
-// (streamAlerts["fallback_state"] in batch_writer.go) so cold-start drift and
+// (batchwriter.StreamAlerts["fallback_state"]) so cold-start drift and
 // runtime flush drift land in one operator-paging rule.
 //
 // The alert is emitted inline via slog.Error with the stable
-// alert=streamAlerts["fallback_state"] attribute, intentionally bypassing the
+// alert=batchwriter.StreamAlerts["fallback_state"] attribute, intentionally bypassing the
 // batch writer's flushItem path. The batch writer is for high-frequency
 // background streams; this is a one-shot startup hook with no need for the
 // retry/queue machinery. Operators page on the alert key, not the call path.
@@ -144,7 +146,7 @@ func (s *Server) restoreFallbackState(ctx context.Context) error {
 	if err != nil {
 		s.logger.ErrorContext(ctx, "hydrate fallback state failed",
 			"err", err,
-			"alert", streamAlerts["fallback_state"],
+			"alert", batchwriter.StreamAlerts["fallback_state"],
 		)
 		return nil
 	}

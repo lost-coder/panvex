@@ -1,4 +1,4 @@
-package server
+package batchwriter
 
 import (
 	"context"
@@ -33,8 +33,11 @@ const (
 	// relative path resolved against the process working directory — the same
 	// convention as the workspace `data/` runtime dir — because the
 	// control-plane server has no first-class data-dir abstraction to thread
-	// through. Override via the storeBatchWriter.deadLetterDir field.
+	// through. Override via the Writer.deadLetterDir field.
 	defaultAuditDeadLetterDir = "data/audit-deadletter"
+
+	// logBatchFlush is the debug log message emitted once per stream flush.
+	logBatchFlush = "batch flush"
 )
 
 // streamBatchSizes is the per-stream flush threshold (in items) used by
@@ -81,7 +84,7 @@ var retryBackoffs = []time.Duration{
 	500 * time.Millisecond,
 }
 
-// batchMetricsSink is the narrow interface storeBatchWriter needs from the
+// MetricsSink is the narrow interface Writer needs from the
 // Prometheus collector bundle. Kept small so tests can inject a fake without
 // having to construct a full *metricsCollectors.
 //
@@ -95,7 +98,7 @@ var retryBackoffs = []time.Duration{
 // ObserveFlushDuration is called once per item after its retry sequence
 // resolves, regardless of outcome (success, exhausted, or persistent drop),
 // with the total wall-clock seconds spent across all attempts.
-type batchMetricsSink interface {
+type MetricsSink interface {
 	ObserveFlushError(buffer, errorType string)
 	SetQueueDepth(buffer string, depth float64)
 	ObservePersistRetry(stream, outcome string)
@@ -215,12 +218,12 @@ func (b *batchBuffer[T]) Drain(ctx context.Context) {
 	b.flushFn(ctx, batch)
 }
 
-// storeBatchWriter decouples storage I/O from the server's in-memory state
+// Writer decouples storage I/O from the server's in-memory state
 // mutex by accumulating writes in typed buffers and flushing them to the store
 // on a background timer. This eliminates DB latency from the critical path.
-type storeBatchWriter struct {
+type Writer struct {
 	store   storage.Store
-	metrics batchMetricsSink
+	metrics MetricsSink
 	// done is closed by StopWithTimeout to signal the background flush
 	// loop and any in-flight retry sleeps that the writer is shutting
 	// down. Closing-only semantics replace what used to be an embedded
@@ -263,13 +266,13 @@ type storeBatchWriter struct {
 	serverLoad *batchBuffer[storage.ServerLoadPointRecord]
 	dcHealth   *batchBuffer[storage.DCHealthPointRecord]
 	clientIPs  *batchBuffer[storage.ClientIPHistoryRecord]
-	telemetry  *batchBuffer[telemetryWriteUnit]
+	telemetry  *batchBuffer[TelemetryWriteUnit]
 	// auditEvents is the 8th stream (P2-LOG-10 / M-R4 / P7-R6). Audit writes
 	// used to run synchronously on the HTTP request path — a stalled DB froze
 	// login and other handlers. Appending into this buffer is O(1) and the
 	// background flush loop persists rows asynchronously with the shared
 	// retry/classify logic. Critical-stream alerts are emitted via
-	// streamAlerts[audit] so operators can page on persistent audit failures.
+	// StreamAlerts[audit] so operators can page on persistent audit failures.
 	auditEvents *batchBuffer[storage.AuditEventRecord]
 	// fallbackState carries put/delete ops for agent_fallback_state. The
 	// authoritative in-memory copy lives in s.fallback (agents.FallbackTracker);
@@ -288,16 +291,16 @@ type fallbackStateOp struct {
 	op        string // "put" or "delete"
 }
 
-// telemetryWriteUnit groups all per-agent telemetry writes for a single
+// TelemetryWriteUnit groups all per-agent telemetry writes for a single
 // snapshot so they can be flushed together.
-type telemetryWriteUnit struct {
-	agentID     string
-	runtime     *storage.TelemetryRuntimeCurrentRecord
-	dcs         []storage.TelemetryRuntimeDCRecord
-	upstreams   []storage.TelemetryRuntimeUpstreamRecord
-	events      []storage.TelemetryRuntimeEventRecord
-	diagnostics *storage.TelemetryDiagnosticsCurrentRecord
-	security    *storage.TelemetrySecurityInventoryCurrentRecord
+type TelemetryWriteUnit struct {
+	AgentID     string
+	Runtime     *storage.TelemetryRuntimeCurrentRecord
+	DCs         []storage.TelemetryRuntimeDCRecord
+	Upstreams   []storage.TelemetryRuntimeUpstreamRecord
+	Events      []storage.TelemetryRuntimeEventRecord
+	Diagnostics *storage.TelemetryDiagnosticsCurrentRecord
+	Security    *storage.TelemetrySecurityInventoryCurrentRecord
 }
 
 // noopMetricsSink is the default sink used when a caller does not supply one
@@ -305,7 +308,7 @@ type telemetryWriteUnit struct {
 // writer usable without the metrics subsystem wired in.
 type noopMetricsSink struct{}
 
-// noopMetricsSink implements batchMetricsSink as a null-object so the
+// noopMetricsSink implements MetricsSink as a null-object so the
 // writer can run without a metrics subsystem wired in. Each method is
 // intentionally a no-op — see the type comment above for context.
 func (noopMetricsSink) ObserveFlushError(string, string)     { /* null-object */ }
@@ -314,14 +317,14 @@ func (noopMetricsSink) ObservePersistRetry(string, string)   { /* null-object */
 func (noopMetricsSink) ObserveFlushDuration(string, float64) { /* null-object */ }
 func (noopMetricsSink) ObserveBufferDrop(string, int)        { /* null-object */ }
 
-func newStoreBatchWriter(store storage.Store, metrics batchMetricsSink, now func() time.Time) *storeBatchWriter {
+func New(store storage.Store, metrics MetricsSink, now func() time.Time) *Writer {
 	if metrics == nil {
 		metrics = noopMetricsSink{}
 	}
 	if now == nil {
 		now = time.Now
 	}
-	w := &storeBatchWriter{
+	w := &Writer{
 		store:         store,
 		metrics:       metrics,
 		done:          make(chan struct{}),
@@ -357,7 +360,7 @@ const defaultBatchBufferCap = 10_000
 // SetBufferCap applies one hard bound to every stream buffer. Must be
 // called before Start(); the operational-settings store supplies the
 // value in lifecycle.go next to flushInterval.
-func (w *storeBatchWriter) SetBufferCap(capLimit int) {
+func (w *Writer) SetBufferCap(capLimit int) {
 	w.agents.capLimit = capLimit
 	w.instances.capLimit = capLimit
 	w.metricsBuf.capLimit = capLimit
@@ -369,12 +372,33 @@ func (w *storeBatchWriter) SetBufferCap(capLimit int) {
 	w.fallbackState.capLimit = capLimit
 }
 
+// SetFlushInterval overrides the background flush cadence. Must be called
+// before Start; lifecycle wiring reads it from operational settings.
+func (w *Writer) SetFlushInterval(d time.Duration) { w.flushInterval = d }
+
+// Enqueue* are the typed entry points other packages use to append records to
+// each stream buffer. They replace direct access to the (now unexported)
+// buffer fields, keeping the buffer wiring internal to this package.
+func (w *Writer) EnqueueAgent(rec storage.AgentRecord)                { w.agents.Enqueue(rec) }
+func (w *Writer) EnqueueInstance(rec storage.InstanceRecord)          { w.instances.Enqueue(rec) }
+func (w *Writer) EnqueueMetric(rec storage.MetricSnapshotRecord)      { w.metricsBuf.Enqueue(rec) }
+func (w *Writer) EnqueueServerLoad(rec storage.ServerLoadPointRecord) { w.serverLoad.Enqueue(rec) }
+func (w *Writer) EnqueueDCHealth(rec storage.DCHealthPointRecord)     { w.dcHealth.Enqueue(rec) }
+func (w *Writer) EnqueueClientIP(rec storage.ClientIPHistoryRecord)   { w.clientIPs.Enqueue(rec) }
+func (w *Writer) EnqueueAudit(rec storage.AuditEventRecord)           { w.auditEvents.Enqueue(rec) }
+func (w *Writer) EnqueueTelemetry(u TelemetryWriteUnit)               { w.telemetry.Enqueue(u) }
+
+// Flush synchronously drains every pending buffer to the store. Safe to call
+// while the background loops run — each buffer drain is mutex-guarded — and
+// used by tests that need queued writes visible in the store immediately.
+func (w *Writer) Flush(ctx context.Context) { w.drainAll(ctx) }
+
 // wireDropObservers connects every buffer's overflow path to the metrics
 // sink, and routes evicted AUDIT events into the dead-letter spool so the
 // critical stream never drops silently (A4). fallback_state eviction is
 // safe by construction: put/delete ops are full per-agent overwrites, so
 // the newest op per agent supersedes any evicted older one.
-func (w *storeBatchWriter) wireDropObservers() {
+func (w *Writer) wireDropObservers() {
 	w.agents.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("agents", n) }
 	w.instances.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("instances", n) }
 	w.metricsBuf.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("metrics", n) }
@@ -407,7 +431,7 @@ func (w *storeBatchWriter) wireDropObservers() {
 // callers must pass a real lifecycle ctx (Plan 3 tail / S25 T2).
 //
 //nolint:contextcheck // test-only nil parentCtx triggers a Background fallback; production callers always supply serverCtx.
-func (w *storeBatchWriter) Start(parentCtx context.Context) {
+func (w *Writer) Start(parentCtx context.Context) {
 	if parentCtx == nil {
 		parentCtx = context.WithoutCancel(context.Background()) //nolint:noctx,contextcheck // reason: test-only fallback when Start is called without a lifecycle ctx; production wiring (lifecycle.go) always supplies serverCtx.
 	}
@@ -444,7 +468,7 @@ func (w *storeBatchWriter) Start(parentCtx context.Context) {
 // already past the per-buffer Drain call — callers that must not lose events
 // should stop upstream producers (HTTP handlers, gRPC streams) before
 // invoking StopWithTimeout.
-func (w *storeBatchWriter) StopWithTimeout(parentCtx context.Context, timeout time.Duration) error {
+func (w *Writer) StopWithTimeout(parentCtx context.Context, timeout time.Duration) error {
 	w.stopOnce.Do(func() { close(w.done) })
 	w.wg.Wait()
 
@@ -463,14 +487,14 @@ func (w *storeBatchWriter) StopWithTimeout(parentCtx context.Context, timeout ti
 	case <-ctx.Done():
 		// Wait for the drain goroutine to finish its current flushItem call
 		// so it does not race with store.Close(). flushItem itself cannot
-		// block forever because classifyFlushError + retry will bail on
+		// block forever because ClassifyFlushError + retry will bail on
 		// context.DeadlineExceeded.
 		<-done
 		return ctx.Err()
 	}
 }
 
-func (w *storeBatchWriter) flushLoop(parentCtx context.Context) {
+func (w *Writer) flushLoop(parentCtx context.Context) {
 	defer w.wg.Done()
 	ticker := time.NewTicker(w.flushInterval)
 	defer ticker.Stop()
@@ -525,7 +549,7 @@ func (w *storeBatchWriter) flushLoop(parentCtx context.Context) {
 // flushes with their retry backoffs no longer sit between an agent's
 // ME→Direct transition and its persistence: fallback_state gets its own
 // ticker + signal wake-up. Same flushCtx detachment rationale as flushLoop.
-func (w *storeBatchWriter) criticalFlushLoop(parentCtx context.Context) {
+func (w *Writer) criticalFlushLoop(parentCtx context.Context) {
 	defer w.wg.Done()
 	ticker := time.NewTicker(w.flushInterval)
 	defer ticker.Stop()
@@ -547,7 +571,7 @@ func (w *storeBatchWriter) criticalFlushLoop(parentCtx context.Context) {
 // the Prometheus gauge. Called BEFORE drain so the gauge reflects the peak
 // queue depth observed by Prometheus (post-drain the value would always be
 // zero and useless for alerting).
-func (w *storeBatchWriter) observeQueueDepths() {
+func (w *Writer) observeQueueDepths() {
 	w.metrics.SetQueueDepth("agents", float64(w.agents.Len()))
 	w.metrics.SetQueueDepth("instances", float64(w.instances.Len()))
 	w.metrics.SetQueueDepth("metrics", float64(w.metricsBuf.Len()))
@@ -562,7 +586,7 @@ func (w *storeBatchWriter) observeQueueDepths() {
 // drainRegular drains every stream EXCEPT fallback_state, which is owned
 // by criticalFlushLoop. Ordering rationale unchanged: audit last so rows
 // it references land first.
-func (w *storeBatchWriter) drainRegular(ctx context.Context) {
+func (w *Writer) drainRegular(ctx context.Context) {
 	w.observeQueueDepths()
 	w.agents.Drain(ctx)
 	w.instances.Drain(ctx)
@@ -582,12 +606,12 @@ func (w *storeBatchWriter) drainRegular(ctx context.Context) {
 // drainAll is the shutdown-path drain (StopWithTimeout): regular streams
 // plus fallback_state. Both loops have already exited (wg.Wait), so there
 // is no concurrent Drain.
-func (w *storeBatchWriter) drainAll(ctx context.Context) {
+func (w *Writer) drainAll(ctx context.Context) {
 	w.drainRegular(ctx)
 	w.fallbackState.Drain(ctx)
 }
 
-// classifyFlushError returns "transient" or "persistent" for an error produced
+// ClassifyFlushError returns "transient" or "persistent" for an error produced
 // by a Store write.
 //
 // Strategy:
@@ -604,7 +628,7 @@ func (w *storeBatchWriter) drainAll(ctx context.Context) {
 //
 // Anything else — constraint violations, missing tables, schema mismatches —
 // is classified as "persistent" because retrying cannot help.
-func classifyFlushError(err error) string {
+func ClassifyFlushError(err error) string {
 	if err == nil {
 		// callers must not pass err=nil, this fallback is defensive only
 		return "persistent"
@@ -704,12 +728,12 @@ const (
 // observeTransient. The final outcome is reported separately by the caller
 // using ObservePersistRetry so operators can distinguish "eventually
 // succeeded" from "gave up and dropped".
-func (w *storeBatchWriter) retryWithBackoff(op func() error, observeTransient func()) (retryOutcome, error) {
+func (w *Writer) retryWithBackoff(op func() error, observeTransient func()) (retryOutcome, error) {
 	err := op()
 	if err == nil {
 		return retrySucceededFirstTry, nil
 	}
-	if classifyFlushError(err) == "persistent" {
+	if ClassifyFlushError(err) == "persistent" {
 		return retryPersistent, err
 	}
 
@@ -730,7 +754,7 @@ func (w *storeBatchWriter) retryWithBackoff(op func() error, observeTransient fu
 		if err == nil {
 			return retrySucceededOnRetry, nil
 		}
-		if classifyFlushError(err) == "persistent" {
+		if ClassifyFlushError(err) == "persistent" {
 			return retryPersistent, err
 		}
 	}
@@ -748,12 +772,12 @@ func (w *storeBatchWriter) retryWithBackoff(op func() error, observeTransient fu
 // ObservePersistRetry(stream, "success"); a retry that exhausts the schedule
 // is recorded as "exhausted" and the item is dropped.
 //
-// streamAlerts is the set of streams that warrant a "critical alert" marker
+// StreamAlerts is the set of streams that warrant a "critical alert" marker
 // on the error log line — currently reserved for the audit stream once it
 // moves into the batch writer (see P2-LOG-10). For now no buffer is in this
 // set, but the hook is here so the plumbing exists and only the list needs
 // updating when audit async writes land.
-var streamAlerts = map[string]string{
+var StreamAlerts = map[string]string{
 	// P2-LOG-10 / M-R4 / P7-R6: audit is the CRITICAL stream. Persistent
 	// failures (NOT NULL violation, schema mismatch, retry-exhausted
 	// transient) emit slog.Error with alert=audit_persist_failed so
@@ -777,7 +801,7 @@ var streamAlerts = map[string]string{
 	"metrics":     "metrics_persist_failed",
 }
 
-func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() error) {
+func (w *Writer) flushItem(buffer string, logAttrs []any, op func() error) {
 	w.flushItemTracked(buffer, logAttrs, op)
 }
 
@@ -786,7 +810,7 @@ func (w *storeBatchWriter) flushItem(buffer string, logAttrs []any, op func() er
 // resolved unsuccessfully (false). Critical streams (audit) use the bool to
 // decide whether to spool the record to the dead-letter file instead of
 // dropping it silently; non-critical streams call flushItem and ignore it.
-func (w *storeBatchWriter) flushItemTracked(buffer string, logAttrs []any, op func() error) bool {
+func (w *Writer) flushItemTracked(buffer string, logAttrs []any, op func() error) bool {
 	// P2-OBS-03: measure end-to-end flush latency including retries and record
 	// the observation regardless of how the retry sequence resolved. Done via
 	// a deferred closure so early returns (first-try success, retry success)
@@ -819,7 +843,7 @@ func (w *storeBatchWriter) flushItemTracked(buffer string, logAttrs []any, op fu
 		"error", err,
 		"error_chain", errorChain(err),
 	}, logAttrs...)
-	if alert, ok := streamAlerts[buffer]; ok {
+	if alert, ok := StreamAlerts[buffer]; ok {
 		attrs = append(attrs, "alert", alert)
 	}
 	slog.Error("batch persist failed", attrs...)
@@ -862,7 +886,7 @@ func errorChain(err error) []string {
 // dominated the PERF-05 baseline (~5.5ms/flush). Bulk INSERT collapses the
 // round-trips to O(chunks) where chunks = ceil(items / 500).
 
-func (w *storeBatchWriter) flushAgents(ctx context.Context, items []storage.AgentRecord) {
+func (w *Writer) flushAgents(ctx context.Context, items []storage.AgentRecord) {
 	if len(items) == 0 {
 		return
 	}
@@ -872,7 +896,7 @@ func (w *storeBatchWriter) flushAgents(ctx context.Context, items []storage.Agen
 	})
 }
 
-func (w *storeBatchWriter) flushInstances(ctx context.Context, items []storage.InstanceRecord) {
+func (w *Writer) flushInstances(ctx context.Context, items []storage.InstanceRecord) {
 	if len(items) == 0 {
 		return
 	}
@@ -882,7 +906,7 @@ func (w *storeBatchWriter) flushInstances(ctx context.Context, items []storage.I
 	})
 }
 
-func (w *storeBatchWriter) flushMetrics(ctx context.Context, items []storage.MetricSnapshotRecord) {
+func (w *Writer) flushMetrics(ctx context.Context, items []storage.MetricSnapshotRecord) {
 	if len(items) == 0 {
 		return
 	}
@@ -892,7 +916,7 @@ func (w *storeBatchWriter) flushMetrics(ctx context.Context, items []storage.Met
 	})
 }
 
-func (w *storeBatchWriter) flushServerLoad(ctx context.Context, items []storage.ServerLoadPointRecord) {
+func (w *Writer) flushServerLoad(ctx context.Context, items []storage.ServerLoadPointRecord) {
 	if len(items) == 0 {
 		return
 	}
@@ -902,7 +926,7 @@ func (w *storeBatchWriter) flushServerLoad(ctx context.Context, items []storage.
 	})
 }
 
-func (w *storeBatchWriter) flushDCHealth(ctx context.Context, items []storage.DCHealthPointRecord) {
+func (w *Writer) flushDCHealth(ctx context.Context, items []storage.DCHealthPointRecord) {
 	if len(items) == 0 {
 		return
 	}
@@ -912,7 +936,7 @@ func (w *storeBatchWriter) flushDCHealth(ctx context.Context, items []storage.DC
 	})
 }
 
-func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.ClientIPHistoryRecord) {
+func (w *Writer) flushClientIPs(ctx context.Context, items []storage.ClientIPHistoryRecord) {
 	if len(items) == 0 {
 		return
 	}
@@ -934,7 +958,7 @@ func (w *storeBatchWriter) flushClientIPs(ctx context.Context, items []storage.C
 // coarser than the previous per-row spool (one poisoned row now drags its
 // batch-mates into the spool instead of the DB) but nothing is ever
 // silently dropped, and batches are small (audit flush threshold = 50).
-func (w *storeBatchWriter) flushAuditEvents(ctx context.Context, items []storage.AuditEventRecord) {
+func (w *Writer) flushAuditEvents(ctx context.Context, items []storage.AuditEventRecord) {
 	if len(items) == 0 {
 		return
 	}
@@ -978,7 +1002,7 @@ type deadLetteredAuditEvent struct {
 // w.writeDeadLetter implementation (A4). It opens with O_APPEND so concurrent
 // writers do not clobber each other, though in practice only the single flush
 // loop calls it.
-func (w *storeBatchWriter) writeAuditDeadLetter(item storage.AuditEventRecord) error {
+func (w *Writer) writeAuditDeadLetter(item storage.AuditEventRecord) error {
 	dir := w.deadLetterDir
 	if dir == "" {
 		dir = defaultAuditDeadLetterDir
@@ -1011,7 +1035,7 @@ func (w *storeBatchWriter) writeAuditDeadLetter(item storage.AuditEventRecord) e
 // classification + metrics observations. The in-memory s.fallback
 // (agents.FallbackTracker) is the read source — this buffer exists only for durability
 // across control-plane restarts.
-func (w *storeBatchWriter) flushFallbackState(ctx context.Context, items []fallbackStateOp) {
+func (w *Writer) flushFallbackState(ctx context.Context, items []fallbackStateOp) {
 	if len(items) == 0 {
 		return
 	}
@@ -1043,14 +1067,40 @@ func (w *storeBatchWriter) flushFallbackState(ctx context.Context, items []fallb
 // EnqueueFallbackPut queues a put against agent_fallback_state for the given
 // agent and entered-at timestamp. Lock-free; safe to call under the server
 // state mutex.
-func (w *storeBatchWriter) EnqueueFallbackPut(agentID string, enteredAt time.Time) {
+func (w *Writer) EnqueueFallbackPut(agentID string, enteredAt time.Time) {
 	w.fallbackState.Enqueue(fallbackStateOp{agentID: agentID, enteredAt: enteredAt, op: "put"})
 }
 
 // EnqueueFallbackDelete queues a delete against agent_fallback_state for the
 // given agent. Lock-free; safe to call under the server state mutex.
-func (w *storeBatchWriter) EnqueueFallbackDelete(agentID string) {
+func (w *Writer) EnqueueFallbackDelete(agentID string) {
 	w.fallbackState.Enqueue(fallbackStateOp{agentID: agentID, op: "delete"})
+}
+
+// FallbackOp is an exported view of one queued fallback-state operation.
+type FallbackOp struct {
+	AgentID   string
+	EnteredAt time.Time
+	Op        string // "put" or "delete"
+}
+
+// DrainPendingFallbackOps atomically removes and returns every fallback op
+// currently queued in the fallback_state buffer WITHOUT flushing it to the
+// store. It exists so callers in other packages (notably the server's
+// fallback-transition tests) can assert the put/delete an agent-state
+// transition enqueues, without reaching into this package's buffer internals.
+func (w *Writer) DrainPendingFallbackOps() []FallbackOp {
+	b := w.fallbackState
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	live := b.items[b.start:]
+	ops := make([]FallbackOp, len(live))
+	for i, op := range live {
+		ops[i] = FallbackOp{AgentID: op.agentID, EnteredAt: op.enteredAt, Op: op.op}
+	}
+	b.items = b.items[:0]
+	b.start = 0
+	return ops
 }
 
 // flushTelemetry groups the batch by telemetry part and issues at most SIX
@@ -1066,7 +1116,7 @@ func (w *storeBatchWriter) EnqueueFallbackDelete(agentID string) {
 // Error semantics: one flushItem per PART (not per unit) — a persistent
 // error drops that part for the whole batch and records a single
 // ObservePersistRetry observation, matching the other bulk streams.
-func (w *storeBatchWriter) flushTelemetry(ctx context.Context, items []telemetryWriteUnit) {
+func (w *Writer) flushTelemetry(ctx context.Context, items []TelemetryWriteUnit) {
 	if len(items) == 0 {
 		return
 	}
@@ -1080,27 +1130,27 @@ func (w *storeBatchWriter) flushTelemetry(ctx context.Context, items []telemetry
 	var security []storage.TelemetrySecurityInventoryCurrentRecord
 
 	for _, unit := range items {
-		if unit.runtime != nil {
-			runtimes = append(runtimes, *unit.runtime)
+		if unit.Runtime != nil {
+			runtimes = append(runtimes, *unit.Runtime)
 		}
-		if unit.dcs != nil {
+		if unit.DCs != nil {
 			if dcsByAgent == nil {
 				dcsByAgent = make(map[string][]storage.TelemetryRuntimeDCRecord)
 			}
-			dcsByAgent[unit.agentID] = unit.dcs
+			dcsByAgent[unit.AgentID] = unit.DCs
 		}
-		if unit.upstreams != nil {
+		if unit.Upstreams != nil {
 			if upstreamsByAgent == nil {
 				upstreamsByAgent = make(map[string][]storage.TelemetryRuntimeUpstreamRecord)
 			}
-			upstreamsByAgent[unit.agentID] = unit.upstreams
+			upstreamsByAgent[unit.AgentID] = unit.Upstreams
 		}
-		events = append(events, unit.events...)
-		if unit.diagnostics != nil {
-			diagnostics = append(diagnostics, *unit.diagnostics)
+		events = append(events, unit.Events...)
+		if unit.Diagnostics != nil {
+			diagnostics = append(diagnostics, *unit.Diagnostics)
 		}
-		if unit.security != nil {
-			security = append(security, *unit.security)
+		if unit.Security != nil {
+			security = append(security, *unit.Security)
 		}
 	}
 
