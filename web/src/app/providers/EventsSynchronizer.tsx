@@ -12,7 +12,7 @@ import {
 import { authApi } from "@/shared/api/auth";
 import { SESSION_EXPIRED_EVENT } from "@/shared/api/http";
 import { useAuth } from "@/app/providers/AuthProvider";
-import { eventEnvelopeSchema } from "@/shared/api/schemas/events";
+import { eventEnvelopeSchema, type EventEnvelope } from "@/shared/api/schemas/events";
 import { invalidateTelemetryQueries } from "@/shared/events/telemetry-query-invalidation";
 import { buildEventsURL, resolveConfiguredRootPath } from "@/shared/lib/runtime-path";
 import {
@@ -83,6 +83,26 @@ export function useWsLastEventAt(): number | null {
   return useSyncExternalStore(store.subscribe, store.getSnapshot);
 }
 
+// 7.4 (#web-6): подписка на валидные envelope'ы для потребителей вне
+// конвейера инвалидаций (сегодня — useAgentRuntimeEvents). Один сокет
+// на всю панель: /events на сервере не умеет топики (http_events.go
+// шлёт каждому подписчику весь bus), второй сокет только дублировал
+// трафик и ел лимит соединений на пользователя.
+export type WsEnvelopeListener = (envelope: EventEnvelope) => void;
+
+export interface WsEventsValue {
+  /** Подписаться на все валидные envelope'ы. Возвращает unsubscribe. */
+  subscribe: (listener: WsEnvelopeListener) => () => void;
+}
+
+const noopSubscribe: WsEventsValue = { subscribe: () => () => {} };
+const WsEventsContext = createContext<WsEventsValue>(noopSubscribe);
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useWsEvents(): WsEventsValue {
+  return useContext(WsEventsContext);
+}
+
 export function EventsSynchronizer({ children }: Readonly<{ children?: React.ReactNode }>) {
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
@@ -91,6 +111,17 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
   // Store создаётся один раз на инстанс провайдера (useState-инициализатор
   // вместо useRef — чистая инициализация без мутаций в рендере).
   const [lastEventStore] = useState<LastEventStore>(createLastEventStore);
+  // Подписчики envelope'ов. Ref, а не state: рассылка не должна
+  // рендерить провайдер. Value контекста стабилен на всю жизнь провайдера.
+  const envelopeListenersRef = useRef<Set<WsEnvelopeListener>>(new Set());
+  const [eventsValue] = useState<WsEventsValue>(() => ({
+    subscribe: (listener: WsEnvelopeListener) => {
+      envelopeListenersRef.current.add(listener);
+      return () => {
+        envelopeListenersRef.current.delete(listener);
+      };
+    },
+  }));
   // Refs so the long-lived effect doesn't depend on state and re-subscribe.
   const attemptsRef = useRef(0);
   // D6c: last seen hub sequence number for the current socket. null until
@@ -198,6 +229,11 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
           return;
         }
         const event = result.data;
+        // 7.4: доставка живым подписчикам (runtime-лента и т.п.) — до
+        // seq-gap-ветки: текущий кадр валиден, потеряны только предыдущие.
+        for (const listener of envelopeListenersRef.current) {
+          listener(event);
+        }
         if (typeof event.seq === "number") {
           const last = lastSeqRef.current;
           lastSeqRef.current = event.seq;
@@ -262,7 +298,9 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
   return (
     <WsStatusContext.Provider value={statusValue}>
       <WsLastEventContext.Provider value={lastEventStore}>
-        {body}
+        <WsEventsContext.Provider value={eventsValue}>
+          {body}
+        </WsEventsContext.Provider>
       </WsLastEventContext.Provider>
     </WsStatusContext.Provider>
   );

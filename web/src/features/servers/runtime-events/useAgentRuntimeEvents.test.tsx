@@ -1,24 +1,14 @@
-// Task 2.8 (audit, MEDIUM M13 + H3 hole): regression coverage for the
-// runtime-events WS + HTTP decode paths. Before this fix:
-//
-//   - WS: `JSON.parse(msg.data) as BusMessage` was cast with only an
-//     `Array.isArray(data.events)` guard. A `runtime.events` frame with
-//     `events: [null]` flowed straight into
-//     `.map(record => ({ ts: record.ts, ... }))`, and `null.ts` threw a
-//     TypeError inside the synchronous `onmessage` handler — crashing
-//     the server-detail live-events section.
-//   - HTTP: `api<RuntimeEventsListResponse>(...)` was called with no
-//     3rd-arg schema, so a malformed `items` array flowed unchecked
-//     into `setEvents(initial.data.items)`.
-//
-// These tests pin: (1) a malformed WS frame is dropped without
-// throwing and without mutating state, (2) a well-formed WS frame
-// still applies, (3) a malformed HTTP seed is dropped by the schema
-// instead of being cast through.
+// 7.4 (audit #web-6): runtime-events feed no longer owns a second
+// WebSocket — it subscribes to the panel-wide EventsSynchronizer socket
+// via useWsEvents and watches connection status via useWsStatus. The
+// harness drives both directly. Retained coverage: a malformed bus frame
+// is dropped whole, a well-formed frame applies, a foreign agent_id is
+// ignored, the HTTP backlog seeds + schema-rejects, and — new — a
+// reconnect (status → "open") refetches the backlog.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import * as React from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/shared/api/api", () => ({
   apiClient: {
@@ -26,34 +16,27 @@ vi.mock("@/shared/api/api", () => ({
   },
 }));
 
+// 7.4: хук больше не открывает свой WebSocket — он подписывается на
+// envelope'ы EventsSynchronizer через useWsEvents и следит за статусом
+// через useWsStatus. Тест управляет обоими напрямую.
+const listeners = new Set<(envelope: unknown) => void>();
+let wsStatus: "connecting" | "open" | "reconnecting" | "closed" = "open";
+vi.mock("@/app/providers/EventsSynchronizer", () => ({
+  useWsEvents: () => ({
+    subscribe: (listener: (envelope: unknown) => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  }),
+  useWsStatus: () => ({ status: wsStatus, reconnectAttempts: 0 }),
+}));
+
 import { apiClient } from "@/shared/api/api";
 import { useAgentRuntimeEvents } from "./useAgentRuntimeEvents";
 
 const AGENT_ID = "agent-1";
-
-// Capture the WebSocket instance the hook creates so tests can drive
-// `onmessage` directly, mirroring EventsSynchronizer.test.tsx's
-// FakeWebSocket harness.
-class FakeWebSocket {
-  static OPEN = 1;
-  static CONNECTING = 0;
-  static CLOSED = 3;
-  static CLOSING = 2;
-  static instances: FakeWebSocket[] = [];
-  readyState: number = FakeWebSocket.CONNECTING;
-  onopen: ((ev: Event) => void) | null = null;
-  onmessage: ((ev: MessageEvent) => void) | null = null;
-  onerror: ((ev: Event) => void) | null = null;
-  onclose: ((ev: CloseEvent) => void) | null = null;
-  url: string;
-  constructor(url: string) {
-    this.url = url;
-    FakeWebSocket.instances.push(this);
-  }
-  close(): void {
-    this.readyState = FakeWebSocket.CLOSED;
-  }
-}
 
 function wrapper() {
   const qc = new QueryClient({
@@ -63,40 +46,31 @@ function wrapper() {
     React.createElement(QueryClientProvider, { client: qc }, children);
 }
 
-function sendWsFrame(payload: unknown): void {
-  const ws = FakeWebSocket.instances.at(-1);
-  expect(ws).toBeDefined();
-  ws?.onmessage?.(new MessageEvent("message", { data: JSON.stringify(payload) }));
+function sendEnvelope(payload: unknown): void {
+  act(() => {
+    for (const listener of listeners) listener(payload);
+  });
 }
 
+beforeEach(() => {
+  listeners.clear();
+  wsStatus = "open";
+  (apiClient.listRuntimeEvents as ReturnType<typeof vi.fn>).mockReset();
+  (apiClient.listRuntimeEvents as ReturnType<typeof vi.fn>).mockReturnValue(
+    new Promise(() => {}), // never resolves unless a test overrides it
+  );
+});
+
 describe("useAgentRuntimeEvents", () => {
-  let originalWS: typeof globalThis.WebSocket;
-
-  beforeEach(() => {
-    FakeWebSocket.instances = [];
-    originalWS = globalThis.WebSocket;
-    (globalThis as unknown as { WebSocket: typeof FakeWebSocket }).WebSocket = FakeWebSocket;
-    (apiClient.listRuntimeEvents as ReturnType<typeof vi.fn>).mockReturnValue(
-      new Promise(() => {}), // never resolves unless a test overrides it
-    );
-  });
-
-  afterEach(() => {
-    (globalThis as unknown as { WebSocket: typeof globalThis.WebSocket }).WebSocket = originalWS;
-    vi.restoreAllMocks();
-  });
-
   it("drops a runtime.events frame with a null element (no throw, events stays empty)", () => {
     const { result } = renderHook(() => useAgentRuntimeEvents(AGENT_ID), {
       wrapper: wrapper(),
     });
 
     expect(() => {
-      act(() => {
-        sendWsFrame({
-          type: "runtime.events",
-          data: { agent_id: AGENT_ID, events: [null] },
-        });
+      sendEnvelope({
+        type: "runtime.events",
+        data: { agent_id: AGENT_ID, events: [null] },
       });
     }).not.toThrow();
 
@@ -109,16 +83,14 @@ describe("useAgentRuntimeEvents", () => {
       wrapper: wrapper(),
     });
 
-    act(() => {
-      sendWsFrame({
-        type: "runtime.events",
-        data: {
-          agent_id: AGENT_ID,
-          events: [
-            { ts: "2026-07-01T00:00:00Z", level: "warn", message: "hello" },
-          ],
-        },
-      });
+    sendEnvelope({
+      type: "runtime.events",
+      data: {
+        agent_id: AGENT_ID,
+        events: [
+          { ts: "2026-07-01T00:00:00Z", level: "warn", message: "hello" },
+        ],
+      },
     });
 
     expect(result.current.events).toEqual([
@@ -132,28 +104,13 @@ describe("useAgentRuntimeEvents", () => {
       wrapper: wrapper(),
     });
 
-    act(() => {
-      sendWsFrame({
-        type: "runtime.events",
-        data: {
-          agent_id: "some-other-agent",
-          events: [{ ts: "2026-07-01T00:00:00Z", level: "info", message: "nope" }],
-        },
-      });
+    sendEnvelope({
+      type: "runtime.events",
+      data: {
+        agent_id: "some-other-agent",
+        events: [{ ts: "2026-07-01T00:00:00Z", level: "info", message: "nope" }],
+      },
     });
-
-    expect(result.current.events).toEqual([]);
-  });
-
-  it("drops a non-JSON WS message without throwing", () => {
-    const { result } = renderHook(() => useAgentRuntimeEvents(AGENT_ID), {
-      wrapper: wrapper(),
-    });
-
-    expect(() => {
-      const ws = FakeWebSocket.instances.at(-1);
-      ws?.onmessage?.(new MessageEvent("message", { data: "not json {{{" }));
-    }).not.toThrow();
 
     expect(result.current.events).toEqual([]);
   });
@@ -177,11 +134,6 @@ describe("useAgentRuntimeEvents", () => {
   });
 
   it("does not seed events from a malformed HTTP backlog (schema rejects it)", async () => {
-    // Simulates what apiClient.listRuntimeEvents would surface once
-    // runtime-events.ts validates the response via
-    // runtimeEventsListResponseSchema: a malformed payload rejects at
-    // the http layer and the query settles into an error state instead
-    // of handing the hook an untrusted `items` array.
     (apiClient.listRuntimeEvents as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("Response did not match expected schema"),
     );
@@ -195,5 +147,25 @@ describe("useAgentRuntimeEvents", () => {
     });
 
     expect(result.current.events).toEqual([]);
+  });
+
+  it("re-fetches the HTTP backlog when the socket comes back (reconnect)", async () => {
+    (apiClient.listRuntimeEvents as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [],
+    });
+    wsStatus = "reconnecting";
+    const { result, rerender } = renderHook(() => useAgentRuntimeEvents(AGENT_ID), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(apiClient.listRuntimeEvents).toHaveBeenCalledTimes(1);
+
+    wsStatus = "open";
+    rerender();
+
+    // Переход не-open → open инвалидирует backlog-query → второй фетч.
+    await waitFor(() =>
+      expect(apiClient.listRuntimeEvents).toHaveBeenCalledTimes(2),
+    );
   });
 });
