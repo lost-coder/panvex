@@ -191,7 +191,12 @@ export function ServerListView({
     },
   ], [selection, t, tc]);
 
-  const columns = allColumns.filter((c) => c.key === "server" || visibleColumns[c.key] !== false);
+  // 7.2 (#web-3): без useMemo фильтрат пересоздаётся каждый рендер и
+  // обесценивает мемоизацию allColumns (L-20 выше).
+  const columns = useMemo(
+    () => allColumns.filter((c) => c.key === "server" || visibleColumns[c.key] !== false),
+    [allColumns, visibleColumns],
+  );
 
   return (
     <div className="bg-bg-card border border-border rounded-xl shadow-sm overflow-hidden">

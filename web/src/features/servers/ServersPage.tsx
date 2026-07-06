@@ -48,23 +48,32 @@ export function ServersPage({
 
   const effectiveMode: ViewMode = viewMode ?? (servers.length <= autoThreshold ? "cards" : "list");
 
-  // Filtering
-  const filtered = servers.filter((s) => {
-    const matchSearch = !search || s.name.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || s.status === statusFilter;
-    const matchGroup = groupFilter === "all" || s.fleetGroupId === groupFilter;
-    return matchSearch && matchStatus && matchGroup;
-  });
+  // Filtering — 7.2 (#web-4): useMemo по образцу ClientsPage:89-98, иначе
+  // каждый рендер (в т.ч. от выбора строк) пересобирает массив и
+  // инвалидирует sortedData в DataTable.
+  const filtered = useMemo(
+    () =>
+      servers.filter((s) => {
+        const matchSearch = !search || s.name.toLowerCase().includes(search.toLowerCase());
+        const matchStatus = statusFilter === "all" || s.status === statusFilter;
+        const matchGroup = groupFilter === "all" || s.fleetGroupId === groupFilter;
+        return matchSearch && matchStatus && matchGroup;
+      }),
+    [servers, search, statusFilter, groupFilter],
+  );
 
   // Counts are derived from the unfiltered fleet so the chips keep
   // showing the full distribution regardless of the active filter.
   // Displayed as " · N" suffix in each chip's label.
-  const statusCounts = {
-    all: servers.length,
-    ok: servers.filter((s) => s.status === "ok").length,
-    warn: servers.filter((s) => s.status === "warn").length,
-    error: servers.filter((s) => s.status === "error").length,
-  };
+  const statusCounts = useMemo(
+    () => ({
+      all: servers.length,
+      ok: servers.filter((s) => s.status === "ok").length,
+      warn: servers.filter((s) => s.status === "warn").length,
+      error: servers.filter((s) => s.status === "error").length,
+    }),
+    [servers],
+  );
 
   // Client-side pagination via the shared adapter — clamps the page when
   // filters shrink the fleet (previously this page used currentPage

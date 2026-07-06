@@ -112,13 +112,21 @@ export function ClientsPage({
     sel.clear();
   };
 
-  const columns = buildClientColumns(nowSec, t, {
-    selected: sel.selected,
-    onToggle: sel.toggleOne,
-    onToggleAll: sel.toggleAllOnPage,
-    allSelected: sel.allSelected,
-    someSelected: sel.someSelected,
-  });
+  // 7.2 (#web-3): колонки содержат инлайн-рендереры — без useMemo каждый
+  // рендер страницы даёт новый массив и DataTable пересортировывает
+  // sortedData впустую. Хендлеры sel.* стабильны (useCallback в
+  // useClientSelection), поэтому deps ниже честные.
+  const columns = useMemo(
+    () =>
+      buildClientColumns(nowSec, t, {
+        selected: sel.selected,
+        onToggle: sel.toggleOne,
+        onToggleAll: sel.toggleAllOnPage,
+        allSelected: sel.allSelected,
+        someSelected: sel.someSelected,
+      }),
+    [nowSec, t, sel.selected, sel.toggleOne, sel.toggleAllOnPage, sel.allSelected, sel.someSelected],
+  );
 
   return (
     <>
