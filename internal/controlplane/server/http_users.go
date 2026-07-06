@@ -1,10 +1,8 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"net/http"
-	"sort"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -59,7 +57,7 @@ func (s *Server) handleUsers() http.HandlerFunc {
 			return
 		}
 
-		users, err := s.listUsersWithContext(r.Context())
+		users, err := s.auth.ListUsers(r.Context())
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "list users failed", "error", err)
 			writeError(w, http.StatusInternalServerError, msgInternalError)
@@ -303,45 +301,4 @@ func (s *Server) handleResetUserTotp() http.HandlerFunc {
 		s.appendAuditWithContext(r.Context(), session.UserID, "auth.totp.reset_by_admin", targetUserID, nil)
 		w.WriteHeader(http.StatusNoContent)
 	}
-}
-
-func (s *Server) listUsersWithContext(ctx context.Context) ([]auth.User, error) {
-	if s.store == nil {
-		users := s.auth.SnapshotUsers()
-		sort.Slice(users, func(left, right int) bool {
-			if users[left].CreatedAt.Equal(users[right].CreatedAt) {
-				return users[left].ID < users[right].ID
-			}
-			return users[left].CreatedAt.Before(users[right].CreatedAt)
-		})
-		for i := range users {
-			users[i].PasswordHash = ""
-			users[i].TotpSecret = ""
-		}
-		return users, nil
-	}
-
-	records, err := s.store.ListUsers(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	users := make([]auth.User, 0, len(records))
-	for _, record := range records {
-		users = append(users, auth.User{
-			ID:          record.ID,
-			Username:    record.Username,
-			Role:        auth.Role(record.Role),
-			TotpEnabled: record.TotpEnabled,
-			CreatedAt:   record.CreatedAt.UTC(),
-		})
-	}
-
-	// Zero sensitive fields for in-memory users as well.
-	for i := range users {
-		users[i].PasswordHash = ""
-		users[i].TotpSecret = ""
-	}
-
-	return users, nil
 }
