@@ -73,7 +73,7 @@ func (s *Server) handleServerLoadHistory() http.HandlerFunc {
 
 		// If requested range starts within raw retention, use raw points.
 		if from.After(rawCutoff) || from.Equal(rawCutoff) {
-			points, err := s.store.ListServerLoadPoints(r.Context(), agentID, from, to)
+			points, err := s.historySvc.ServerLoadPoints(r.Context(), agentID, from, to)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, msgInternalError)
 				return
@@ -83,7 +83,7 @@ func (s *Server) handleServerLoadHistory() http.HandlerFunc {
 		}
 
 		// Otherwise fall back to hourly rollups.
-		points, err := s.store.ListServerLoadHourly(r.Context(), agentID, from, to)
+		points, err := s.historySvc.ServerLoadHourly(r.Context(), agentID, from, to)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
@@ -124,7 +124,7 @@ func (s *Server) handleDCHealthHistory() http.HandlerFunc {
 			return
 		}
 
-		points, err := s.store.ListDCHealthPoints(r.Context(), agentID, from, to)
+		points, err := s.historySvc.DCHealthPoints(r.Context(), agentID, from, to)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, msgInternalError)
 			return
@@ -224,7 +224,7 @@ func (s *Server) handleClientIPHistory() http.HandlerFunc {
 		// with total_unique_available=false so callers can distinguish
 		// "genuinely zero" from "count unavailable" instead of quietly
 		// showing a wrong-but-plausible number.
-		totalUnique, err := s.store.CountUniqueClientIPs(r.Context(), clientID)
+		totalUnique, err := s.historySvc.CountUniqueClientIPs(r.Context(), clientID)
 		totalUniqueAvailable := err == nil
 		if err != nil {
 			s.logger.WarnContext(r.Context(), "count unique client ips failed", "client_id", clientID, "error", err)
@@ -268,21 +268,19 @@ func (s *Server) clientVisibleInScope(ctx context.Context, w http.ResponseWriter
 
 // fetchClientIPRows aggregates the client's per-IP history in the window and
 // returns the page rows, whether the result was truncated, and the applied
-// limit.
+// limit. The store round-trip and the limit+1 over-fetch truncation rule live
+// in history.Service; this wrapper parses the HTTP limit and maps the rows to
+// the presentation shape plus geoip enrichment.
 //
 // Q4.U-P-04 follow-up: the per-IP fold is pushed into SQL via
-// AggregateClientIPHistory + LIMIT. We pull (limit + 1) so truncation can be
-// detected without a separate COUNT round-trip; the caller reports
-// total_unique from the dedicated CountUniqueClientIPs query.
+// AggregateClientIPHistory + LIMIT. Truncation is detected without a separate
+// COUNT round-trip; the caller reports total_unique from the dedicated
+// CountUniqueClientIPs query.
 func (s *Server) fetchClientIPRows(r *http.Request, clientID string, from, to time.Time) (ips []clientIPRow, truncated bool, limit int, err error) {
 	limit = parseClientIPHistoryLimit(r)
-	aggregates, err := s.store.AggregateClientIPHistory(r.Context(), clientID, from, to, limit+1)
+	aggregates, truncated, err := s.historySvc.ClientIPs(r.Context(), clientID, from, to, limit)
 	if err != nil {
 		return nil, false, limit, err
-	}
-	if len(aggregates) > limit {
-		aggregates = aggregates[:limit]
-		truncated = true
 	}
 	ips = make([]clientIPRow, len(aggregates))
 	for i, agg := range aggregates {

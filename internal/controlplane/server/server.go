@@ -27,6 +27,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/fleet"
 	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
+	"github.com/lost-coder/panvex/internal/controlplane/history"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/metrics"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
@@ -193,6 +194,11 @@ type Server struct {
 	// editable-section validation, and the drift view; the store round-trips
 	// go through this service. See internal/controlplane/configtargets.
 	configTargets *configtargets.Service
+	// historySvc is the read-only facade for the time-series history endpoints
+	// (server load, DC health, per-client IP history) (P8.2j). Handlers keep
+	// scope checks, time-range parsing, raw-vs-hourly resolution, and geoip
+	// enrichment. See internal/controlplane/history.
+	historySvc *history.Service
 	// adoptMu serializes adopt/merge-adopt of discovered clients. It closes
 	// the TOCTOU window between reading a discovered record's status,
 	// checking it, creating/updating the managed client, and marking the

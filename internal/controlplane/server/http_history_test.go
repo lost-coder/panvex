@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/history"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -329,6 +330,9 @@ func TestClientIPHistoryCountErrorDoesNotReportPageSizeAsTotal(t *testing.T) {
 	}
 
 	server.store = &countErrStore{Store: server.store, err: errors.New("count query failed")}
+	// The history read facade holds its own store ref, so re-wire it to the
+	// count-erroring wrapper the same way the swap above rewired s.store.
+	server.historySvc = history.NewService(server.store)
 
 	resp := performJSONRequest(t, server, http.MethodGet, "/api/clients/client-1/history/ips", nil, cookies)
 	if resp.Code != http.StatusOK {
