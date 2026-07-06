@@ -19,6 +19,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
 )
 
@@ -691,21 +692,23 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 	}
 
 	if err := first.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		Instances: []instanceSnapshot{
-			{
-				ID:                "instance-1",
-				Name:              "telemt-a",
-				Version:           "2026.03",
-				ConfigFingerprint: "cfg-1",
-				Connections:       42,
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			Instances: []*gatewayrpc.InstanceSnapshot{
+				{
+					Id:                "instance-1",
+					Name:              "telemt-a",
+					Version:           "2026.03",
+					ConfigFingerprint: "cfg-1",
+					Connections:       42,
+				},
 			},
-		},
-		Metrics: map[string]uint64{
-			"requests_total": 128,
+			Metrics: map[string]uint64{
+				"requests_total": 128,
+			},
 		},
 		ObservedAt: now.Add(15 * time.Second),
 	}); err != nil {

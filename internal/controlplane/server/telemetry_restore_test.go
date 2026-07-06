@@ -49,26 +49,28 @@ func TestRestoreStoredTelemetry_BulkRehydrationMatchesPerAgent(t *testing.T) {
 		})
 	}
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      agentA,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		Runtime:      runtimeA,
-		HasRuntime:   true,
-		ObservedAt:   now.Add(20 * time.Second),
+		AgentID: agentA,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			Runtime:      runtimeA,
+		},
+		ObservedAt: now.Add(20 * time.Second),
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot(A) error = %v", err)
 	}
 
 	agentB := enrollTelemetryAgent(t, server, fleetGroupID, "node-b", now)
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      agentB,
-		NodeName:     "node-b",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		Runtime:      gatewayRuntimeSnapshotForTest(),
-		HasRuntime:   true,
-		ObservedAt:   now.Add(20 * time.Second),
+		AgentID: agentB,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-b",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			Runtime:      gatewayRuntimeSnapshotForTest(),
+		},
+		ObservedAt: now.Add(20 * time.Second),
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot(B) error = %v", err)
 	}

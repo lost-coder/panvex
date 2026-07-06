@@ -212,7 +212,7 @@ func connectionClassCountsFromSnapshot(rows []*gatewayrpc.ConnectionsClassCount)
 }
 
 func serverLoadPointFromSnapshot(agent Agent, snapshot agentSnapshot) storage.ServerLoadPointRecord {
-	rt := snapshot.Runtime
+	rt := snapshot.Snap.Runtime
 	record := storage.ServerLoadPointRecord{
 		AgentID:                agent.ID,
 		CapturedAt:             snapshot.ObservedAt.UTC(),
@@ -290,7 +290,7 @@ func serverLoadPointFromSnapshot(agent Agent, snapshot agentSnapshot) storage.Se
 }
 
 func dcHealthPointsFromSnapshot(agent Agent, snapshot agentSnapshot) []storage.DCHealthPointRecord {
-	rt := snapshot.Runtime
+	rt := snapshot.Snap.Runtime
 	capturedAt := snapshot.ObservedAt.UTC()
 
 	if aggDCs := rt.GetAggregatedDcs(); len(aggDCs) > 0 {
@@ -343,7 +343,7 @@ func telemetryWriteUnitForRuntime(agent Agent, snapshot agentSnapshot) batchwrit
 		Upstreams: runtimeUpstreamRecordsFromAgent(agent),
 		Events:    runtimeEventRecordsFromAgent(agent),
 	}
-	if d := snapshot.RuntimeDiagnostics; d != nil && !diagnosticsCarriedForward(d) {
+	if d := snapshot.Snap.RuntimeDiagnostics; d != nil && !diagnosticsCarriedForward(d) {
 		diag := storage.TelemetryDiagnosticsCurrentRecord{
 			AgentID:             agent.ID,
 			ObservedAt:          snapshot.ObservedAt.UTC(),
@@ -358,7 +358,7 @@ func telemetryWriteUnitForRuntime(agent Agent, snapshot agentSnapshot) batchwrit
 		}
 		unit.Diagnostics = &diag
 	}
-	if sec := snapshot.RuntimeSecurityInventory; sec != nil && !securityInventoryCarriedForward(sec) {
+	if sec := snapshot.Snap.RuntimeSecurityInventory; sec != nil && !securityInventoryCarriedForward(sec) {
 		s := storage.TelemetrySecurityInventoryCurrentRecord{
 			AgentID:      agent.ID,
 			ObservedAt:   snapshot.ObservedAt.UTC(),
@@ -402,7 +402,7 @@ func securityInventoryCarriedForward(sec *gatewayrpc.RuntimeSecurityInventorySna
 // enqueueRuntimeBatchWrites pushes runtime telemetry, server-load and DC
 // health points for one snapshot. No-op when the snapshot has no runtime.
 func (s *Server) enqueueRuntimeBatchWrites(agent Agent, snapshot agentSnapshot) {
-	if !snapshot.HasRuntime || snapshot.Runtime == nil {
+	if snapshot.Snap.Runtime == nil {
 		return
 	}
 	s.batchWriter.EnqueueTelemetry(telemetryWriteUnitForRuntime(agent, snapshot))
@@ -415,7 +415,7 @@ func (s *Server) enqueueRuntimeBatchWrites(agent Agent, snapshot agentSnapshot) 
 // enqueueClientIPHistory pushes one ClientIPHistoryRecord per active IP in
 // the snapshot.
 func (s *Server) enqueueClientIPHistory(ctx context.Context, snapshot agentSnapshot) {
-	if !snapshot.HasClientIPs {
+	if !snapshot.Snap.HasClientIps {
 		return
 	}
 	now := snapshot.ObservedAt.UTC()

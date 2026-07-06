@@ -8,16 +8,15 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
-// handleSnapshotMessage translates the wire-format snapshot into the internal
-// AgentSnapshot and enqueues it for the regular processor goroutine. Splitting
-// this out keeps processRegularAgentMessage's CC under threshold by isolating
-// the per-client and per-clientIP loops behind named helpers.
+// handleSnapshotMessage resolves client IDs on the wire snapshot and enqueues
+// it for the regular processor goroutine. The wire message is carried as-is
+// (AgentSnapshot is an envelope, not a projection); the proto→domain mapping
+// happens once, in applyAgentSnapshot's helpers (P8.3, audit #23).
 func (g *Gateway) handleSnapshotMessage(connectionCtx context.Context, agentID string, regularSnapshots chan AgentSnapshot, snap *gatewayrpc.Snapshot) {
 	g.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "snapshot")
 	observedAt := time.Unix(snap.ObservedAtUnix, 0).UTC()
 
-	instances := convertInstanceSnapshots(snap.Instances)
-	clients, usageResolved, usageSkipped := g.convertClientUsageSnapshots(agentID, snap.Clients, observedAt)
+	reports, usageResolved, usageSkipped := g.convertClientUsageSnapshots(agentID, snap.Clients, observedAt)
 	if len(snap.Clients) > 0 {
 		g.logger.InfoContext(connectionCtx, "client usage snapshot received", "agent_id", agentID, "total", len(snap.Clients), "resolved", usageResolved, "skipped", usageSkipped)
 	}
@@ -27,43 +26,12 @@ func (g *Gateway) handleSnapshotMessage(connectionCtx context.Context, agentID s
 	}
 
 	enqueueRegularSnapshot(connectionCtx, regularSnapshots, AgentSnapshot{
-		AgentID:                  agentID,
-		AgentBootID:              snap.AgentBootId,
-		NodeName:                 snap.NodeName,
-		FleetGroupID:             snap.FleetGroupId,
-		Version:                  snap.Version,
-		ReadOnly:                 snap.ReadOnly,
-		Instances:                instances,
-		Clients:                  clients,
-		HasClients:               snap.HasClientUsage,
-		ClientIPs:                clientIPs,
-		HasClientIPs:             snap.HasClientIps,
-		Runtime:                  snap.Runtime,
-		HasRuntime:               snap.Runtime != nil,
-		RuntimeDiagnostics:       snap.RuntimeDiagnostics,
-		RuntimeSecurityInventory: snap.RuntimeSecurityInventory,
-		Metrics:                  snap.Metrics,
-		ObservedAt:               observedAt,
-		Partial:                  snap.Partial,
+		AgentID:    agentID,
+		Snap:       snap,
+		ObservedAt: observedAt,
+		Clients:    reports,
+		ClientIPs:  clientIPs,
 	})
-}
-
-// convertInstanceSnapshots maps wire instances to the internal type.
-func convertInstanceSnapshots(in []*gatewayrpc.InstanceSnapshot) []InstanceSnapshot {
-	instances := make([]InstanceSnapshot, 0, len(in))
-	for _, instance := range in {
-		instances = append(instances, InstanceSnapshot{
-			ID:                instance.Id,
-			Name:              instance.Name,
-			Version:           instance.Version,
-			ConfigFingerprint: instance.ConfigFingerprint,
-			ManagedConfigHash: instance.GetManagedConfigHash(),
-			ManagedConfigJSON: instance.GetManagedConfigJson(),
-			Connections:       int(instance.Connections),
-			ReadOnly:          instance.ReadOnly,
-		})
-	}
-	return instances
 }
 
 // convertClientUsageSnapshots translates wire client usage rows into

@@ -19,6 +19,7 @@ import (
 // Caller must hold s.mu (for the cooldown table). The live store has its own
 // lock; live.Get is taken under s.mu, preserving the s.mu -> live ordering.
 func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
+	snap := snapshot.Snap
 	agent, _ := s.live.Get(snapshot.AgentID)
 	agent.ID = snapshot.AgentID
 	// Enrollment fixes the node name. Subsequent heartbeats must not
@@ -26,21 +27,21 @@ func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
 	// agent's reported name (often defaulted to the system hostname) would
 	// otherwise revert the rename on the next snapshot.
 	if agent.NodeName == "" {
-		agent.NodeName = snapshot.NodeName
+		agent.NodeName = snap.NodeName
 	}
 	// Enrollment fixes the agent group. Runtime snapshots may be stale or
 	// misconfigured, so they must not move an enrolled agent into a
 	// different fleet group.
 	if agent.FleetGroupID == "" {
-		agent.FleetGroupID = snapshot.FleetGroupID
+		agent.FleetGroupID = snap.FleetGroupId
 	}
 	// IN-H6: a partial snapshot may carry blanked version / read_only, so
 	// preserve the last-known values instead of flapping the UI to empty
 	// during a transient telemt sub-endpoint outage. LastSeenAt still
 	// advances — the agent is demonstrably alive.
-	if !snapshot.Partial {
-		agent.Version = snapshot.Version
-		agent.ReadOnly = snapshot.ReadOnly
+	if !snap.Partial {
+		agent.Version = snap.Version
+		agent.ReadOnly = snap.ReadOnly
 	}
 	// P3-3.2 (аудит #25b): все три "last seen"-величины — панельные часы.
 	// presence.Heartbeat уже штампуется s.now() (M-5, см. applyAgentSnapshot);
@@ -50,11 +51,11 @@ func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
 	// в Runtime.ReportedObservedAt для диагностики.
 	receivedAt := s.now().UTC()
 	agent.LastSeenAt = receivedAt
-	if snapshot.HasRuntime && snapshot.Runtime != nil {
+	if snap.Runtime != nil {
 		previousRuntime := agent.Runtime
-		next := agentRuntimeFromSnapshot(snapshot.Runtime, receivedAt)
+		next := agentRuntimeFromSnapshot(snap.Runtime, receivedAt)
 		next.ReportedObservedAt = snapshot.ObservedAt.UTC()
-		if snapshot.Partial && next.UptimeSeconds == 0 {
+		if snap.Partial && next.UptimeSeconds == 0 {
 			// uptime comes from the slow /v1/system/info fetch; preserve the
 			// last-known value rather than reporting a regressed 0.
 			next.UptimeSeconds = previousRuntime.UptimeSeconds
@@ -105,20 +106,23 @@ func (s *Server) refreshInitializationWatchCooldown(snapshot agentSnapshot, curr
 	}
 }
 
-// instancesFromSnapshot projects the snapshot's instances into the in-memory
-// Instance shape. Pure function — does no map mutation.
+// instancesFromSnapshot projects the wire snapshot's instances into the
+// in-memory Instance shape. Pure function — does no map mutation. The former
+// instanceSnapshot copy-type is gone (P8.3): this is the single proto→domain
+// mapping for instances.
 func instancesFromSnapshot(snapshot agentSnapshot) []Instance {
-	instances := make([]Instance, 0, len(snapshot.Instances))
-	for _, instance := range snapshot.Instances {
+	wire := snapshot.Snap.Instances
+	instances := make([]Instance, 0, len(wire))
+	for _, instance := range wire {
 		instances = append(instances, Instance{
-			ID:                instance.ID,
+			ID:                instance.Id,
 			AgentID:           snapshot.AgentID,
 			Name:              instance.Name,
 			Version:           instance.Version,
 			ConfigFingerprint: instance.ConfigFingerprint,
-			ManagedConfigHash: instance.ManagedConfigHash,
-			ManagedConfigJSON: instance.ManagedConfigJSON,
-			Connections:       instance.Connections,
+			ManagedConfigHash: instance.GetManagedConfigHash(),
+			ManagedConfigJSON: instance.GetManagedConfigJson(),
+			Connections:       int(instance.Connections),
 			ReadOnly:          instance.ReadOnly,
 			UpdatedAt:         snapshot.ObservedAt.UTC(),
 		})
@@ -225,8 +229,8 @@ func (s *Server) applyTelemtReachabilityTransition(ctx context.Context, agent Ag
 // snapshot's addresses are still persisted to client_ip_history by
 // enqueueClientIPHistory elsewhere in the snapshot pipeline.
 func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agentSnapshot) {
-	if snapshot.HasClients {
-		s.applyClientUsageSnapshot(ctx, snapshot.AgentID, snapshot.AgentBootID, snapshot.Clients)
+	if snapshot.Snap.HasClientUsage {
+		s.applyClientUsageSnapshot(ctx, snapshot.AgentID, snapshot.Snap.GetAgentBootId(), snapshot.Clients)
 	}
 }
 
@@ -237,7 +241,7 @@ func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agent
 // in-memory ring is gone); the metricsAuditMu guards metricSeq so concurrent
 // minting stays race-free.
 func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnapshot {
-	if len(snapshot.Metrics) == 0 {
+	if len(snapshot.Snap.Metrics) == 0 {
 		return nil
 	}
 	s.metricsAuditMu.Lock()
@@ -247,13 +251,13 @@ func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnaps
 		ID:         newSequenceID("metric", s.metricSeq),
 		AgentID:    snapshot.AgentID,
 		CapturedAt: snapshot.ObservedAt.UTC(),
-		Values:     snapshot.Metrics,
+		Values:     snapshot.Snap.Metrics,
 	}
 	return &metric
 }
 
 func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot) error {
-	s.logger.DebugContext(ctx, "agent heartbeat applied", "agent_id", snapshot.AgentID, "node", snapshot.NodeName)
+	s.logger.DebugContext(ctx, "agent heartbeat applied", "agent_id", snapshot.AgentID, "node", snapshot.Snap.NodeName)
 
 	// Lock section: build all state objects AND commit to in-memory maps
 	// atomically. No DB I/O happens under the locks.
@@ -288,7 +292,7 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	// call site. The live store never calls back into the server, so this can
 	// never invert.
 	var instances []Instance
-	if snapshot.Partial {
+	if snapshot.Snap.Partial {
 		instances = s.live.InstancesForAgent(snapshot.AgentID)
 	} else {
 		instances = instancesFromSnapshot(snapshot)

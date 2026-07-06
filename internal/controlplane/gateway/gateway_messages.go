@@ -94,12 +94,15 @@ func (g *Gateway) processRegularAgentMessage(
 			"observed_at_unix", hb.ObservedAtUnix,
 		)
 		enqueueRegularSnapshot(connectionCtx, regularSnapshots, AgentSnapshot{
-			AgentID:      agentID,
-			NodeName:     hb.NodeName,
-			FleetGroupID: hb.FleetGroupId,
-			Version:      hb.Version,
-			ReadOnly:     hb.ReadOnly,
-			ObservedAt:   time.Unix(hb.ObservedAtUnix, 0).UTC(),
+			AgentID: agentID,
+			Snap: &gatewayrpc.Snapshot{
+				NodeName:       hb.NodeName,
+				FleetGroupId:   hb.FleetGroupId,
+				Version:        hb.Version,
+				ReadOnly:       hb.ReadOnly,
+				ObservedAtUnix: hb.ObservedAtUnix,
+			},
+			ObservedAt: time.Unix(hb.ObservedAtUnix, 0).UTC(),
 		})
 		return nil
 	}

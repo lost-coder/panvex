@@ -24,11 +24,12 @@ func TestApplyTelemtReachabilityTransitionRequestsRediscovery(t *testing.T) {
 			TelemtUnreachable: unreachable,
 		}
 		if err := s.applyAgentSnapshot(context.Background(), agentSnapshot{
-			AgentID:    agentID,
-			NodeName:   "node-eu-1",
-			Version:    "1.0.0",
-			Runtime:    runtime,
-			HasRuntime: true,
+			AgentID: agentID,
+			Snap: &gatewayrpc.Snapshot{
+				NodeName: "node-eu-1",
+				Version:  "1.0.0",
+				Runtime:  runtime,
+			},
 			ObservedAt: s.now(),
 		}); err != nil {
 			t.Fatalf("applyAgentSnapshot() error = %v", err)

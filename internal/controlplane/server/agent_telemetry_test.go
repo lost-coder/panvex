@@ -118,13 +118,14 @@ func TestTelemetryWriteUnitCarriesForwardHashGatedDiagnostics(t *testing.T) {
 	base := agentSnapshot{
 		AgentID:    "agent-1",
 		ObservedAt: observedAt,
-		HasRuntime: true,
-		Runtime:    &gatewayrpc.RuntimeSnapshot{},
+		Snap: &gatewayrpc.Snapshot{
+			Runtime: &gatewayrpc.RuntimeSnapshot{},
+		},
 	}
 
 	gated := base
-	gated.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{ContentHash: "abc"}
-	gated.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{ContentHash: "def"}
+	gated.Snap.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{ContentHash: "abc"}
+	gated.Snap.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{ContentHash: "def"}
 	unit := telemetryWriteUnitForRuntime(agent, gated)
 	if unit.Diagnostics != nil {
 		t.Fatal("hash-only diagnostics must not overwrite the stored row")
@@ -134,10 +135,10 @@ func TestTelemetryWriteUnitCarriesForwardHashGatedDiagnostics(t *testing.T) {
 	}
 
 	full := base
-	full.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
+	full.Snap.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{
 		ContentHash: "abc", State: "ok", SystemInfoJson: `{"cpu":4}`,
 	}
-	full.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
+	full.Snap.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{
 		ContentHash: "def", State: "ok", Enabled: true, EntriesJson: `[]`,
 	}
 	unit = telemetryWriteUnitForRuntime(agent, full)
@@ -149,8 +150,8 @@ func TestTelemetryWriteUnitCarriesForwardHashGatedDiagnostics(t *testing.T) {
 	}
 
 	blank := base
-	blank.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{}
-	blank.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{}
+	blank.Snap.RuntimeDiagnostics = &gatewayrpc.RuntimeDiagnosticsSnapshot{}
+	blank.Snap.RuntimeSecurityInventory = &gatewayrpc.RuntimeSecurityInventorySnapshot{}
 	unit = telemetryWriteUnitForRuntime(agent, blank)
 	if unit.Diagnostics == nil || unit.Security == nil {
 		t.Fatal("empty-hash blank record must keep the historical overwrite semantics")

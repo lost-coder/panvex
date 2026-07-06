@@ -15,6 +15,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T) {
@@ -376,11 +377,13 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	}
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:     "agent-000001",
-		AgentBootID: "boot-1",
-		NodeName:    "node-a",
-		Version:     "dev",
-		HasClients:  true,
+		AgentID: "agent-000001",
+		Snap: &gatewayrpc.Snapshot{
+			AgentBootId:    "boot-1",
+			NodeName:       "node-a",
+			Version:        "dev",
+			HasClientUsage: true,
+		},
 		Clients: []clients.UsageReport{
 			{
 				ClientID:       clients.ClientID(created.ID),
@@ -395,11 +398,13 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		t.Fatalf("applyAgentSnapshot(agent-000001) error = %v", err)
 	}
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:     "agent-000002",
-		AgentBootID: "boot-1",
-		NodeName:    "node-b",
-		Version:     "dev",
-		HasClients:  true,
+		AgentID: "agent-000002",
+		Snap: &gatewayrpc.Snapshot{
+			AgentBootId:    "boot-1",
+			NodeName:       "node-b",
+			Version:        "dev",
+			HasClientUsage: true,
+		},
 		Clients: []clients.UsageReport{
 			{
 				ClientID:       clients.ClientID(created.ID),
@@ -495,11 +500,13 @@ func TestHTTPClientsListingReflectsDeploymentAndUsage(t *testing.T) {
 	recordJobResultForTest(server, context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:     "agent-000001",
-		AgentBootID: "boot-1",
-		NodeName:    "node-a",
-		Version:     "dev",
-		HasClients:  true,
+		AgentID: "agent-000001",
+		Snap: &gatewayrpc.Snapshot{
+			AgentBootId:    "boot-1",
+			NodeName:       "node-a",
+			Version:        "dev",
+			HasClientUsage: true,
+		},
 		Clients: []clients.UsageReport{
 			{
 				ClientID:       clients.ClientID(created.ID),
@@ -610,11 +617,13 @@ func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
 
 	// (2) Usage-snapshot write-path: apply a live usage tick.
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:     "agent-000001",
-		AgentBootID: "boot-1",
-		NodeName:    "node-a",
-		Version:     "dev",
-		HasClients:  true,
+		AgentID: "agent-000001",
+		Snap: &gatewayrpc.Snapshot{
+			AgentBootId:    "boot-1",
+			NodeName:       "node-a",
+			Version:        "dev",
+			HasClientUsage: true,
+		},
 		Clients: []clients.UsageReport{
 			{
 				ClientID:       clients.ClientID(created.ID),

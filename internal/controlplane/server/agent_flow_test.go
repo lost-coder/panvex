@@ -156,26 +156,27 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 	}
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		ReadOnly:     true,
-		Instances: []instanceSnapshot{
-			{
-				ID:                "instance-1",
-				Name:              "telemt-a",
-				Version:           "2026.03",
-				ConfigFingerprint: "cfg-1",
-				Connections:       42,
-				ReadOnly:          true,
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			ReadOnly:     true,
+			Instances: []*gatewayrpc.InstanceSnapshot{
+				{
+					Id:                "instance-1",
+					Name:              "telemt-a",
+					Version:           "2026.03",
+					ConfigFingerprint: "cfg-1",
+					Connections:       42,
+					ReadOnly:          true,
+				},
 			},
+			Metrics: map[string]uint64{
+				"requests_total": 128,
+			},
+			Runtime: gatewayRuntimeSnapshotForTest(),
 		},
-		Metrics: map[string]uint64{
-			"requests_total": 128,
-		},
-		Runtime:    gatewayRuntimeSnapshotForTest(),
-		HasRuntime: true,
 		ObservedAt: now.Add(15 * time.Second),
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot() error = %v", err)
@@ -271,11 +272,13 @@ func TestApplyAgentSnapshotIgnoresRevokedAgent(t *testing.T) {
 	server.mu.Unlock()
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		ObservedAt:   now.Add(20 * time.Second),
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+		},
+		ObservedAt: now.Add(20 * time.Second),
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot() error = %v", err)
 	}
@@ -321,26 +324,27 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 	}
 
 	if err := first.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		ReadOnly:     true,
-		Instances: []instanceSnapshot{
-			{
-				ID:                "instance-1",
-				Name:              "telemt-a",
-				Version:           "2026.03",
-				ConfigFingerprint: "cfg-1",
-				Connections:       42,
-				ReadOnly:          true,
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			ReadOnly:     true,
+			Instances: []*gatewayrpc.InstanceSnapshot{
+				{
+					Id:                "instance-1",
+					Name:              "telemt-a",
+					Version:           "2026.03",
+					ConfigFingerprint: "cfg-1",
+					Connections:       42,
+					ReadOnly:          true,
+				},
 			},
+			Metrics: map[string]uint64{
+				"requests_total": 128,
+			},
+			Runtime: gatewayRuntimeSnapshotForTest(),
 		},
-		Metrics: map[string]uint64{
-			"requests_total": 128,
-		},
-		Runtime:    gatewayRuntimeSnapshotForTest(),
-		HasRuntime: true,
 		ObservedAt: now.Add(15 * time.Second),
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot() error = %v", err)
@@ -421,13 +425,14 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 
 	// Async batch writer means persistence failures do not block the caller.
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		Runtime:      gatewayRuntimeSnapshotForTest(),
-		HasRuntime:   true,
-		ObservedAt:   now.Add(20 * time.Second),
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			Runtime:      gatewayRuntimeSnapshotForTest(),
+		},
+		ObservedAt: now.Add(20 * time.Second),
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot() error = %v, want nil (async persistence)", err)
 	}
@@ -467,13 +472,14 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 	runtime.Degraded = true
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		Runtime:      runtime,
-		HasRuntime:   true,
-		ObservedAt:   now.Add(20 * time.Second),
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			Runtime:      runtime,
+		},
+		ObservedAt: now.Add(20 * time.Second),
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot() error = %v", err)
 	}
@@ -507,13 +513,14 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 	initializingRuntime.InitializationProgressPct = 38
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		Runtime:      initializingRuntime,
-		HasRuntime:   true,
-		ObservedAt:   now.Add(20 * time.Second),
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			Runtime:      initializingRuntime,
+		},
+		ObservedAt: now.Add(20 * time.Second),
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot(initializing) error = %v", err)
 	}
@@ -524,13 +531,14 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 
 	readyObservedAt := now.Add(50 * time.Second)
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		Runtime:      gatewayRuntimeSnapshotForTest(),
-		HasRuntime:   true,
-		ObservedAt:   readyObservedAt,
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			Runtime:      gatewayRuntimeSnapshotForTest(),
+		},
+		ObservedAt: readyObservedAt,
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot(ready) error = %v", err)
 	}
@@ -640,11 +648,13 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 	}
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: amsGroupID,
-		Version:      "1.0.0",
-		ObservedAt:   now.Add(20 * time.Second),
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: amsGroupID,
+			Version:      "1.0.0",
+		},
+		ObservedAt: now.Add(20 * time.Second),
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot() error = %v", err)
 	}
@@ -690,14 +700,16 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 
 	// Seed three instances for agent A.
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		Instances: []instanceSnapshot{
-			{ID: "inst-1", Name: "telemt-1", Version: "2026.03"},
-			{ID: "inst-2", Name: "telemt-2", Version: "2026.03"},
-			{ID: "inst-3", Name: "telemt-3", Version: "2026.03"},
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			Instances: []*gatewayrpc.InstanceSnapshot{
+				{Id: "inst-1", Name: "telemt-1", Version: "2026.03"},
+				{Id: "inst-2", Name: "telemt-2", Version: "2026.03"},
+				{Id: "inst-3", Name: "telemt-3", Version: "2026.03"},
+			},
 		},
 		ObservedAt: now.Add(10 * time.Second),
 	}); err != nil {
@@ -713,13 +725,15 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 
 	// Apply a new snapshot reporting only two instances — inst-3 must be pruned.
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      identity.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Version:      "1.0.0",
-		Instances: []instanceSnapshot{
-			{ID: "inst-1", Name: "telemt-1", Version: "2026.03"},
-			{ID: "inst-2", Name: "telemt-2", Version: "2026.03"},
+		AgentID: identity.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Version:      "1.0.0",
+			Instances: []*gatewayrpc.InstanceSnapshot{
+				{Id: "inst-1", Name: "telemt-1", Version: "2026.03"},
+				{Id: "inst-2", Name: "telemt-2", Version: "2026.03"},
+			},
 		},
 		ObservedAt: now.Add(20 * time.Second),
 	}); err != nil {
@@ -785,23 +799,27 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	}
 
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      agentA.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Instances: []instanceSnapshot{
-			{ID: "inst-a1", Name: "telemt-a1"},
-			{ID: "inst-a2", Name: "telemt-a2"},
+		AgentID: agentA.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Instances: []*gatewayrpc.InstanceSnapshot{
+				{Id: "inst-a1", Name: "telemt-a1"},
+				{Id: "inst-a2", Name: "telemt-a2"},
+			},
 		},
 		ObservedAt: now.Add(10 * time.Second),
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot(A) error = %v", err)
 	}
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      agentB.AgentID,
-		NodeName:     "node-b",
-		FleetGroupID: fleetGroupID,
-		Instances: []instanceSnapshot{
-			{ID: "inst-b1", Name: "telemt-b1"},
+		AgentID: agentB.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-b",
+			FleetGroupId: fleetGroupID,
+			Instances: []*gatewayrpc.InstanceSnapshot{
+				{Id: "inst-b1", Name: "telemt-b1"},
+			},
 		},
 		ObservedAt: now.Add(11 * time.Second),
 	}); err != nil {
@@ -810,11 +828,13 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 
 	// Agent A reports only inst-a1 now. inst-a2 must be pruned; inst-b1 must remain.
 	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:      agentA.AgentID,
-		NodeName:     "node-a",
-		FleetGroupID: fleetGroupID,
-		Instances: []instanceSnapshot{
-			{ID: "inst-a1", Name: "telemt-a1"},
+		AgentID: agentA.AgentID,
+		Snap: &gatewayrpc.Snapshot{
+			NodeName:     "node-a",
+			FleetGroupId: fleetGroupID,
+			Instances: []*gatewayrpc.InstanceSnapshot{
+				{Id: "inst-a1", Name: "telemt-a1"},
+			},
 		},
 		ObservedAt: now.Add(20 * time.Second),
 	}); err != nil {

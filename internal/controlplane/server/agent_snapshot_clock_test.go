@@ -24,11 +24,12 @@ func TestSnapshotClockSkewDoesNotAffectLiveness(t *testing.T) {
 
 	skewed := now.Add(-10 * time.Minute)
 	err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-		AgentID:    "agent-skew",
-		NodeName:   "node-skew",
-		Version:    "dev",
-		HasRuntime: true,
-		Runtime:    &gatewayrpc.RuntimeSnapshot{AcceptingNewConnections: true},
+		AgentID: "agent-skew",
+		Snap: &gatewayrpc.Snapshot{
+			NodeName: "node-skew",
+			Version:  "dev",
+			Runtime:  &gatewayrpc.RuntimeSnapshot{AcceptingNewConnections: true},
+		},
 		ObservedAt: skewed,
 	})
 	if err != nil {

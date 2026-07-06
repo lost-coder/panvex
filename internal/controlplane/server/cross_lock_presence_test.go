@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 // TestResolveClientTargetAgentIDsRunsCleanUnderRace validates the lock
@@ -205,11 +207,13 @@ func TestPresenceConnectedAtPersistsAcrossSnapshots(t *testing.T) {
 	for idx := 1; idx <= 3; idx++ {
 		snapshotAt := streamOpenT1.Add(time.Duration(idx) * 5 * time.Second)
 		if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-			AgentID:      agentID,
-			NodeName:     "node-xyz",
-			FleetGroupID: "grp",
-			Version:      "dev",
-			ObservedAt:   snapshotAt,
+			AgentID: agentID,
+			Snap: &gatewayrpc.Snapshot{
+				NodeName:     "node-xyz",
+				FleetGroupId: "grp",
+				Version:      "dev",
+			},
+			ObservedAt: snapshotAt,
 		}); err != nil {
 			t.Fatalf("applyAgentSnapshot(#%d) error = %v", idx, err)
 		}

@@ -114,13 +114,14 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 	pushSnapshot := func(snap *gatewayrpc.RuntimeSnapshot, observedAt time.Time) {
 		t.Helper()
 		if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
-			AgentID:      agentID,
-			NodeName:     "node-eu-1",
-			FleetGroupID: fleetGroupID,
-			Version:      "1.0.0",
-			Runtime:      snap,
-			HasRuntime:   true,
-			ObservedAt:   observedAt,
+			AgentID: agentID,
+			Snap: &gatewayrpc.Snapshot{
+				NodeName:     "node-eu-1",
+				FleetGroupId: fleetGroupID,
+				Version:      "1.0.0",
+				Runtime:      snap,
+			},
+			ObservedAt: observedAt,
 		}); err != nil {
 			t.Fatalf("applyAgentSnapshot() error = %v", err)
 		}
