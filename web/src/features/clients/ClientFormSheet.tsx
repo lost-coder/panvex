@@ -8,11 +8,10 @@ import { LimitNumberInput } from "./components/LimitNumberInput";
 import { QuotaInput } from "./components/QuotaInput";
 import { cn } from "@/ui/lib/cn";
 import type { ClientFormSheetProps } from "@/shared/api/types-pages/pages";
-
-// Mirrors Telemt's username constraint (and the panel's clientNameRegex
-// in internal/controlplane/server/clients_flow.go). Catching it client-side
-// avoids round-tripping just to surface a guaranteed 400.
-const CLIENT_NAME_REGEX = /^[A-Za-z0-9_.-]{1,64}$/;
+// 7.6: правило имени живёт в Zod request-схеме (единый источник правды,
+// SYNC-комментарий там же); форма только импортирует его для мгновенной
+// подсветки без round-trip'а к гарантированному 400.
+import { CLIENT_NAME_REGEX } from "@/shared/api/schemas/requests";
 
 export function ClientFormSheet({
   mode,

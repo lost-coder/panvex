@@ -4,6 +4,10 @@ import type { TFunction } from "i18next";
 import { Button, FormField, Input } from "@/ui";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/ui/base/sheet";
 import type { WebhookEndpoint } from "@/shared/api/webhooks";
+import {
+  createWebhookEndpointRequestSchema,
+  updateWebhookEndpointRequestSchema,
+} from "@/shared/api/schemas/requests";
 
 export type WebhookFormMode = "create" | "edit";
 
@@ -46,18 +50,40 @@ export interface WebhookFormSheetProps {
   error?: string;
 }
 
-// Lightweight on-form validation — surfaces the same rules the server
-// enforces so the operator gets immediate feedback before a 400 round
-// trip. The Zod request schema in shared/api/schemas/requests/
-// webhookEndpointRequest.ts is the canonical source of truth; this
-// mirror catches the obvious cases.
+// 7.6: on-form валидация ВЫВОДИТСЯ из канонических Zod request-схем
+// (webhookEndpointRequest.ts) вместо ручного зеркала — правило, меняясь
+// в схеме, автоматически подтягивается сюда. Схемы не локализованы,
+// поэтому маппинг issue→сообщение (по полю) остаётся на форме. Бонус к
+// старому зеркалу: клиентски ловятся url≤2048 и синтаксис event_filter.
 function validate(mode: WebhookFormMode, data: WebhookFormData, t: TFunction): string | null {
-  if (!data.name.trim()) return t("webhooks.form.validation.nameRequired");
-  if (data.name.length > 128) return t("webhooks.form.validation.nameTooLong");
-  if (!/^https?:\/\//i.test(data.url.trim())) return t("webhooks.form.validation.urlScheme");
-  if (mode === "create" && !data.secret.trim()) return t("webhooks.form.validation.secretRequired");
-  if (data.secret.length > 1024) return t("webhooks.form.validation.secretTooLong");
-  return null;
+  const schema =
+    mode === "create"
+      ? createWebhookEndpointRequestSchema
+      : updateWebhookEndpointRequestSchema;
+  const result = schema.safeParse({
+    ...data,
+    name: data.name.trim(),
+    url: data.url.trim(),
+    secret: data.secret.trim(),
+  });
+  if (result.success) return null;
+  const issue = result.error.issues[0];
+  switch (issue?.path[0]) {
+    case "name":
+      return issue.code === "too_big"
+        ? t("webhooks.form.validation.nameTooLong")
+        : t("webhooks.form.validation.nameRequired");
+    case "url":
+      return t("webhooks.form.validation.urlScheme");
+    case "secret":
+      return issue.code === "too_big"
+        ? t("webhooks.form.validation.secretTooLong")
+        : t("webhooks.form.validation.secretRequired");
+    case "event_filter":
+      return t("webhooks.form.validation.filterInvalid");
+    default:
+      return t("webhooks.form.validation.invalid");
+  }
 }
 
 export function WebhookFormSheet({
