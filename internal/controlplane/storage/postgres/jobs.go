@@ -47,6 +47,29 @@ func (s *Store) GetJobByIdempotencyKey(ctx context.Context, idempotencyKey strin
 	return job, nil
 }
 
+// GetJob returns one job row by primary key, or storage.ErrNotFound.
+// Mirrors GetJobByIdempotencyKey; see storage.JobStore for the contract.
+func (s *Store) GetJob(ctx context.Context, id string) (storage.JobRecord, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, action, idempotency_key, actor_id, status, created_at, ttl_nanos, payload_json
+		FROM jobs
+		WHERE id = $1
+	`, id)
+
+	var job storage.JobRecord
+	var ttlNanos int64
+	if err := row.Scan(&job.ID, &job.Action, &job.IdempotencyKey, &job.ActorID, &job.Status, &job.CreatedAt, &ttlNanos, &job.PayloadJSON); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storage.JobRecord{}, storage.ErrNotFound
+		}
+		return storage.JobRecord{}, err
+	}
+
+	job.CreatedAt = job.CreatedAt.UTC()
+	job.TTL = time.Duration(ttlNanos)
+	return job, nil
+}
+
 // ListJobs returns every job ordered by created_at + id for stable
 // pagination. Phase-3 §3.1 (continued): wired through dbsqlc.ListJobs;
 // the SQL definition in db/queries/jobs.sql is the single source of

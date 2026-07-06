@@ -190,6 +190,11 @@ type FleetStore interface {
 type JobStore interface {
 	PutJob(ctx context.Context, job JobRecord) error
 	GetJobByIdempotencyKey(ctx context.Context, idempotencyKey string) (JobRecord, error)
+	// GetJob returns a single job row by primary key, or ErrNotFound.
+	// P8.1 (audit #24): backs jobs.Service.GetWithContext — terminal jobs
+	// evicted from the in-memory maps are read back from here until the
+	// retention worker deletes them (PruneTerminalJobs).
+	GetJob(ctx context.Context, id string) (JobRecord, error)
 	// ListJobs returns every job. S25 T1: capped defensively at
 	// DefaultListLimit by the SQL backends so a long-lived store cannot
 	// stream millions of rows even if a caller forgets to paginate. New

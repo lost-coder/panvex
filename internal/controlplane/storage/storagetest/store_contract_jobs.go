@@ -2,6 +2,7 @@ package storagetest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -144,6 +145,45 @@ func runJobsContract(t *testing.T, open OpenStore) {
 		}
 		if targets[0].ResultJSON != target.ResultJSON {
 			t.Fatalf("ListJobTargets()[0].ResultJSON = %q, want %q", targets[0].ResultJSON, target.ResultJSON)
+		}
+	})
+
+	t.Run("GetJob returns a persisted row by id and ErrNotFound for a missing id", func(t *testing.T) {
+		// P8.1 (audit #24): the jobs service reads terminal jobs back from
+		// the store after in-memory eviction; both backends must serve a
+		// point lookup with full field fidelity.
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		created := time.Date(2026, time.July, 3, 10, 0, 0, 0, time.UTC)
+		want := storage.JobRecord{
+			ID:             "job-getjob-1",
+			Action:         "client.update",
+			ActorID:        "actor-1",
+			Status:         "failed",
+			CreatedAt:      created,
+			TTL:            5 * time.Minute,
+			IdempotencyKey: "getjob-key-1",
+			PayloadJSON:    `{"client_id":"c-1"}`,
+		}
+		if err := store.PutJob(ctx, want); err != nil {
+			t.Fatalf("PutJob: %v", err)
+		}
+
+		got, err := store.GetJob(ctx, want.ID)
+		if err != nil {
+			t.Fatalf("GetJob(%s): %v", want.ID, err)
+		}
+		if got.ID != want.ID || got.Action != want.Action || got.ActorID != want.ActorID ||
+			got.Status != want.Status || !got.CreatedAt.Equal(want.CreatedAt) ||
+			got.TTL != want.TTL || got.IdempotencyKey != want.IdempotencyKey ||
+			got.PayloadJSON != want.PayloadJSON {
+			t.Fatalf("GetJob round trip mismatch:\n got %+v\nwant %+v", got, want)
+		}
+
+		if _, err := store.GetJob(ctx, "job-getjob-missing"); !errors.Is(err, storage.ErrNotFound) {
+			t.Fatalf("GetJob(missing) error = %v, want storage.ErrNotFound", err)
 		}
 	})
 
