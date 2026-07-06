@@ -167,3 +167,14 @@ go run ./cmd/control-plane bootstrap-admin -username admin -password '<pw>'
 - HTTP/gRPC handlers MUST use `r.Context()` (or stream ctx) — never `context.Background()`.
 - Boot-only paths (`New`, migrations) accept a caller-supplied ctx (typically `bootCtx` derived from `s.serverCtx`); never use `context.Background()` literal.
 - `golangci-lint noctx` enforces this; suppression `//nolint:noctx // reason:` requires an explicit rationale.
+
+## Слои control-plane (P8.2)
+
+- HTTP-хендлеры (`internal/controlplane/server/http_*.go`) ходят к данным
+  ТОЛЬКО через доменные сервисы (`internal/controlplane/<domain>` — clients,
+  fleet, jobs, configtargets, history, webhooks, updates, auth, ...) —
+  никогда напрямую через `s.store.*`.
+- Доменные пакеты не импортируют `internal/controlplane/server`. Обратная
+  связь — только через интерфейс на стороне домена (образец: `gateway.Deps`).
+- Оба правила закреплены arch-тестом `internal/controlplane/archguard`;
+  allowlist в нём — ratchet: записи можно только удалять.
