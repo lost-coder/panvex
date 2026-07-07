@@ -474,6 +474,11 @@ export interface components {
             dc_coverage_pct: number;
             healthy_upstreams: number;
             total_upstreams: number;
+            unhealthy_upstreams?: number;
+            direct_upstreams?: number;
+            socks4_upstreams?: number;
+            socks5_upstreams?: number;
+            shadowsocks_upstreams?: number;
             /**
              * Format: double
              * @description 5-minute upstream connect fail-rate. Read together with

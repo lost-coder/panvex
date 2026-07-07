@@ -669,6 +669,16 @@ components:
         dc_coverage_pct: { type: number, format: double }
         healthy_upstreams: { type: integer }
         total_upstreams: { type: integer }
+        # Per-route-kind upstream counts (Telemt 3.4.7+, surfaced through
+        # the gateway). Optional: older agents / Telemt versions don't
+        # report them, so the panel falls back to counting the upstream
+        # rows. The Go struct emits them without omitempty, but leaving
+        # them out of `required` keeps the panel backward-compatible.
+        unhealthy_upstreams: { type: integer, minimum: 0 }
+        direct_upstreams: { type: integer, minimum: 0 }
+        socks4_upstreams: { type: integer, minimum: 0 }
+        socks5_upstreams: { type: integer, minimum: 0 }
+        shadowsocks_upstreams: { type: integer, minimum: 0 }
         fail_rate_pct_5m:
           type: number
           format: double
