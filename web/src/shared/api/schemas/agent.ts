@@ -1,32 +1,51 @@
 import { z } from "zod";
 
-import { id, timestamp } from "./common.ts";
+import type { components } from "../openapi.gen.ts";
+import { id, timestamp, type LoosenOptional } from "./common.ts";
 
 /**
  * Runtime / agent schemas mirror internal/controlplane HTTP payloads.
  *
- * Principle: the schemas are DEFENSIVE, not prescriptive. If the backend
- * adds fields we don't know about, we let them through (Zod's default
- * object behaviour). We validate only the fields the UI reads, so that
- * backend additions are not release-blocking.
+ * Principle: the schemas are DEFENSIVE, not prescriptive. We validate
+ * only the fields the UI reads, with .default(...) for counters older
+ * agents don't emit, so backend additions are not release-blocking.
+ * (NB: Zod objects STRIP unknown keys — a field must be listed here for
+ * the UI to see it at all.)
+ *
+ * P8.3: every schema with an OpenAPI counterpart is compile-time bound
+ * to the generated type via `satisfies z.ZodType<...>` — a deep,
+ * covariant assignability check. If openapi/panvex.yaml grows a required
+ * field this schema doesn't produce, or a type drifts, the build breaks
+ * HERE. Fix by reconciling the schema with the YAML (see also
+ * openapi-drift-guard.ts for the reverse direction: every Zod key must
+ * exist in the spec).
  */
+
+// P8.3: `satisfies z.ZodType<Gen[...]>` bindings compare against the
+// optional-loosened generated types (see LoosenOptional) so Zod's
+// `.optional()` output (`T | undefined`) is assignable to an OpenAPI
+// exact-optional `T?` under exactOptionalPropertyTypes, without weakening
+// the required-field / type-drift check.
+type Gen = {
+  [K in keyof components["schemas"]]: LoosenOptional<components["schemas"][K]>;
+};
 
 const runtimeEventSchema = z.object({
   sequence: z.number(),
   timestamp_unix: z.number(),
   event_type: z.string(),
   context: z.string(),
-});
+}) satisfies z.ZodType<Gen["RuntimeEvent"]>;
 
 const topByConnectionsSchema = z.object({
   username: z.string(),
   connections: z.number(),
-});
+}) satisfies z.ZodType<Gen["RuntimeTopByConnections"]>;
 
 const topByThroughputSchema = z.object({
   username: z.string(),
   throughput_bytes: z.number(),
-});
+}) satisfies z.ZodType<Gen["RuntimeTopByThroughput"]>;
 
 const dcEntrySchema = z.object({
   dc: z.number(),
@@ -39,7 +58,7 @@ const dcEntrySchema = z.object({
   fresh_coverage_pct: z.number(),
   rtt_ms: z.number(),
   load: z.number(),
-});
+}) satisfies z.ZodType<Gen["RuntimeDC"]>;
 
 const upstreamEntrySchema = z.object({
   upstream_id: z.number(),
@@ -51,7 +70,7 @@ const upstreamEntrySchema = z.object({
   weight: z.number(),
   last_check_age_secs: z.number(),
   scopes: z.array(z.string()).optional(),
-});
+}) satisfies z.ZodType<Gen["RuntimeUpstream"]>;
 
 const systemLoadSchema = z.object({
   cpu_usage_pct: z.number(),
@@ -66,7 +85,7 @@ const systemLoadSchema = z.object({
   load_15m: z.number(),
   net_bytes_sent: z.number(),
   net_bytes_recv: z.number(),
-});
+}) satisfies z.ZodType<Gen["RuntimeSystemLoad"]>;
 
 const meWritersSummarySchema = z.object({
   configured_endpoints: z.number(),
@@ -76,7 +95,12 @@ const meWritersSummarySchema = z.object({
   fresh_coverage_pct: z.number(),
   required_writers: z.number(),
   alive_writers: z.number(),
-});
+}) satisfies z.ZodType<Gen["RuntimeMeWritersSummary"]>;
+
+const connectionClassCountSchema = z.object({
+  class: z.string(),
+  total: z.number(),
+}) satisfies z.ZodType<Gen["ConnectionClassCount"]>;
 
 export const agentRuntimeSchema = z.object({
   accepting_new_connections: z.boolean(),
@@ -109,11 +133,11 @@ export const agentRuntimeSchema = z.object({
   // accumulated any failures yet doesn't fail the whole list parse.
   connections_bad_by_class: z.preprocess(
     (v) => v ?? [],
-    z.array(z.object({ class: z.string(), total: z.number() })),
+    z.array(connectionClassCountSchema),
   ),
   handshake_failures_by_class: z.preprocess(
     (v) => v ?? [],
-    z.array(z.object({ class: z.string(), total: z.number() })),
+    z.array(connectionClassCountSchema),
   ),
   handshake_timeouts_total: z.number(),
   configured_users: z.number(),
@@ -151,25 +175,35 @@ export const agentRuntimeSchema = z.object({
   dcs: z.array(dcEntrySchema),
   upstreams: z.array(upstreamEntrySchema),
   lifecycle_state: z.string().optional(),
-  updated_at: timestamp.optional(),
+  // P8.3: was `.optional()` — but the YAML marks updated_at required and
+  // the Go struct's json tag has no omitempty, so the wire ALWAYS carries
+  // it. The satisfies binding below is what surfaced the drift.
+  updated_at: timestamp,
   recent_events: z.array(runtimeEventSchema),
   system_load: systemLoadSchema,
   me_writers_summary: meWritersSummarySchema.optional(),
   telemt_unreachable: z.boolean().default(false),
   telemt_unreachable_since_unix: z.number().default(0),
-});
+}) satisfies z.ZodType<Gen["AgentRuntime"]>;
 
 export const agentCertificateRecoverySchema = z.object({
+  // P8.3: agent_id was silently STRIPPED before (Zod drops unknown keys);
+  // the wire always carries it (Go json tag without omitempty) and the
+  // OpenAPI grant marks it required.
+  agent_id: z.string(),
   status: z.enum(["allowed", "expired", "used", "revoked"]),
   issued_at_unix: z.number(),
   expires_at_unix: z.number(),
   used_at_unix: z.number().optional(),
   revoked_at_unix: z.number().optional(),
-});
+}) satisfies z.ZodType<Gen["AgentCertificateRecoveryGrant"]>;
 
 /**
  * Single agent DTO — the list response from GET /api/agents is an array
  * of this shape.
+ *
+ * Not parsed on purpose (UI doesn't read them yet, defensive-minimal):
+ * `transport_reconnect_pending` (optional in the spec).
  */
 export const agentSchema = z.object({
   id,
@@ -183,13 +217,18 @@ export const agentSchema = z.object({
   cert_expires_at: timestamp.optional(),
   runtime: agentRuntimeSchema,
   last_seen_at: timestamp,
-});
+}) satisfies z.ZodType<Gen["Agent"]>;
 
 export const agentListSchema = z.array(agentSchema);
 
 /**
  * Instance DTO returned by GET /api/instances. Each agent may report
  * zero or more running Telemt process instances.
+ *
+ * No `satisfies` binding: GET /api/instances is not described in
+ * openapi/panvex.yaml (no path, no component) — there is no generated
+ * type to bind to. When the endpoint gets specced, add
+ * `satisfies z.ZodType<Gen["Instance"]>` here.
  */
 export const instanceSchema = z.object({
   id,
@@ -205,5 +244,6 @@ export const instanceSchema = z.object({
 export const instanceListSchema = z.array(instanceSchema);
 
 export type AgentParsed = z.infer<typeof agentSchema>;
+export type AgentRuntimeParsed = z.infer<typeof agentRuntimeSchema>;
 export type InstanceParsed = z.infer<typeof instanceSchema>;
 export type AgentCertificateRecoveryParsed = z.infer<typeof agentCertificateRecoverySchema>;
