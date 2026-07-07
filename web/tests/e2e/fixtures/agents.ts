@@ -71,6 +71,10 @@ export function mockDirectAgent(overrides: MockDirectAgentOverrides = {}) {
         cert_expires_at: "2026-05-01T00:00:00Z",
         last_seen_at: "2026-04-29T12:00:00Z",
         runtime: {
+          // P8.3: updated_at is now required (Go always emits it; the Zod
+          // schema is compile-time bound to the OpenAPI type). Mock runtimes
+          // must carry it or the agent parse rejects the whole fixture.
+          updated_at: "2026-04-29T12:00:00Z",
           accepting_new_connections: true,
           me_runtime_ready: false,
           me2dc_fallback_enabled: false,
