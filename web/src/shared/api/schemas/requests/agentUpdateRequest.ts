@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import type { components } from "../../openapi.gen.ts";
+
+type Gen = components["schemas"];
+
 /**
  * Mirrors the inline payload accepted by `handleAgentUpdate` in
  * internal/controlplane/server/http_updates.go (POST
@@ -10,6 +14,6 @@ import { z } from "zod";
  */
 export const agentUpdateRequestSchema = z.object({
   version: z.string().max(128).optional().default(""),
-});
+}) satisfies z.ZodType<Gen["DispatchAgentUpdateRequest"]>;
 
 export type AgentUpdateRequest = z.infer<typeof agentUpdateRequestSchema>;
