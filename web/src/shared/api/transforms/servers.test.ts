@@ -39,6 +39,12 @@ function makeRuntime(overrides: Partial<AgentRuntime> = {}): AgentRuntime {
     dc_coverage_pct: 100,
     healthy_upstreams: 2,
     total_upstreams: 3,
+    fail_rate_pct_5m: 0,
+    fail_rate_known: false,
+    connect_attempt_total: 0,
+    connect_success_total: 0,
+    connect_fail_total: 0,
+    connect_failfast_total: 0,
     dcs: [],
     upstreams: [
       {
@@ -87,6 +93,7 @@ function makeRuntime(overrides: Partial<AgentRuntime> = {}): AgentRuntime {
       net_bytes_sent: 0,
       net_bytes_recv: 0,
     },
+    updated_at: "2026-05-04T12:00:00Z",
     ...overrides,
   };
 }
