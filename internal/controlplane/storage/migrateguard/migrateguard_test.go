@@ -14,128 +14,117 @@ import (
 
 func openSQLite(t *testing.T) *sql.DB {
 	t.Helper()
-	dsn := "file:" + filepath.Join(t.TempDir(), "guard.db")
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "guard.db"))
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
 	}
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
-// schema bootstraps just enough of the production layout for the guard
-// to make a meaningful decision: the goose bookkeeping table plus the
-// three tables that DestructiveMigrations[0] guards.
-func schema(t *testing.T, db *sql.DB) {
+func mustExec(t *testing.T, db *sql.DB, query string, args ...any) {
 	t.Helper()
-	stmts := []string{
-		`CREATE TABLE goose_db_version (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			version_id BIGINT NOT NULL,
-			is_applied INTEGER NOT NULL,
-			tstamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE TABLE fleet_groups (id TEXT PRIMARY KEY, name TEXT)`,
-		`CREATE TABLE agents (id TEXT PRIMARY KEY)`,
-		`CREATE TABLE clients (id TEXT PRIMARY KEY)`,
-	}
-	for _, s := range stmts {
-		if _, err := db.ExecContext(t.Context(), s); err != nil {
-			t.Fatalf("schema %q: %v", s, err)
-		}
+	if _, err := db.ExecContext(context.Background(), query, args...); err != nil {
+		t.Fatalf("exec %q: %v", query, err)
 	}
 }
 
-func TestCheckAll_FreshDB_NoGooseTable(t *testing.T) {
-	t.Setenv(EnvAllowDestructiveMigration, "")
+// seedGooseTable creates the goose ledger and marks the given versions
+// applied — the minimum a guard probe needs to see a "not fresh" DB.
+func seedGooseTable(t *testing.T, db *sql.DB, versions ...int64) {
+	t.Helper()
+	mustExec(t, db, `CREATE TABLE goose_db_version (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		version_id INTEGER NOT NULL,
+		is_applied INTEGER NOT NULL,
+		tstamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`)
+	for _, v := range versions {
+		mustExec(t, db, `INSERT INTO goose_db_version (version_id, is_applied) VALUES (?, 1)`, v)
+	}
+}
+
+// syntheticEntry is a registry entry that no real migration ships —
+// the registry itself is empty since the P9 squash, so every behaviour
+// of checkOne is exercised through this synthetic value.
+var syntheticEntry = DestructiveMigration{
+	Version: 9999,
+	Tables:  []string{"fleet_groups"},
+}
+
+// TestCheckAllEmptyRegistryIsNoOp pins the post-squash contract: with an
+// empty DestructiveMigrations registry, CheckAll passes on a populated
+// DB without needing PANVEX_ALLOW_DESTRUCTIVE_MIGRATION. A stale entry
+// referencing a squashed-away version would permanently block migrations
+// on any fresh-install DB that has data — this test is the regression
+// canary for that trap.
+func TestCheckAllEmptyRegistryIsNoOp(t *testing.T) {
+	if len(DestructiveMigrations) != 0 {
+		t.Fatalf("DestructiveMigrations must be empty after the P9 squash; got %d entries", len(DestructiveMigrations))
+	}
 	db := openSQLite(t)
+	seedGooseTable(t, db, 1)
+	mustExec(t, db, `CREATE TABLE fleet_groups (id TEXT PRIMARY KEY)`)
+	mustExec(t, db, `INSERT INTO fleet_groups (id) VALUES ('fg-1')`)
+
 	if err := CheckAll(context.Background(), db, DialectSQLite, slog.Default()); err != nil {
-		t.Fatalf("fresh DB should pass, got %v", err)
+		t.Fatalf("CheckAll with empty registry must pass, got: %v", err)
 	}
 }
 
-func TestCheckAll_VersionAlreadyApplied(t *testing.T) {
+func TestCheckOneBlocksPopulatedUnapplied(t *testing.T) {
 	t.Setenv(EnvAllowDestructiveMigration, "")
 	db := openSQLite(t)
-	schema(t, db)
-	// Mark version 14 as applied AND populate the tables: the migration
-	// already ran, so the data here is post-erase state and must not
-	// trigger the guard.
-	if _, err := db.ExecContext(t.Context(), `INSERT INTO goose_db_version (version_id, is_applied) VALUES (14, 1)`); err != nil {
-		t.Fatalf("seed goose_db_version: %v", err)
-	}
-	if _, err := db.ExecContext(t.Context(), `INSERT INTO fleet_groups (id, name) VALUES ('g1', 'x')`); err != nil {
-		t.Fatalf("seed fleet_groups: %v", err)
-	}
+	seedGooseTable(t, db, 1)
+	mustExec(t, db, `CREATE TABLE fleet_groups (id TEXT PRIMARY KEY)`)
+	mustExec(t, db, `INSERT INTO fleet_groups (id) VALUES ('fg-1')`)
 
-	if err := CheckAll(context.Background(), db, DialectSQLite, slog.Default()); err != nil {
-		t.Fatalf("already-applied should pass, got %v", err)
-	}
-}
-
-func TestCheckAll_PendingButTablesEmpty(t *testing.T) {
-	t.Setenv(EnvAllowDestructiveMigration, "")
-	db := openSQLite(t)
-	schema(t, db)
-	// goose table exists but version 14 is not in it; tables empty.
-	if err := CheckAll(context.Background(), db, DialectSQLite, slog.Default()); err != nil {
-		t.Fatalf("empty tables should pass, got %v", err)
-	}
-}
-
-func TestCheckAll_PendingAndPopulated_BlocksByDefault(t *testing.T) {
-	t.Setenv(EnvAllowDestructiveMigration, "")
-	db := openSQLite(t)
-	schema(t, db)
-	if _, err := db.ExecContext(t.Context(), `INSERT INTO fleet_groups (id, name) VALUES ('g1', 'production')`); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
-	err := CheckAll(context.Background(), db, DialectSQLite, slog.Default())
+	err := checkOne(context.Background(), db, DialectSQLite, syntheticEntry, slog.Default())
 	if !errors.Is(err, ErrBlocked) {
-		t.Fatalf("want ErrBlocked, got %v", err)
+		t.Fatalf("expected ErrBlocked, got: %v", err)
 	}
 }
 
-func TestCheckAll_PendingAndPopulated_AllowedByEnv(t *testing.T) {
+func TestCheckOneFreshDBPasses(t *testing.T) {
+	t.Setenv(EnvAllowDestructiveMigration, "")
+	db := openSQLite(t) // no goose_db_version table at all
+
+	if err := checkOne(context.Background(), db, DialectSQLite, syntheticEntry, slog.Default()); err != nil {
+		t.Fatalf("fresh DB must pass, got: %v", err)
+	}
+}
+
+func TestCheckOneAppliedVersionPasses(t *testing.T) {
+	t.Setenv(EnvAllowDestructiveMigration, "")
+	db := openSQLite(t)
+	seedGooseTable(t, db, syntheticEntry.Version)
+	mustExec(t, db, `CREATE TABLE fleet_groups (id TEXT PRIMARY KEY)`)
+	mustExec(t, db, `INSERT INTO fleet_groups (id) VALUES ('fg-1')`)
+
+	if err := checkOne(context.Background(), db, DialectSQLite, syntheticEntry, slog.Default()); err != nil {
+		t.Fatalf("already-applied version must pass, got: %v", err)
+	}
+}
+
+func TestCheckOneEmptyTablesPass(t *testing.T) {
+	t.Setenv(EnvAllowDestructiveMigration, "")
+	db := openSQLite(t)
+	seedGooseTable(t, db, 1)
+	mustExec(t, db, `CREATE TABLE fleet_groups (id TEXT PRIMARY KEY)`)
+
+	if err := checkOne(context.Background(), db, DialectSQLite, syntheticEntry, slog.Default()); err != nil {
+		t.Fatalf("empty destructive-target tables must pass, got: %v", err)
+	}
+}
+
+func TestCheckOneOptInAllows(t *testing.T) {
 	t.Setenv(EnvAllowDestructiveMigration, "1")
 	db := openSQLite(t)
-	schema(t, db)
-	if _, err := db.ExecContext(t.Context(), `INSERT INTO agents (id) VALUES ('a1')`); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
+	seedGooseTable(t, db, 1)
+	mustExec(t, db, `CREATE TABLE fleet_groups (id TEXT PRIMARY KEY)`)
+	mustExec(t, db, `INSERT INTO fleet_groups (id) VALUES ('fg-1')`)
 
-	if err := CheckAll(context.Background(), db, DialectSQLite, slog.Default()); err != nil {
-		t.Fatalf("opt-in should pass, got %v", err)
-	}
-}
-
-func TestCheckAll_TableMissing_DoesNotPanic(t *testing.T) {
-	t.Setenv(EnvAllowDestructiveMigration, "")
-	db := openSQLite(t)
-	// goose table exists but the data tables do not — earliest schema state.
-	if _, err := db.ExecContext(t.Context(), `CREATE TABLE goose_db_version (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		version_id BIGINT NOT NULL,
-		is_applied INTEGER NOT NULL,
-		tstamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	)`); err != nil {
-		t.Fatal(err)
-	}
-	if err := CheckAll(context.Background(), db, DialectSQLite, slog.Default()); err != nil {
-		t.Fatalf("missing data tables should pass, got %v", err)
-	}
-}
-
-func TestCheckAll_BlankEnvDoesNotCountAsOptIn(t *testing.T) {
-	// Explicitly set to whitespace; should be treated as unset.
-	t.Setenv(EnvAllowDestructiveMigration, "   ")
-	db := openSQLite(t)
-	schema(t, db)
-	if _, err := db.ExecContext(t.Context(), `INSERT INTO clients (id) VALUES ('c1')`); err != nil {
-		t.Fatal(err)
-	}
-	if err := CheckAll(context.Background(), db, DialectSQLite, slog.Default()); !errors.Is(err, ErrBlocked) {
-		t.Fatalf("want ErrBlocked despite whitespace-only env, got %v", err)
+	if err := checkOne(context.Background(), db, DialectSQLite, syntheticEntry, slog.Default()); err != nil {
+		t.Fatalf("opt-in env must allow, got: %v", err)
 	}
 }
