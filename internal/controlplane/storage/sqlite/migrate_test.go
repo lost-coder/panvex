@@ -29,22 +29,21 @@ func TestMigrateCreatesGooseVersionTable(t *testing.T) {
 		t.Fatalf("goose_db_version table not found: %v", err)
 	}
 
-	// Count applied versions — we expect at least the 8 embedded migrations
-	// (0001..0008). The ">=" floor is there so future migrations don't
-	// force a brittle equality assertion.
+	// Exactly one embedded migration after the P9 squash: 0001_init.sql.
+	// Pre-squash DBs carry versions 1..58, but this test always starts
+	// from an empty file, so the ledger must contain exactly version 1.
 	var count int
 	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM goose_db_version WHERE is_applied = 1 AND version_id > 0`).Scan(&count); err != nil {
 		t.Fatalf("count applied versions: %v", err)
 	}
-	if count < 8 {
-		t.Fatalf("expected >= 8 applied goose versions, got %d", count)
+	if count != 1 {
+		t.Fatalf("expected exactly 1 applied goose version (0001_init), got %d", count)
 	}
 }
 
-// TestMigrateCreatesMissingFKIndexes verifies that migration 0008 creates the
-// four FK/status indexes required by remediation task P2-DB-02. Without these,
-// audit finding DF-22 (missing indexes on high-selectivity foreign keys) stays
-// open — the retention worker and filter APIs would degrade to full scans.
+// TestMigrateCreatesMissingFKIndexes verifies that the squashed 0001_init
+// carries the four FK/status indexes required by remediation task P2-DB-02
+// (historically added by migration 0008; audit finding DF-22).
 func TestMigrateCreatesMissingFKIndexes(t *testing.T) {
 	db := openEmptySQLite(t)
 
@@ -123,13 +122,12 @@ func TestMigrateCreatesCoreTables(t *testing.T) {
 	}
 }
 
-// TestMigrateRenamesJSONColumns verifies that migration 0011 renames the
-// SQLite JSON-blob columns to match the PostgreSQL schema (P2-DB-05 / DF-25).
-// Before 0011, SQLite used audit_events.details_json and
-// metric_snapshots.values_json; after 0011, the names are `details` and
-// `values` respectively. Keeping them aligned across backends lets the Store
-// methods share SQL and removes a whole class of copy-paste drift bugs.
-func TestMigrateRenamesJSONColumns(t *testing.T) {
+// TestSchemaUsesCanonicalJSONColumnNames pins the canonical (PostgreSQL-
+// aligned) JSON column names in the SQLite schema: audit_events.details and
+// metric_snapshots."values" (P2-DB-05 / DF-25, historically migration 0011).
+// If a schema edit reintroduces the *_json names, the Store SQL shared
+// between backends silently diverges again — this is the parity canary.
+func TestSchemaUsesCanonicalJSONColumnNames(t *testing.T) {
 	db := openEmptySQLite(t)
 
 	if err := Migrate(db); err != nil {
