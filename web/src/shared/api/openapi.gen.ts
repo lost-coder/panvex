@@ -456,6 +456,17 @@ export interface components {
             connections_total: number;
             /** Format: int64 */
             connections_bad_total: number;
+            /**
+             * @description Per-class breakdown of bad connections (Telemt 3.4.10+). The
+             *     class set is open-ended. Backend emits `null` (not `[]`) when
+             *     no breakdown has been observed yet — absence means "unknown".
+             */
+            connections_bad_by_class?: components["schemas"]["ConnectionClassCount"][] | null;
+            /**
+             * @description Per-class breakdown of handshake failures (Telemt 3.4.10+).
+             *     Same null-vs-empty semantics as connections_bad_by_class.
+             */
+            handshake_failures_by_class?: components["schemas"]["ConnectionClassCount"][] | null;
             /** Format: int64 */
             handshake_timeouts_total: number;
             configured_users: number;
@@ -573,6 +584,16 @@ export interface components {
             fresh_coverage_pct: number;
             required_writers: number;
             alive_writers: number;
+        };
+        /**
+         * @description One (class, total) pair from Telemt's classified bad-connection
+         *     and handshake-failure counters. Mirrors the Go
+         *     `ConnectionClassCount` presentation type.
+         */
+        ConnectionClassCount: {
+            class: string;
+            /** Format: int64 */
+            total: number;
         };
         RuntimeTopByConnections: {
             username: string;
