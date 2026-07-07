@@ -647,6 +647,23 @@ components:
         uptime_seconds: { type: number, format: double }
         connections_total: { type: integer, format: int64, minimum: 0 }
         connections_bad_total: { type: integer, format: int64, minimum: 0 }
+        connections_bad_by_class:
+          type: array
+          nullable: true
+          description: |
+            Per-class breakdown of bad connections (Telemt 3.4.10+). The
+            class set is open-ended. Backend emits `null` (not `[]`) when
+            no breakdown has been observed yet — absence means "unknown".
+          items:
+            $ref: '#/components/schemas/ConnectionClassCount'
+        handshake_failures_by_class:
+          type: array
+          nullable: true
+          description: |
+            Per-class breakdown of handshake failures (Telemt 3.4.10+).
+            Same null-vs-empty semantics as connections_bad_by_class.
+          items:
+            $ref: '#/components/schemas/ConnectionClassCount'
         handshake_timeouts_total: { type: integer, format: int64, minimum: 0 }
         configured_users: { type: integer }
         dc_coverage_pct: { type: number, format: double }
@@ -809,6 +826,17 @@ components:
         fresh_coverage_pct: { type: number, format: double }
         required_writers: { type: integer }
         alive_writers: { type: integer }
+
+    ConnectionClassCount:
+      type: object
+      description: |
+        One (class, total) pair from Telemt's classified bad-connection
+        and handshake-failure counters. Mirrors the Go
+        `ConnectionClassCount` presentation type.
+      required: [class, total]
+      properties:
+        class: { type: string }
+        total: { type: integer, format: int64, minimum: 0 }
 
     RuntimeTopByConnections:
       type: object
