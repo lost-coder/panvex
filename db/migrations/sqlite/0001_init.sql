@@ -1,30 +1,42 @@
 -- +goose Up
-CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL,
-    totp_enabled INTEGER NOT NULL DEFAULT 0,
-    totp_secret TEXT NOT NULL DEFAULT '',
-    created_at_unix INTEGER NOT NULL
+-- P9 squash (2026-07): консолидация миграций 0001..0058 в один init.
+-- Файл сгенерирован дампом sqlite_master свежей БД, смигрированной
+-- полным историческим деревом (tools/squashtool, задача P9-3).
+-- НЕ редактировать вручную задним числом: изменения схемы = новая
+-- миграция с номером >= 0059 (см. db/migrations/README.md).
+
+CREATE TABLE "agent_certificate_recovery_grants" (
+    agent_id TEXT PRIMARY KEY,
+    issued_by TEXT NOT NULL,
+    issued_at_unix INTEGER NOT NULL,
+    expires_at_unix INTEGER NOT NULL,
+    used_at_unix INTEGER,
+    revoked_at_unix INTEGER,
+    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS user_appearance (
-    user_id TEXT PRIMARY KEY,
-    theme TEXT NOT NULL DEFAULT 'system',
-    density TEXT NOT NULL DEFAULT 'comfortable',
-    help_mode TEXT NOT NULL DEFAULT 'basic',
-    updated_at_unix INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+CREATE TABLE agent_config_targets (
+    scope_type    TEXT NOT NULL,
+    scope_id      TEXT NOT NULL,
+    sections_json TEXT NOT NULL DEFAULT '{}',
+    created_at    TIMESTAMP NOT NULL,
+    updated_at    TIMESTAMP NOT NULL,
+    PRIMARY KEY (scope_type, scope_id)
 );
 
-CREATE TABLE IF NOT EXISTS fleet_groups (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    created_at_unix INTEGER NOT NULL
+CREATE TABLE agent_fallback_state (
+    agent_id        TEXT PRIMARY KEY,
+    entered_at_unix INTEGER NOT NULL,
+    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS agents (
+CREATE TABLE agent_revocations (
+    agent_id              TEXT PRIMARY KEY,
+    revoked_at_unix       INTEGER NOT NULL,
+    cert_expires_at_unix  INTEGER NOT NULL
+);
+
+CREATE TABLE "agents" (
     id TEXT PRIMARY KEY,
     node_name TEXT NOT NULL,
     fleet_group_id TEXT,
@@ -32,55 +44,322 @@ CREATE TABLE IF NOT EXISTS agents (
     read_only INTEGER NOT NULL DEFAULT 0,
     last_seen_at_unix INTEGER NOT NULL,
     created_at_unix INTEGER NOT NULL DEFAULT 0,
+    cert_issued_at_unix INTEGER,
+    cert_expires_at_unix INTEGER,
+    cert_serial TEXT NOT NULL DEFAULT '',
+    transport_mode TEXT NOT NULL DEFAULT 'inbound'
+        CHECK (transport_mode IN ('inbound', 'outbound')),
+    dial_address TEXT,
+    bootstrap_state TEXT NOT NULL DEFAULT 'active'
+        CHECK (bootstrap_state IN ('pending', 'active', 'expired', 'revoked')),
+    bootstrap_token_hash BLOB,
+    bootstrap_expires_at INTEGER,
+    cert_spki_sha256 BLOB NOT NULL DEFAULT x''
+        CHECK (length(cert_spki_sha256) IN (0, 32)),
     FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id)
 );
 
-CREATE TABLE IF NOT EXISTS telemt_instances (
+CREATE TABLE "audit_events" (
+    id TEXT PRIMARY KEY,
+    actor_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    created_at_unix INTEGER NOT NULL,
+    details TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(details)),
+    prev_hash TEXT NOT NULL DEFAULT '',
+    event_hash TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE certificate_authority (
+    scope TEXT PRIMARY KEY,
+    ca_pem TEXT NOT NULL,
+    private_key_pem TEXT NOT NULL,
+    updated_at_unix INTEGER NOT NULL
+);
+
+CREATE TABLE "client_assignments" (
+    id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    fleet_group_id TEXT,
+    agent_id TEXT,
+    created_at_unix INTEGER NOT NULL,
+    FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE,
+    FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id) ON DELETE SET NULL,
+    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE SET NULL
+);
+
+CREATE TABLE "client_deployments" (
+    client_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    desired_operation TEXT NOT NULL,
+    status TEXT NOT NULL,
+    last_error TEXT NOT NULL DEFAULT '',
+    last_applied_at_unix INTEGER,
+    updated_at_unix INTEGER NOT NULL,
+    connection_links TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(connection_links)),
+    last_reset_epoch_secs INTEGER NOT NULL DEFAULT 0,
+    link_diagnostic TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (client_id, agent_id),
+    FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE,
+    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
+);
+
+CREATE TABLE client_ip_history (
+    agent_id    TEXT NOT NULL,
+    client_id   TEXT NOT NULL,
+    ip_address  TEXT NOT NULL,
+    first_seen_unix INTEGER NOT NULL,
+    last_seen_unix  INTEGER NOT NULL,
+    PRIMARY KEY (agent_id, client_id, ip_address)
+);
+
+CREATE TABLE client_usage (
+    client_id         TEXT NOT NULL,
+    agent_id          TEXT NOT NULL,
+    traffic_used_bytes INTEGER NOT NULL DEFAULT 0,
+    unique_ips_used   INTEGER NOT NULL DEFAULT 0,
+    active_tcp_conns  INTEGER NOT NULL DEFAULT 0,
+    active_unique_ips INTEGER NOT NULL DEFAULT 0,
+    observed_at_unix  INTEGER NOT NULL, quota_used_bytes INTEGER NOT NULL DEFAULT 0, quota_last_reset_unix INTEGER NOT NULL DEFAULT 0, agent_boot_id TEXT NOT NULL DEFAULT '', last_total_bytes INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (client_id, agent_id),
+    FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE,
+    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
+);
+
+CREATE TABLE clients (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    secret_ciphertext TEXT NOT NULL,
+    user_ad_tag TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    max_tcp_conns INTEGER NOT NULL DEFAULT 0,
+    max_unique_ips INTEGER NOT NULL DEFAULT 0,
+    data_quota_bytes INTEGER NOT NULL DEFAULT 0,
+    expiration_rfc3339 TEXT NOT NULL DEFAULT '',
+    created_at_unix INTEGER NOT NULL,
+    updated_at_unix INTEGER NOT NULL,
+    deleted_at_unix INTEGER
+, subscription_token TEXT);
+
+CREATE TABLE config_apply_batch_targets (
+    batch_id    TEXT NOT NULL REFERENCES config_apply_batches (id) ON DELETE CASCADE,
+    agent_id    TEXT NOT NULL,
+    wave_index  INTEGER NOT NULL,
+    job_id      TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL CHECK (status IN ('pending', 'running', 'succeeded', 'failed', 'skipped')), message TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (batch_id, agent_id)
+);
+
+CREATE TABLE "config_apply_batches" (
+    id                 TEXT PRIMARY KEY,
+    fleet_group_id     TEXT REFERENCES fleet_groups (id) ON DELETE CASCADE,
+    mode               TEXT NOT NULL CHECK (mode IN ('all_at_once', 'rolling')),
+    wave_size          INTEGER NOT NULL DEFAULT 1,
+    expected_revision  TEXT NOT NULL DEFAULT '',
+    status             TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed', 'halted')),
+    created_at_unix    INTEGER NOT NULL,
+    updated_at_unix    INTEGER NOT NULL
+);
+
+CREATE TABLE consumed_totp (
+    user_id TEXT NOT NULL,
+    code TEXT NOT NULL,
+    used_at_unix INTEGER NOT NULL,
+    PRIMARY KEY (user_id, code)
+);
+
+CREATE TABLE cp_secrets (
+    key TEXT PRIMARY KEY,
+    value BLOB NOT NULL,
+    updated_at_unix INTEGER NOT NULL
+);
+
+CREATE TABLE "discovered_clients" (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    client_name TEXT NOT NULL,
+    secret TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending_review' CHECK (status IN ('pending_review','adopted','ignored')),
+    total_octets INTEGER NOT NULL DEFAULT 0,
+    current_connections INTEGER NOT NULL DEFAULT 0,
+    active_unique_ips INTEGER NOT NULL DEFAULT 0,
+    max_tcp_conns INTEGER NOT NULL DEFAULT 0,
+    max_unique_ips INTEGER NOT NULL DEFAULT 0,
+    data_quota_bytes INTEGER NOT NULL DEFAULT 0,
+    expiration TEXT NOT NULL DEFAULT '',
+    discovered_at_unix INTEGER NOT NULL,
+    updated_at_unix INTEGER NOT NULL,
+    connection_links TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(connection_links)),
+    UNIQUE (agent_id, client_name),
+    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
+);
+
+CREATE TABLE enrollment_attempts (
+    id              TEXT PRIMARY KEY,
+    token_id        TEXT,
+    agent_id        TEXT,
+    mode            TEXT NOT NULL CHECK (mode IN ('inbound', 'outbound')),
+    client_addr     TEXT,
+    request_id      TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('in_progress', 'success', 'failed')),
+    error_code      TEXT,
+    error_message   TEXT,
+    started_at      TIMESTAMP NOT NULL,
+    finished_at     TIMESTAMP
+);
+
+CREATE TABLE "enrollment_events" (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    attempt_id  TEXT NOT NULL REFERENCES enrollment_attempts (id) ON DELETE CASCADE,
+    ts          TIMESTAMP NOT NULL,
+    step        TEXT NOT NULL,
+    level       TEXT NOT NULL CHECK (level IN ('info', 'warn', 'error')),
+    message     TEXT,
+    fields_json TEXT CHECK (fields_json IS NULL OR json_valid(fields_json))
+);
+
+CREATE TABLE "enrollment_tokens" (
+    value TEXT PRIMARY KEY,
+    fleet_group_id TEXT,
+    issued_at_unix INTEGER NOT NULL,
+    expires_at_unix INTEGER NOT NULL,
+    consumed_at_unix INTEGER,
+    revoked_at_unix INTEGER,
+    FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id) ON DELETE SET NULL
+);
+
+CREATE TABLE "fleet_group_integrations" (
+    id              TEXT PRIMARY KEY,
+    fleet_group_id  TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    provider_id     TEXT,
+    config          TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(config)),
+    enabled         INTEGER NOT NULL DEFAULT 0,
+    created_at_unix INTEGER NOT NULL,
+    updated_at_unix INTEGER NOT NULL,
+    FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id) ON DELETE CASCADE,
+    FOREIGN KEY (provider_id)    REFERENCES integration_providers (id) ON DELETE SET NULL,
+    UNIQUE (fleet_group_id, kind)
+);
+
+CREATE TABLE fleet_groups (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at_unix INTEGER NOT NULL
+, label           TEXT NOT NULL DEFAULT '', description     TEXT NOT NULL DEFAULT '', updated_at_unix INTEGER NOT NULL DEFAULT 0);
+
+CREATE TABLE "integration_providers" (
+    id              TEXT PRIMARY KEY,
+    kind            TEXT NOT NULL,
+    label           TEXT NOT NULL DEFAULT '',
+    -- Permissive: config is either plain JSON or a vault-sealed
+    -- "PVS1:"/"PVS2:"/"PVS3:" ciphertext string (see file header note).
+    config          TEXT NOT NULL DEFAULT '{}'
+        CHECK (json_valid(config) OR config LIKE 'PVS_:%'),
+    created_at_unix INTEGER NOT NULL,
+    updated_at_unix INTEGER NOT NULL
+);
+
+CREATE TABLE "job_targets" (
+    job_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued','sent','acknowledged','succeeded','failed','expired')),
+    result_text TEXT NOT NULL DEFAULT '',
+    result_json TEXT NOT NULL DEFAULT '',
+    updated_at_unix INTEGER NOT NULL,
+    PRIMARY KEY (job_id, agent_id),
+    FOREIGN KEY (job_id) REFERENCES jobs (id)
+);
+
+CREATE TABLE "jobs" (
+    id TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued','running','succeeded','failed','expired','partial')),
+    created_at_unix INTEGER NOT NULL,
+    ttl_nanos INTEGER NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    payload_json TEXT NOT NULL DEFAULT ''
+        CHECK (payload_json = '' OR json_valid(payload_json))
+);
+
+CREATE TABLE login_lockouts (
+    username         TEXT    PRIMARY KEY,
+    failures         INTEGER NOT NULL DEFAULT 0,
+    locked_at_unix   INTEGER,
+    updated_at_unix  INTEGER NOT NULL
+);
+
+CREATE TABLE "metric_snapshots" (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    instance_id TEXT NOT NULL DEFAULT '',
+    captured_at_unix INTEGER NOT NULL,
+    "values" TEXT NOT NULL CHECK (json_valid("values")),
+    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
+);
+
+CREATE TABLE "panel_settings" (
+    scope                 TEXT PRIMARY KEY,
+    http_public_url       TEXT NOT NULL DEFAULT '',
+    grpc_public_endpoint  TEXT NOT NULL DEFAULT '',
+    password_min_length   INTEGER NOT NULL DEFAULT 10
+        CHECK (password_min_length >= 8 AND password_min_length <= 128),
+    retention_json        TEXT NOT NULL DEFAULT '',
+    geoip_json            TEXT NOT NULL DEFAULT '',
+    geoip_state_json      TEXT NOT NULL DEFAULT '',
+    updated_at_unix       INTEGER NOT NULL
+);
+
+CREATE TABLE runtime_settings (
+    name        TEXT PRIMARY KEY,
+    value_json  TEXT NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    updated_by  TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE "sessions" (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at_unix INTEGER NOT NULL, last_seen_at_unix INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE TABLE telemt_diagnostics_current (
+    agent_id TEXT PRIMARY KEY,
+    observed_at_unix INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT '',
+    state_reason TEXT NOT NULL DEFAULT '',
+    system_info_json TEXT NOT NULL DEFAULT '{}',
+    effective_limits_json TEXT NOT NULL DEFAULT '{}',
+    security_posture_json TEXT NOT NULL DEFAULT '{}',
+    minimal_all_json TEXT NOT NULL DEFAULT '{}',
+    me_pool_json TEXT NOT NULL DEFAULT '{}',
+    dcs_json TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
+);
+
+CREATE TABLE "telemt_instances" (
     id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL,
     name TEXT NOT NULL,
     version TEXT NOT NULL DEFAULT '',
     config_fingerprint TEXT NOT NULL DEFAULT '',
-    connected_users INTEGER NOT NULL DEFAULT 0,
+    connections INTEGER NOT NULL DEFAULT 0,
     read_only INTEGER NOT NULL DEFAULT 0,
     updated_at_unix INTEGER NOT NULL,
-    FOREIGN KEY (agent_id) REFERENCES agents (id)
-);
-
-CREATE TABLE IF NOT EXISTS telemt_runtime_current (
-    agent_id TEXT PRIMARY KEY,
-    observed_at_unix INTEGER NOT NULL,
-    state TEXT NOT NULL DEFAULT '',
-    state_reason TEXT NOT NULL DEFAULT '',
-    read_only INTEGER NOT NULL DEFAULT 0,
-    accepting_new_connections INTEGER NOT NULL DEFAULT 0,
-    me_runtime_ready INTEGER NOT NULL DEFAULT 0,
-    me2dc_fallback_enabled INTEGER NOT NULL DEFAULT 0,
-    use_middle_proxy INTEGER NOT NULL DEFAULT 0,
-    startup_status TEXT NOT NULL DEFAULT '',
-    startup_stage TEXT NOT NULL DEFAULT '',
-    startup_progress_pct REAL NOT NULL DEFAULT 0,
-    initialization_status TEXT NOT NULL DEFAULT '',
-    degraded INTEGER NOT NULL DEFAULT 0,
-    initialization_stage TEXT NOT NULL DEFAULT '',
-    initialization_progress_pct REAL NOT NULL DEFAULT 0,
-    transport_mode TEXT NOT NULL DEFAULT '',
-    current_connections INTEGER NOT NULL DEFAULT 0,
-    current_connections_me INTEGER NOT NULL DEFAULT 0,
-    current_connections_direct INTEGER NOT NULL DEFAULT 0,
-    active_users INTEGER NOT NULL DEFAULT 0,
-    uptime_seconds REAL NOT NULL DEFAULT 0,
-    connections_total INTEGER NOT NULL DEFAULT 0,
-    connections_bad_total INTEGER NOT NULL DEFAULT 0,
-    handshake_timeouts_total INTEGER NOT NULL DEFAULT 0,
-    configured_users INTEGER NOT NULL DEFAULT 0,
-    dc_coverage_pct REAL NOT NULL DEFAULT 0,
-    healthy_upstreams INTEGER NOT NULL DEFAULT 0,
-    total_upstreams INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS telemt_runtime_dcs_current (
+CREATE TABLE telemt_runtime_current (
+    agent_id TEXT PRIMARY KEY,
+    observed_at_unix INTEGER NOT NULL,
+    runtime_json TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
+);
+
+CREATE TABLE telemt_runtime_dcs_current (
     agent_id TEXT NOT NULL,
     dc INTEGER NOT NULL,
     observed_at_unix INTEGER NOT NULL,
@@ -95,7 +374,19 @@ CREATE TABLE IF NOT EXISTS telemt_runtime_dcs_current (
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS telemt_runtime_upstreams_current (
+CREATE TABLE telemt_runtime_events (
+    agent_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    observed_at_unix INTEGER NOT NULL,
+    timestamp_unix INTEGER NOT NULL,
+    event_type TEXT NOT NULL DEFAULT '',
+    context TEXT NOT NULL DEFAULT '',
+    severity TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (agent_id, sequence),
+    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
+);
+
+CREATE TABLE telemt_runtime_upstreams_current (
     agent_id TEXT NOT NULL,
     upstream_id INTEGER NOT NULL,
     observed_at_unix INTEGER NOT NULL,
@@ -108,36 +399,7 @@ CREATE TABLE IF NOT EXISTS telemt_runtime_upstreams_current (
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
--- Column name differs between drivers: SQLite uses timestamp_unix (INTEGER)
--- while Postgres uses timestamp_at (TIMESTAMPTZ). Query implementations in
--- each driver's telemetry.go must use the correct column name.
-CREATE TABLE IF NOT EXISTS telemt_runtime_events (
-    agent_id TEXT NOT NULL,
-    sequence INTEGER NOT NULL,
-    observed_at_unix INTEGER NOT NULL,
-    timestamp_unix INTEGER NOT NULL,
-    event_type TEXT NOT NULL DEFAULT '',
-    context TEXT NOT NULL DEFAULT '',
-    severity TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (agent_id, sequence),
-    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS telemt_diagnostics_current (
-    agent_id TEXT PRIMARY KEY,
-    observed_at_unix INTEGER NOT NULL,
-    state TEXT NOT NULL DEFAULT '',
-    state_reason TEXT NOT NULL DEFAULT '',
-    system_info_json TEXT NOT NULL DEFAULT '{}',
-    effective_limits_json TEXT NOT NULL DEFAULT '{}',
-    security_posture_json TEXT NOT NULL DEFAULT '{}',
-    minimal_all_json TEXT NOT NULL DEFAULT '{}',
-    me_pool_json TEXT NOT NULL DEFAULT '{}',
-    dcs_json TEXT NOT NULL DEFAULT '{}',
-    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS telemt_security_inventory_current (
+CREATE TABLE telemt_security_inventory_current (
     agent_id TEXT PRIMARY KEY,
     observed_at_unix INTEGER NOT NULL,
     state TEXT NOT NULL DEFAULT '',
@@ -148,153 +410,230 @@ CREATE TABLE IF NOT EXISTS telemt_security_inventory_current (
     FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS telemt_detail_boosts (
-    agent_id TEXT PRIMARY KEY,
-    expires_at_unix INTEGER NOT NULL,
-    updated_at_unix INTEGER NOT NULL,
-    FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS jobs (
-    id TEXT PRIMARY KEY,
-    action TEXT NOT NULL,
-    actor_id TEXT NOT NULL,
-    status TEXT NOT NULL,
-    created_at_unix INTEGER NOT NULL,
-    ttl_nanos INTEGER NOT NULL,
-    idempotency_key TEXT NOT NULL UNIQUE,
-    payload_json TEXT NOT NULL DEFAULT ''
-);
-
-CREATE TABLE IF NOT EXISTS job_targets (
-    job_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL,
-    status TEXT NOT NULL,
-    result_text TEXT NOT NULL DEFAULT '',
-    result_json TEXT NOT NULL DEFAULT '',
-    updated_at_unix INTEGER NOT NULL,
-    PRIMARY KEY (job_id, agent_id),
-    FOREIGN KEY (job_id) REFERENCES jobs (id)
-);
-
-CREATE TABLE IF NOT EXISTS audit_events (
-    id TEXT PRIMARY KEY,
-    actor_id TEXT NOT NULL,
-    action TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    created_at_unix INTEGER NOT NULL,
-    details_json TEXT NOT NULL DEFAULT '{}'
-);
-
-CREATE TABLE IF NOT EXISTS metric_snapshots (
-    id TEXT PRIMARY KEY,
-    agent_id TEXT NOT NULL,
-    instance_id TEXT NOT NULL DEFAULT '',
+CREATE TABLE ts_dc_health (
+    agent_id         TEXT NOT NULL,
     captured_at_unix INTEGER NOT NULL,
-    values_json TEXT NOT NULL
+    dc               INTEGER NOT NULL,
+    coverage_pct_avg REAL NOT NULL DEFAULT 0,
+    coverage_pct_min REAL NOT NULL DEFAULT 0,
+    rtt_ms_avg       REAL NOT NULL DEFAULT 0,
+    rtt_ms_max       REAL NOT NULL DEFAULT 0,
+    alive_writers_min INTEGER NOT NULL DEFAULT 0,
+    required_writers INTEGER NOT NULL DEFAULT 0,
+    load_max         INTEGER NOT NULL DEFAULT 0,
+    sample_count     INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (agent_id, dc, captured_at_unix)
 );
 
-CREATE TABLE IF NOT EXISTS enrollment_tokens (
-    value TEXT PRIMARY KEY,
-    fleet_group_id TEXT,
-    issued_at_unix INTEGER NOT NULL,
-    expires_at_unix INTEGER NOT NULL,
-    consumed_at_unix INTEGER,
-    revoked_at_unix INTEGER
+CREATE TABLE ts_server_load (
+    agent_id                TEXT NOT NULL,
+    captured_at_unix        INTEGER NOT NULL,
+    cpu_pct_avg             REAL NOT NULL DEFAULT 0,
+    cpu_pct_max             REAL NOT NULL DEFAULT 0,
+    mem_pct_avg             REAL NOT NULL DEFAULT 0,
+    mem_pct_max             REAL NOT NULL DEFAULT 0,
+    disk_pct_avg            REAL NOT NULL DEFAULT 0,
+    disk_pct_max            REAL NOT NULL DEFAULT 0,
+    load_1m                 REAL NOT NULL DEFAULT 0,
+    load_5m                 REAL NOT NULL DEFAULT 0,
+    load_15m                REAL NOT NULL DEFAULT 0,
+    connections_avg         INTEGER NOT NULL DEFAULT 0,
+    connections_max         INTEGER NOT NULL DEFAULT 0,
+    connections_me_avg      INTEGER NOT NULL DEFAULT 0,
+    connections_direct_avg  INTEGER NOT NULL DEFAULT 0,
+    active_users_avg        INTEGER NOT NULL DEFAULT 0,
+    active_users_max        INTEGER NOT NULL DEFAULT 0,
+    connections_total       INTEGER NOT NULL DEFAULT 0,
+    connections_bad_total   INTEGER NOT NULL DEFAULT 0,
+    handshake_timeouts_total INTEGER NOT NULL DEFAULT 0,
+    dc_coverage_min_pct     REAL NOT NULL DEFAULT 0,
+    dc_coverage_avg_pct     REAL NOT NULL DEFAULT 0,
+    healthy_upstreams       INTEGER NOT NULL DEFAULT 0,
+    total_upstreams         INTEGER NOT NULL DEFAULT 0,
+    net_bytes_sent          INTEGER NOT NULL DEFAULT 0,
+    net_bytes_recv          INTEGER NOT NULL DEFAULT 0,
+    sample_count            INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (agent_id, captured_at_unix)
 );
 
-CREATE TABLE IF NOT EXISTS agent_certificate_recovery_grants (
-    agent_id TEXT PRIMARY KEY,
-    issued_by TEXT NOT NULL,
-    issued_at_unix INTEGER NOT NULL,
-    expires_at_unix INTEGER NOT NULL,
-    used_at_unix INTEGER,
-    revoked_at_unix INTEGER,
-    FOREIGN KEY (agent_id) REFERENCES agents (id)
+CREATE TABLE ts_server_load_hourly (
+    agent_id          TEXT NOT NULL,
+    bucket_hour_unix  INTEGER NOT NULL,
+    cpu_pct_avg       REAL,
+    cpu_pct_max       REAL,
+    mem_pct_avg       REAL,
+    mem_pct_max       REAL,
+    connections_avg   REAL,
+    connections_max   INTEGER,
+    active_users_avg  REAL,
+    active_users_max  INTEGER,
+    dc_coverage_min   REAL,
+    dc_coverage_avg   REAL,
+    sample_count      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (agent_id, bucket_hour_unix)
 );
 
-CREATE TABLE IF NOT EXISTS clients (
+CREATE TABLE update_config (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE user_appearance (
+    user_id TEXT PRIMARY KEY,
+    theme TEXT NOT NULL DEFAULT 'system',
+    density TEXT NOT NULL DEFAULT 'comfortable',
+    help_mode TEXT NOT NULL DEFAULT 'basic',
+    updated_at_unix INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE TABLE user_fleet_group_scopes (
+    user_id        TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    fleet_group_id TEXT NOT NULL REFERENCES fleet_groups (id) ON DELETE CASCADE,
+    granted_at_unix INTEGER NOT NULL DEFAULT 0,
+    granted_by     TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (user_id, fleet_group_id)
+);
+
+CREATE TABLE users (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    secret_ciphertext TEXT NOT NULL,
-    user_ad_tag TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    max_tcp_conns INTEGER NOT NULL DEFAULT 0,
-    max_unique_ips INTEGER NOT NULL DEFAULT 0,
-    data_quota_bytes INTEGER NOT NULL DEFAULT 0,
-    expiration_rfc3339 TEXT NOT NULL DEFAULT '',
-    created_at_unix INTEGER NOT NULL,
-    updated_at_unix INTEGER NOT NULL,
-    deleted_at_unix INTEGER
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL,
+    totp_enabled INTEGER NOT NULL DEFAULT 0,
+    totp_secret TEXT NOT NULL DEFAULT '',
+    created_at_unix INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS client_assignments (
-    id TEXT PRIMARY KEY,
-    client_id TEXT NOT NULL,
-    target_type TEXT NOT NULL,
-    fleet_group_id TEXT,
-    agent_id TEXT,
-    created_at_unix INTEGER NOT NULL,
-    FOREIGN KEY (client_id) REFERENCES clients (id),
-    FOREIGN KEY (fleet_group_id) REFERENCES fleet_groups (id),
-    FOREIGN KEY (agent_id) REFERENCES agents (id)
+CREATE TABLE webhook_endpoints (
+    id                 TEXT PRIMARY KEY,
+    name               TEXT NOT NULL UNIQUE,
+    url                TEXT NOT NULL,
+    secret_ciphertext  TEXT NOT NULL,
+    event_filter       TEXT NOT NULL DEFAULT '',
+    allow_private      INTEGER NOT NULL DEFAULT 0 CHECK (allow_private IN (0, 1)),
+    enabled            INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS client_deployments (
-    client_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL,
-    desired_operation TEXT NOT NULL,
-    status TEXT NOT NULL,
-    last_error TEXT NOT NULL DEFAULT '',
-    connection_link TEXT NOT NULL DEFAULT '',
-    last_applied_at_unix INTEGER,
-    updated_at_unix INTEGER NOT NULL,
-    PRIMARY KEY (client_id, agent_id),
-    FOREIGN KEY (client_id) REFERENCES clients (id),
-    FOREIGN KEY (agent_id) REFERENCES agents (id)
+CREATE TABLE "webhook_outbox" (
+    id              TEXT PRIMARY KEY,
+    endpoint_id     TEXT NOT NULL REFERENCES webhook_endpoints (id) ON DELETE CASCADE,
+    event_action    TEXT NOT NULL,
+    payload         TEXT NOT NULL CHECK (json_valid(payload)),
+    attempt         INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMP NOT NULL,
+    last_error      TEXT NOT NULL DEFAULT '',
+    dead            INTEGER NOT NULL DEFAULT 0 CHECK (dead IN (0, 1)),
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    delivered_at    TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS panel_settings (
-    scope TEXT PRIMARY KEY,
-    http_public_url TEXT NOT NULL DEFAULT '',
-    http_root_path TEXT NOT NULL DEFAULT '',
-    grpc_public_endpoint TEXT NOT NULL DEFAULT '',
-    http_listen_address TEXT NOT NULL DEFAULT '',
-    grpc_listen_address TEXT NOT NULL DEFAULT '',
-    tls_mode TEXT NOT NULL DEFAULT '',
-    tls_cert_file TEXT NOT NULL DEFAULT '',
-    tls_key_file TEXT NOT NULL DEFAULT '',
-    updated_at_unix INTEGER NOT NULL
-);
+CREATE UNIQUE INDEX clients_subscription_token_key
+    ON clients (subscription_token);
 
-CREATE TABLE IF NOT EXISTS certificate_authority (
-    scope TEXT PRIMARY KEY,
-    ca_pem TEXT NOT NULL,
-    private_key_pem TEXT NOT NULL,
-    updated_at_unix INTEGER NOT NULL
-);
+CREATE UNIQUE INDEX fleet_groups_name_unique
+    ON fleet_groups (name);
+
+CREATE INDEX idx_agent_fallback_state_entered_at
+    ON agent_fallback_state (entered_at_unix);
+
+CREATE INDEX idx_agent_revocations_cert_expires_at_unix
+    ON agent_revocations(cert_expires_at_unix);
+
+CREATE INDEX idx_agents_cert_spki_sha256
+    ON agents (cert_spki_sha256)
+    WHERE length(cert_spki_sha256) > 0;
+
+CREATE INDEX idx_agents_fleet_group_id ON agents (fleet_group_id);
+
+CREATE INDEX idx_agents_last_seen_at ON agents (last_seen_at_unix);
+
+CREATE INDEX idx_agents_transport_mode ON agents(transport_mode);
+
+CREATE INDEX idx_audit_events_chain_walk ON audit_events (created_at_unix, id);
+
+CREATE INDEX idx_audit_events_created_at ON audit_events (created_at_unix);
+
+CREATE INDEX idx_client_assignments_client_id ON client_assignments (client_id);
+
+CREATE INDEX idx_client_deployments_client_id ON client_deployments (client_id);
+
+CREATE INDEX idx_client_ip_client ON client_ip_history (client_id, last_seen_unix DESC);
+
+CREATE INDEX idx_client_ip_client_addr ON client_ip_history (client_id, ip_address);
+
+CREATE INDEX idx_client_ip_last_seen ON client_ip_history (last_seen_unix);
+
+CREATE INDEX idx_client_usage_agent_id
+    ON client_usage (agent_id);
+
+CREATE INDEX idx_config_apply_batch_targets_batch_wave
+    ON config_apply_batch_targets (batch_id, wave_index);
+
+CREATE INDEX idx_config_apply_batches_status
+    ON config_apply_batches (status);
+
+CREATE INDEX idx_consumed_totp_used_at ON consumed_totp(used_at_unix);
+
+CREATE INDEX idx_discovered_clients_agent_id ON discovered_clients (agent_id);
+
+CREATE UNIQUE INDEX idx_discovered_clients_pending_unique
+    ON discovered_clients (agent_id, client_name)
+    WHERE status = 'pending_review';
+
+CREATE INDEX idx_enrollment_attempts_agent   ON enrollment_attempts(agent_id);
+
+CREATE INDEX idx_enrollment_attempts_started ON enrollment_attempts(started_at);
+
+CREATE INDEX idx_enrollment_attempts_token   ON enrollment_attempts(token_id);
+
+CREATE INDEX idx_enrollment_events_attempt ON enrollment_events (attempt_id, ts);
+
+CREATE INDEX idx_enrollment_tokens_fleet_group_id ON enrollment_tokens (fleet_group_id);
+
+CREATE INDEX idx_fleet_group_integrations_fleet_group_id ON fleet_group_integrations (fleet_group_id);
+
+CREATE INDEX idx_fleet_group_integrations_kind ON fleet_group_integrations (kind);
+
+CREATE INDEX idx_integration_providers_kind ON integration_providers (kind);
+
+CREATE INDEX idx_job_targets_agent_id ON job_targets (agent_id);
+
+CREATE INDEX idx_jobs_actor_id ON jobs (actor_id);
+
+CREATE INDEX idx_jobs_created_at ON jobs (created_at_unix);
+
+CREATE INDEX idx_jobs_status ON jobs (status);
+
+CREATE INDEX idx_login_lockouts_locked_at_unix
+    ON login_lockouts(locked_at_unix);
+
+CREATE INDEX idx_metric_snapshots_agent_captured ON metric_snapshots (agent_id, captured_at_unix);
+
+CREATE INDEX idx_metric_snapshots_captured_at ON metric_snapshots (captured_at_unix);
+
+CREATE INDEX idx_sessions_created_at_unix ON sessions (created_at_unix);
+
+CREATE INDEX idx_sessions_user_id ON sessions (user_id);
+
+CREATE INDEX idx_telemt_instances_agent_id ON telemt_instances (agent_id);
+
+CREATE INDEX idx_ts_dc_health_time ON ts_dc_health (agent_id, captured_at_unix DESC);
+
+CREATE INDEX idx_ts_server_load_time ON ts_server_load (agent_id, captured_at_unix DESC);
+
+CREATE INDEX idx_user_fleet_group_scopes_fleet_group_id
+    ON user_fleet_group_scopes (fleet_group_id);
+
+CREATE INDEX idx_user_fleet_group_scopes_user_id
+    ON user_fleet_group_scopes (user_id);
+
+CREATE INDEX idx_webhook_outbox_ready
+    ON webhook_outbox (next_attempt_at)
+    WHERE dead = 0 AND delivered_at IS NULL;
 
 -- +goose Down
-DROP TABLE IF EXISTS certificate_authority;
-DROP TABLE IF EXISTS panel_settings;
-DROP TABLE IF EXISTS client_deployments;
-DROP TABLE IF EXISTS client_assignments;
-DROP TABLE IF EXISTS clients;
-DROP TABLE IF EXISTS agent_certificate_recovery_grants;
-DROP TABLE IF EXISTS enrollment_tokens;
-DROP TABLE IF EXISTS metric_snapshots;
-DROP TABLE IF EXISTS audit_events;
-DROP TABLE IF EXISTS job_targets;
-DROP TABLE IF EXISTS jobs;
-DROP TABLE IF EXISTS telemt_detail_boosts;
-DROP TABLE IF EXISTS telemt_security_inventory_current;
-DROP TABLE IF EXISTS telemt_diagnostics_current;
-DROP TABLE IF EXISTS telemt_runtime_events;
-DROP TABLE IF EXISTS telemt_runtime_upstreams_current;
-DROP TABLE IF EXISTS telemt_runtime_dcs_current;
-DROP TABLE IF EXISTS telemt_runtime_current;
-DROP TABLE IF EXISTS telemt_instances;
-DROP TABLE IF EXISTS agents;
-DROP TABLE IF EXISTS user_appearance;
-DROP TABLE IF EXISTS users;
-DROP TABLE IF EXISTS fleet_groups;
+-- Squash-init: даунгрейда некуда — no-op.
+SELECT 1;
