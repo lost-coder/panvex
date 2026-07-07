@@ -1,62 +1,8 @@
 package agents
 
 import (
-	"time"
-
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
-
-// InstanceSnapshot describes one Telemt instance that an agent reports on.
-type InstanceSnapshot struct {
-	ID                string
-	Name              string
-	Version           string
-	ConfigFingerprint string
-	Connections       int
-	ReadOnly          bool
-}
-
-// Snapshot is the full per-tick payload sent by an agent over the
-// gRPC gateway. See controlplane/server/agent_flow.go for the reducer
-// that applies it to in-memory and persisted state.
-type Snapshot struct {
-	AgentID                  string
-	NodeName                 string
-	FleetGroupID             string
-	Version                  string
-	ReadOnly                 bool
-	Instances                []InstanceSnapshot
-	Clients                  []ClientUsageSnapshot
-	HasClients               bool
-	ClientIPs                []ClientIPSnapshot
-	HasClientIPs             bool
-	Runtime                  *gatewayrpc.RuntimeSnapshot
-	HasRuntime               bool
-	RuntimeDiagnostics       *gatewayrpc.RuntimeDiagnosticsSnapshot
-	RuntimeSecurityInventory *gatewayrpc.RuntimeSecurityInventorySnapshot
-	Metrics                  map[string]uint64
-	ObservedAt               time.Time
-}
-
-// ClientUsageSnapshot is the per-client Telemt usage delta published by
-// an agent. Seq is the monotonic per-agent snapshot sequence number;
-// seq == 0 denotes "unknown" (legacy agent or synthetic entry) and the
-// dedup path accumulates unconditionally in that case.
-type ClientUsageSnapshot struct {
-	ClientID         string
-	TrafficUsedBytes uint64
-	UniqueIPsUsed    int
-	ActiveTCPConns   int
-	ActiveUniqueIPs  int
-	ObservedAt       time.Time
-	Seq              uint64
-}
-
-// ClientIPSnapshot publishes the set of IPs currently seen on each client.
-type ClientIPSnapshot struct {
-	ClientID  string
-	ActiveIPs []string
-}
 
 // RuntimeLifecycleState derives the coarse-grained lifecycle label used
 // by the UI from the raw gateway runtime snapshot. Pure helper.

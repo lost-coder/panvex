@@ -163,6 +163,61 @@ func TestSchemaUsesCanonicalJSONColumnNames(t *testing.T) {
 	}
 }
 
+// TestMigrateSkipsSquashedBaselineOnPreSquashDB proves the upgrade path for
+// databases that predate the P9 squash. Such a DB already carries goose
+// versions 1..58 (the historical tree's first migration was numbered 0001),
+// so when goose sees the single squashed 0001_init it MUST recognise version
+// 1 as already applied and skip re-running it. If goose instead re-ran the
+// baseline it would clobber (or, on a live schema, error against) tables the
+// operator already has. We simulate the ledger without the real schema, so a
+// wrongful re-run is directly observable: 0001_init would materialise the
+// `users` table that our seeded DB deliberately lacks.
+func TestMigrateSkipsSquashedBaselineOnPreSquashDB(t *testing.T) {
+	db := openEmptySQLite(t)
+	ctx := t.Context()
+
+	// Recreate goose's own ledger schema, then seed it as a pre-squash DB:
+	// version 0 (goose's initial row) plus 1..58 all applied. No product
+	// tables exist — only the ledger.
+	if _, err := db.ExecContext(ctx, `CREATE TABLE goose_db_version (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		version_id INTEGER NOT NULL,
+		is_applied INTEGER NOT NULL,
+		tstamp TIMESTAMP DEFAULT (datetime('now'))
+	)`); err != nil {
+		t.Fatalf("create goose_db_version: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO goose_db_version (version_id, is_applied) VALUES (0, 1)`); err != nil {
+		t.Fatalf("seed version 0: %v", err)
+	}
+	for v := 1; v <= 58; v++ {
+		if _, err := db.ExecContext(ctx, `INSERT INTO goose_db_version (version_id, is_applied) VALUES (?, 1)`, v); err != nil {
+			t.Fatalf("seed version %d: %v", v, err)
+		}
+	}
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() on pre-squash DB error = %v", err)
+	}
+
+	// 0001_init must have been skipped: its `users` table must NOT appear.
+	var name string
+	err := db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name='users'`).Scan(&name)
+	if err != sql.ErrNoRows {
+		t.Fatalf("expected 0001_init to be skipped (no users table), but got err=%v name=%q", err, name)
+	}
+
+	// The ledger must be untouched: still exactly the 58 seeded versions,
+	// with no duplicate row for version 1.
+	var applied int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE is_applied = 1 AND version_id > 0`).Scan(&applied); err != nil {
+		t.Fatalf("count applied versions: %v", err)
+	}
+	if applied != 58 {
+		t.Fatalf("expected ledger to stay at 58 applied versions, got %d", applied)
+	}
+}
+
 // TestStatusSucceedsOnFreshDB confirms Status runs without error against a
 // migrated DB. It is a smoke check; goose writes its output to stdout.
 func TestStatusSucceedsOnFreshDB(t *testing.T) {

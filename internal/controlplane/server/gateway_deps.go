@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
@@ -58,9 +59,19 @@ func (s *Server) AuthorizeAgentConnect(ctx context.Context, sess agenttransport.
 	if s.store != nil {
 		expected, err := s.store.GetAgentCertSerial(ctx, agentID)
 		if err != nil {
-			s.logger.ErrorContext(ctx, "agent cert serial lookup failed — rejecting connect",
-				"agent_id", agentID,
-				"error", err)
+			// Still fail closed, but a client that walked away mid-handshake
+			// (context canceled/deadline) is expected connection churn, not a
+			// store fault — keep it out of the ERROR stream so real DB lookup
+			// failures stay visible.
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				s.logger.InfoContext(ctx, "agent cert serial lookup aborted before completion — rejecting connect",
+					"agent_id", agentID,
+					"error", err)
+			} else {
+				s.logger.ErrorContext(ctx, "agent cert serial lookup failed — rejecting connect",
+					"agent_id", agentID,
+					"error", err)
+			}
 			return "", "", status.Error(codes.Unavailable, "agent cert pin check unavailable")
 		}
 		if expected != "" && expected != presentedSerial {
