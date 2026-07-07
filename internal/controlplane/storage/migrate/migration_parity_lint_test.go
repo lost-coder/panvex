@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -68,8 +69,8 @@ func readMigrationTree(t *testing.T, fsys fs.FS, label string) map[int]migration
 			t.Errorf("%s: %s does not match NNNN_title.sql", label, e.Name())
 			continue
 		}
-		var version int
-		fmt.Sscanf(m[1], "%d", &version)
+		// The regexp guarantees m[1] is exactly four digits, so Atoi cannot fail.
+		version, _ := strconv.Atoi(m[1])
 		if prev, dup := tree[version]; dup {
 			t.Errorf("%s: duplicate version %04d (%s vs %s)", label, version, prev.title, m[2])
 			continue

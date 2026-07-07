@@ -48,14 +48,14 @@ func run(table, createFile, columns, copyFile string, indexes []string) error {
 	if table == "" || createFile == "" {
 		return fmt.Errorf("-table and -create are required")
 	}
-	createSQL, err := os.ReadFile(createFile)
+	createSQL, err := os.ReadFile(createFile) //nolint:gosec // reason: local dev tool; the operator supplies the CREATE-TABLE file path deliberately.
 	if err != nil {
 		return err
 	}
 	spec := Spec{Table: table, CreateSQL: string(createSQL), Indexes: indexes}
 	switch {
 	case copyFile != "":
-		copySQL, err := os.ReadFile(copyFile)
+		copySQL, err := os.ReadFile(copyFile) //nolint:gosec // reason: local dev tool; the operator supplies the custom-copy file path deliberately.
 		if err != nil {
 			return err
 		}
