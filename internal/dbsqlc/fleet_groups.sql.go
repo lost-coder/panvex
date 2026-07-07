@@ -68,7 +68,7 @@ type GetFleetGroupRow struct {
 
 // R-Q-03: fleet_groups — operator-managed grouping of agents +
 // enrollment-tokens + client-assignments. Note: id is UUID on
-// postgres (since migration 0014).
+// postgres (UUID id column).
 func (q *Queries) GetFleetGroup(ctx context.Context, id uuid.UUID) (GetFleetGroupRow, error) {
 	row := q.db.QueryRowContext(ctx, getFleetGroup, id)
 	var i GetFleetGroupRow

@@ -59,7 +59,8 @@ internal/
   gatewayrpc/        shared gRPC transport contract (control-plane <-> agent)
   dbsqlc/            sqlc-generated DB layer — DO NOT edit manually
 db/
-  migrations/        PostgreSQL schema
+  migrations/        goose-миграции, два дерева: postgres/ (источник для
+                     sqlc) + sqlite/ — правила в db/migrations/README.md
   queries/           SQL source for sqlc
 proto/               Protobuf definitions for gRPC gateway
 web/                 React dashboard (web/src/ui/ is the in-tree UI kit)
