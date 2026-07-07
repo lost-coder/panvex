@@ -1,13 +1,12 @@
 // Package migrateguard refuses to apply migrations that would silently
 // destroy production data unless the operator has explicitly opted in.
 //
-// Some early-life migrations (notably 0014_fleet_groups_redesign) ship
-// with `DELETE FROM` against tables that hold real production rows.
-// On a fresh DB those statements are no-ops; on a populated DB they
-// erase fleet, agent and client state that cannot be reconstructed
-// without restore-from-backup. The check below sits between the goose
-// runner and `UpContext` so the unsafe path can never be taken without
-// PANVEX_ALLOW_DESTRUCTIVE_MIGRATION=1 in the environment.
+// Historically the registry held 0014_fleet_groups_redesign (DELETE FROM
+// against fleet/agent/client tables); after the P9 squash the registry
+// ships empty and exists for future destructive migrations. The check
+// below sits between the goose runner and `UpContext` so an unsafe path
+// can never be taken without PANVEX_ALLOW_DESTRUCTIVE_MIGRATION=1 in the
+// environment.
 package migrateguard
 
 import (
@@ -43,8 +42,7 @@ const (
 // another DROP/TRUNCATE/DELETE step.
 //
 // Per-dialect differences are handled at the CALL SITE — a benign
-// dialect (e.g. SQLite 0014, which uses ADD COLUMN + UPDATE) simply
-// does not call CheckAll. Keep the call-side wiring in
+// dialect simply does not call CheckAll. Keep the call-side wiring in
 // internal/controlplane/storage/{postgres,sqlite}/migrate.go in sync
 // with this list when adding a new entry.
 type DestructiveMigration struct {
@@ -53,13 +51,16 @@ type DestructiveMigration struct {
 }
 
 // DestructiveMigrations is the canonical registry of destructive
-// migrations.
-var DestructiveMigrations = []DestructiveMigration{
-	{
-		Version: 14,
-		Tables:  []string{"fleet_groups", "agents", "clients"},
-	},
-}
+// migrations. Empty since the P9 migration squash: 0001_init.sql
+// contains only CREATE statements, and the one historical destructive
+// entry (0014_fleet_groups_redesign) no longer ships. Keeping a stale
+// entry would be worse than useless — a post-squash fresh install
+// never records version 14 in goose_db_version, so checkOne would
+// treat the migration as "pending" forever and block every migration
+// run the moment the DB has data. Append a real entry (with its NEW
+// goose version, > squashedHistoryCeiling) whenever a future migration
+// destroys rows.
+var DestructiveMigrations = []DestructiveMigration{}
 
 // CheckAll runs the guard for every entry in DestructiveMigrations and
 // returns the first ErrBlocked it produces (or nil if none apply).

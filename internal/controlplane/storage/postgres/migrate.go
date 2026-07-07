@@ -39,8 +39,10 @@ func MigrateContext(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	// Guard runs BEFORE goose.UpContext so a destructive migration
-	// (e.g., 0014_fleet_groups_redesign) cannot delete production rows
-	// without an explicit operator opt-in. See migrateguard package.
+	// cannot delete production rows without an explicit operator
+	// opt-in. The registry is empty since the P9 squash (no-op), but
+	// the wiring stays so a future destructive migration only needs a
+	// registry entry. See migrateguard package.
 	if err := migrateguard.CheckAll(ctx, db, migrateguard.DialectPostgres, nil); err != nil {
 		return fmt.Errorf("postgres: %w", err)
 	}
