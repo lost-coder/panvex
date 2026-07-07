@@ -8,10 +8,11 @@ import { useEventAwareInterval } from "@/shared/hooks/useEventAwareInterval";
 
 function transformTokens(raw: Awaited<ReturnType<typeof apiClient.listEnrollmentTokens>>): EnrollmentTokenData[] {
   return raw.map((t) => ({
-    // Listings return masked_value + handle; raw `value` only appears on
-    // the creation response. Fall back gracefully so either shape renders.
-    handle: t.handle ?? t.value ?? "",
-    maskedValue: t.masked_value ?? t.value ?? "",
+    // Listings return masked_value + handle; the raw `value` only appears
+    // on the creation response, never in listings (P8.3: the list schema
+    // no longer parses a phantom `value`).
+    handle: t.handle ?? "",
+    maskedValue: t.masked_value ?? "",
     fleetGroupId: t.fleet_group_id || "default",
     status: t.status,
     issuedAtUnix: t.issued_at_unix,

@@ -1,29 +1,36 @@
 /**
- * Compile-time drift guard between the OpenAPI 3.1 source of truth
+ * Drift guard between the OpenAPI 3.1 source of truth
  * (openapi/panvex.yaml → openapi.gen.ts) and the hand-rolled Zod
  * schemas in `schemas/`.
  *
- * Wave 3.3 (see docs/superpowers/plans/2026-05-08-api-codegen.md)
- * keeps Zod for runtime parse — the schemas are intentionally
- * defensive (`agent.ts`: "schemas are DEFENSIVE, not prescriptive"),
- * so backend additions don't break the panel mid-flight. This file
- * shifts the *static* drift check to the type system: if the YAML
- * grows a required field that Zod doesn't parse, the build breaks
- * here instead of at first contact with a payload in production.
+ * Direction 1 — "every spec-required field is parsed, with the right
+ * type" — is enforced AT THE SCHEMA DECLARATIONS via
+ * `satisfies z.ZodType<components["schemas"][...]>` (see
+ * schemas/agent.ts, schemas/enrollment.ts). That check is deep:
+ * TypeScript assignability recurses through nested objects and arrays,
+ * so this file no longer carries the old shallow `AssertCoversRequiredKeys`
+ * machinery (P8.3 replaced it).
  *
- * Failure mode is "missing required field in Zod schema": fix by
- * adding the field to the matching schema, not by editing this file.
+ * Direction 2 — "every field a Zod schema parses is described in the
+ * spec" — is what THIS file asserts. `satisfies` is covariant and lets
+ * extra Zod fields through silently; historically that is exactly how
+ * openapi/panvex.yaml lagged behind the backend (e.g.
+ * connections_bad_by_class existed in Go and Zod but not in the YAML).
+ * The check is per-level: each exported schema is asserted against its
+ * own generated counterpart, so nesting is covered schema-by-schema.
  *
- * Note: the check is intentionally one-directional and shallow
- * (top-level keys only). Zod is allowed to carry *extra* fields
- * (defensive parse). Nested objects are spot-checked separately
- * where they matter.
+ * Failure mode reads as: `["Zod schema parses fields missing from the
+ * OpenAPI spec:", "some_field"]` is not assignable to `true`. Fix by
+ * adding the field to openapi/panvex.yaml (+ `make gen-openapi`) when
+ * the backend really emits it, or by deleting it from the Zod schema
+ * when it does not — never by editing this file's types.
  */
 
 import type { components } from "./openapi.gen.ts";
 import type {
   AgentCertificateRecoveryParsed,
   AgentParsed,
+  AgentRuntimeParsed,
 } from "./schemas/agent.ts";
 import type {
   EnrollmentTokenListItemParsed,
@@ -32,62 +39,50 @@ import type {
 
 type OpenAPISchemas = components["schemas"];
 
-type RequiredKeys<T> = {
-  [K in keyof T]-?: undefined extends T[K] ? never : K;
-}[keyof T];
-
-type MissingRequiredKeys<OpenAPI, Zod> = Exclude<
-  RequiredKeys<OpenAPI>,
-  keyof Zod
->;
+type ExtraKeys<Zod, OpenAPI> = Exclude<keyof Zod, keyof OpenAPI>;
 
 /**
- * Resolves to literal `true` when every required key in `OpenAPI`
- * is present in `Zod`, otherwise to a tuple naming the offenders.
- * Assigning the named alias to a `true`-typed constant is what
- * actually triggers the build break.
+ * Resolves to literal `true` when every key of the parsed Zod output
+ * exists in the generated OpenAPI shape, otherwise to a tuple naming
+ * the offenders. Assigning to a `true`-typed constant triggers the
+ * build break.
  */
-type AssertCoversRequiredKeys<OpenAPI, Zod> = [
-  MissingRequiredKeys<OpenAPI, Zod>,
-] extends [never]
+type AssertNoUnspecKeys<Zod, OpenAPI> = [ExtraKeys<Zod, OpenAPI>] extends [
+  never,
+]
   ? true
-  : ["OpenAPI required fields missing from Zod schema:", MissingRequiredKeys<OpenAPI, Zod>];
+  : ["Zod schema parses fields missing from the OpenAPI spec:", ExtraKeys<Zod, OpenAPI>];
 
-// ─── Drift assertions ───────────────────────────────────────────────
-//
-// Each `_*Drift` const evaluates to `true` when the Zod schema covers
-// the corresponding OpenAPI shape. A type error on any line below
-// means the OpenAPI YAML and the Zod schema have drifted on a
-// required top-level field.
+// ─── Direction-2 assertions ─────────────────────────────────────────
 
-const _agentDrift: AssertCoversRequiredKeys<
-  OpenAPISchemas["Agent"],
-  AgentParsed
+const _agentKeys: AssertNoUnspecKeys<AgentParsed, OpenAPISchemas["Agent"]> =
+  true;
+
+const _agentRuntimeKeys: AssertNoUnspecKeys<
+  AgentRuntimeParsed,
+  OpenAPISchemas["AgentRuntime"]
 > = true;
 
-const _certificateRecoveryDrift: AssertCoversRequiredKeys<
-  OpenAPISchemas["AgentCertificateRecoveryGrant"],
-  // The embedded Zod shape (used inside `Agent.certificate_recovery`)
-  // omits `agent_id` because the field is implicit from context.
-  // Re-introduce it for the comparison so the guard accepts the OpenAPI
-  // shape that always carries it.
-  AgentCertificateRecoveryParsed & { agent_id: string }
+const _certificateRecoveryKeys: AssertNoUnspecKeys<
+  AgentCertificateRecoveryParsed,
+  OpenAPISchemas["AgentCertificateRecoveryGrant"]
 > = true;
 
-const _enrollmentListDrift: AssertCoversRequiredKeys<
-  OpenAPISchemas["EnrollmentTokenListItem"],
-  EnrollmentTokenListItemParsed
+const _enrollmentListKeys: AssertNoUnspecKeys<
+  EnrollmentTokenListItemParsed,
+  OpenAPISchemas["EnrollmentTokenListItem"]
 > = true;
 
-const _enrollmentCreateDrift: AssertCoversRequiredKeys<
-  OpenAPISchemas["CreateEnrollmentTokenResponse"],
-  EnrollmentTokenResponseParsed
+const _enrollmentCreateKeys: AssertNoUnspecKeys<
+  EnrollmentTokenResponseParsed,
+  OpenAPISchemas["CreateEnrollmentTokenResponse"]
 > = true;
 
 // Keep the bindings live so tree-shaking doesn't drop the assertions.
 export const __openapiDriftGuards = [
-  _agentDrift,
-  _certificateRecoveryDrift,
-  _enrollmentListDrift,
-  _enrollmentCreateDrift,
+  _agentKeys,
+  _agentRuntimeKeys,
+  _certificateRecoveryKeys,
+  _enrollmentListKeys,
+  _enrollmentCreateKeys,
 ] as const;

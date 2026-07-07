@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { unixSeconds } from "./common.ts";
+import type { components } from "../openapi.gen.ts";
+import { unixSeconds, type LoosenOptional } from "./common.ts";
 
 /**
  * R-Q-20: Zod schemas for /api/agents/enrollment-tokens.
@@ -8,7 +9,18 @@ import { unixSeconds } from "./common.ts";
  * Schemas mirror the runtime types declared in shared/api/enrollment.ts
  * 1:1 (including which fields are truly optional) so the api<T>()
  * overload accepts them under exactOptionalPropertyTypes.
+ *
+ * P8.3: schemas with an OpenAPI counterpart are compile-time bound to the
+ * generated type via `satisfies z.ZodType<Gen[...]>` (see agent.ts for the
+ * rationale). Gen is optional-loosened (LoosenOptional) so Zod's
+ * `.optional()` output is assignable under exactOptionalPropertyTypes; the
+ * reverse "every Zod key is in the spec" direction lives in
+ * openapi-drift-guard.ts.
  */
+
+type Gen = {
+  [K in keyof components["schemas"]]: LoosenOptional<components["schemas"][K]>;
+};
 
 // PR-2a: ScriptSource / ScriptSources mirror the OpenAPI schemas.
 // `sha256` is intentionally nullable rather than optional — the backend
@@ -17,12 +29,12 @@ import { unixSeconds } from "./common.ts";
 export const scriptSourceSchema = z.object({
   url: z.string(),
   sha256: z.string().nullable(),
-});
+}) satisfies z.ZodType<Gen["ScriptSource"]>;
 
 export const scriptSourcesSchema = z.object({
   panel: scriptSourceSchema,
   github: scriptSourceSchema,
-});
+}) satisfies z.ZodType<Gen["ScriptSources"]>;
 
 export const enrollmentTokenResponseSchema = z.object({
   value: z.string(),
@@ -32,14 +44,15 @@ export const enrollmentTokenResponseSchema = z.object({
   expires_at_unix: unixSeconds,
   ca_pem: z.string(),
   script_sources: scriptSourcesSchema,
-});
+}) satisfies z.ZodType<Gen["CreateEnrollmentTokenResponse"]>;
 
 export const enrollmentTokenListItemSchema = z.object({
   // Listings mask the raw token: the backend emits `masked_value` +
-  // `handle` (omitempty) and omits `value` entirely (http_enrollment.go).
-  // All three are optional so the same schema parses both the masked
-  // listing rows and any future raw-value row.
-  value: z.string().optional(),
+  // `handle` (both omitempty) and omits the raw `value` entirely
+  // (http_enrollment.go — `value` is returned ONLY by the create
+  // endpoint, see CreateEnrollmentTokenResponse). The OpenAPI
+  // EnrollmentTokenListItem has no `value` field, so parsing one here
+  // would be a phantom the drift guard rejects (P8.3).
   masked_value: z.string().optional(),
   handle: z.string().optional(),
   panel_url: z.string(),
@@ -51,7 +64,7 @@ export const enrollmentTokenListItemSchema = z.object({
   // truly optional (absent — not undefined) in the wire payload.
   consumed_at_unix: unixSeconds.optional(),
   revoked_at_unix: unixSeconds.optional(),
-});
+}) satisfies z.ZodType<Gen["EnrollmentTokenListItem"]>;
 
 export const enrollmentTokenListSchema = z.array(enrollmentTokenListItemSchema);
 
@@ -62,6 +75,7 @@ export type EnrollmentTokenListItemParsed = z.infer<typeof enrollmentTokenListIt
 // Mirror the JSON projections in internal/controlplane/enrollment/recorder.go:
 // `AttemptDTO`, `EventDTO`, `AttemptWithEvents`. Optional fields are
 // `omitempty` on the Go side, so we mark them optional here too.
+// no OpenAPI counterpart yet — /api/agents/enrollment attempts endpoints are not specced
 
 export const enrollmentAttemptSchema = z.object({
   id: z.string(),
@@ -125,4 +139,4 @@ export const provisionOutboundAgentResponseSchema = z.object({
   command: z.string(),
   expires_at_unix: unixSeconds,
   script_url: z.string(),
-});
+}) satisfies z.ZodType<Gen["ProvisionOutboundAgentResponse"]>;
