@@ -44,12 +44,15 @@ func TestMigrateGoosePostgres(t *testing.T) {
 		if err != nil || !exists {
 			t.Fatalf("goose_db_version table missing: err=%v exists=%v", err, exists)
 		}
+		// Exactly one embedded migration after the P9 squash: 0001_init.sql.
+		// Pre-squash DBs carry versions 1..58, but this test migrates a fresh
+		// schema, so the ledger must contain exactly version 1.
 		var count int
 		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE is_applied = TRUE AND version_id > 0`).Scan(&count); err != nil {
 			t.Fatalf("count applied versions: %v", err)
 		}
-		if count < 7 {
-			t.Fatalf("expected >= 7 applied goose versions, got %d", count)
+		if count != 1 {
+			t.Fatalf("expected exactly 1 applied goose version (0001_init), got %d", count)
 		}
 	})
 
