@@ -62,7 +62,7 @@ func RunJSONValidationContract(t *testing.T, open OpenStore) {
 
 		ctx := context.Background()
 		err := store.CreateIntegrationProvider(ctx, storage.IntegrationProviderRecord{
-			// PostgreSQL's id column is UUID (migration 0014) — SQLite
+			// PostgreSQL's id column is UUID — SQLite
 			// keeps id as TEXT, but the shared contract must use a value
 			// valid on both backends.
 			ID:        "00000000-0000-4000-a000-000000000101",

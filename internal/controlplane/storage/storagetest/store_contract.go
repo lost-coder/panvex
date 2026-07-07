@@ -15,7 +15,7 @@ type OpenStore func(t *testing.T) storage.MigrationStore
 
 // testFleetGroupID is a deterministic UUIDv4 used as the fleet-group
 // primary key inside contract-test fixtures. Postgres stores ids in a
-// UUID column since migration 0014, so every PutFleetGroup call must
+// UUID column on PostgreSQL (TEXT on SQLite), so every PutFleetGroup call must
 // pass a real UUID. We pick a fixed value so assertions that mention
 // the id stay readable.
 const testFleetGroupID = "00000000-0000-4000-a000-000000000001"

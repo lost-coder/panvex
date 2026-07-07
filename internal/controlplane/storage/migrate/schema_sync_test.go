@@ -206,9 +206,9 @@ var acceptedTypePairs = map[[2]string]bool{
 	// 0041_enrollment_attempts.sql — none of those were touched by 0052).
 	typePairKey("jsonb", "text"): true,
 	// SQLite has no UUID type; fleet_groups.id and dependent FK columns
-	// are UUID on PostgreSQL (postgres/0014_fleet_groups_redesign.sql)
-	// but TEXT on SQLite, with UUID format enforced at the application
-	// layer (see the 0014 sqlite migration header note).
+	// are UUID on PostgreSQL (fleet_groups redesign, squashed into
+	// 0001_init.sql) but TEXT on SQLite, with UUID format enforced at the
+	// application layer.
 	typePairKey("uuid", "text"): true,
 	// agents.bootstrap_token_hash is BYTEA on PostgreSQL
 	// (postgres/0030_node_transport_mode.sql) and BLOB on SQLite

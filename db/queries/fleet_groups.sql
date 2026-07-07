@@ -1,6 +1,6 @@
 -- R-Q-03: fleet_groups — operator-managed grouping of agents +
 -- enrollment-tokens + client-assignments. Note: id is UUID on
--- postgres (since migration 0014).
+-- postgres (UUID id column).
 
 -- name: GetFleetGroup :one
 SELECT id, name, label, description, created_at, updated_at
