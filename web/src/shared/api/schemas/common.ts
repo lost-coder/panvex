@@ -8,6 +8,29 @@ import { z } from "zod";
  * change exactly one location, not one per entity.
  */
 
+/**
+ * P8.3: relaxes every OPTIONAL property of a generated OpenAPI type so it
+ * also admits `undefined`, recursively (through nested objects and array
+ * elements). This is the reconciliation layer for the `schema satisfies
+ * z.ZodType<LoosenOptional<Gen[...]>>` bindings: Zod types the output of a
+ * `.optional()` field as `T | undefined`, but openapi-typescript emits an
+ * exact-optional `T?` which — under this repo's `exactOptionalPropertyTypes`
+ * — does NOT accept an explicit `undefined`. LoosenOptional bridges the two
+ * WITHOUT weakening the drift check: required keys keep their exact type
+ * (missing them still fails the bind) and every type is preserved verbatim
+ * (a drifted type still fails). Only Zod's representation of "absent" is
+ * normalised.
+ */
+export type LoosenOptional<T> = T extends (infer U)[]
+  ? LoosenOptional<U>[]
+  : T extends object
+    ? {
+        [K in keyof T]: undefined extends T[K]
+          ? LoosenOptional<T[K]> | undefined
+          : LoosenOptional<T[K]>;
+      }
+    : T;
+
 /** Free-form non-empty ID — backend issues UUIDs today but we don't enforce
  * the UUID grammar so that any future ID scheme (e.g. KSUID) passes through
  * without a schema bump. */
