@@ -36,7 +36,9 @@
     "dcConnDegraded": "Degraded DC connectivity",
     "noUpstreams": "No upstreams configured",
     "allUpstreamsDown": "All upstreams down",
-    "someUpstreamsUnhealthy": "Some upstreams unhealthy"
+    "someUpstreamsUnhealthy": "Some upstreams unhealthy",
+    "enrollmentPending": "Awaiting enrollment",
+    "enrollmentExpired": "Enrollment token expired — re-issue the install command"
   },
   "unsaved": {
     "title": "Discard unsaved changes?",

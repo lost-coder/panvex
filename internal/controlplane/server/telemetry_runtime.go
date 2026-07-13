@@ -99,6 +99,14 @@ type telemetryServersResponse struct {
 	Servers []telemetryServerSummary `json:"servers"`
 }
 
+// Stable (English) reasons for a half-added node's lifecycle state. The web
+// localizes them via reason-text.ts (en+ru). Kept as backend constants so the
+// severity override and any log/audit reads the same string (R9a).
+const (
+	reasonEnrollmentPending = "Awaiting enrollment"
+	reasonEnrollmentExpired = "Enrollment token expired"
+)
+
 type telemetryServerDetailResponse struct {
 	Server              telemetryServerSummary               `json:"server"`
 	InitializationWatch telemetryInitializationWatchResponse `json:"initialization_watch"`
@@ -419,6 +427,19 @@ func (s *Server) telemetrySummaryForAgent(agent Agent, presenceState presence.St
 		fallbackForSeverity = fallbackEnteredAt
 	}
 	severity, reason := s.telemetrySeverityAndReason(agent, presenceState, freshness, fallbackForSeverity, now)
+	// A half-added node (provisioned, never enrolled) must not read as a
+	// broken server. While it has never connected (presence != online),
+	// present it with a neutral lifecycle reason instead of the offline/bad
+	// phantom from the bug report (R9a). Once it connects, normal severity
+	// applies and BootstrapState is ignored here.
+	if presenceState != presence.StateOnline {
+		switch agent.BootstrapState {
+		case "pending":
+			severity, reason = "ok", reasonEnrollmentPending
+		case "expired":
+			severity, reason = "warn", reasonEnrollmentExpired
+		}
+	}
 	return telemetryServerSummary{
 		Agent:            agent,
 		Severity:         severity,

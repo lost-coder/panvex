@@ -245,8 +245,10 @@ func (s *Server) provisionOutboundAgentRow(
 	// postgres column names (`last_seen_at`, etc.), but the sqlite store
 	// uses parallel column names (`last_seen_at_unix`, INTEGER). The
 	// storage layer hides the difference. LastSeenAt is the "never seen"
-	// sentinel (Unix epoch) — presence views sort the row to the bottom
-	// and the cleanup sweep keys on it.
+	// sentinel (Unix epoch) — presence views sort the row to the bottom.
+	// The row is now a first-class pending node (visible in both UIs via
+	// the ApplySnapshot below), so an operator deletes it explicitly; there
+	// is no background sweep (R9a).
 	if err := s.store.PutAgent(r.Context(), storage.AgentRecord{
 		ID:           agentID,
 		NodeName:     req.NodeName,
@@ -302,6 +304,22 @@ func (s *Server) provisionOutboundAgentRow(
 		PanelURL:   s.ResolveAgentGRPCEndpoint(r), // live grpc.public_endpoint
 	})
 
+	// Make the half-added node a first-class live object immediately: it
+	// shows up in both UIs as pending and OnNodeChanged boots the outbound
+	// supervisor without a panel restart, so enrollment starts while the
+	// 5-minute token is alive (R9a — LiveStore ⊇ DB invariant).
+	agent := agentFromRecord(storage.AgentRecord{
+		ID:             agentID,
+		NodeName:       req.NodeName,
+		FleetGroupID:   fleetGroupID,
+		LastSeenAt:     time.Unix(0, 0).UTC(),
+		BootstrapState: "pending",
+		TransportMode:  "outbound",
+		DialAddress:    req.DialAddress,
+	})
+	s.live.ApplySnapshot(agentID, agent, nil)
+	s.notifyTransportManager(r.Context(), agentID)
+
 	return agentID, cmd, issued.ExpiresAt.Unix(), true
 }
 
@@ -309,8 +327,8 @@ func (s *Server) provisionOutboundAgentRow(
 // when a follow-on step (transport-mode update, token issuance, or token
 // persistence) fails. Best-effort: errors are logged at Error level (not
 // returned) because the original failure is already the user-facing error. If
-// the row sticks around it will be caught by the sweep that prunes outbound
-// rows with expired bootstrap tokens and no first-connection. ErrNotFound is
+// the delete fails the row remains a visible pending node the operator can
+// remove from the UI — there is no background sweep (R9a). ErrNotFound is
 // silently skipped (row already absent).
 func (s *Server) rollbackProvisionedOutboundAgent(ctx context.Context, agentID string) {
 	if s.store == nil {
@@ -320,6 +338,10 @@ func (s *Server) rollbackProvisionedOutboundAgent(ctx context.Context, agentID s
 		s.logger.ErrorContext(ctx, "rollback provisioned outbound agent failed",
 			"agent_id", agentID, "error", err)
 	}
+	// Keep LiveStore ⊇ DB: if ApplySnapshot already ran, drop the mirror and
+	// tell the transport manager to tear down any supervisor it started.
+	s.live.Remove(agentID)
+	s.notifyTransportManager(ctx, agentID)
 }
 
 // isValidAgentNodeName mirrors the wizard's client-side validator: 1-64

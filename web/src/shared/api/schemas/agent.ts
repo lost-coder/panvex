@@ -215,6 +215,11 @@ export const agentSchema = z.object({
   certificate_recovery: agentCertificateRecoverySchema.optional(),
   cert_issued_at: timestamp.optional(),
   cert_expires_at: timestamp.optional(),
+  // R9a: enrollment lifecycle + persisted dial mode of the agents row.
+  // Optional (empty for legacy inbound rows); used to render a half-added
+  // node as pending/expired instead of offline.
+  bootstrap_state: z.string().optional(),
+  dial_transport_mode: z.string().optional(),
   runtime: agentRuntimeSchema,
   last_seen_at: timestamp,
 }) satisfies z.ZodType<Gen["Agent"]>;

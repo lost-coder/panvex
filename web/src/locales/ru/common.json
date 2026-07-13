@@ -36,7 +36,9 @@
     "dcConnDegraded": "Деградация связности с DC",
     "noUpstreams": "Upstream'ы не настроены",
     "allUpstreamsDown": "Все upstream'ы недоступны",
-    "someUpstreamsUnhealthy": "Часть upstream'ов неисправна"
+    "someUpstreamsUnhealthy": "Часть upstream'ов неисправна",
+    "enrollmentPending": "Ожидает подключения",
+    "enrollmentExpired": "Токен enrollment истёк — пересоздайте install-команду"
   },
   "unsaved": {
     "title": "Уйти без сохранения?",

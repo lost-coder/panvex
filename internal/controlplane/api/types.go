@@ -14,7 +14,19 @@ type Agent struct {
 	// agent to outbound transport and no agent session has been accepted
 	// since (A2 "switched but never reconnected"). Request-time derived.
 	TransportReconnectPending bool                                   `json:"transport_reconnect_pending,omitempty"`
-	CertificateRecovery       *AgentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
+	// BootstrapState is the enrollment lifecycle state of the underlying
+	// agents row: "pending" (provisioned, awaiting first enrollment),
+	// "expired" (bootstrap token lapsed before enrollment), or "active"
+	// (enrolled). Empty for legacy inbound rows. Meaningful for the UI only
+	// while the node has never connected (presence != online) — a
+	// half-added node renders as pending/expired instead of offline (R9a).
+	BootstrapState string `json:"bootstrap_state,omitempty"`
+	// DialTransportMode is the persisted transport mode of the agents row —
+	// "inbound" (agent dials the panel) or "outbound" (panel dials the
+	// agent). Distinct from Runtime.TransportMode, which is Telemt's
+	// classic/middle_proxy runtime mode (R9a).
+	DialTransportMode   string                                 `json:"dial_transport_mode,omitempty"`
+	CertificateRecovery *AgentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
 	CertIssuedAt              *time.Time                             `json:"cert_issued_at,omitempty"`
 	CertExpiresAt             *time.Time                             `json:"cert_expires_at,omitempty"`
 	// CertSerial is the serial of the most recently issued client cert.

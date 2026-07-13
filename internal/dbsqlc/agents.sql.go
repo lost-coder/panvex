@@ -28,20 +28,24 @@ func (q *Queries) GetAgentCertPin(ctx context.Context, id string) ([]byte, error
 
 const listAgents = `-- name: ListAgents :many
 SELECT id, node_name, fleet_group_id, version, read_only,
-       last_seen_at, cert_issued_at, cert_expires_at
+       last_seen_at, cert_issued_at, cert_expires_at,
+       transport_mode, dial_address, bootstrap_state
 FROM agents
 ORDER BY last_seen_at ASC, id ASC
 `
 
 type ListAgentsRow struct {
-	ID            string
-	NodeName      string
-	FleetGroupID  uuid.NullUUID
-	Version       string
-	ReadOnly      bool
-	LastSeenAt    time.Time
-	CertIssuedAt  sql.NullTime
-	CertExpiresAt sql.NullTime
+	ID             string
+	NodeName       string
+	FleetGroupID   uuid.NullUUID
+	Version        string
+	ReadOnly       bool
+	LastSeenAt     time.Time
+	CertIssuedAt   sql.NullTime
+	CertExpiresAt  sql.NullTime
+	TransportMode  string
+	DialAddress    sql.NullString
+	BootstrapState string
 }
 
 func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
@@ -62,6 +66,9 @@ func (q *Queries) ListAgents(ctx context.Context) ([]ListAgentsRow, error) {
 			&i.LastSeenAt,
 			&i.CertIssuedAt,
 			&i.CertExpiresAt,
+			&i.TransportMode,
+			&i.DialAddress,
+			&i.BootstrapState,
 		); err != nil {
 			return nil, err
 		}

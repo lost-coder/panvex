@@ -114,7 +114,7 @@ func (s *Store) EarliestAgentCertExpiry(ctx context.Context) (*time.Time, error)
 
 func (s *Store) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, node_name, fleet_group_id, version, read_only, last_seen_at_unix, cert_issued_at_unix, cert_expires_at_unix, cert_serial
+		SELECT id, node_name, fleet_group_id, version, read_only, last_seen_at_unix, cert_issued_at_unix, cert_expires_at_unix, cert_serial, transport_mode, dial_address, bootstrap_state
 		FROM agents
 		ORDER BY last_seen_at_unix, id
 	`)
@@ -132,11 +132,15 @@ func (s *Store) ListAgents(ctx context.Context) ([]storage.AgentRecord, error) {
 		var certIssuedAtUnix sql.NullInt64
 		var certExpiresAtUnix sql.NullInt64
 		var certSerial sql.NullString
-		if err := rows.Scan(&agent.ID, &agent.NodeName, &fleetGroupID, &agent.Version, &readOnly, &lastSeenAt, &certIssuedAtUnix, &certExpiresAtUnix, &certSerial); err != nil {
+		var dialAddress sql.NullString
+		if err := rows.Scan(&agent.ID, &agent.NodeName, &fleetGroupID, &agent.Version, &readOnly, &lastSeenAt, &certIssuedAtUnix, &certExpiresAtUnix, &certSerial, &agent.TransportMode, &dialAddress, &agent.BootstrapState); err != nil {
 			return nil, err
 		}
 		if certSerial.Valid {
 			agent.CertSerial = certSerial.String
+		}
+		if dialAddress.Valid {
+			agent.DialAddress = dialAddress.String
 		}
 		if fleetGroupID.Valid {
 			agent.FleetGroupID = fleetGroupID.String
