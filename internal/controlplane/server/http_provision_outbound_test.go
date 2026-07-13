@@ -159,6 +159,8 @@ func TestProvisionOutboundAgentVisibleAndDeletable(t *testing.T) {
 				BootstrapState    string `json:"bootstrap_state"`
 				DialTransportMode string `json:"dial_transport_mode"`
 			} `json:"agent"`
+			Severity string `json:"severity"`
+			Reason   string `json:"reason"`
 		} `json:"servers"`
 	}
 	if err := json.Unmarshal(list.Body.Bytes(), &listBody); err != nil {
@@ -175,6 +177,14 @@ func TestProvisionOutboundAgentVisibleAndDeletable(t *testing.T) {
 		}
 		if srv.Agent.DialTransportMode != "outbound" {
 			t.Errorf("dial_transport_mode = %q, want outbound", srv.Agent.DialTransportMode)
+		}
+		// A never-connected pending node reads neutrally, not as a broken
+		// server (no offline/bad phantom).
+		if srv.Severity != "ok" {
+			t.Errorf("severity = %q, want ok for pending node", srv.Severity)
+		}
+		if srv.Reason != "Awaiting enrollment" {
+			t.Errorf("reason = %q, want %q", srv.Reason, "Awaiting enrollment")
 		}
 	}
 	if !found {
