@@ -98,7 +98,14 @@ func buildChainedRows(t *testing.T, n int) []storage.AuditEventRecord {
 			Details:   map[string]any{"step": i, "label": "row"},
 			PrevHash:  prev,
 		}
-		hash, err := hashchain.ComputeEventHash(prev, r)
+		hash, err := hashchain.ComputeEventHash(prev, hashchain.Record{
+			ID:        r.ID,
+			ActorID:   r.ActorID,
+			Action:    r.Action,
+			TargetID:  r.TargetID,
+			CreatedAt: r.CreatedAt,
+			Details:   r.Details,
+		})
 		if err != nil {
 			t.Fatalf("compute: %v", err)
 		}

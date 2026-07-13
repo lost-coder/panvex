@@ -4,12 +4,10 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 func TestComputeEventHashDeterministic(t *testing.T) {
-	r := storage.AuditEventRecord{
+	r := Record{
 		ID:        "evt_42",
 		ActorID:   "user_admin",
 		Action:    "client.create",
@@ -35,7 +33,7 @@ func TestComputeEventHashDeterministic(t *testing.T) {
 }
 
 func TestComputeEventHashDetailsKeyOrderIrrelevant(t *testing.T) {
-	base := storage.AuditEventRecord{
+	base := Record{
 		ID:        "evt_1",
 		ActorID:   "user_x",
 		Action:    "settings.update",
@@ -43,9 +41,6 @@ func TestComputeEventHashDetailsKeyOrderIrrelevant(t *testing.T) {
 		CreatedAt: time.Unix(1700000000, 0).UTC(),
 	}
 
-	// Same details, different Go map iteration order in principle.
-	// Two literal map[string]any constructions exercise the canonical
-	// re-encoding path — the resulting hash must be identical.
 	a := base
 	a.Details = map[string]any{"alpha": 1, "beta": 2, "gamma": map[string]any{"x": "y", "z": "w"}}
 
@@ -65,8 +60,36 @@ func TestComputeEventHashDetailsKeyOrderIrrelevant(t *testing.T) {
 	}
 }
 
+// TestComputeEventHashFieldBoundary (R4, audit §1.5): moving a delimiter
+// between two fields must change the hash. Before canonical-JSON the payload
+// was "%s|…|%s"-joined, so (Action="a|b", TargetID="c") and
+// (Action="a", TargetID="b|c") collided into one hash.
+func TestComputeEventHashFieldBoundary(t *testing.T) {
+	base := Record{
+		ID:        "evt_x",
+		ActorID:   "u",
+		CreatedAt: time.Unix(1700000000, 0).UTC(),
+	}
+	a := base
+	a.Action, a.TargetID = "a|b", "c"
+	b := base
+	b.Action, b.TargetID = "a", "b|c"
+
+	ha, err := ComputeEventHash("", a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hb, err := ComputeEventHash("", b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ha == hb {
+		t.Fatal("delimiter collision: distinct (Action,TargetID) split produced the same hash")
+	}
+}
+
 func TestComputeEventHashPrevHashChangesOutput(t *testing.T) {
-	r := storage.AuditEventRecord{
+	r := Record{
 		ID:        "evt_2",
 		ActorID:   "user_y",
 		Action:    "agent.deregister",
@@ -88,14 +111,10 @@ func TestComputeEventHashPrevHashChangesOutput(t *testing.T) {
 	}
 }
 
-// TestComputeEventHashPrevHashCantSpoofPayload verifies the
-// unit-separator boundary between prev_hash and the payload.
-// Without it, an attacker who chose a prev_hash that embedded the
-// next payload's prefix could compute a colliding hash. The 0x1F
-// separator is not part of the hex alphabet so a real prev_hash
-// (always hex) cannot collide.
+// TestComputeEventHashPrevHashCantSpoofPayload verifies the unit-separator
+// boundary between prev_hash and the payload.
 func TestComputeEventHashPrevHashCantSpoofPayload(t *testing.T) {
-	r := storage.AuditEventRecord{
+	r := Record{
 		ID:        "evt_3",
 		ActorID:   "u",
 		Action:    "a",
@@ -104,7 +123,7 @@ func TestComputeEventHashPrevHashCantSpoofPayload(t *testing.T) {
 		Details:   map[string]any{},
 	}
 
-	hWith, err := ComputeEventHash("evt_3|u", r) // tries to embed payload prefix into prev_hash
+	hWith, err := ComputeEventHash("evt_3|u", r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,20 +136,18 @@ func TestComputeEventHashPrevHashCantSpoofPayload(t *testing.T) {
 	}
 }
 
-func TestCanonicaliseDetailsEmptyMap(t *testing.T) {
-	for _, in := range []map[string]any{nil, {}} {
-		s, err := CanonicaliseDetails(in)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if s != "{}" {
-			t.Fatalf("empty details should serialise to {}, got %q", s)
-		}
+func TestCanonicaliseJSONValueEmptyMap(t *testing.T) {
+	s, err := canonicaliseJSONValue(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s != "{}" {
+		t.Fatalf("empty map should serialise to {}, got %q", s)
 	}
 }
 
-func TestCanonicaliseDetailsStableNesting(t *testing.T) {
-	got, err := CanonicaliseDetails(map[string]any{
+func TestCanonicaliseJSONValueStableNesting(t *testing.T) {
+	got, err := canonicaliseJSONValue(map[string]any{
 		"a": []any{3, 1, 2}, // arrays preserve order
 		"b": map[string]any{"y": 2, "x": 1},
 	})

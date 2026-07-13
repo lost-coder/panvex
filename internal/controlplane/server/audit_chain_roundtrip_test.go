@@ -60,7 +60,14 @@ func TestAuditChainSurvivesStorageRoundTrip(t *testing.T) {
 		if row.PrevHash != prev {
 			t.Fatalf("row %d prev_hash mismatch: stored %q want %q", i, row.PrevHash, prev)
 		}
-		want, err := hashchain.ComputeEventHash(prev, row)
+		want, err := hashchain.ComputeEventHash(prev, hashchain.Record{
+			ID:        row.ID,
+			ActorID:   row.ActorID,
+			Action:    row.Action,
+			TargetID:  row.TargetID,
+			CreatedAt: row.CreatedAt,
+			Details:   row.Details,
+		})
 		if err != nil {
 			t.Fatalf("ComputeEventHash: %v", err)
 		}

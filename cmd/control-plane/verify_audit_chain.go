@@ -142,7 +142,14 @@ func verifyAuditChainRows(rows []storage.AuditEventRecord) (report string, misma
 
 		// Recompute the event hash to detect rewrites of the row's
 		// own fields (id/actor/action/target/created_at/details).
-		recomputed, err := hashchain.ComputeEventHash(prev, row)
+		recomputed, err := hashchain.ComputeEventHash(prev, hashchain.Record{
+			ID:        row.ID,
+			ActorID:   row.ActorID,
+			Action:    row.Action,
+			TargetID:  row.TargetID,
+			CreatedAt: row.CreatedAt,
+			Details:   row.Details,
+		})
 		if err != nil {
 			return b.String() + fmt.Sprintf(
 				"hash compute failed at event %s: %v\n",

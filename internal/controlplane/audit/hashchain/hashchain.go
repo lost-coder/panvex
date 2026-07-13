@@ -10,19 +10,32 @@
 // The verifier walks the table chronologically; recompute mismatch
 // names the offending event id. Pre-migration rows have empty
 // hashes — the verifier treats them as the chain-genesis prefix.
+//
+// This package is a leaf primitive: it depends only on the standard
+// library so the hash domain can't shift under it (R4). Callers pass a
+// Record built from their own row type rather than importing a storage
+// struct here.
 package hashchain
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
+
+// Record is the subset of an audit event that is covered by the hash. It is
+// defined locally (not imported from storage) so hashchain stays a leaf.
+type Record struct {
+	ID        string
+	ActorID   string
+	Action    string
+	TargetID  string
+	CreatedAt time.Time
+	Details   map[string]any
+}
 
 // ComputeEventHash returns the hex-encoded SHA-256 of
 //
@@ -30,49 +43,48 @@ import (
 //
 // The unit-separator byte makes the prev_hash boundary unambiguous —
 // a prev_hash that happened to embed the literal payload prefix
-// can't silently glue itself onto the next record. The canonical
-// encoding sorts JSON object keys recursively so two byte-identical
-// records serialised on different machines always produce the same
-// hash.
+// can't silently glue itself onto the next record.
+//
+// canonical(record) is a canonical-JSON object over ALL covered fields with
+// keys sorted recursively. Encoding each field as a distinct JSON member
+// (rather than the old "%s|%s|…" join) removes the delimiter-collision where
+// (Action="a|b", TargetID="c") and (Action="a", TargetID="b|c") hashed
+// identically (R4, audit 2026-07-07 §1.5). Byte-identical records serialised
+// on different machines always produce the same hash.
 //
 // The producer side is a single batch-writer goroutine plus the
 // rare appendAuditSync path serialised through metricsAuditMu — the
 // chain has a single producer at a time. See server/audit_trail.go
 // for the race contract.
-func ComputeEventHash(prevHash string, r storage.AuditEventRecord) (string, error) {
-	canonicalDetails, err := CanonicaliseDetails(r.Details)
-	if err != nil {
-		return "", fmt.Errorf("canonicalise audit details: %w", err)
+func ComputeEventHash(prevHash string, r Record) (string, error) {
+	details := r.Details
+	if details == nil {
+		details = map[string]any{}
 	}
-	payload := fmt.Sprintf(
-		"%s|%s|%s|%s|%s|%s",
-		r.ID, r.ActorID, r.Action, r.TargetID,
-		r.CreatedAt.UTC().Format(time.RFC3339Nano),
-		canonicalDetails,
-	)
+	canonical, err := canonicaliseJSONValue(map[string]any{
+		"id":         r.ID,
+		"actor_id":   r.ActorID,
+		"action":     r.Action,
+		"target_id":  r.TargetID,
+		"created_at": r.CreatedAt.UTC().Format(time.RFC3339Nano),
+		"details":    details,
+	})
+	if err != nil {
+		return "", err
+	}
 	h := sha256.New()
 	h.Write([]byte(prevHash))
 	h.Write([]byte{0x1f}) // ASCII unit separator: prev_hash boundary marker
-	h.Write([]byte(payload))
+	h.Write([]byte(canonical))
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// CanonicaliseDetails returns a JSON re-encoding of the details map
-// with object keys sorted (recursively). An empty/nil map serialises
-// as "{}" so the hash domain is stable.
-func CanonicaliseDetails(details map[string]any) (string, error) {
-	if len(details) == 0 {
-		return "{}", nil
-	}
-	return CanonicaliseJSONValue(details)
-}
-
-// CanonicaliseJSONValue walks a decoded JSON value (or a Go-native
+// canonicaliseJSONValue walks a decoded JSON value (or a Go-native
 // equivalent built from interface{} maps and slices) and emits a
 // deterministic JSON string with sorted object keys. Numbers and
 // strings round-trip through encoding/json so escape rules and
 // floating-point representation match the standard encoder.
-func CanonicaliseJSONValue(v any) (string, error) {
+func canonicaliseJSONValue(v any) (string, error) {
 	switch t := v.(type) {
 	case nil:
 		return "null", nil
@@ -94,7 +106,7 @@ func CanonicaliseJSONValue(v any) (string, error) {
 	case []any:
 		parts := make([]string, 0, len(t))
 		for _, item := range t {
-			s, err := CanonicaliseJSONValue(item)
+			s, err := canonicaliseJSONValue(item)
 			if err != nil {
 				return "", err
 			}
@@ -113,7 +125,7 @@ func CanonicaliseJSONValue(v any) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			vEnc, err := CanonicaliseJSONValue(t[k])
+			vEnc, err := canonicaliseJSONValue(t[k])
 			if err != nil {
 				return "", err
 			}
