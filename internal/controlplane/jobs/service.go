@@ -518,7 +518,11 @@ func (s *Service) Enqueue(ctx context.Context, input CreateJobInput, now time.Ti
 	}
 
 	s.sequence++
-	jobID := fmt.Sprintf("job-%06d", s.sequence)
+	// job-%012d: zero-padded to 12 digits so lexicographic ordering (used by
+	// supersede + top-K) stays correct past 999999 jobs. maxJobSequence parses
+	// any digit width, so restoring a mix of old (job-%06d) and new IDs is
+	// safe (R4, audit 2026-07-07 §1.10).
+	jobID := fmt.Sprintf("job-%012d", s.sequence)
 	job := Job{
 		ID:             jobID,
 		Action:         input.Action,
@@ -1083,18 +1087,20 @@ func targetIsPending(target JobTarget, now time.Time, retryAfter time.Duration) 
 // observedAt is the agent-reported execution timestamp; retained as API
 // metadata only — retry gating uses the panel clock (D3).
 func (s *Service) MarkDelivered(ctx context.Context, agentID, jobID string, observedAt time.Time) {
-	s.updateTarget(ctx, agentID, jobID, func(target *JobTarget) {
+	s.updateTarget(ctx, agentID, jobID, func(target *JobTarget) bool {
 		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
-			return
+			return true
 		}
 		if target.Status == TargetStatusAcknowledged {
 			// P2-LOG-05: re-dispatched post-restore ack targets stay in the
 			// acknowledged state (so the result handler sees the correct
 			// history), but the UpdatedAt bump via updateTarget gates the
-			// next retryAfter window in PendingForAgent.
-			return
+			// next retryAfter window in PendingForAgent — so this is a
+			// deliberate persist, not a no-op.
+			return true
 		}
 		target.Status = TargetStatusSent
+		return true
 	})
 }
 
@@ -1102,14 +1108,15 @@ func (s *Service) MarkDelivered(ctx context.Context, agentID, jobID string, obse
 // observedAt is the agent-reported execution timestamp; retained as API
 // metadata only — retry gating uses the panel clock (D3).
 func (s *Service) MarkAcknowledged(ctx context.Context, agentID, jobID string, observedAt time.Time) {
-	s.updateTarget(ctx, agentID, jobID, func(target *JobTarget) {
+	s.updateTarget(ctx, agentID, jobID, func(target *JobTarget) bool {
 		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
-			return
+			return true
 		}
 		if target.Status != TargetStatusSent && target.Status != TargetStatusAcknowledged {
-			return
+			return true
 		}
 		target.Status = TargetStatusAcknowledged
+		return true
 	})
 }
 
@@ -1239,9 +1246,12 @@ func (s *Service) StartAcknowledgedExpiryWorker(ctx context.Context, interval ti
 // observedAt is the agent-reported execution timestamp; retained as API
 // metadata only — retry gating uses the panel clock (D3).
 func (s *Service) RecordResult(ctx context.Context, agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) bool {
-	applied := s.updateTarget(ctx, agentID, jobID, func(target *JobTarget) {
+	applied := s.updateTarget(ctx, agentID, jobID, func(target *JobTarget) bool {
 		if target.Status == TargetStatusExpired {
-			return
+			// A result that arrived after the target already expired is a
+			// no-op: don't stamp UpdatedAt or persist a redundant job version
+			// (R4, audit 2026-07-07 §1.10).
+			return false
 		}
 		if success {
 			target.Status = TargetStatusSucceeded
@@ -1250,6 +1260,7 @@ func (s *Service) RecordResult(ctx context.Context, agentID, jobID string, succe
 		}
 		target.ResultText = message
 		target.ResultJSON = resultJSON
+		return true
 	})
 	if applied {
 		// Look up the job's action for the log record. We tolerate a miss
@@ -1321,19 +1332,24 @@ func (s *Service) expireJobAndCollectCandidatesLocked(job Job, now time.Time) []
 // agent-supplied observedAt. Retry gating in targetIsPending compares
 // UpdatedAt against s.now(); mixing in agent clock skew let a
 // fast-clocked agent freeze redelivery indefinitely.
-func (s *Service) applyTargetMutationLocked(job Job, agentID string, now time.Time, mutate func(target *JobTarget)) []persistCandidate {
+// mutate returns false when it was a no-op (e.g. a late result for an
+// already-expired target); in that case the target is left untouched — no
+// UpdatedAt bump, no redundant persist (R4, audit 2026-07-07 §1.10).
+func (s *Service) applyTargetMutationLocked(job Job, agentID string, now time.Time, mutate func(target *JobTarget) bool) ([]persistCandidate, bool) {
 	updated := false
 	for index := range job.Targets {
 		if job.Targets[index].AgentID != agentID {
 			continue
 		}
+		if !mutate(&job.Targets[index]) {
+			return nil, false
+		}
 		job.Targets[index].UpdatedAt = now
-		mutate(&job.Targets[index])
 		updated = true
 		break
 	}
 	if !updated {
-		return nil
+		return nil, false
 	}
 
 	prevStatus := job.Status
@@ -1352,7 +1368,7 @@ func (s *Service) applyTargetMutationLocked(job Job, agentID string, now time.Ti
 	s.noteJobExpiryLocked(job)
 
 	if s.jobStore == nil {
-		return nil
+		return nil, true
 	}
 	s.updateSeq++
 	s.jobVersion[job.ID] = s.updateSeq
@@ -1360,7 +1376,7 @@ func (s *Service) applyTargetMutationLocked(job Job, agentID string, now time.Ti
 		jobID:   job.ID,
 		version: s.updateSeq,
 		job:     cloneJob(job),
-	}}
+	}}, true
 }
 
 // updateTarget applies `mutate` to the matching target. D3: the target's
@@ -1368,7 +1384,7 @@ func (s *Service) applyTargetMutationLocked(job Job, agentID string, now time.Ti
 // s.now() — is stamped with the PANEL clock. The agent-reported ObservedAt
 // (kept in the exported Mark*/RecordResult signatures) is metadata only;
 // mixing it in let agent clock skew freeze or storm redelivery.
-func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, mutate func(target *JobTarget)) bool {
+func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, mutate func(target *JobTarget) bool) bool {
 	s.mu.Lock()
 	now := s.now().UTC()
 
@@ -1383,17 +1399,18 @@ func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, mutat
 	}
 
 	var candidates []persistCandidate
+	applied := true
 	if jobShouldExpire(job, now) {
 		candidates = s.expireJobAndCollectCandidatesLocked(job, now)
 	} else {
-		candidates = s.applyTargetMutationLocked(job, agentID, now, mutate)
+		candidates, applied = s.applyTargetMutationLocked(job, agentID, now, mutate)
 	}
 	s.mu.Unlock()
 
 	for _, candidate := range candidates {
 		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
-	return true
+	return applied
 }
 
 func (s *Service) expireJobsLocked(now time.Time) []persistCandidate {
