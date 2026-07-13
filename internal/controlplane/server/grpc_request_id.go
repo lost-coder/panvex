@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
+	"github.com/lost-coder/panvex/internal/requestid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -29,7 +30,7 @@ func injectRequestID(ctx context.Context) context.Context {
 	if id == "" {
 		id = newRequestID()
 	}
-	ctx = context.WithValue(ctx, requestIDKey{}, id)
+	ctx = requestid.WithRequestID(ctx, id)
 	return enrollment.WithRequestID(ctx, id)
 }
 

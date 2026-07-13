@@ -2,8 +2,6 @@ package logutil
 
 import (
 	"log/slog"
-
-	"github.com/lost-coder/panvex/internal/controlplane/server"
 )
 
 // NewHandler returns the project's standard slog handler:
@@ -38,5 +36,5 @@ func NewHandler(opts Options) slog.Handler {
 		inner = slog.NewTextHandler(sink, handlerOpts)
 	}
 	redacting := newRedactingHandler(inner)
-	return server.NewSlogContextHandler(redacting)
+	return NewSlogContextHandler(redacting)
 }

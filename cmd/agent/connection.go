@@ -29,7 +29,9 @@ type transportReloadState struct {
 
 // panelClientCN mirrors server.PanelClientCN — the protocol-fixed CN of the
 // control-plane's outbound client certificate. Duplicated as a literal
-// because cmd/agent must not import the control-plane server package.
+// because cmd/agent must not import the control-plane server package: the
+// agent's transitive deps are guarded to contain no controlplane/server (and
+// no DB layer) — see agent_deps_test.go (R3).
 const panelClientCN = "control-plane.panvex.internal"
 
 // updateBackupCleanupOnce gates the one-shot removal of the self-update
