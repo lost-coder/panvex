@@ -37,7 +37,14 @@ import (
 func (s *Server) chainAuditRecordLocked(ctx context.Context, event AuditEvent) storage.AuditEventRecord {
 	record := auditEventToRecord(event)
 	prev := s.auditChainTail
-	hash, err := hashchain.ComputeEventHash(prev, record)
+	hash, err := hashchain.ComputeEventHash(prev, hashchain.Record{
+		ID:        record.ID,
+		ActorID:   record.ActorID,
+		Action:    record.Action,
+		TargetID:  record.TargetID,
+		CreatedAt: record.CreatedAt,
+		Details:   record.Details,
+	})
 	if err != nil {
 		s.logger.ErrorContext(ctx, "audit chain hash compute failed",
 			"event_id", record.ID,

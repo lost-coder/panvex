@@ -95,6 +95,11 @@ type EndpointInput struct {
 type Storage interface {
 	ListEnabledEndpoints(ctx context.Context) ([]Endpoint, error)
 	InsertOutbox(ctx context.Context, row OutboxRow) error
+	// InsertOutboxBatch writes an entire event fan-out in ONE transaction:
+	// either every row lands or none do. The producer uses this so a partial
+	// fan-out (some endpoints notified, others not, because a mid-loop insert
+	// failed) can never happen (R4 §1.7). An empty slice is a no-op.
+	InsertOutboxBatch(ctx context.Context, rows []OutboxRow) error
 	ClaimReady(ctx context.Context, now time.Time, max int) ([]Delivery, error)
 	MarkDelivered(ctx context.Context, id string, deliveredAt time.Time) error
 	MarkFailed(ctx context.Context, id string, attempt int, nextAttempt time.Time, errMsg string, dead bool) error

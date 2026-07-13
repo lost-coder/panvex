@@ -11,10 +11,91 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+// TestJobIDFormatIs12Digit (R4, audit §1.10): generated IDs are zero-padded to
+// 12 digits so lexicographic ordering (supersede + top-K) survives past 1e6.
+func TestJobIDFormatIs12Digit(t *testing.T) {
+	service := NewService()
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "fmt-1",
+		PayloadJSON:    `{"client_id":"c-1","max_tcp_conns":1}`,
+	}, time.Date(2026, time.July, 3, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if job.ID != "job-000000000001" {
+		t.Fatalf("first job ID = %q, want job-000000000001 (12-digit)", job.ID)
+	}
+	if !strings.HasPrefix(job.ID, "job-") || len(job.ID) != len("job-000000000001") {
+		t.Fatalf("job ID = %q, want job-%%012d form", job.ID)
+	}
+}
+
+// TestRecordResultOnExpiredTargetIsNoOp (R4, audit §1.10): a result that
+// arrives after the target already expired must be a no-op — RecordResult
+// returns false and does not overwrite the target or bump UpdatedAt.
+func TestRecordResultOnExpiredTargetIsNoOp(t *testing.T) {
+	base := time.Date(2026, time.July, 3, 12, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return base })
+
+	job, err := service.Enqueue(context.Background(), CreateJobInput{
+		Action:         ActionClientUpdate,
+		TargetAgentIDs: []string{"agent-1"},
+		TTL:            time.Minute,
+		IdempotencyKey: "exp-noop-1",
+		PayloadJSON:    `{"client_id":"c-1","max_tcp_conns":1}`,
+	}, base)
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	// Advance past the TTL so the next touch expires the target.
+	later := base.Add(2 * time.Minute)
+	service.SetNow(func() time.Time { return later })
+
+	// First late touch expires the job (target -> expired).
+	service.RecordResult(context.Background(), "agent-1", job.ID, true, "late", "", later)
+
+	// Second late result finds the target already expired: it must be a no-op.
+	if service.RecordResult(context.Background(), "agent-1", job.ID, true, "late-again", "", later) {
+		t.Fatal("RecordResult on an already-expired target must return false (no-op, no redundant persist)")
+	}
+
+	got, ok := service.Get(job.ID)
+	if !ok {
+		t.Fatal("job missing after expiry")
+	}
+	if got.Targets[0].Status != TargetStatusExpired {
+		t.Fatalf("target status = %q, want expired", got.Targets[0].Status)
+	}
+	if got.Targets[0].ResultText != "" {
+		t.Fatalf("expired target result text = %q, want empty (late results ignored)", got.Targets[0].ResultText)
+	}
+}
+
+// TestMaxJobSequenceMixedWidths (R4, audit §1.10): restoring a mix of old
+// (job-%06d) and new (job-%012d) IDs must recover the true max sequence.
+func TestMaxJobSequenceMixedWidths(t *testing.T) {
+	var seq uint64
+	seq = maxJobSequence(seq, "job-000005")       // old 6-digit
+	seq = maxJobSequence(seq, "job-000000000010") // new 12-digit
+	seq = maxJobSequence(seq, "job-000000000003") // lower, ignored
+	if seq != 10 {
+		t.Fatalf("maxJobSequence mixed widths = %d, want 10", seq)
+	}
+	if "job-000000999999" >= "job-000001000000" {
+		t.Fatal("12-digit IDs must sort lexicographically by numeric value")
+	}
+}
 
 // testClientSupersedeKey mirrors clients.JobSupersedeKey. It cannot be
 // imported here: these tests are white-box (package jobs), and clients

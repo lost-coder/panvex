@@ -98,6 +98,42 @@ func (s *WebhookStore) InsertOutbox(ctx context.Context, row webhooks.OutboxRow)
 	return nil
 }
 
+const insertOutboxSQL = `
+	INSERT INTO webhook_outbox
+		(id, endpoint_id, event_action, payload, attempt, next_attempt_at, last_error, dead, created_at)
+	VALUES
+		(?, ?, ?, ?, ?, ?, '', 0, ?)
+`
+
+// InsertOutboxBatch writes every fan-out row in ONE transaction so a failure
+// on any row leaves the outbox untouched (R4 §1.7).
+func (s *WebhookStore) InsertOutboxBatch(ctx context.Context, rows []webhooks.OutboxRow) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("webhooks: begin outbox batch: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, row := range rows {
+		payload := row.Payload
+		if len(payload) == 0 {
+			payload = json.RawMessage(`{}`)
+		}
+		if _, err := tx.ExecContext(ctx, insertOutboxSQL,
+			row.ID, row.EndpointID, row.EventAction, string(payload),
+			row.Attempt, row.NextAttemptAt.UTC(), row.CreatedAt.UTC(),
+		); err != nil {
+			return fmt.Errorf("webhooks: insert outbox batch row: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("webhooks: commit outbox batch: %w", err)
+	}
+	return nil
+}
+
 // ClaimReady selects up to max ready rows joined with their
 // endpoint and returns Delivery records. SQLite's WAL gives one
 // writer at a time, so a worker reading then writing within a

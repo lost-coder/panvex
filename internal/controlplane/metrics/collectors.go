@@ -68,6 +68,13 @@ type Collectors struct {
 	// label-less to honour the cardinality rule above (no agent_id).
 	AgentInboundDropsTotal prometheus.Counter
 
+	// R4 (audit §1.12): symmetric silent-drop visibility for the regular
+	// agent-SNAPSHOT queue. enqueueRegularSnapshot uses the same drop-oldest
+	// retry as the inbound path; when a concurrent reader re-fills the slot
+	// the fresh snapshot was discarded with no signal. Label-less, same
+	// cardinality rule as AgentInboundDropsTotal.
+	AgentSnapshotDropsTotal prometheus.Counter
+
 	JobQueueDepth prometheus.Gauge
 	LockoutActive prometheus.Gauge
 
@@ -232,6 +239,10 @@ func NewCollectors() *Collectors {
 			Name: "panvex_agent_inbound_drops_total",
 			Help: "Inbound agent messages dropped on the regular-priority queue when the drop-oldest retry races with a concurrent reader. Intentionally label-less to keep cardinality bounded (D-2).",
 		}),
+		AgentSnapshotDropsTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "panvex_agent_snapshot_drops_total",
+			Help: "Regular-priority agent snapshots dropped when the drop-oldest retry races with a concurrent reader. Intentionally label-less to keep cardinality bounded (R4 §1.12).",
+		}),
 		EventHubSubscribers: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "panvex_event_hub_subscribers",
 			Help: "Current number of event-hub subscribers.",
@@ -343,6 +354,7 @@ func NewCollectors() *Collectors {
 		mc.EventHubDropTotal,
 		mc.EventHubSubscribers,
 		mc.AgentInboundDropsTotal,
+		mc.AgentSnapshotDropsTotal,
 		mc.JobQueueDepth,
 		mc.LockoutActive,
 		mc.JobPersistFailuresTotal,

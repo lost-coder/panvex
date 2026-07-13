@@ -6,6 +6,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // handleSnapshotMessage resolves client IDs on the wire snapshot and enqueues
@@ -31,7 +32,16 @@ func (g *Gateway) handleSnapshotMessage(connectionCtx context.Context, agentID s
 		ObservedAt: observedAt,
 		Clients:    reports,
 		ClientIPs:  clientIPs,
-	})
+	}, g.snapshotDropCounter(), g.logger)
+}
+
+// snapshotDropCounter returns the observability counter for dropped regular
+// snapshots, or nil when metrics are not wired (tests).
+func (g *Gateway) snapshotDropCounter() prometheus.Counter {
+	if g.obs != nil {
+		return g.obs.AgentSnapshotDropsTotal
+	}
+	return nil
 }
 
 // convertClientUsageSnapshots translates wire client usage rows into

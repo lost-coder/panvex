@@ -56,6 +56,18 @@ func (s *Server) startWebhookWorker(ctx context.Context, storage webhooks.Storag
 	worker := webhooks.NewWorker(storage, webhooks.WorkerConfig{
 		Logger: logger.With("subsystem", "webhooks"),
 		Clock:  s.now,
+		// R4 §1.7: make the dead_letter promise from doc.go durable — record
+		// it on the audit trail, not only in slog.
+		OnDeadLetter: func(ctx context.Context, dl webhooks.DeadLetter) {
+			s.appendAuditWithContext(ctx, "system", "webhook.dead_letter", dl.OutboxID, map[string]any{
+				"endpoint_id":   dl.EndpointID,
+				"endpoint_name": dl.EndpointName,
+				"event_action":  dl.EventAction,
+				"attempts":      dl.Attempts,
+				"last_error":    dl.LastError,
+				"preflight":     dl.Preflight,
+			})
+		},
 	})
 	go worker.Run(ctx)
 }

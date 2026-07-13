@@ -2,7 +2,10 @@ package gateway
 
 import (
 	"context"
+	"log/slog"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type jobResultEffect struct {
@@ -110,6 +113,8 @@ func enqueueRegularSnapshot(
 	connectionCtx context.Context,
 	regularSnapshots chan AgentSnapshot,
 	snapshot AgentSnapshot,
+	dropCounter prometheus.Counter,
+	logger *slog.Logger,
 ) bool {
 	if connectionCtx.Err() != nil {
 		return false
@@ -138,6 +143,18 @@ func enqueueRegularSnapshot(
 		return false
 	case regularSnapshots <- snapshot:
 	default:
+		// A concurrent reader re-filled the slot between the drain above and
+		// this send, so the fresh snapshot is discarded. Symmetric with the
+		// inbound drop path — surface it instead of losing it silently (R4
+		// §1.12). The next tick's absolute totals catch up, so this is benign
+		// but worth observing under sustained backpressure.
+		if dropCounter != nil {
+			dropCounter.Inc()
+		}
+		if logger != nil {
+			logger.DebugContext(connectionCtx, "dropped fresh regular snapshot under backpressure",
+				"agent_id", snapshot.AgentID)
+		}
 	}
 
 	return true

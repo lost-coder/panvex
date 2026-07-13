@@ -142,10 +142,14 @@ func TestWorkerDeadLettersAfterMaxAttempts(t *testing.T) {
 		t.Fatalf("InsertOutbox: %v", err)
 	}
 
+	var deadLetters []DeadLetter
 	w := NewWorker(store, WorkerConfig{
 		MaxAttempts: 3,
 		Clock:       func() time.Time { return now },
 		Backoff:     func(int) time.Duration { return time.Second },
+		OnDeadLetter: func(_ context.Context, dl DeadLetter) {
+			deadLetters = append(deadLetters, dl)
+		},
 	})
 	w.tick(context.Background())
 
@@ -155,6 +159,13 @@ func TestWorkerDeadLettersAfterMaxAttempts(t *testing.T) {
 	}
 	if !got.Dead {
 		t.Errorf("Dead = false; expected dead-letter once Attempt reaches MaxAttempts")
+	}
+	// R4 §1.7: the dead-letter must be surfaced durably via the hook, not only logged.
+	if len(deadLetters) != 1 {
+		t.Fatalf("OnDeadLetter calls = %d, want 1", len(deadLetters))
+	}
+	if deadLetters[0].OutboxID != "r1" || deadLetters[0].Attempts != 3 {
+		t.Fatalf("dead-letter = %+v, want OutboxID=r1 Attempts=3", deadLetters[0])
 	}
 }
 
