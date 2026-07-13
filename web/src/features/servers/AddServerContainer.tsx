@@ -278,8 +278,9 @@ export function AddServerContainer() {
   }, []);
 
   // Outbound cancel/close path needs to clean up the agent row we
-  // pre-provisioned. Best-effort: if the DELETE fails the row will be
-  // pruned by the panel's sweep once the bootstrap token expires.
+  // pre-provisioned. Best-effort: if the DELETE fails the row stays a
+  // visible pending node the operator can remove from the Servers list —
+  // there is no background sweep (R9a).
   const cleanupOutbound = useCallback(async () => {
     if (mode !== "outbound" || !outboundData?.agent_id) return;
     try {

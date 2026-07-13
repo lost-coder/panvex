@@ -224,6 +224,10 @@
     "online": "is online. Redirecting to the server page…",
     "retry": "Retry",
     "viewAttempts": "Open enrollment log",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "expired": {
+      "title": "Enrollment token expired",
+      "body": "The node never completed enrollment before its token lapsed. Close this wizard and re-add the server for a fresh install command, or delete the pending node from the Servers list."
+    }
   }
 }

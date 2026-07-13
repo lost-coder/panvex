@@ -245,8 +245,10 @@ func (s *Server) provisionOutboundAgentRow(
 	// postgres column names (`last_seen_at`, etc.), but the sqlite store
 	// uses parallel column names (`last_seen_at_unix`, INTEGER). The
 	// storage layer hides the difference. LastSeenAt is the "never seen"
-	// sentinel (Unix epoch) — presence views sort the row to the bottom
-	// and the cleanup sweep keys on it.
+	// sentinel (Unix epoch) — presence views sort the row to the bottom.
+	// The row is now a first-class pending node (visible in both UIs via
+	// the ApplySnapshot below), so an operator deletes it explicitly; there
+	// is no background sweep (R9a).
 	if err := s.store.PutAgent(r.Context(), storage.AgentRecord{
 		ID:           agentID,
 		NodeName:     req.NodeName,
@@ -325,8 +327,8 @@ func (s *Server) provisionOutboundAgentRow(
 // when a follow-on step (transport-mode update, token issuance, or token
 // persistence) fails. Best-effort: errors are logged at Error level (not
 // returned) because the original failure is already the user-facing error. If
-// the row sticks around it will be caught by the sweep that prunes outbound
-// rows with expired bootstrap tokens and no first-connection. ErrNotFound is
+// the delete fails the row remains a visible pending node the operator can
+// remove from the UI — there is no background sweep (R9a). ErrNotFound is
 // silently skipped (row already absent).
 func (s *Server) rollbackProvisionedOutboundAgent(ctx context.Context, agentID string) {
 	if s.store == nil {

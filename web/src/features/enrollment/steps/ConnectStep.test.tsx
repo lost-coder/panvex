@@ -50,4 +50,28 @@ describe("ConnectStep error recovery", () => {
     render(<ConnectStep {...makeProps()} />);
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
+
+  it("surfaces an expired outcome when the token lapses before connecting (R9a)", () => {
+    render(
+      <ConnectStep
+        {...makeProps({
+          tokenExpiresInSecs: 0,
+          connectionStatus: { bootstrap: "waiting", grpcConnect: "pending", firstData: "pending" },
+        })}
+      />,
+    );
+    expect(screen.getByText("Enrollment token expired")).toBeInTheDocument();
+  });
+
+  it("shows no expired outcome once the node has connected (R9a)", () => {
+    render(
+      <ConnectStep
+        {...makeProps({
+          tokenExpiresInSecs: 0,
+          connectionStatus: { bootstrap: "done", grpcConnect: "done", firstData: "done" },
+        })}
+      />,
+    );
+    expect(screen.queryByText("Enrollment token expired")).not.toBeInTheDocument();
+  });
 });

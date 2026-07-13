@@ -22,6 +22,11 @@ export function ConnectStep({
     connectionStatus.bootstrap === "done" &&
     connectionStatus.grpcConnect === "done" &&
     connectionStatus.firstData === "done";
+  // R9a: once the one-shot token lapses without the node connecting, stop
+  // showing an ambiguous "waiting" forever — surface a clear outcome with
+  // the operator's two real options (re-add for a fresh command, or delete
+  // the pending node from the Servers list).
+  const tokenExpired = tokenExpiresInSecs <= 0 && !allDone;
 
   useEffect(() => {
     if (allDone && connectedAgent && onViewDetails) {
@@ -103,6 +108,16 @@ export function ConnectStep({
       {allDone && connectedAgent && (
         <div className="rounded-xs bg-status-ok/8 border border-status-ok/25 p-3 text-xs text-status-ok">
           <strong>{connectedAgent.id}</strong> {t("connect.online")}
+        </div>
+      )}
+
+      {tokenExpired && (
+        <div
+          role="alert"
+          className="rounded-xs bg-status-warn/8 border border-status-warn/25 p-3 text-xs text-status-warn flex flex-col gap-1"
+        >
+          <strong>{t("connect.expired.title")}</strong>
+          <span className="text-fg-muted">{t("connect.expired.body")}</span>
         </div>
       )}
 
