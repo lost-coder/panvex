@@ -114,6 +114,13 @@ func (s *Server) collectTelemetryDashboardSnapshot(scope FleetScopeAccess, now t
 func buildTelemetryAttention(items []telemetryServerSummary) []telemetryAttentionItem {
 	attention := make([]telemetryAttentionItem, 0, 5)
 	for _, item := range items {
+		// A half-added node awaiting its first enrollment is expected to be
+		// offline until it connects — it must not read as "needs attention"
+		// (the phantom from the bug report). Expired rows still surface: they
+		// carry an actionable "re-issue the install command" reason (R9a).
+		if item.Agent.BootstrapState == "pending" && item.Agent.PresenceState != "online" {
+			continue
+		}
 		if (item.Severity == "good" || item.Severity == "ok") && item.RuntimeFreshness.State == "fresh" {
 			continue
 		}
