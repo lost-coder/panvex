@@ -110,6 +110,41 @@ func TestHandleRuntimeEventsBatchPopulatesBufferAndPublishes(t *testing.T) {
 	}
 }
 
+// TestHeartbeatSnapshotIsPartial pins R9b Task 8: a heartbeat frame must be
+// converted to a PARTIAL snapshot so the downstream merge preserves the live
+// instance list + ReadOnly instead of wiping them to empty/false every tick.
+func TestHeartbeatSnapshotIsPartial(t *testing.T) {
+	g := &Gateway{
+		deps:   stubDeps{},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		now:    func() time.Time { return time.Date(2026, time.May, 14, 10, 0, 0, 0, time.UTC) },
+	}
+	msg := &gatewayrpc.ConnectClientMessage{
+		Body: &gatewayrpc.ConnectClientMessage_Heartbeat{
+			Heartbeat: &gatewayrpc.Heartbeat{
+				AgentId:        "agent-x",
+				NodeName:       "node-x",
+				ObservedAtUnix: g.now().Unix(),
+			},
+		},
+	}
+	regularSnapshots := make(chan AgentSnapshot, 1)
+	if err := g.processRegularAgentMessage(context.Background(), "agent-x", nil, regularSnapshots, msg); err != nil {
+		t.Fatalf("processRegularAgentMessage() error = %v", err)
+	}
+	select {
+	case snap := <-regularSnapshots:
+		if snap.Snap == nil {
+			t.Fatal("heartbeat produced a nil Snap")
+		}
+		if !snap.Snap.Partial {
+			t.Fatal("heartbeat snapshot must be Partial to avoid wiping instances/ReadOnly")
+		}
+	default:
+		t.Fatal("heartbeat produced no snapshot on the channel")
+	}
+}
+
 // drainBatchEvent reads at most one runtime.events batch event from ch
 // within timeout, ignoring any other event types the bus may carry.
 // Returns nil if no matching event arrives before the deadline.

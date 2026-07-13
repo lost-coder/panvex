@@ -139,6 +139,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		csrfManager:               csrfManager,
 		loginTimingFloor:          resolveLoginTimingFloor(options.LoginTimingFloor),
 		revokedAgentIDs:           make(map[string]struct{}),
+		revokedDropWarned:         make(map[string]struct{}),
 		transportSwitchPendingAt:  map[string]time.Time{},
 		retentionDisabledWarned:   make(map[string]bool),
 		// live (A2/A1): single owner of agent live-state + instances. The

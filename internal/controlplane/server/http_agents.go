@@ -177,6 +177,12 @@ func (s *Server) persistAgentDeregister(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusInternalServerError, msgStorageError)
 		return false
 	}
+	// R9b: cancel any buffered agent upsert still sitting in the batch writer
+	// so it can't flush a PutAgent AFTER the DeleteAgent below and resurrect
+	// the row (the in-memory revocation guard only stops NEW snapshots).
+	if s.batchWriter != nil {
+		s.batchWriter.RemovePendingAgent(agentID)
+	}
 	if err := s.store.DeleteAgent(r.Context(), agentID); err != nil && !errors.Is(err, storage.ErrNotFound) {
 		s.logger.ErrorContext(r.Context(), "delete agent from store failed", "agent_id", agentID, "error", err)
 		writeError(w, http.StatusInternalServerError, msgStorageError)

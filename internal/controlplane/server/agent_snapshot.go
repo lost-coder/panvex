@@ -234,6 +234,33 @@ func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agent
 	}
 }
 
+// clockSkewTolerance bounds how far an agent's self-reported observed_at may
+// lead the panel clock before we treat it as a wrong clock and clamp stored
+// telemetry timestamps. Small leads (NTP drift + in-flight latency) pass
+// through untouched; beyond this we clamp to the panel now and warn (R9b).
+const clockSkewTolerance = 2 * time.Minute
+
+// clampObservedAt bounds an agent-reported observed_at to the panel clock for
+// use in *stored* telemetry timestamps (metric/server-load CapturedAt,
+// instance UpdatedAt). A sample cannot be captured in the future; a badly
+// skewed agent clock otherwise writes points dated ahead of now, poisoning
+// charts and "latest sample" logic. The raw value is preserved in
+// Runtime.ReportedObservedAt (diagnostics); an egregious lead is logged once
+// per snapshot.
+func (s *Server) clampObservedAt(ctx context.Context, agentID string, observed time.Time) time.Time {
+	now := s.now().UTC()
+	ceiling := now.Add(clockSkewTolerance)
+	if observed.After(ceiling) {
+		s.logger.WarnContext(ctx, "agent observed_at leads the panel clock; clamping stored telemetry timestamps",
+			"agent_id", agentID,
+			"observed_at", observed.UTC(),
+			"skew", observed.Sub(now).Round(time.Second),
+		)
+		return ceiling
+	}
+	return observed
+}
+
 // commitMetricSnapshotLocked mints a new metric sample (ID + timestamp) and
 // returns it for downstream batch-writer enqueueing, which persists it to the
 // store. Returns nil when the snapshot carries no metrics. Caller must hold
@@ -275,11 +302,29 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	// itself in the panel — typically with a "DEGRADED" badge as its telemetry
 	// caught up.
 	if _, revoked := s.revokedAgentIDs[snapshot.AgentID]; revoked {
+		// A deleted agent still streaming is worth an operator's attention
+		// (stale credential in use / misbehaving reconnect loop) — log at
+		// Warn, but only once per agent so a retrying agent can't flood the
+		// log every tick (R9b).
+		_, warned := s.revokedDropWarned[snapshot.AgentID]
+		if !warned {
+			s.revokedDropWarned[snapshot.AgentID] = struct{}{}
+		}
 		s.mu.Unlock()
-		s.logger.InfoContext(ctx, "dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
+		if warned {
+			s.logger.DebugContext(ctx, "dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
+		} else {
+			s.logger.WarnContext(ctx, "dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
+		}
 		return nil
 	}
 	agent := s.updateAgentRecordFromSnapshot(snapshot)
+	// R9b: clamp the agent-reported observed_at to the panel clock for every
+	// downstream *stored* timestamp (metric/server-load CapturedAt, instance
+	// UpdatedAt). The raw value was already captured into
+	// Runtime.ReportedObservedAt above (diagnostics), so this only affects
+	// stored history — never liveness, which is panel-stamped.
+	snapshot.ObservedAt = s.clampObservedAt(ctx, snapshot.AgentID, snapshot.ObservedAt)
 	// IN-H6: on a partial snapshot the instance rows are blanked
 	// (version/connections/read_only); preserve the last-known instances
 	// instead of committing/persisting zeros. The agent is alive (LastSeenAt

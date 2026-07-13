@@ -97,7 +97,9 @@ func (s *Server) ShouldTerminateForRevocation(ctx context.Context, agentID, pres
 	_, isRevoked := s.revokedAgentIDs[agentID]
 	s.mu.RUnlock()
 	if isRevoked {
-		s.logger.InfoContext(ctx, "mid-stream revocation triggered, terminating agent stream", "agent_id", agentID)
+		// Fires once per stream teardown (not per tick) — Warn so operators
+		// can see a deleted agent was actively connected (R9b).
+		s.logger.WarnContext(ctx, "mid-stream revocation triggered, terminating agent stream", "agent_id", agentID)
 		return true
 	}
 	if s.store == nil {
