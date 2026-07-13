@@ -118,6 +118,19 @@ type Service struct {
 	// setMirrorClientLocked/deleteMirrorClientLocked — every mirrorClients
 	// mutation MUST go through those helpers.
 	mirrorNamesIndex map[string]map[ClientID]struct{}
+
+	// saveLocks serialises DB-commit + mirror-apply per client (R4 §1.6).
+	// Without it two concurrent Saves of the SAME client can commit in one
+	// order but apply the mirror (the handler-facing source of truth) in the
+	// opposite order, leaving the mirror diverged from the DB until restart.
+	// Keyed by ClientID so Saves of DIFFERENT clients never serialise.
+	// Lock ordering: saveLocksMu is held ONLY to fetch/create the per-client
+	// mutex (never around uow.Do or s.mu); the per-client mutex is then held
+	// across uow.Do + the s.mu mirror write. Never take saveLocksMu or the
+	// per-client mutex while holding s.mu. (This moves into the orchestration
+	// layer in R8.1.)
+	saveLocksMu sync.Mutex
+	saveLocks   map[ClientID]*sync.Mutex
 }
 
 // ServiceConfig carries the dependencies for NewService: a
@@ -152,7 +165,21 @@ func NewService(cfg ServiceConfig) *Service {
 		mirrorDeployments: make(map[ClientID]map[string]Deployment),
 		mirrorUsage:       make(map[ClientID]map[string]usageMirror),
 		mirrorNamesIndex:  make(map[string]map[ClientID]struct{}),
+		saveLocks:         make(map[ClientID]*sync.Mutex),
 	}
+}
+
+// clientSaveLock returns the per-client save mutex, creating it on first use.
+// See the saveLocks field doc for the ordering contract (R4 §1.6).
+func (s *Service) clientSaveLock(id ClientID) *sync.Mutex {
+	s.saveLocksMu.Lock()
+	defer s.saveLocksMu.Unlock()
+	lock, ok := s.saveLocks[id]
+	if !ok {
+		lock = &sync.Mutex{}
+		s.saveLocks[id] = lock
+	}
+	return lock
 }
 
 // setMirrorClientLocked writes the client into mirrorClients and keeps
@@ -536,6 +563,13 @@ func (s *Service) Save(ctx context.Context, c Client) error {
 	toStore := c
 	toStore.Secret = encryptedSecret
 
+	// R4 §1.6: hold the per-client lock across BOTH the commit and the mirror
+	// apply so concurrent Saves of this client can't apply the mirror in an
+	// order that diverges from the committed DB state.
+	saveLock := s.clientSaveLock(c.ID)
+	saveLock.Lock()
+	defer saveLock.Unlock()
+
 	if err := s.uow.Do(ctx, func(rs ClientsRepoSet) error {
 		return rs.Clients().Save(ctx, toStore)
 	}); err != nil {
@@ -559,6 +593,11 @@ func (s *Service) SaveState(ctx context.Context, c Client, assignments []Assignm
 	}
 	toStore := c
 	toStore.Secret = encryptedSecret
+
+	// R4 §1.6: serialise commit + mirror apply per client (see Save).
+	saveLock := s.clientSaveLock(c.ID)
+	saveLock.Lock()
+	defer saveLock.Unlock()
 
 	if err := s.uow.Do(ctx, func(rs ClientsRepoSet) error {
 		if err := rs.Clients().Save(ctx, toStore); err != nil {
