@@ -272,8 +272,13 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 		return ErrAgentIDMismatch
 	}
 
-	var hash [32]byte
-	copy(hash[:], row.BootstrapTokenHash)
+	hash, hashErr := tokenHashFromRow(row.BootstrapTokenHash)
+	if hashErr != nil {
+		d.logger.Warn("bootstrap: malformed stored token hash",
+			"agent_id", agentID, "error", hashErr)
+		d.record("mismatch")
+		return ErrBootstrapTokenMismatch
+	}
 	if vErr := VerifyToken(opening.BootstrapToken, hash, row.BootstrapExpiresAt.Time, d.now()); vErr != nil {
 		if errors.Is(vErr, ErrTokenExpired) {
 			if expErr := d.queries.ExpireAgentBootstrapToken(ctx, agentID); expErr != nil {
@@ -390,4 +395,18 @@ func (d *EnrollDriver) Run(ctx context.Context, agentAddr string, tlsCfg *tls.Co
 	d.record("success")
 	d.notify("bootstrap.enrollment_completed", agentID)
 	return nil
+}
+
+// tokenHashFromRow converts the stored bootstrap token hash into the
+// fixed-size array VerifyToken expects. A row whose hash is not exactly
+// 32 bytes (truncated write, manual DB edit) must fail the token check
+// loudly instead of being silently zero-padded into a comparable value
+// (R1.4, audit 2026-07-07 §1.8).
+func tokenHashFromRow(raw []byte) ([32]byte, error) {
+	var hash [32]byte
+	if len(raw) != len(hash) {
+		return hash, fmt.Errorf("stored token hash is %d bytes, want %d", len(raw), len(hash))
+	}
+	copy(hash[:], raw)
+	return hash, nil
 }
