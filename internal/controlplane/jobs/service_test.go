@@ -92,7 +92,7 @@ func TestMaxJobSequenceMixedWidths(t *testing.T) {
 	if seq != 10 {
 		t.Fatalf("maxJobSequence mixed widths = %d, want 10", seq)
 	}
-	if !("job-000000999999" < "job-000001000000") {
+	if "job-000000999999" >= "job-000001000000" {
 		t.Fatal("12-digit IDs must sort lexicographically by numeric value")
 	}
 }
