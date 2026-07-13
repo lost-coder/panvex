@@ -112,12 +112,12 @@ func (w *Worker) tick(ctx context.Context) {
 	// production stays quiet; non-idle ticks go to Info so operators can
 	// see the outbox draining.
 	if len(deliveries) == 0 {
-		w.cfg.Logger.DebugContext(ctx, "rollup worker tick idle",
+		w.cfg.Logger.DebugContext(ctx, "webhook outbox worker tick idle",
 			"worker", "webhook_outbox",
 			"lap_ms", elapsed.Milliseconds())
 		return
 	}
-	w.cfg.Logger.InfoContext(ctx, "rollup worker tick",
+	w.cfg.Logger.InfoContext(ctx, "webhook outbox worker tick",
 		"worker", "webhook_outbox",
 		"lap_ms", elapsed.Milliseconds(),
 		"rows_affected", len(deliveries))
