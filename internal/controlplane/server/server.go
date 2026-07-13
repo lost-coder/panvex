@@ -239,6 +239,10 @@ type Server struct {
 	// empty, which is acceptable because the CA will not have issued new
 	// certificates for deleted agents and existing ones expire within 30 days.
 	revokedAgentIDs map[string]struct{}
+	// revokedDropWarned rate-limits the "dropping snapshot from revoked agent"
+	// Warn to once per agent per process lifetime, so a revoked agent stuck in
+	// a reconnect loop can't flood the log every telemetry tick (R9b).
+	revokedDropWarned map[string]struct{}
 	// transportSwitchPendingAt tracks agents that were switched to outbound
 	// transport but have not yet accepted a new agent stream (A2 "switched
 	// but never reconnected"). The value is the time of the switch; it is

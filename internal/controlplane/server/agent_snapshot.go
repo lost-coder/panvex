@@ -301,8 +301,20 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot)
 	// itself in the panel — typically with a "DEGRADED" badge as its telemetry
 	// caught up.
 	if _, revoked := s.revokedAgentIDs[snapshot.AgentID]; revoked {
+		// A deleted agent still streaming is worth an operator's attention
+		// (stale credential in use / misbehaving reconnect loop) — log at
+		// Warn, but only once per agent so a retrying agent can't flood the
+		// log every tick (R9b).
+		_, warned := s.revokedDropWarned[snapshot.AgentID]
+		if !warned {
+			s.revokedDropWarned[snapshot.AgentID] = struct{}{}
+		}
 		s.mu.Unlock()
-		s.logger.InfoContext(ctx, "dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
+		if warned {
+			s.logger.DebugContext(ctx, "dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
+		} else {
+			s.logger.WarnContext(ctx, "dropping snapshot from revoked agent", "agent_id", snapshot.AgentID)
+		}
 		return nil
 	}
 	agent := s.updateAgentRecordFromSnapshot(snapshot)
