@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/lost-coder/panvex/internal/requestid"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -13,7 +14,7 @@ func TestRequestIDUnaryInterceptorReusesIncoming(t *testing.T) {
 
 	var seen string
 	handler := func(ctx context.Context, _ any) (any, error) {
-		seen = requestIDFromContext(ctx)
+		seen = requestid.FromContext(ctx)
 		return nil, nil
 	}
 	_, err := requestIDUnaryInterceptor()(ctx, nil, nil, handler)
@@ -28,7 +29,7 @@ func TestRequestIDUnaryInterceptorReusesIncoming(t *testing.T) {
 func TestRequestIDUnaryInterceptorGeneratesWhenMissing(t *testing.T) {
 	var seen string
 	handler := func(ctx context.Context, _ any) (any, error) {
-		seen = requestIDFromContext(ctx)
+		seen = requestid.FromContext(ctx)
 		return nil, nil
 	}
 	_, err := requestIDUnaryInterceptor()(context.Background(), nil, nil, handler)
