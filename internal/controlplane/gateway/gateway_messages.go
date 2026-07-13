@@ -108,7 +108,7 @@ func (g *Gateway) processRegularAgentMessage(
 				Partial: true,
 			},
 			ObservedAt: time.Unix(hb.ObservedAtUnix, 0).UTC(),
-		})
+		}, g.snapshotDropCounter(), g.logger)
 		return nil
 	}
 

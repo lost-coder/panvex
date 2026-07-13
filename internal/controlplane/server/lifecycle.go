@@ -774,7 +774,12 @@ func New(options Options) (*Server, error) {
 //
 // Events enqueued AFTER this point may race with the final drain and can
 // be dropped — upstream callers (HTTP handlers, gRPC streams) must stop
-// before Close() runs to guarantee zero loss.
+// before Close() runs to guarantee zero loss. This ordering IS enforced by
+// the process shutdown sequence in cmd/control-plane/serve.go: the HTTP
+// server Shutdown and gRPC GracefulStop both run (LIFO defer stack) BEFORE
+// api.Close() reaches this method, so agent stream drain goroutines are
+// already quiesced when the batch writer drains here (R4 §1.12 — verified,
+// no inversion needed). Do not move the batch drain ahead of the gRPC stop.
 func (s *Server) Close() {
 	// Cancel the lifecycle context FIRST so any worker subscribed to it
 	// observes shutdown before the batch writer drain or rollup stop runs.

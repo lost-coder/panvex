@@ -245,7 +245,7 @@ func TestEnqueueRegularSnapshotDropsStaleUpdateWhenQueueIsFull(t *testing.T) {
 	}
 	regularSnapshots <- stale
 
-	ok := enqueueRegularSnapshot(context.Background(), regularSnapshots, latest)
+	ok := enqueueRegularSnapshot(context.Background(), regularSnapshots, latest, nil, nil)
 	if !ok {
 		t.Fatal("enqueueRegularSnapshot() = false, want true")
 	}
