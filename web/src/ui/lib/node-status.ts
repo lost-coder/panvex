@@ -50,10 +50,26 @@ export interface NodeStateInput {
   telemtUnreachable: boolean;
   /** Backend human reason; used to detect the startup/pending case. */
   reason: string;
+  /**
+   * Enrollment lifecycle state of the agents row ("pending"/"expired"/
+   * "active"/undefined). A half-added node that has never connected renders
+   * as PENDING instead of the offline/bad phantom — but only while it has
+   * never connected: once presence is "online" this is ignored (R9a).
+   */
+  bootstrapState?: string | undefined;
 }
 
-/** Map backend per-node signals to a NodeState. Priority: offline > down > pending > degraded > ok. */
+/** Map backend per-node signals to a NodeState. Priority: (pending/expired while never-connected) > offline > down > pending > degraded > ok. */
 export function deriveNodeState(input: NodeStateInput): NodeState {
+  // A provisioned-but-never-enrolled node is "awaiting connection", not
+  // broken — take the neutral PENDING state before any offline/down branch,
+  // but only while it has not yet connected (R9a).
+  if (
+    input.presenceState !== "online" &&
+    (input.bootstrapState === "pending" || input.bootstrapState === "expired")
+  ) {
+    return "pending";
+  }
   if (input.presenceState === "offline") return "offline";
   if (input.telemtUnreachable || input.severity === "critical" || input.severity === "bad") {
     return "down";

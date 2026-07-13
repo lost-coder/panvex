@@ -23,4 +23,8 @@ describe("localizeReason", () => {
   it("returns empty string unchanged", () => {
     expect(localizeReason("", t)).toBe("");
   });
+  it("maps the R9a enrollment lifecycle reasons", () => {
+    expect(localizeReason("Awaiting enrollment", t)).toBe("reason.enrollmentPending");
+    expect(localizeReason("Enrollment token expired", t)).toBe("reason.enrollmentExpired");
+  });
 });

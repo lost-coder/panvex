@@ -56,6 +56,21 @@ describe("deriveNodeState", () => {
   it("offline presence wins over everything", () => {
     expect(deriveNodeState({ ...base, presenceState: "offline", severity: "critical" })).toBe("offline");
   });
+  it("pending bootstrap_state (never connected) → pending, not offline (R9a)", () => {
+    expect(
+      deriveNodeState({ ...base, presenceState: "offline", severity: "bad", bootstrapState: "pending" }),
+    ).toBe("pending");
+  });
+  it("expired bootstrap_state (never connected) → pending (R9a)", () => {
+    expect(
+      deriveNodeState({ ...base, presenceState: "offline", bootstrapState: "expired" }),
+    ).toBe("pending");
+  });
+  it("bootstrap_state ignored once the node is online (R9a)", () => {
+    expect(
+      deriveNodeState({ ...base, presenceState: "online", severity: "bad", bootstrapState: "pending" }),
+    ).toBe("down");
+  });
   it("telemt unreachable → down", () => {
     expect(deriveNodeState({ ...base, telemtUnreachable: true })).toBe("down");
   });

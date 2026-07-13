@@ -109,6 +109,7 @@ function summaryToListItem(card: TelemetryServerSummary): ServerListItem {
       presenceState: agent?.presence_state ?? "online",
       telemtUnreachable: runtime?.telemt_unreachable ?? false,
       reason: card.reason ?? "",
+      bootstrapState: agent?.bootstrap_state,
     }),
     reason: card.reason ?? "",
     connections: runtime?.current_connections ?? 0,

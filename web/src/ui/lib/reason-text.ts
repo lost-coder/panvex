@@ -20,6 +20,9 @@ const REASON_KEYS: Record<string, string> = {
   "no upstreams configured": "reason.noUpstreams",
   "all upstreams down": "reason.allUpstreamsDown",
   "some upstreams unhealthy": "reason.someUpstreamsUnhealthy",
+  // R9a — half-added node lifecycle (server/telemetry_runtime.go).
+  "Awaiting enrollment": "reason.enrollmentPending",
+  "Enrollment token expired": "reason.enrollmentExpired",
 };
 
 const TELEMT_PREFIX = "Telemt API unreachable since ";
