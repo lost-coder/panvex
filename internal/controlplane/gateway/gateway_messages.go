@@ -101,6 +101,11 @@ func (g *Gateway) processRegularAgentMessage(
 				Version:        hb.Version,
 				ReadOnly:       hb.ReadOnly,
 				ObservedAtUnix: hb.ObservedAtUnix,
+				// R9b: a heartbeat is a liveness ping, not a full state
+				// report — mark it Partial so the snapshot merge preserves
+				// the live instance list + ReadOnly instead of blanking them
+				// to empty/false every 15s (agent_snapshot.go: IN-H6 merge).
+				Partial: true,
 			},
 			ObservedAt: time.Unix(hb.ObservedAtUnix, 0).UTC(),
 		})
