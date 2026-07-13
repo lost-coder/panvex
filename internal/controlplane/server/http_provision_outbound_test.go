@@ -125,6 +125,72 @@ func TestProvisionOutboundAgentHappyPath(t *testing.T) {
 	}
 }
 
+// TestProvisionOutboundAgentVisibleAndDeletable (R9a) pins the LiveStore ⊇ DB
+// invariant: a provisioned outbound node is immediately visible as pending in
+// the servers list and deletable from the UI at that stage (no panel restart,
+// no "hidden until enrolled" gap that forced operators to delete via the DB).
+func TestProvisionOutboundAgentVisibleAndDeletable(t *testing.T) {
+	f := setupProvisionOutboundFixture(t, nil)
+
+	resp := performJSONRequest(t, f.srv, http.MethodPost,
+		"/api/agents/provision-outbound",
+		map[string]any{
+			"node_name":     "edge-fra-99",
+			"dial_address":  "203.0.113.10:8443",
+			"script_source": "github",
+		},
+		f.cookies)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("provision status = %d, want 201 (body=%s)", resp.Code, resp.Body.String())
+	}
+	var prov provisionOutboundAgentResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &prov); err != nil {
+		t.Fatalf("unmarshal provision: %v", err)
+	}
+
+	list := performJSONRequest(t, f.srv, http.MethodGet, "/api/telemetry/servers", nil, f.cookies)
+	if list.Code != http.StatusOK {
+		t.Fatalf("servers list status = %d, want 200 (body=%s)", list.Code, list.Body.String())
+	}
+	var listBody struct {
+		Servers []struct {
+			Agent struct {
+				ID                string `json:"id"`
+				BootstrapState    string `json:"bootstrap_state"`
+				DialTransportMode string `json:"dial_transport_mode"`
+			} `json:"agent"`
+		} `json:"servers"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &listBody); err != nil {
+		t.Fatalf("unmarshal servers: %v", err)
+	}
+	found := false
+	for _, srv := range listBody.Servers {
+		if srv.Agent.ID != prov.AgentID {
+			continue
+		}
+		found = true
+		if srv.Agent.BootstrapState != "pending" {
+			t.Errorf("bootstrap_state = %q, want pending", srv.Agent.BootstrapState)
+		}
+		if srv.Agent.DialTransportMode != "outbound" {
+			t.Errorf("dial_transport_mode = %q, want outbound", srv.Agent.DialTransportMode)
+		}
+	}
+	if !found {
+		t.Fatalf("provisioned agent %q not visible in servers list", prov.AgentID)
+	}
+
+	del := performJSONRequest(t, f.srv, http.MethodDelete, "/api/agents/"+prov.AgentID, nil, f.cookies)
+	if del.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204 (body=%s)", del.Code, del.Body.String())
+	}
+	del2 := performJSONRequest(t, f.srv, http.MethodDelete, "/api/agents/"+prov.AgentID, nil, f.cookies)
+	if del2.Code != http.StatusNotFound {
+		t.Fatalf("second delete status = %d, want 404 (body=%s)", del2.Code, del2.Body.String())
+	}
+}
+
 // TestProvisionOutboundAgentRejectsInvalidNodeName (T-06) confirms the
 // regex guard catches shell-unsafe input. The wizard pre-validates the
 // same way; the server-side check is defence-in-depth so a hand-rolled
