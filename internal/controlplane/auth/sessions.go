@@ -148,7 +148,8 @@ func (s *Service) SetSessionStore(sessionStore SessionStore) {
 }
 
 // RestoreSessions loads persisted sessions into the in-memory map, discarding
-// any that have exceeded the session TTL. This should be called during startup.
+// any that have exceeded the configured session max lifetime. This should be
+// called during startup.
 // ctx is the lifecycle context of the caller (serverCtx / Background in tests);
 // a cancelled ctx aborts the restore so a Close() during boot does not hang.
 func (s *Service) RestoreSessions(ctx context.Context) error {
@@ -162,7 +163,10 @@ func (s *Service) RestoreSessions(ctx context.Context) error {
 	}
 
 	now := s.now().UTC()
-	cutoff := now.Add(-sessionTTL)
+	// R1.3 (audit 2026-07-07 §1.4): honour the operator-configured max
+	// lifetime; the compiled-in constant is only the fallback inside
+	// effectiveSessionMaxLifetime when no fn is wired.
+	cutoff := now.Add(-s.effectiveSessionMaxLifetime())
 
 	s.installRestoredSessions(records, cutoff)
 

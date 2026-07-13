@@ -16,6 +16,7 @@ import {
   type ClientFormData,
   type DashboardPageProps,
 } from "@/ui";
+import { submitAndClose } from "@/shared/lib/submit-and-close";
 import { KpiStrip } from "./ui/KpiStrip";
 import { FleetPanel } from "./ui/FleetPanel";
 import { TimelinePanel } from "./ui/TimelinePanel";
@@ -151,10 +152,9 @@ export function DashboardPage({
                 mode="create"
                 data={createData}
                 onChange={setCreateData}
-                onSubmit={async () => {
-                  await onCreate(createData);
-                  if (!createError) setCreateOpen(false);
-                }}
+                onSubmit={() =>
+                  submitAndClose(() => onCreate(createData), () => setCreateOpen(false))
+                }
                 onCancel={() => setCreateOpen(false)}
                 loading={createLoading}
                 error={createError}

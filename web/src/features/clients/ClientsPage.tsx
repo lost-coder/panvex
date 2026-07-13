@@ -24,6 +24,7 @@ import { buildClientColumns } from "@/features/clients/components/ClientsTableCo
 import { useClientSelection } from "@/features/clients/components/useClientSelection";
 import { useNowSec } from "@/shared/hooks/useNowSec";
 import { useTableData } from "@/shared/hooks";
+import { submitAndClose } from "@/shared/lib/submit-and-close";
 import {
   BulkActionBar,
   Button,
@@ -281,10 +282,9 @@ export function ClientsPage({
           open={createOpen}
           data={createData}
           onChange={setCreateData}
-          onSubmit={async () => {
-            await onCreate(createData);
-            if (!createError) setCreateOpen(false);
-          }}
+          onSubmit={() =>
+            submitAndClose(() => onCreate(createData), () => setCreateOpen(false))
+          }
           onClose={() => setCreateOpen(false)}
           loading={createLoading}
           error={createError}

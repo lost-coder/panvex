@@ -10,7 +10,7 @@ import {
 } from "react";
 
 import { authApi } from "@/shared/api/auth";
-import { SESSION_EXPIRED_EVENT } from "@/shared/api/http";
+import { ApiError, SESSION_EXPIRED_EVENT } from "@/shared/api/http";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { eventEnvelopeSchema, type EventEnvelope } from "@/shared/api/schemas/events";
 import { invalidateTelemetryQueries } from "@/shared/events/telemetry-query-invalidation";
@@ -292,10 +292,19 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
         try {
           await authApi.me();
           scheduleReconnect();
-        } catch {
-          stopped = true;
-          setStatus("closed");
-          globalThis.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+        } catch (err) {
+          // Only a definitive 401 proves the session is gone. Any other
+          // failure — a network TypeError while the panel restarts
+          // (self-update!), a 5xx, a timeout — must NOT log the operator
+          // out: the cookie may still be valid, so keep reconnecting
+          // (R1.1, audit 2026-07-07 §1.1).
+          if (err instanceof ApiError && err.status === 401) {
+            stopped = true;
+            setStatus("closed");
+            globalThis.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+          } else {
+            scheduleReconnect();
+          }
         }
       };
     };

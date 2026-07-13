@@ -18,6 +18,7 @@ import { SecretSection } from "./components/SecretSection";
 import { SubscriptionLinkCard } from "./SubscriptionLinkCard";
 import { deriveClientState } from "./components/ClientsPageCells";
 import { useNowSec } from "@/shared/hooks/useNowSec";
+import { submitAndClose } from "@/shared/lib/submit-and-close";
 import {
   Breadcrumbs,
   SwipeTabView,
@@ -214,10 +215,9 @@ export function ClientDetailPage({
           open={editOpen}
           data={editData}
           onChange={setEditData}
-          onSubmit={async () => {
-            await onEdit(editData);
-            if (!editError) setEditOpen(false);
-          }}
+          onSubmit={() =>
+            submitAndClose(() => onEdit(editData), () => setEditOpen(false))
+          }
           onClose={() => setEditOpen(false)}
           loading={editLoading}
           error={editError}

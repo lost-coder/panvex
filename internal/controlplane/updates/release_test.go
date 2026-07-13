@@ -34,11 +34,31 @@ func TestCompareVersions(t *testing.T) {
 		{"0.1.0", "0.2.0", -1},
 		{"1.0.0", "0.9.9", 1},
 		{"0.1.2", "0.1.10", -1},
+		{"v1.2.3", "1.2.3", 0},
+		{"1.2.3-rc1", "1.2.3", -1},
 	}
 	for _, tt := range tests {
-		got := CompareVersions(tt.a, tt.b)
+		got, err := CompareVersions(tt.a, tt.b)
+		if err != nil {
+			t.Fatalf("CompareVersions(%q, %q) unexpected error: %v", tt.a, tt.b, err)
+		}
 		if got != tt.want {
 			t.Errorf("CompareVersions(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
+// R1.5 (audit 2026-07-07 §1.14): malformed versions must be an error,
+// not a silent zero ("1.x.3" used to compare equal to "1.0.3").
+func TestCompareVersionsRejectsMalformed(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"1.x.3", "1.0.3"},
+		{"", "1.0.0"},
+		{"1.0.0", "abc"},
+		{"dev", "1.0.0"},
+	} {
+		if _, err := CompareVersions(pair[0], pair[1]); err == nil {
+			t.Errorf("CompareVersions(%q, %q) must return an error", pair[0], pair[1])
 		}
 	}
 }

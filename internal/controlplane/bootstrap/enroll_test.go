@@ -751,3 +751,26 @@ func TestEnrollDriverPinWriterAtomicAccess(t *testing.T) {
 		t.Fatalf("after SetCertPinWriter(nil): pinWriter.Load() = %v, want nil", got)
 	}
 }
+
+// R1.4 (audit 2026-07-07 §1.8): a stored hash that is not exactly 32
+// bytes (truncated write, manual DB edit) must fail loudly instead of
+// being silently zero-padded into a comparable value on the token path.
+func TestTokenHashFromRow(t *testing.T) {
+	if _, err := tokenHashFromRow(nil); err == nil {
+		t.Fatal("nil hash must be rejected")
+	}
+	if _, err := tokenHashFromRow(make([]byte, 31)); err == nil {
+		t.Fatal("31-byte hash must be rejected")
+	}
+	if _, err := tokenHashFromRow(make([]byte, 33)); err == nil {
+		t.Fatal("33-byte hash must be rejected")
+	}
+	want := bytes.Repeat([]byte{0xAB}, 32)
+	got, err := tokenHashFromRow(want)
+	if err != nil {
+		t.Fatalf("valid 32-byte hash rejected: %v", err)
+	}
+	if !bytes.Equal(got[:], want) {
+		t.Fatal("hash bytes must round-trip unchanged")
+	}
+}

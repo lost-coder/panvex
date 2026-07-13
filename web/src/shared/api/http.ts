@@ -14,9 +14,17 @@ type ApiErrorCodeOrString = ApiErrorCode | (string & {});
 
 export class ApiError extends Error {
   code?: ApiErrorCodeOrString | undefined;
-  constructor(message: string, code?: ApiErrorCodeOrString) {
+  /**
+   * HTTP status of the failed response. `undefined` for client-side
+   * failures thrown before/without a response (offline, invalid path) —
+   * callers that branch on status MUST treat undefined as "not proven",
+   * never as 401 (R1.1, audit 2026-07-07 §1.1).
+   */
+  status?: number | undefined;
+  constructor(message: string, code?: ApiErrorCodeOrString, status?: number) {
     super(message);
     this.code = code;
+    this.status = status;
   }
 }
 
@@ -285,7 +293,7 @@ async function handleErrorResponse(
     );
   }
 
-  throw new ApiError(message, code);
+  throw new ApiError(message, code, response.status);
 }
 
 function parseWithSchema<T>(path: string, schema: ZodType<T>, json: unknown): T {

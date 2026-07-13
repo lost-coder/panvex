@@ -27,7 +27,7 @@ func ParseReleaseTag(tag string) (component, version string, ok bool) {
 }
 
 // CompareVersions delegates to updates.CompareVersions.
-func CompareVersions(a, b string) int { return updates.CompareVersions(a, b) }
+func CompareVersions(a, b string) (int, error) { return updates.CompareVersions(a, b) }
 
 // FetchLatestVersions delegates to updates.FetchLatestVersions.
 func FetchLatestVersions(ctx context.Context, repo, token string) (panel, agent *GitHubRelease, err error) {

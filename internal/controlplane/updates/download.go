@@ -205,7 +205,27 @@ func DownloadChecksum(ctx context.Context, url, token string) (string, error) {
 
 	// The first field is the hex-encoded SHA256 hash.
 	fields := strings.Fields(line)
-	return fields[0], nil
+	digest := fields[0]
+	if !isHexSHA256(digest) {
+		return "", fmt.Errorf("checksum file malformed: %q is not a 64-char hex sha256 digest", digest)
+	}
+	return digest, nil
+}
+
+// isHexSHA256 reports whether s is a hex-encoded SHA-256 digest
+// (exactly 64 hex characters).
+func isHexSHA256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // VerifyChecksum computes the SHA256 of the file at path and compares it to
