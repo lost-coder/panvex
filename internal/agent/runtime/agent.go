@@ -660,7 +660,8 @@ func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted, base
 	}
 
 	currentTotal := client.TrafficUsedBytes
-	previousTotal := a.lastOctets[trackingKey]
+	previousTotal, hadLast := a.lastOctets[trackingKey]
+	_, hadTotal := a.usageTotals[trackingKey]
 	delta := currentTotal
 	switch {
 	case baselineTick:
@@ -668,12 +669,26 @@ func (a *Agent) processUsageRowLocked(client telemt.ClientUsage, restarted, base
 		// baseline without counting them. Counting resumes on the next
 		// tick from this baseline.
 		delta = 0
-	case !restarted && currentTotal >= previousTotal:
+	case restarted:
+		// telemt restarted (uptime rewind): its fresh counter is entirely
+		// new traffic — keep delta = currentTotal.
+	case hadTotal && !hadLast:
+		// R2 (audit 2026-07-07 §1.3): the client dropped out of a sample —
+		// cleanupStaleUsageStateLocked pruned its lastOctets but kept its
+		// usageTotals — and is now back within the SAME telemt run. Its
+		// currentTotal already includes everything we counted before, so
+		// re-baseline (delta = 0) instead of adding the whole counter a
+		// second time. The precise gap delta can't be recovered (the
+		// per-client baseline isn't stored), so we lose at most one
+		// sample-interval of traffic — far cheaper than doubling a client's
+		// entire cumulative "money" total.
+		delta = 0
+	case currentTotal >= previousTotal:
 		delta = currentTotal - previousTotal
 	}
-	// restarted (or a counter rewind without an uptime rewind) falls
-	// through with delta = currentTotal: telemt restarted, its fresh
-	// counter is entirely new traffic.
+	// A counter rewind without an uptime rewind (currentTotal < previousTotal,
+	// not restarted, not a reappearance) falls through with delta =
+	// currentTotal: treat the fresh counter as entirely new traffic.
 	a.usageTotals[trackingKey] += delta
 	connectionsChanged := a.lastConnections[trackingKey] != client.ActiveTCPConns
 
@@ -710,13 +725,14 @@ func clampInt32(v int) int32 {
 	return int32(v)
 }
 
-// cleanupStaleUsageStateLocked drops per-tick tracker entries for clients
-// absent from the latest sample. usageTotals is deliberately NOT pruned:
-// the wire total must stay monotonic for the whole process epoch, and a
-// client that reappears within the same Telemt run would otherwise
-// re-count its full counter (lastOctets is re-baselined via the delta
-// falling through as the full counter — a pre-existing property of the
-// delta logic, unchanged here). Caller must hold a.mu.
+// cleanupStaleUsageStateLocked drops per-tick tracker entries (lastOctets,
+// lastConnections) for clients absent from the latest sample so those maps
+// don't grow unbounded across a long run. usageTotals is deliberately NOT
+// pruned: the wire total must stay monotonic for the whole process epoch.
+// The asymmetry is safe because processUsageRowLocked detects a reappearing
+// client (usageTotals present, lastOctets pruned) and re-baselines it with a
+// zero delta instead of re-counting its full counter (R2, audit 2026-07-07
+// §1.3). Caller must hold a.mu.
 func (a *Agent) cleanupStaleUsageStateLocked(seen map[string]struct{}) {
 	for clientID := range a.lastConnections {
 		if _, ok := seen[clientID]; ok {
