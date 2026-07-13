@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
 
 // GitHubRelease represents a single release from the GitHub Releases API.
@@ -47,33 +49,41 @@ func ParseReleaseTag(tag string) (component, version string, ok bool) {
 	return component, version, true
 }
 
-// CompareVersions performs a numeric semver comparison of two
-// "major.minor.patch" version strings. It returns -1, 0, or 1.
-func CompareVersions(a, b string) int {
-	ap := parseSemverParts(a)
-	bp := parseSemverParts(b)
-	for i := 0; i < 3; i++ {
-		if ap[i] < bp[i] {
-			return -1
-		}
-		if ap[i] > bp[i] {
-			return 1
-		}
+// CompareVersions performs a semver comparison of two version strings
+// ("1.2.3" or "v1.2.3"; pre-release suffixes follow semver ordering).
+// It returns an error when either side is not a parseable semver —
+// callers must fail closed (refuse the update) instead of comparing
+// silently-zeroed segments: "1.x.3" used to compare equal to "1.0.3"
+// (R1.5, audit 2026-07-07 §1.14).
+func CompareVersions(a, b string) (int, error) {
+	ca, ok := canonicalSemver(a)
+	if !ok {
+		return 0, fmt.Errorf("updates: version %q is not a parseable semver", a)
 	}
-	return 0
+	cb, ok := canonicalSemver(b)
+	if !ok {
+		return 0, fmt.Errorf("updates: version %q is not a parseable semver", b)
+	}
+	return semver.Compare(ca, cb), nil
 }
 
-func parseSemverParts(v string) [3]int {
-	var parts [3]int
-	segments := strings.SplitN(v, ".", 3)
-	for i, seg := range segments {
-		if i >= 3 {
-			break
-		}
-		n, _ := strconv.Atoi(seg)
-		parts[i] = n
+// canonicalSemver normalises a version string into the leading-"v" form
+// golang.org/x/mod/semver expects. Deliberate mirror of
+// internal/agent/updater.canonicalSemver — the agent binary and the
+// control-plane keep independent copies by design (no shared import in
+// either direction); R6 (dedup) may consolidate into a leaf package.
+func canonicalSemver(v string) (string, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", false
 	}
-	return parts
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	if !semver.IsValid(v) {
+		return "", false
+	}
+	return v, true
 }
 
 // FetchLatestVersions queries the GitHub Releases API and returns the newest

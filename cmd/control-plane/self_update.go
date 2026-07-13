@@ -123,7 +123,10 @@ func resolveSelfUpdateTarget(ctx context.Context, opts selfUpdateOptions) (panel
 	}
 
 	currentVersion = strings.TrimPrefix(Version, "v")
-	cmp := server.CompareVersions(targetVersion, currentVersion)
+	cmp, cmpErr := server.CompareVersions(targetVersion, currentVersion)
+	if cmpErr != nil {
+		return nil, "", "", false, fmt.Errorf("cannot compare versions: %w", cmpErr)
+	}
 	if cmp == 0 && !opts.force {
 		fmt.Printf("Already at version %s. Use --force to re-install.\n", currentVersion)
 		return nil, "", "", false, nil

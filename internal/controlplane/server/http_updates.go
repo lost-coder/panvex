@@ -320,7 +320,12 @@ func (s *Server) resolvePanelTargetVersion(w http.ResponseWriter, requested stri
 
 	// Strip "v" prefix for comparison since UpdateState stores bare semver.
 	currentVersion := strings.TrimPrefix(s.version, "v")
-	if CompareVersions(targetVersion, currentVersion) <= 0 {
+	cmp, err := CompareVersions(targetVersion, currentVersion)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid version: "+err.Error())
+		return "", false
+	}
+	if cmp <= 0 {
 		writeError(w, http.StatusConflict, "target version is not newer than current version")
 		return "", false
 	}
