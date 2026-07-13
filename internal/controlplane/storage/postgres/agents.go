@@ -107,6 +107,11 @@ func agentRecordFromRow(row dbsqlc.ListAgentsRow) storage.AgentRecord {
 		t := row.CertExpiresAt.Time.UTC()
 		rec.CertExpiresAt = &t
 	}
+	rec.TransportMode = row.TransportMode
+	rec.BootstrapState = row.BootstrapState
+	if row.DialAddress.Valid {
+		rec.DialAddress = row.DialAddress.String
+	}
 	return rec
 }
 

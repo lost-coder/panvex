@@ -307,6 +307,49 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 			t.Fatalf("remaining revocations = %+v, want only agent-live", remaining)
 		}
 	})
+
+	// R9a: ListAgents must surface the persisted dial transport_mode +
+	// dial_address so a restored outbound row renders with its real mode
+	// (previously these columns were dropped by ListAgents).
+	t.Run("ListAgents surfaces transport_mode and dial_address", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		agent := storage.AgentRecord{
+			ID:         "agent-outbound",
+			NodeName:   "node-outbound",
+			Version:    "dev",
+			LastSeenAt: time.Unix(0, 0).UTC(),
+		}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+		if err := store.UpdateAgentTransportMode(ctx, agent.ID, "outbound", "10.0.0.5:9443"); err != nil {
+			t.Fatalf("UpdateAgentTransportMode() error = %v", err)
+		}
+
+		agents, err := store.ListAgents(ctx)
+		if err != nil {
+			t.Fatalf("ListAgents() error = %v", err)
+		}
+		var got *storage.AgentRecord
+		for i := range agents {
+			if agents[i].ID == agent.ID {
+				got = &agents[i]
+				break
+			}
+		}
+		if got == nil {
+			t.Fatalf("ListAgents() missing agent %q", agent.ID)
+		}
+		if got.TransportMode != "outbound" {
+			t.Errorf("TransportMode = %q, want outbound", got.TransportMode)
+		}
+		if got.DialAddress != "10.0.0.5:9443" {
+			t.Errorf("DialAddress = %q, want 10.0.0.5:9443", got.DialAddress)
+		}
+	})
 }
 
 // seedDiscoveredClientForCascade inserts a minimal discovered_clients row

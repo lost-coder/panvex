@@ -249,6 +249,15 @@ type AgentRecord struct {
 	// pinned"; subsequent dials must verify the served cert hashes to this
 	// value via storage.UpdateAgentCertPin.
 	CertSPKISHA256 []byte
+	// BootstrapState is the enrollment lifecycle state ("pending",
+	// "expired", "active"; empty for legacy inbound rows). Written by the
+	// bootstrap token/enroll paths; surfaced so a half-added node restores
+	// and renders as pending rather than offline (R9a).
+	BootstrapState string
+	// TransportMode is the persisted dial mode ("inbound"/"outbound").
+	TransportMode string
+	// DialAddress is the panel-dials-agent target for outbound rows.
+	DialAddress string
 }
 
 // InstanceRecord stores one Telemt runtime observed through an agent.

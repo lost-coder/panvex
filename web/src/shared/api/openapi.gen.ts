@@ -401,6 +401,21 @@ export interface components {
              */
             transport_reconnect_pending?: boolean;
             /**
+             * @description Enrollment lifecycle state of the agents row: "pending"
+             *     (provisioned, awaiting first enrollment), "expired" (bootstrap
+             *     token lapsed before enrollment) or "active" (enrolled). Empty for
+             *     legacy inbound rows. Meaningful for the UI only while the node has
+             *     never connected — a half-added node renders as pending/expired
+             *     instead of offline (R9a).
+             */
+            bootstrap_state?: string;
+            /**
+             * @description Persisted transport mode of the agents row — "inbound" (agent
+             *     dials the panel) or "outbound" (panel dials the agent). Distinct
+             *     from runtime.transport_mode (Telemt classic/middle_proxy).
+             */
+            dial_transport_mode?: string;
+            /**
              * @description Optional snapshot of any active certificate-recovery grant
              *     for the agent. Absent when no grant has been issued.
              */

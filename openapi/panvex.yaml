@@ -554,6 +554,21 @@ components:
             panel has not accepted a session from/to it since the switch
             ("switched but never reconnected"). Cleared on the next accepted
             agent stream.
+        bootstrap_state:
+          type: string
+          description: |
+            Enrollment lifecycle state of the agents row: "pending"
+            (provisioned, awaiting first enrollment), "expired" (bootstrap
+            token lapsed before enrollment) or "active" (enrolled). Empty for
+            legacy inbound rows. Meaningful for the UI only while the node has
+            never connected — a half-added node renders as pending/expired
+            instead of offline (R9a).
+        dial_transport_mode:
+          type: string
+          description: |
+            Persisted transport mode of the agents row — "inbound" (agent
+            dials the panel) or "outbound" (panel dials the agent). Distinct
+            from runtime.transport_mode (Telemt classic/middle_proxy).
         certificate_recovery:
           allOf:
             - $ref: '#/components/schemas/AgentCertificateRecoveryGrant'

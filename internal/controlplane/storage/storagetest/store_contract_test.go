@@ -717,10 +717,14 @@ func (s *memoryStore) GetAgentCertSerial(_ context.Context, agentID string) (str
 	return agent.CertSerial, nil
 }
 
-func (s *memoryStore) UpdateAgentTransportMode(_ context.Context, agentID, _, _ string) error {
-	if _, ok := s.agents[agentID]; !ok {
+func (s *memoryStore) UpdateAgentTransportMode(_ context.Context, agentID, transportMode, dialAddress string) error {
+	rec, ok := s.agents[agentID]
+	if !ok {
 		return storage.ErrNotFound
 	}
+	rec.TransportMode = transportMode
+	rec.DialAddress = dialAddress
+	s.agents[agentID] = rec
 	return nil
 }
 

@@ -46,14 +46,16 @@ func agentToRecord(agent Agent) storage.AgentRecord {
 
 func agentFromRecord(record storage.AgentRecord) Agent {
 	return Agent{
-		ID:            record.ID,
-		NodeName:      record.NodeName,
-		FleetGroupID:  record.FleetGroupID,
-		Version:       record.Version,
-		ReadOnly:      record.ReadOnly,
-		LastSeenAt:    record.LastSeenAt.UTC(),
-		CertIssuedAt:  record.CertIssuedAt,
-		CertExpiresAt: record.CertExpiresAt,
+		ID:                record.ID,
+		NodeName:          record.NodeName,
+		FleetGroupID:      record.FleetGroupID,
+		Version:           record.Version,
+		ReadOnly:          record.ReadOnly,
+		LastSeenAt:        record.LastSeenAt.UTC(),
+		CertIssuedAt:      record.CertIssuedAt,
+		CertExpiresAt:     record.CertExpiresAt,
+		BootstrapState:    record.BootstrapState,
+		DialTransportMode: record.TransportMode,
 	}
 }
 
