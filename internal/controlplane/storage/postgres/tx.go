@@ -12,9 +12,10 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
-// maxTransactRetries caps how many times Transact retries on a PostgreSQL
-// serialization failure (SQLSTATE 40001). Beyond this the caller is
-// returned the last error; raising the cap risks wedging a request under
+// maxTransactRetries caps how many times Transact retries on a retryable
+// PostgreSQL transaction conflict (serialization_failure 40001 or
+// deadlock_detected 40P01 — see isRetryableTxError). Beyond this the caller
+// is returned the last error; raising the cap risks wedging a request under
 // contention. See P2-ARCH-01.
 const maxTransactRetries = 3
 
@@ -42,7 +43,7 @@ func (s *Store) Transact(ctx context.Context, fn storage.TxFn) error {
 			return nil
 		}
 
-		if !isSerializationFailure(err) {
+		if !isRetryableTxError(err) {
 			return err
 		}
 		lastErr = err
@@ -62,7 +63,7 @@ func (s *Store) Transact(ctx context.Context, fn storage.TxFn) error {
 			return ctx.Err()
 		}
 	}
-	return fmt.Errorf("postgres: serialization failure after %d retries: %w", maxTransactRetries, lastErr)
+	return fmt.Errorf("postgres: retryable transaction conflict after %d retries: %w", maxTransactRetries, lastErr)
 }
 
 func (s *Store) runTransact(ctx context.Context, fn storage.TxFn) (retErr error) {
@@ -95,13 +96,21 @@ func (s *Store) runTransact(ctx context.Context, fn storage.TxFn) (retErr error)
 	return nil
 }
 
-// isSerializationFailure reports whether err originates from a
-// PostgreSQL serialization_failure (SQLSTATE 40001). pgx surfaces it
-// as *pgconn.PgError through database/sql.
-func isSerializationFailure(err error) bool {
+// isRetryableTxError reports whether err is a PostgreSQL transaction
+// conflict that is safe to retry by re-running the whole TxFn:
+//
+//   - 40001 serialization_failure — kept for completeness (rare under
+//     read-committed, which is what Transact uses, but real if a caller ever
+//     bumps the isolation level).
+//   - 40P01 deadlock_detected — the common real case: Postgres picks one
+//     transaction as the victim and aborts it with 40P01; re-running usually
+//     succeeds once the winner has committed (R4, audit 2026-07-07 §1.9).
+//
+// pgx surfaces both as *pgconn.PgError through database/sql.
+func isRetryableTxError(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		return pgErr.Code == "40001"
+		return pgErr.Code == "40001" || pgErr.Code == "40P01"
 	}
 	return false
 }

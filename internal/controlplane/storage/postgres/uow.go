@@ -1,10 +1,10 @@
 // internal/controlplane/storage/postgres/uow.go
 //
 // Postgres-backed UnitOfWork. The retry and rollback contract mirrors
-// (*Store).Transact in tx.go — serialization failures (SQLSTATE 40001)
-// are retried up to maxTransactRetries times with jittered backoff;
-// panics inside fn cause rollback + re-raise; nested Do returns
-// storage.ErrNestedTransact.
+// (*Store).Transact in tx.go — retryable conflicts (serialization_failure
+// 40001 / deadlock_detected 40P01, see isRetryableTxError) are retried up to
+// maxTransactRetries times with jittered backoff; panics inside fn cause
+// rollback + re-raise; nested Do returns storage.ErrNestedTransact.
 package postgres
 
 import (
@@ -46,7 +46,7 @@ func (u *pgUoW) Do(ctx context.Context, fn func(rs uow.RepoSet) error) error {
 			return nil
 		}
 
-		if !isSerializationFailure(err) {
+		if !isRetryableTxError(err) {
 			return err
 		}
 		lastErr = err
@@ -65,7 +65,7 @@ func (u *pgUoW) Do(ctx context.Context, fn func(rs uow.RepoSet) error) error {
 			return ctx.Err()
 		}
 	}
-	return fmt.Errorf("postgres uow: serialization failure after %d retries: %w", maxTransactRetries, lastErr)
+	return fmt.Errorf("postgres uow: retryable transaction conflict after %d retries: %w", maxTransactRetries, lastErr)
 }
 
 func (u *pgUoW) runOnce(ctx context.Context, fn func(rs uow.RepoSet) error) (retErr error) {
