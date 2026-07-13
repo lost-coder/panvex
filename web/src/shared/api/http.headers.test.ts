@@ -51,3 +51,29 @@ describe("api() init merging", () => {
     expect(init.credentials).toBe("include");
   });
 });
+
+describe("ApiError.status", () => {
+  const fetchSpy = vi.fn();
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("attaches the HTTP status of a failed response", async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await expect(api(`${apiBasePath}/clients`)).rejects.toMatchObject({
+      status: 401,
+    });
+  });
+});
