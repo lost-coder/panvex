@@ -249,13 +249,14 @@ const clockSkewTolerance = 2 * time.Minute
 // per snapshot.
 func (s *Server) clampObservedAt(ctx context.Context, agentID string, observed time.Time) time.Time {
 	now := s.now().UTC()
-	if observed.After(now.Add(clockSkewTolerance)) {
-		s.logger.WarnContext(ctx, "agent observed_at leads the panel clock; clamping stored telemetry timestamps to now",
+	ceiling := now.Add(clockSkewTolerance)
+	if observed.After(ceiling) {
+		s.logger.WarnContext(ctx, "agent observed_at leads the panel clock; clamping stored telemetry timestamps",
 			"agent_id", agentID,
 			"observed_at", observed.UTC(),
 			"skew", observed.Sub(now).Round(time.Second),
 		)
-		return now
+		return ceiling
 	}
 	return observed
 }

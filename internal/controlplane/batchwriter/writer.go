@@ -201,6 +201,32 @@ func (b *batchBuffer[T]) Len() int {
 	return len(b.items) - b.start
 }
 
+// RemoveMatching drops every live item for which pred returns true and returns
+// the number removed, preserving the order of the rest. Used to cancel a
+// pending write that a later operation has superseded — e.g. an EnqueueAgent
+// still buffered when the agent is deregistered, which would otherwise
+// resurrect the row after DeleteAgent (R9b).
+func (b *batchBuffer[T]) RemoveMatching(pred func(T) bool) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	live := b.items[b.start:]
+	filtered := make([]T, 0, len(live))
+	removed := 0
+	for _, it := range live {
+		if pred(it) {
+			removed++
+			continue
+		}
+		filtered = append(filtered, it)
+	}
+	if removed == 0 {
+		return 0
+	}
+	b.items = filtered
+	b.start = 0
+	return removed
+}
+
 // Drain swaps out the current live window and flushes accumulated items. Safe
 // to call concurrently — only one drain runs at a time because items are
 // swapped under the lock before the flush function is invoked.
@@ -380,6 +406,13 @@ func (w *Writer) SetFlushInterval(d time.Duration) { w.flushInterval = d }
 // each stream buffer. They replace direct access to the (now unexported)
 // buffer fields, keeping the buffer wiring internal to this package.
 func (w *Writer) EnqueueAgent(rec storage.AgentRecord)                { w.agents.Enqueue(rec) }
+
+// RemovePendingAgent cancels any buffered agent upsert(s) for agentID so a
+// deregister cannot be undone by a stale in-flight EnqueueAgent flushing after
+// DeleteAgent (the "resurrecting node" race). Returns the number dropped.
+func (w *Writer) RemovePendingAgent(agentID string) int {
+	return w.agents.RemoveMatching(func(rec storage.AgentRecord) bool { return rec.ID == agentID })
+}
 func (w *Writer) EnqueueInstance(rec storage.InstanceRecord)          { w.instances.Enqueue(rec) }
 func (w *Writer) EnqueueMetric(rec storage.MetricSnapshotRecord)      { w.metricsBuf.Enqueue(rec) }
 func (w *Writer) EnqueueServerLoad(rec storage.ServerLoadPointRecord) { w.serverLoad.Enqueue(rec) }

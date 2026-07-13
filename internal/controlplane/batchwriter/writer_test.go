@@ -37,6 +37,32 @@ func TestBatchBufferDrainFlushesAccumulatedItems(t *testing.T) {
 	}
 }
 
+// TestBatchBufferRemoveMatching (R9b Task 10): a superseding delete must be
+// able to cancel buffered writes so they don't flush after the delete.
+func TestBatchBufferRemoveMatching(t *testing.T) {
+	var flushed []int
+	buf := newBatchBuffer(10, func(_ context.Context, items []int) {
+		flushed = append(flushed, items...)
+	})
+	buf.Enqueue(1)
+	buf.Enqueue(2)
+	buf.Enqueue(3)
+	buf.Enqueue(2)
+
+	if removed := buf.RemoveMatching(func(v int) bool { return v == 2 }); removed != 2 {
+		t.Fatalf("RemoveMatching removed %d, want 2", removed)
+	}
+	buf.Drain(context.Background())
+	if len(flushed) != 2 || flushed[0] != 1 || flushed[1] != 3 {
+		t.Fatalf("flushed = %v, want [1 3] (order preserved, 2s cancelled)", flushed)
+	}
+
+	buf.Enqueue(5)
+	if removed := buf.RemoveMatching(func(v int) bool { return v == 99 }); removed != 0 {
+		t.Fatalf("RemoveMatching(no match) = %d, want 0", removed)
+	}
+}
+
 func TestBatchBufferDrainIsNoOpWhenEmpty(t *testing.T) {
 	called := false
 	buf := newBatchBuffer(10, func(_ context.Context, _ []int) {

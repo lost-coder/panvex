@@ -81,8 +81,9 @@ func TestClampObservedAt(t *testing.T) {
 		t.Errorf("within-tolerance future clamped: got %v, want %v", got, small)
 	}
 	future := now.Add(time.Hour)
-	if got := server.clampObservedAt(ctx, "a", future); !got.Equal(now) {
-		t.Errorf("future observed not clamped: got %v, want %v", got, now)
+	ceiling := now.Add(clockSkewTolerance)
+	if got := server.clampObservedAt(ctx, "a", future); !got.Equal(ceiling) {
+		t.Errorf("future observed not clamped: got %v, want %v", got, ceiling)
 	}
 }
 
