@@ -59,6 +59,34 @@ func TestProducerPublishFansOutToMatchingEndpoints(t *testing.T) {
 	}
 }
 
+// TestProducerPublishIsAtomic (R4 §1.7): if the fan-out batch write fails on
+// any row, the whole event fan-out rolls back — no partial fan-out where some
+// endpoints are notified and others are silently dropped.
+func TestProducerPublishIsAtomic(t *testing.T) {
+	store := newMemStore()
+	store.addEndpoint(Endpoint{
+		ID: "ep-1", Name: "one", URL: "https://a.example.com",
+		Secret: []byte("k1"), EventFilter: []string{"agent.*"}, Enabled: true,
+	})
+	store.addEndpoint(Endpoint{
+		ID: "ep-2", Name: "two", URL: "https://b.example.com",
+		Secret: []byte("k2"), EventFilter: []string{"agent.*"}, Enabled: true,
+	})
+
+	p := NewProducer(store)
+	p.SetClock(func() time.Time { return time.Date(2026, 5, 8, 1, 2, 3, 0, time.UTC) })
+	// Force a collision: both fan-out rows get the same ID, so the batch
+	// insert fails as a whole and must leave the outbox empty.
+	p.SetIDFunc(func() string { return "dup" })
+
+	if err := p.Publish(context.Background(), Event{Action: "agent.unhealthy", Payload: json.RawMessage(`{}`)}); err == nil {
+		t.Fatal("Publish must fail when the fan-out batch cannot be written atomically")
+	}
+	if rows := store.allRows(); len(rows) != 0 {
+		t.Fatalf("outbox has %d rows after a failed atomic fan-out, want 0", len(rows))
+	}
+}
+
 func TestProducerEmptyFilterMatchesEverything(t *testing.T) {
 	store := newMemStore()
 	store.addEndpoint(Endpoint{

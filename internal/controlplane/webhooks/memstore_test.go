@@ -2,6 +2,7 @@ package webhooks
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -48,6 +49,28 @@ func (s *memStore) InsertOutbox(ctx context.Context, row OutboxRow) error {
 	defer s.mu.Unlock()
 	cp := row
 	s.rows[row.ID] = &cp
+	return nil
+}
+
+// InsertOutboxBatch mirrors the real backends' all-or-nothing contract: a
+// duplicate ID anywhere in the batch fails the whole batch with no rows added.
+func (s *memStore) InsertOutboxBatch(ctx context.Context, rows []OutboxRow) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	staged := make(map[string]*OutboxRow, len(rows))
+	for i := range rows {
+		if _, exists := s.rows[rows[i].ID]; exists {
+			return fmt.Errorf("memStore: duplicate outbox id %q", rows[i].ID)
+		}
+		if _, dup := staged[rows[i].ID]; dup {
+			return fmt.Errorf("memStore: duplicate outbox id %q in batch", rows[i].ID)
+		}
+		cp := rows[i]
+		staged[rows[i].ID] = &cp
+	}
+	for id, row := range staged {
+		s.rows[id] = row
+	}
 	return nil
 }
 

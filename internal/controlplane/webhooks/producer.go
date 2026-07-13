@@ -9,10 +9,11 @@ import (
 )
 
 // Producer fans an event out into one outbox row per matching
-// endpoint. The producer is intentionally minimal — no queueing,
-// no dedupe — so it can be called in the same DB transaction as the
-// event source's existing write (atomic-with-the-fact-that-happened
-// is the durability contract).
+// endpoint. The fan-out is atomic RELATIVE TO ITSELF (all rows land or
+// none, via InsertOutboxBatch) but is NOT enrolled in the source event's
+// transaction — Publish opens its own batch write (C-1b). Callers that need
+// the outbox rows to roll back with the originating event must not rely on
+// this; the durability contract here is "the whole fan-out is all-or-nothing".
 type Producer struct {
 	storage Storage
 	clock   func() time.Time
@@ -47,11 +48,9 @@ func (p *Producer) SetIDFunc(idFunc func() string) {
 }
 
 // Publish writes one outbox row per enabled endpoint whose filter
-// matches ev.Action. Returns nil with no rows written if no
-// endpoint matched (event sources can call Publish unconditionally;
-// the lookup cost is one query). Publish does not retry — if the
-// storage write fails, the caller's transaction must roll back so
-// the originating event also rolls back.
+// matches ev.Action, atomically (all rows or none — R4 §1.7). Returns nil
+// with no rows written if no endpoint matched (event sources can call Publish
+// unconditionally; the lookup cost is one query).
 func (p *Producer) Publish(ctx context.Context, ev Event) error {
 	if ev.Action == "" {
 		return fmt.Errorf("webhooks: event Action is empty")
@@ -61,14 +60,14 @@ func (p *Producer) Publish(ctx context.Context, ev Event) error {
 		return fmt.Errorf("webhooks: list endpoints: %w", err)
 	}
 	now := p.clock().UTC()
+	// ListEnabledEndpoints already filters disabled rows server-side, so no
+	// ep.Enabled re-check is needed here.
+	rows := make([]OutboxRow, 0, len(endpoints))
 	for _, ep := range endpoints {
-		if !ep.Enabled {
-			continue
-		}
 		if !matchesFilter(ev.Action, ep.EventFilter) {
 			continue
 		}
-		row := OutboxRow{
+		rows = append(rows, OutboxRow{
 			ID:            p.idFunc(),
 			EndpointID:    ep.ID,
 			EventAction:   ev.Action,
@@ -76,10 +75,13 @@ func (p *Producer) Publish(ctx context.Context, ev Event) error {
 			Attempt:       0,
 			NextAttemptAt: now,
 			CreatedAt:     now,
-		}
-		if err := p.storage.InsertOutbox(ctx, row); err != nil {
-			return fmt.Errorf("webhooks: insert outbox row: %w", err)
-		}
+		})
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	if err := p.storage.InsertOutboxBatch(ctx, rows); err != nil {
+		return fmt.Errorf("webhooks: insert outbox batch: %w", err)
 	}
 	return nil
 }

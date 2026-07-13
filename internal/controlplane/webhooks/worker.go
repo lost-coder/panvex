@@ -39,6 +39,27 @@ type WorkerConfig struct {
 	Clock func() time.Time
 	// Logger — defaults to slog.Default().
 	Logger *slog.Logger
+	// OnDeadLetter, if set, is invoked after a delivery is dead-lettered so
+	// the caller can write a DURABLE record of it — the slog line alone is
+	// not durable, yet doc.go promised a webhook.dead_letter event (R4 §1.7).
+	// The server wires this to the audit trail. Best-effort; a nil value is a
+	// no-op, and an OnDeadLetter that blocks stalls the delivery loop, so
+	// callers must keep it cheap.
+	OnDeadLetter func(ctx context.Context, dl DeadLetter)
+}
+
+// DeadLetter describes a delivery that exhausted its attempts (or was
+// permanently refused at preflight). Passed to WorkerConfig.OnDeadLetter.
+type DeadLetter struct {
+	OutboxID     string
+	EndpointID   string
+	EndpointName string
+	EventAction  string
+	Attempts     int
+	LastError    string
+	// Preflight is true when the row was refused before any HTTP attempt
+	// (e.g. non-https URL, private CIDR without allow_private).
+	Preflight bool
 }
 
 // Worker delivers queued outbox rows. Run blocks until ctx is
@@ -184,6 +205,21 @@ func (w *Worker) recordFailure(ctx context.Context, d Delivery, deliverErr error
 			"attempts", attempt,
 			"last_error", errMsg,
 		)
+		w.notifyDeadLetter(ctx, DeadLetter{
+			OutboxID:     d.Outbox.ID,
+			EndpointID:   d.Endpoint.ID,
+			EndpointName: d.Endpoint.Name,
+			EventAction:  d.Outbox.EventAction,
+			Attempts:     attempt,
+			LastError:    errMsg,
+		})
+	}
+}
+
+// notifyDeadLetter invokes the OnDeadLetter hook if wired (R4 §1.7).
+func (w *Worker) notifyDeadLetter(ctx context.Context, dl DeadLetter) {
+	if w.cfg.OnDeadLetter != nil {
+		w.cfg.OnDeadLetter(ctx, dl)
 	}
 }
 
@@ -202,6 +238,15 @@ func (w *Worker) failPermanently(ctx context.Context, d Delivery, deliverErr err
 		"endpoint", d.Endpoint.Name,
 		"error", deliverErr,
 	)
+	w.notifyDeadLetter(ctx, DeadLetter{
+		OutboxID:     d.Outbox.ID,
+		EndpointID:   d.Endpoint.ID,
+		EndpointName: d.Endpoint.Name,
+		EventAction:  d.Outbox.EventAction,
+		Attempts:     w.cfg.MaxAttempts,
+		LastError:    truncateError(deliverErr.Error()),
+		Preflight:    true,
+	})
 }
 
 // preflight rejects URLs the worker is not allowed to dial. Run
