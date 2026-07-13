@@ -245,6 +245,7 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 		"node_name":      request.NodeName,
 		"fleet_group_id": token.FleetGroupID,
 	})
+	s.auditDuplicateNodeName(ctx, agentID, request.NodeName)
 	s.events.Publish(eventbus.Event{
 		Type: cpevents.TypeAgentsEnrolled,
 		Data: agent,
@@ -256,6 +257,36 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 		CAPEM:          issued.CAPEM,
 		ExpiresAt:      issued.ExpiresAt,
 	}, nil
+}
+
+// auditDuplicateNodeName surfaces a possible double identity to the operator
+// when a freshly-enrolled agent shares its node_name with an existing agent
+// row (e.g. a cloned VM re-running bootstrap without clearing its state file).
+// Heuristic only — node_name is the sole shared field (hostname is not
+// stored), so two genuinely-distinct hosts that happen to share a hostname
+// will also trip this. We deliberately do NOT auto-dedupe (that would risk
+// merging two real hosts); we make the collision visible via audit + Warn and
+// let the operator decide (R9b).
+func (s *Server) auditDuplicateNodeName(ctx context.Context, newAgentID, nodeName string) {
+	if nodeName == "" {
+		return
+	}
+	var others []string
+	for _, a := range s.live.List() {
+		if a.ID == newAgentID || a.NodeName != nodeName {
+			continue
+		}
+		others = append(others, a.ID)
+	}
+	if len(others) == 0 {
+		return
+	}
+	s.logger.WarnContext(ctx, "enrolled agent shares node_name with existing agent(s) — possible duplicate identity (cloned VM / re-run bootstrap)",
+		"agent_id", newAgentID, "node_name", nodeName, "existing_agent_ids", others)
+	s.appendAuditWithContext(ctx, newAgentID, "agents.duplicate_node_name_suspected", newAgentID, map[string]any{
+		"node_name":          nodeName,
+		"existing_agent_ids": others,
+	})
 }
 
 func (s *Server) applyClientUsageSnapshot(ctx context.Context, agentID, agentBootID string, reports []clients.UsageReport) {
