@@ -1,11 +1,23 @@
 import { z } from "zod";
 
+import type { components } from "../openapi.gen.ts";
+import type { LoosenOptional } from "./common.ts";
+
 /**
  * R-Q-20: Zod schemas for the /settings/updates and related endpoints.
  *
  * Schemas mirror the runtime types declared in shared/api/updates.ts
  * exactly so the api<T>() ZodType<T> overload accepts them.
  */
+
+// selfUpdateStateSchema (R11b Task 3) is the one schema here with an OpenAPI
+// counterpart, so it carries the P8.3 drift-guard binding: `satisfies
+// z.ZodType<Gen["SelfUpdateState"]>` compares against the optional-loosened
+// generated type (see agent.ts / LoosenOptional), and openapi-drift-guard.ts
+// asserts the reverse direction (every Zod key exists in the spec).
+type Gen = {
+  [K in keyof components["schemas"]]: LoosenOptional<components["schemas"][K]>;
+};
 
 export const updateSettingsSchema = z.object({
   check_interval_hours: z.number(),
@@ -28,10 +40,28 @@ export const updateStateSchema = z.object({
   last_check_error: z.string().optional().default(""),
 });
 
+// Server-persisted panel self-update lifecycle. Defensive defaults so a phase
+// with only `phase` populated (the idle / just-started case) still parses.
+export const selfUpdateStateSchema = z.object({
+  phase: z.enum([
+    "",
+    "downloading",
+    "installing",
+    "restart_pending",
+    "completed",
+    "failed",
+  ]),
+  from_version: z.string().optional().default(""),
+  to_version: z.string().optional().default(""),
+  message: z.string().optional().default(""),
+  updated_at: z.number().optional().default(0),
+}) satisfies z.ZodType<Gen["SelfUpdateState"]>;
+
 export const updateSettingsResponseSchema = z.object({
   settings: updateSettingsSchema,
   state: updateStateSchema,
   current_version: z.string(),
+  self_update: selfUpdateStateSchema,
 });
 
 export const checkForUpdatesResponseSchema = z.object({
@@ -52,3 +82,4 @@ export const updateAgentResponseSchema = z.object({
 
 export type UpdateSettingsParsed = z.infer<typeof updateSettingsSchema>;
 export type UpdateSettingsResponseParsed = z.infer<typeof updateSettingsResponseSchema>;
+export type SelfUpdateStateParsed = z.infer<typeof selfUpdateStateSchema>;

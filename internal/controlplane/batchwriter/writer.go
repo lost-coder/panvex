@@ -1006,10 +1006,17 @@ func (w *Writer) flushAuditEvents(ctx context.Context, items []storage.AuditEven
 // the storage.AuditEventRecord plus the time the event was dead-lettered.
 const auditDeadLetterFileName = "audit-events.jsonl"
 
-// deadLetteredAuditEvent is the on-disk JSONL envelope: the original audit
+// DeadLetteredAuditEvent is the on-disk JSONL envelope: the original audit
 // record plus the wall-clock time it was spooled, so a later replay tool can
 // order and de-duplicate entries.
-type deadLetteredAuditEvent struct {
+//
+// Records in this spool live OUTSIDE the SHA-256 hash chain that the
+// verify-audit-chain subcommand checks — they never reached the store, so
+// they were never chained. There is deliberately no auto-import: sequence
+// IDs restart from the persisted maximum on boot, so replaying a spooled
+// event would collide with an already-issued ID and break chain continuity.
+// Use `control-plane audit-deadletter` to read this file for manual triage.
+type DeadLetteredAuditEvent struct {
 	DeadLetteredAt time.Time                `json:"dead_lettered_at"`
 	Event          storage.AuditEventRecord `json:"event"`
 }
@@ -1027,7 +1034,7 @@ func (w *Writer) writeAuditDeadLetter(item storage.AuditEventRecord) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create audit dead-letter dir %q: %w", dir, err)
 	}
-	line, err := json.Marshal(deadLetteredAuditEvent{
+	line, err := json.Marshal(DeadLetteredAuditEvent{
 		DeadLetteredAt: w.now().UTC(),
 		Event:          item,
 	})

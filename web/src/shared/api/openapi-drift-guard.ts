@@ -36,6 +36,7 @@ import type {
   EnrollmentTokenListItemParsed,
   EnrollmentTokenResponseParsed,
 } from "./schemas/enrollment.ts";
+import type { SelfUpdateStateParsed } from "./schemas/updates.ts";
 
 type OpenAPISchemas = components["schemas"];
 
@@ -78,6 +79,11 @@ const _enrollmentCreateKeys: AssertNoUnspecKeys<
   OpenAPISchemas["CreateEnrollmentTokenResponse"]
 > = true;
 
+const _selfUpdateStateKeys: AssertNoUnspecKeys<
+  SelfUpdateStateParsed,
+  OpenAPISchemas["SelfUpdateState"]
+> = true;
+
 // Keep the bindings live so tree-shaking doesn't drop the assertions.
 export const __openapiDriftGuards = [
   _agentKeys,
@@ -85,4 +91,5 @@ export const __openapiDriftGuards = [
   _certificateRecoveryKeys,
   _enrollmentListKeys,
   _enrollmentCreateKeys,
+  _selfUpdateStateKeys,
 ] as const;

@@ -836,6 +836,28 @@ export interface components {
              */
             ttl_seconds?: number;
         };
+        /**
+         * @description Server-side lifecycle of the current or most-recent panel
+         *     self-update run, persisted across restarts. `phase` is the
+         *     source of truth for whether an update is in progress: the empty
+         *     string means idle (no run started, or nothing to show).
+         *     `completed` and `failed` are terminal; on `failed`, `message`
+         *     carries the operator-readable reason. The dashboard reads this so
+         *     an in-flight update survives a page reload and always resolves to
+         *     a terminal outcome.
+         */
+        SelfUpdateState: {
+            /** @enum {string} */
+            phase: "" | "downloading" | "installing" | "restart_pending" | "completed" | "failed";
+            from_version?: string;
+            to_version?: string;
+            message?: string;
+            /**
+             * Format: int64
+             * @description Unix seconds of the last phase transition.
+             */
+            updated_at?: number;
+        };
     };
     responses: {
         /** @description Validation error. */

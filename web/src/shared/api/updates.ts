@@ -27,10 +27,44 @@ export interface UpdateState {
   last_check_error: string;
 }
 
+export type SelfUpdatePhase =
+  | ""
+  | "downloading"
+  | "installing"
+  | "restart_pending"
+  | "completed"
+  | "failed";
+
+// SelfUpdateState mirrors the server-persisted panel self-update lifecycle
+// (openapi/panvex.yaml -> components.schemas.SelfUpdateState). `phase` is the
+// source of truth for whether an update is in progress; "" is idle.
+export interface SelfUpdateState {
+  phase: SelfUpdatePhase;
+  from_version: string;
+  to_version: string;
+  message: string;
+  updated_at: number;
+}
+
 export interface UpdateSettingsResponse {
   settings: UpdateSettings;
   state: UpdateState;
   current_version: string;
+  self_update: SelfUpdateState;
+}
+
+// ACTIVE_SELF_UPDATE_PHASES are the non-terminal, in-progress phases: while the
+// phase is one of these the Update button is disabled and the dashboard polls
+// on a short interval. Idle ("") and the terminal phases (completed/failed) are
+// excluded.
+export const ACTIVE_SELF_UPDATE_PHASES: readonly SelfUpdatePhase[] = [
+  "downloading",
+  "installing",
+  "restart_pending",
+];
+
+export function isActiveSelfUpdatePhase(phase: SelfUpdatePhase): boolean {
+  return ACTIVE_SELF_UPDATE_PHASES.includes(phase);
 }
 
 export const updatesApi = {

@@ -173,6 +173,17 @@
     "panelUpdateAvailable": "Panel update available",
     "updateButton": "Update to {{version}}",
     "updating": "Updating…",
+    "selfUpdate": {
+      "updatingTo": "Updating to {{version}}… ({{phase}})",
+      "waitingForRestart": "waiting for restart",
+      "failedTitle": "Update failed",
+      "completed": "Updated to {{version}}",
+      "phase": {
+        "downloading": "downloading",
+        "installing": "installing",
+        "restart_pending": "restarting"
+      }
+    },
     "versionsLabel": "Versions",
     "panel": "Panel",
     "agents": "Agents",

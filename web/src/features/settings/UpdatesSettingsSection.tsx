@@ -4,6 +4,7 @@ import { PageSection, SettingsRow, Button, Input } from "@/ui";
 import { Download, RefreshCw } from "lucide-react";
 import { useUpdates } from "@/shared/hooks/useUpdates";
 import { useUnsavedChangesGuard } from "@/shared/hooks";
+import { isActiveSelfUpdatePhase } from "@/shared/api/api";
 import type { UpdateSettings } from "@/shared/api/api";
 
 export function UpdatesSettingsSection() {
@@ -21,7 +22,14 @@ export function UpdatesSettingsSection() {
 
   const settings: UpdateSettings = { ...data.settings, ...draft };
   const state = data.state;
+  const selfUpdate = data.self_update;
   const isDirty = Object.keys(draft).length > 0;
+
+  // The server-side phase is now the source of truth for "updating"; the
+  // ephemeral mutation flag only covers the instant before the first refetch
+  // observes the persisted "downloading" phase.
+  const activePhase = isActiveSelfUpdatePhase(selfUpdate.phase);
+  const isUpdating = activePhase || updatePanel.isPending;
 
   const hasNewerPanel =
     state.latest_panel_version &&
@@ -58,13 +66,47 @@ export function UpdatesSettingsSection() {
           </div>
           <Button
             size="sm"
-            disabled={updatePanel.isPending}
+            disabled={isUpdating}
             onClick={() => updatePanel.mutate(state.latest_panel_version)}
           >
-            {updatePanel.isPending
+            {isUpdating
               ? t("updates.updating")
               : t("updates.updateButton", { version: state.latest_panel_version })}
           </Button>
+        </div>
+      )}
+
+      {/* Self-update lifecycle, read from the server so it survives a reload
+          and always resolves to a terminal outcome (R11b Task 3). */}
+      {activePhase && (
+        <div className="mx-4 mt-3 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3">
+          <p className="text-sm text-fg">
+            {t("updates.selfUpdate.updatingTo", {
+              version: selfUpdate.to_version || data.current_version,
+              phase: t(`updates.selfUpdate.phase.${selfUpdate.phase}`),
+            })}
+            {selfUpdate.phase === "restart_pending" &&
+              ` — ${t("updates.selfUpdate.waitingForRestart")}`}
+          </p>
+        </div>
+      )}
+
+      {selfUpdate.phase === "failed" && (
+        <div className="mx-4 mt-3 rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3">
+          <p className="text-sm font-medium text-red-400">
+            {t("updates.selfUpdate.failedTitle")}
+          </p>
+          <p className="mt-0.5 text-xs text-fg-muted break-words">
+            {selfUpdate.message}
+          </p>
+        </div>
+      )}
+
+      {selfUpdate.phase === "completed" && (
+        <div className="mx-4 mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
+          <p className="text-sm font-medium text-emerald-400">
+            {t("updates.selfUpdate.completed", { version: selfUpdate.to_version })}
+          </p>
         </div>
       )}
 

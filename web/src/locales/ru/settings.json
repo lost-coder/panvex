@@ -175,6 +175,17 @@
     "panelUpdateAvailable": "Доступно обновление панели",
     "updateButton": "Обновить до {{version}}",
     "updating": "Обновляем…",
+    "selfUpdate": {
+      "updatingTo": "Обновляем до {{version}}… ({{phase}})",
+      "waitingForRestart": "ожидание перезапуска",
+      "failedTitle": "Не удалось обновить",
+      "completed": "Обновлено до {{version}}",
+      "phase": {
+        "downloading": "загрузка",
+        "installing": "установка",
+        "restart_pending": "перезапуск"
+      }
+    },
     "versionsLabel": "Версии",
     "panel": "Панель",
     "agents": "Агенты",

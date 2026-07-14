@@ -106,10 +106,13 @@ export type {
   RetentionSettings,
 } from "./settings";
 export type {
+  SelfUpdatePhase,
+  SelfUpdateState,
   UpdateSettings,
   UpdateSettingsResponse,
   UpdateState,
 } from "./updates";
+export { isActiveSelfUpdatePhase } from "./updates";
 export type {
   CreateWebhookEndpointInput,
   UpdateWebhookEndpointInput,

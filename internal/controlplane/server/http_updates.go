@@ -71,9 +71,10 @@ type updateSettingsResponse struct {
 // (updateSettingsResponseSchema). GET and PUT intentionally differ — GET reads
 // the full state, PUT echoes just the saved settings.
 type updateSettingsGetResponse struct {
-	Settings       updateSettingsPayload `json:"settings"`
-	State          UpdateState           `json:"state"`
-	CurrentVersion string                `json:"current_version"`
+	Settings       updateSettingsPayload   `json:"settings"`
+	State          UpdateState             `json:"state"`
+	CurrentVersion string                  `json:"current_version"`
+	SelfUpdate     updates.SelfUpdateState `json:"self_update"`
 }
 
 // updateSettingsPayloadFrom maps stored settings to the wire payload, masking
@@ -153,8 +154,27 @@ func (s *Server) handleGetUpdateSettings() http.HandlerFunc {
 			Settings:       updateSettingsPayloadFrom(settings),
 			State:          state,
 			CurrentVersion: s.version,
+			SelfUpdate:     s.loadSelfUpdateForResponse(r.Context()),
 		})
 	}
+}
+
+// loadSelfUpdateForResponse fetches the persisted self-update phase for the GET
+// /settings/updates response so the dashboard reads the update lifecycle from
+// the server (surviving a page reload), not just from an ephemeral React
+// mutation flag (R11b Task 3). A missing store or a load error yields the zero
+// value (SelfUpdateIdle) — the phase is a UX/observability signal, so a read
+// glitch must not fail the whole settings fetch.
+func (s *Server) loadSelfUpdateForResponse(ctx context.Context) updates.SelfUpdateState {
+	if s.updatesSvc == nil {
+		return updates.SelfUpdateState{}
+	}
+	st, err := s.updatesSvc.LoadSelfUpdate(ctx)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "load self-update state for settings response failed", "error", err)
+		return updates.SelfUpdateState{}
+	}
+	return st
 }
 
 func (s *Server) handlePutUpdateSettings() http.HandlerFunc {
@@ -271,6 +291,10 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 			return
 		}
 
+		if !s.rejectConcurrentSelfUpdate(w, r) {
+			return
+		}
+
 		s.settingsMu.RLock()
 		settings := s.updateSettings
 		state := s.updateState
@@ -283,6 +307,16 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 
 		downloadURL, checksumURL, ok := s.resolvePanelDownloadAssets(w, r, targetVersion, state, settings)
 		if !ok {
+			return
+		}
+
+		// Atomically re-checks the phase and persists "downloading" BEFORE the
+		// 202 response (not inside performPanelUpdate's goroutine), so the
+		// dashboard's very first post-request refetch already observes the
+		// server-side phase instead of racing the background goroutine, AND
+		// so a second concurrent request cannot also claim the same run (R11b
+		// Task 2 TOCTOU fix; see claimSelfUpdate).
+		if !s.claimSelfUpdate(w, r, s.version, targetVersion) {
 			return
 		}
 
@@ -307,6 +341,122 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 			s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, settings.GitHubToken)
 		}()
 	}
+}
+
+// setSelfUpdatePhase persists the current phase of the running (or just-
+// finished) panel self-update so a restart/crash mid-update, or the very
+// first dashboard refetch after POST /settings/panel/update, observes an
+// accurate, terminal-eventually state (R11b Task 2). A persistence failure
+// is logged, never fatal or propagated to the caller — the phase is a
+// best-effort UX/observability signal, not part of the update's correctness.
+func (s *Server) setSelfUpdatePhase(ctx context.Context, phase updates.SelfUpdatePhase, from, to, message string) {
+	if s.updatesSvc == nil {
+		return
+	}
+	st := updates.SelfUpdateState{
+		Phase:       phase,
+		FromVersion: from,
+		ToVersion:   to,
+		Message:     message,
+		UpdatedAt:   s.now().UTC().Unix(),
+	}
+	if err := s.updatesSvc.SaveSelfUpdate(ctx, st); err != nil {
+		s.logger.ErrorContext(ctx, "self-update phase persistence failed",
+			"phase", string(phase), "error", err)
+	}
+	// No dedicated updates.changed WS event type exists yet (Task 3 adds the
+	// UI/OpenAPI surface); introducing one here would be scope creep ahead
+	// of that wiring. The dashboard picks up the new phase via its existing
+	// event-aware poll instead — see the R11b Task 2 report for the decision.
+}
+
+// selfUpdatePhaseBlocksNewRun reports whether a previously-persisted phase
+// means a self-update run is still active (started but not yet resolved to
+// a terminal outcome: downloading/installing/restart_pending), so a new POST
+// would race the in-flight one — download into the same temp area, install
+// over an already-staged binary, or double-request a restart.
+func selfUpdatePhaseBlocksNewRun(phase updates.SelfUpdatePhase) bool {
+	return phase != updates.SelfUpdateIdle && !phase.Terminal()
+}
+
+// rejectConcurrentSelfUpdate is a cheap, best-effort fail-fast: it lets an
+// obviously-conflicting request bail out before handlePanelUpdate spends a
+// round trip resolving the target version and download assets (which can
+// include a GitHub API call). It is deliberately NOT the authoritative
+// guard — being unlocked, two near-simultaneous requests can both pass it.
+// The authoritative, race-closing check is claimSelfUpdate, called later
+// under selfUpdateClaimMu immediately before the phase is persisted and the
+// 202 written (R11b Task 2 TOCTOU fix). Writes 409 and returns false when a
+// run is already active; true (including "no store wired" / "load failed",
+// which fail open rather than blocking a legitimate retry on a read glitch)
+// otherwise.
+func (s *Server) rejectConcurrentSelfUpdate(w http.ResponseWriter, r *http.Request) bool {
+	if s.updatesSvc == nil {
+		return true
+	}
+	st, err := s.updatesSvc.LoadSelfUpdate(r.Context())
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "load self-update state failed", "error", err)
+		return true
+	}
+	if selfUpdatePhaseBlocksNewRun(st.Phase) {
+		writeError(w, http.StatusConflict, "self-update already in progress")
+		return false
+	}
+	return true
+}
+
+// claimSelfUpdate is the authoritative, race-closing guard against a double
+// self-update start (the Critical finding from the R11b Task 2 review):
+// under selfUpdateClaimMu it loads the previous phase, checks it, and — only
+// if no run is active — persists the new "downloading" phase, all as one
+// atomic unit. This closes the TOCTOU window that existed when the check
+// (rejectConcurrentSelfUpdate) and the persist (formerly a bare
+// setSelfUpdatePhase call) were two independent, unlocked operations: two
+// concurrent POSTs could both observe an idle/terminal phase and both spawn
+// performPanelUpdate, each racing updates.AtomicReplaceBinary against the
+// other (internal/controlplane/updates/download.go).
+//
+// The lock is held only across the Load + phase check + the small persisted
+// KV write — never across the target-version/download-asset resolution that
+// happens earlier in handlePanelUpdate (which can make a real GitHub API
+// call), and never across the actual download/checksum/install work, which
+// happens later, unlocked, inside the detached performPanelUpdate goroutine.
+// So no unbounded-duration I/O ever executes while holding selfUpdateClaimMu.
+//
+// Writes 409 and returns false when a run is already active (matching
+// rejectConcurrentSelfUpdate's response exactly, so the fail-fast path and
+// this authoritative path are indistinguishable to the caller); true
+// (including "no store wired" / "load failed", which fail open) otherwise,
+// having already persisted the "downloading" phase.
+func (s *Server) claimSelfUpdate(w http.ResponseWriter, r *http.Request, fromVersion, targetVersion string) bool {
+	if s.updatesSvc == nil {
+		return true
+	}
+
+	s.selfUpdateClaimMu.Lock()
+	defer s.selfUpdateClaimMu.Unlock()
+
+	st, err := s.updatesSvc.LoadSelfUpdate(r.Context())
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "load self-update state failed", "error", err)
+		return true
+	}
+	if selfUpdatePhaseBlocksNewRun(st.Phase) {
+		writeError(w, http.StatusConflict, "self-update already in progress")
+		return false
+	}
+
+	// Test-only seam (nil in production): lets tests deterministically pause
+	// here, still holding selfUpdateClaimMu, to prove a second concurrent
+	// caller blocks on the lock instead of also observing the pre-claim
+	// phase.
+	if s.selfUpdateClaimHook != nil {
+		s.selfUpdateClaimHook()
+	}
+
+	s.setSelfUpdatePhase(r.Context(), updates.SelfUpdateDownloading, fromVersion, targetVersion, "")
+	return true
 }
 
 func (s *Server) resolvePanelTargetVersion(w http.ResponseWriter, requested string, state UpdateState) (string, bool) {
@@ -360,17 +510,26 @@ func (s *Server) resolvePanelDownloadAssets(w http.ResponseWriter, r *http.Reque
 }
 
 // performPanelUpdate downloads, verifies the SHA-256 checksum (mandatory), and
-// installs a new panel binary, then requests a service restart.
+// installs a new panel binary, then requests a service restart. The
+// "downloading" phase is already persisted synchronously by the caller
+// (handlePanelUpdate's claimSelfUpdate, before the 202 response) — this
+// method only carries the transitions past that point: installing ->
+// restart_pending -> (optionally)
+// failed on any error, so a restart or crash mid-update leaves an accurate,
+// terminal-eventually phase for finalizeSelfUpdateState to resolve at boot.
 func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, token string) {
 	ctx := s.Context()
+	fromVersion := s.version
 
-	expectedChecksum, ok := s.fetchExpectedChecksum(ctx, checksumURL, token)
+	expectedChecksum, ok := s.fetchChecksumSeam(ctx, checksumURL, token)
 	if !ok {
+		s.setSelfUpdatePhase(ctx, updates.SelfUpdateFailed, fromVersion, targetVersion, "checksum fetch failed")
 		return
 	}
 
-	archivePath, ok := s.downloadAndVerifyPanelArchive(ctx, downloadURL, expectedChecksum, token)
+	archivePath, ok := s.downloadArchiveSeam(ctx, downloadURL, expectedChecksum, token)
 	if !ok {
+		s.setSelfUpdatePhase(ctx, updates.SelfUpdateFailed, fromVersion, targetVersion, "download or verification failed")
 		return
 	}
 	// G703 false positive: archivePath is the temp file we just created
@@ -378,22 +537,56 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 	// caller-supplied path.
 	defer func() { _ = os.Remove(archivePath) }() //nolint:gosec
 
-	if !s.installPanelBinaryFromArchive(ctx, archivePath) {
+	s.setSelfUpdatePhase(ctx, updates.SelfUpdateInstalling, fromVersion, targetVersion, "")
+
+	if !s.installBinarySeam(ctx, archivePath) {
+		s.setSelfUpdatePhase(ctx, updates.SelfUpdateFailed, fromVersion, targetVersion, "binary install failed")
 		return
 	}
 
 	s.appendAuditWithContext(ctx, actorID, "panel.update.applied", "panel", map[string]any{
-		"from_version": s.version,
+		"from_version": fromVersion,
 		"to_version":   targetVersion,
 	})
 
-	s.logger.InfoContext(ctx, "panel binary updated, requesting restart", "from", s.version, "to", targetVersion)
+	s.logger.InfoContext(ctx, "panel binary updated, requesting restart", "from", fromVersion, "to", targetVersion)
+
+	s.setSelfUpdatePhase(ctx, updates.SelfUpdateRestartPending, fromVersion, targetVersion,
+		"binary staged; waiting for supervisor restart")
 
 	if s.requestRestart != nil {
 		if err := s.requestRestart(); err != nil {
 			s.logger.ErrorContext(ctx, "panel update: restart request failed", "error", err)
+			s.setSelfUpdatePhase(ctx, updates.SelfUpdateFailed, fromVersion, targetVersion,
+				"binary staged, but restart could not be requested; restart the panel manually to finish the update")
 		}
 	}
+}
+
+// fetchChecksumSeam / downloadArchiveSeam / installBinarySeam indirect through
+// the selfUpdate*/Fetcher/Downloader/Installer test seams when set, falling
+// back to the real fetchExpectedChecksum / downloadAndVerifyPanelArchive /
+// installPanelBinaryFromArchive methods otherwise (nil in production). See
+// the seam fields' doc comment on the Server struct for why they exist.
+func (s *Server) fetchChecksumSeam(ctx context.Context, checksumURL, token string) (string, bool) {
+	if s.selfUpdateChecksumFetcher != nil {
+		return s.selfUpdateChecksumFetcher(ctx, checksumURL, token)
+	}
+	return s.fetchExpectedChecksum(ctx, checksumURL, token)
+}
+
+func (s *Server) downloadArchiveSeam(ctx context.Context, downloadURL, expectedChecksum, token string) (string, bool) {
+	if s.selfUpdateArchiveDownloader != nil {
+		return s.selfUpdateArchiveDownloader(ctx, downloadURL, expectedChecksum, token)
+	}
+	return s.downloadAndVerifyPanelArchive(ctx, downloadURL, expectedChecksum, token)
+}
+
+func (s *Server) installBinarySeam(ctx context.Context, archivePath string) bool {
+	if s.selfUpdateInstaller != nil {
+		return s.selfUpdateInstaller(ctx, archivePath)
+	}
+	return s.installPanelBinaryFromArchive(ctx, archivePath)
 }
 
 // fetchExpectedChecksum fetches the published SHA-256 checksum. The checksum is

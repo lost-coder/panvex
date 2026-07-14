@@ -167,9 +167,14 @@ func copyClientIPHistory(ctx context.Context, source, target storage.MigrationSt
 	return nil
 }
 
-// copyUpdateConfigSingletons copies the four update_config kv rows. Each
+// copyUpdateConfigSingletons copies the five update_config kv rows. Each
 // getter returns (nil, nil) when its row is absent (no ErrNotFound), so a
-// nil/empty payload means "nothing to copy".
+// nil/empty payload means "nothing to copy". self_update (the persisted
+// panel self-update phase, R11b Task 2) rides along here rather than getting
+// its own copy step: it is a fifth key in the same update_config KV table,
+// with the same "absent means nothing to copy" semantics as the other four —
+// dropping it silently on a backend migration would lose an in-flight
+// self-update's phase without any signal.
 func copyUpdateConfigSingletons(ctx context.Context, source, target storage.MigrationStore, summary *Summary) error {
 	type pair struct {
 		get func(context.Context) (json.RawMessage, error)
@@ -180,6 +185,7 @@ func copyUpdateConfigSingletons(ctx context.Context, source, target storage.Migr
 		{source.GetUpdateState, target.PutUpdateState},
 		{source.GetGeoIPSettings, target.PutGeoIPSettings},
 		{source.GetGeoIPState, target.PutGeoIPState},
+		{source.GetPanelSelfUpdate, target.PutPanelSelfUpdate},
 	}
 
 	count := 0
@@ -321,6 +327,7 @@ func countUpdateConfigSingletons(ctx context.Context, store storage.MigrationSto
 		store.GetUpdateState,
 		store.GetGeoIPSettings,
 		store.GetGeoIPState,
+		store.GetPanelSelfUpdate,
 	}
 	count := 0
 	for _, get := range getters {
