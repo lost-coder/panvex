@@ -121,25 +121,7 @@ export const serverLoadHistoryResponseSchema = z.object({
   resolution: z.enum(["raw", "hourly"]),
 });
 
-const dcHealthPointSchema = z.object({
-  AgentID: z.string(),
-  CapturedAt: z.string(),
-  DC: z.number(),
-  CoveragePctAvg: z.number(),
-  CoveragePctMin: z.number(),
-  RTTMsAvg: z.number(),
-  RTTMsMax: z.number(),
-  AliveWritersMin: z.number(),
-  RequiredWriters: z.number(),
-  SampleCount: z.number(),
-});
-
-export const dcHealthHistoryResponseSchema = z.object({
-  points: z.array(dcHealthPointSchema),
-});
-
 export type TelemetryDetailBoostParsed = z.infer<typeof telemetryDetailBoostSchema>;
 export type TelemetryServersResponseParsed = z.infer<typeof telemetryServersResponseSchema>;
 export type TelemetryServerDetailResponseParsed = z.infer<typeof telemetryServerDetailResponseSchema>;
 export type ServerLoadHistoryResponseParsed = z.infer<typeof serverLoadHistoryResponseSchema>;
-export type DCHealthHistoryResponseParsed = z.infer<typeof dcHealthHistoryResponseSchema>;

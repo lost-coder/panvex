@@ -26,8 +26,9 @@ export function relativeTimeParts(nowSec: number, targetSec: number): RelativeTi
 /**
  * Shared, localized, ticking relative-time formatter. Returns a function that
  * maps a unix-seconds number or an ISO/RFC3339 string to a label like
- * "5m ago" (localized via the `common` namespace), re-rendering every second
- * via useNowSec. Nullish/unparseable input collapses to "—".
+ * "5m ago" (localized via the `common` namespace), re-rendering on the
+ * useNowSec cadence (30s by default). Nullish/unparseable input collapses
+ * to "—".
  *
  * Use this instead of re-rolling a per-feature relative-time hook. For the
  * non-reactive pure case (e.g. a table cell formatter outside a component)

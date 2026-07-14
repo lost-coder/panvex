@@ -67,7 +67,6 @@ function TabSuspenseFallback() {
     </div>
   );
 }
-import { ServerDetailProvider } from "./ServerDetailContext";
 
 const noop = () => {};
 
@@ -382,7 +381,7 @@ export function ServerDetailPage({
   const handleCloseDeregister = useCallback(() => setDeregisterOpen(false), []);
 
   return (
-    <ServerDetailProvider server={server} serverId={server.id}>
+    <>
       <div className="px-4 md:px-8 pt-3 pb-3">
         <Breadcrumbs items={[{ label: t("detail.breadcrumbServers"), onClick: onBack }, { label: server.name }]} />
       </div>
@@ -557,6 +556,6 @@ export function ServerDetailPage({
         onClose={handleCloseDeregister}
         onConfirm={onDeregister}
       />
-    </ServerDetailProvider>
+    </>
   );
 }

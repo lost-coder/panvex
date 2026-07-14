@@ -6,7 +6,7 @@ export { StatusLabel, type StatusLabelProps, type StatusTone } from "./StatusLab
 export { AgeCell, type AgeCellProps } from "./AgeCell";
 export { StatusBeacon, type StatusBeaconProps } from "./StatusBeacon";
 export { Spinner, type SpinnerProps } from "./Spinner";
-export { Skeleton, SkeletonRows, type SkeletonProps, type SkeletonRowsProps } from "./Skeleton";
+export { SkeletonRows, type SkeletonRowsProps } from "./Skeleton";
 export { Badge, type BadgeProps } from "./Badge";
 export { TrafficCell, type TrafficCellProps } from "./TrafficCell";
 export { ProgressBar, type ProgressBarProps } from "./ProgressBar";

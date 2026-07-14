@@ -46,18 +46,6 @@ export function buildAppearanceDraft(
   };
 }
 
-export function syncAppearanceDraft(
-  currentDraft: AppearanceDraft,
-  settings: Partial<AppearanceSettingsResponse> | undefined,
-  isDirty: boolean
-): AppearanceDraft {
-  if (isDirty) {
-    return currentDraft;
-  }
-
-  return buildAppearanceDraft(settings);
-}
-
 export function resolveEffectiveAppearance(
   settings: AppearanceSettingsResponse,
   prefersDark: boolean

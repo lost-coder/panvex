@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/api";
 import { authKeys } from "@/features/auth/queryKeys";
-import { notifyMutationError } from "@/shared/api/http";
 
 export function useProfileTotp() {
   const qc = useQueryClient();
@@ -10,9 +9,10 @@ export function useProfileTotp() {
     void qc.invalidateQueries({ queryKey: authKeys.me() });
   };
 
+  // No onError funnel here on purpose: the TOTP sheets render the failure
+  // inline from mutation.error, and a toast on top of that would double-report.
   const setupMutation = useMutation({
     mutationFn: () => apiClient.startTotpSetup(),
-    onError: (err) => notifyMutationError("auth", "totp.setup", err),
   });
 
   const enableMutation = useMutation({
@@ -23,14 +23,12 @@ export function useProfileTotp() {
       // Clear TOTP secret from mutation cache after successful enable
       setupMutation.reset();
     },
-    onError: (err) => notifyMutationError("auth", "totp.enable", err),
   });
 
   const disableMutation = useMutation({
     mutationFn: (payload: { password: string; totp_code: string }) =>
       apiClient.disableTotp(payload),
     onSuccess: invalidateProfile,
-    onError: (err) => notifyMutationError("auth", "totp.disable", err),
   });
 
   return { setupMutation, enableMutation, disableMutation };

@@ -4,7 +4,6 @@ import type { AuditEvent } from "./jobs";
 import {
   controlRoomSchema,
   dashboardSchema,
-  dcHealthHistoryResponseSchema,
   fleetResponseSchema,
   metricSnapshotListSchema,
   serverLoadHistoryResponseSchema,
@@ -174,23 +173,6 @@ export type ServerLoadHistoryResponse = {
   resolution: "raw" | "hourly";
 };
 
-export type DCHealthPoint = {
-  AgentID: string;
-  CapturedAt: string;
-  DC: number;
-  CoveragePctAvg: number;
-  CoveragePctMin: number;
-  RTTMsAvg: number;
-  RTTMsMax: number;
-  AliveWritersMin: number;
-  RequiredWriters: number;
-  SampleCount: number;
-};
-
-export type DCHealthHistoryResponse = {
-  points: DCHealthPoint[];
-};
-
 export type MetricSnapshot = {
   id: string;
   agent_id: string;
@@ -246,17 +228,6 @@ export const telemetryApi = {
       `${apiBasePath}/telemetry/servers/${agentID}/history/load${qs ? "?" + qs : ""}`,
       { signal: opts?.signal },
       serverLoadHistoryResponseSchema,
-    );
-  },
-  dcHealthHistory: (agentID: string, from?: string, to?: string, opts?: RequestOpts) => {
-    const params = new URLSearchParams();
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-    const qs = params.toString();
-    return api<DCHealthHistoryResponse>(
-      `${apiBasePath}/telemetry/servers/${agentID}/history/dc${qs ? "?" + qs : ""}`,
-      { signal: opts?.signal },
-      dcHealthHistoryResponseSchema,
     );
   },
 };
