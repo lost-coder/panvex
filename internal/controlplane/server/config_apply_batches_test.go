@@ -368,3 +368,58 @@ func TestConfigApplyBatchFinalizesAfterRestartMidRollout(t *testing.T) {
 		}
 	}
 }
+
+// TestConfigApplyBatchAdoptsOrphanedJobIDAfterRestart is the R-6a window: the
+// panel created the config.apply job and died before writing its ID onto the
+// batch target. On resume the target had no job ID, and the batch declared it
+// "failed / job lost" even though the node had applied the config perfectly
+// well. A restart mid-rollout turned a healthy fleet red.
+//
+// The batch must instead find the job that was created for the target, adopt
+// it, and report its real outcome.
+func TestConfigApplyBatchAdoptsOrphanedJobIDAfterRestart(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "orphan-job-group", time.Time{})
+	const agentA = "agent-orphan-a"
+	srv.seedLiveAgent(Agent{ID: agentA, FleetGroupID: groupID})
+	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+
+	ctx := context.Background()
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA})
+	if err != nil {
+		t.Fatalf("createConfigApplyBatch() error = %v", err)
+	}
+	batch, targets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
+	if err != nil {
+		t.Fatalf("GetConfigApplyBatch(%s): %v", batchID, err)
+	}
+	realJobID := targets[0].JobID
+
+	// Simulate the crash window: the target row exists, its job exists, but the
+	// job id never made it onto the row.
+	if err := srv.store.SetConfigApplyBatchTargetJob(ctx, batchID, agentA, "", storage.ConfigApplyTargetStatusRunning); err != nil {
+		t.Fatalf("SetConfigApplyBatchTargetJob(empty): %v", err)
+	}
+
+	// The node applied the config.
+	if !srv.jobs.RecordResult(ctx, agentA, realJobID, true, "ok", "", time.Now()) {
+		t.Fatal("RecordResult(success) returned false")
+	}
+
+	if err := srv.advanceConfigApplyBatch(ctx, batch); err != nil {
+		t.Fatalf("advanceConfigApplyBatch() error = %v", err)
+	}
+
+	gotBatch, gotTargets, err := srv.store.GetConfigApplyBatch(ctx, batchID)
+	if err != nil {
+		t.Fatalf("GetConfigApplyBatch(%s) after advance: %v", batchID, err)
+	}
+	if gotBatch.Status != storage.ConfigApplyBatchStatusSucceeded {
+		t.Fatalf("batch status = %q, want %q (the node applied the config; the panel just lost the job id)", gotBatch.Status, storage.ConfigApplyBatchStatusSucceeded)
+	}
+	if gotTargets[0].Status != storage.ConfigApplyTargetStatusSucceeded {
+		t.Fatalf("target status = %q, want %q", gotTargets[0].Status, storage.ConfigApplyTargetStatusSucceeded)
+	}
+}

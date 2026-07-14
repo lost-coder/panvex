@@ -787,43 +787,56 @@ func New(options Options) (*Server, error) {
 // Close stops background workers and drains pending writes. It should be
 // called before closing the storage backend.
 //
-// Shutdown ordering (P2-LOG-10 / M-R4 / P7-R6):
-//  1. batchWriter.StopWithTimeout(10s) FIRST — drains the audit-events
-//     queue (and the 7 other streams) before any background goroutine that
-//     might still be producing audits is shut down. This bounds the
-//     worst-case shutdown time at 10s so a wedged DB cannot hang the
-//     process indefinitely, while still giving the DB a realistic window
-//     to absorb in-flight rows.
-//  2. metrics / rollup goroutines stop afterwards.
+// Shutdown ordering. Every producer of audit rows stops BEFORE the batch writer
+// drains, so the last rows they wrote actually reach the store:
 //
-// Events enqueued AFTER this point may race with the final drain and can
-// be dropped — upstream callers (HTTP handlers, gRPC streams) must stop
-// before Close() runs to guarantee zero loss. This ordering IS enforced by
-// the process shutdown sequence in cmd/control-plane/serve.go: the HTTP
-// server Shutdown and gRPC GracefulStop both run (LIFO defer stack) BEFORE
-// api.Close() reaches this method, so agent stream drain goroutines are
-// already quiesced when the batch writer drains here (R4 §1.12 — verified,
-// no inversion needed). Do not move the batch drain ahead of the gRPC stop.
+//  1. Cancel serverCtx, so every worker subscribed to it sees shutdown.
+//  2. Stop the metrics poller and the rollup workers, and JOIN them
+//     (rollupWg). These write audit rows — the client reconciler enqueues jobs,
+//     the retention workers record their sweeps.
+//  3. Join bgWG: the operator-driven goroutines (panel self-update, manual
+//     update check). The self-update goroutine writes the panel.update.applied
+//     audit row, and it wrote it into an already-drained buffer when this wait
+//     ran last — the record of the update that just replaced the binary was the
+//     one thing shutdown could lose (R11 / R-5).
+//  4. Only now drain the batch writer, bounded at 10s so a wedged DB cannot
+//     hang the process indefinitely.
+//  5. Close geoip, which the rollup worker may have been mid-Reload on.
+//
+// Callers upstream of this method must already be quiesced: cmd/control-plane's
+// shutdown runs the HTTP Shutdown and the gRPC GracefulStop (LIFO defer stack)
+// before api.Close() reaches here, so agent stream goroutines are gone by the
+// time the drain starts. Do not move the batch drain ahead of the gRPC stop.
 func (s *Server) Close() {
 	// Cancel the lifecycle context FIRST so any worker subscribed to it
-	// observes shutdown before the batch writer drain or rollup stop runs.
-	// Tasks 2-6 will migrate workers onto serverCtx; until then this is
-	// effectively a no-op for the existing workers (which still use their
-	// own cancel funcs) but the contract — Close cancels Context() — must
-	// hold from this task forward. Idempotent under concurrent invocation:
-	// sync.Once guarantees cancel runs exactly once even if two goroutines
-	// race into Close() simultaneously (a bare nil-check + assign would
-	// race; see the regression test in lifecycle_test.go).
+	// observes shutdown before anything else runs. Idempotent under concurrent
+	// invocation: sync.Once guarantees cancel runs exactly once even if two
+	// goroutines race into Close() (a bare nil-check + assign would race; see
+	// the regression test in lifecycle_test.go).
 	s.serverCloseOnce.Do(func() {
 		if s.serverCancel != nil {
 			s.serverCancel()
 		}
 	})
+
+	s.metricsShutdown()
+	if s.stopRollup != nil {
+		s.stopRollup()
+	}
+	// Join the rollup workers before the drain (they produce audit rows) and
+	// before the store closes (they query it).
+	s.rollupWg.Wait()
+
+	// N-1: join the operator-driven background goroutines (panel self-update,
+	// manual update-check) so a graceful restart cannot race a half-applied
+	// binary swap — and so their audit rows are in the buffer when it drains.
+	s.bgWG.Wait()
+
 	if s.batchWriter != nil {
-		// serverCtx was cancelled above so we detach from cancellation
-		// (values still propagate) — otherwise the WithTimeout below would
-		// be born already-cancelled and the drain would abort before any
-		// queued audit row could be flushed. Plan 3 / BP-01.
+		// serverCtx was cancelled above so we detach from cancellation (values
+		// still propagate) — otherwise the WithTimeout below would be born
+		// already-cancelled and the drain would abort before any queued audit
+		// row could be flushed. Plan 3 / BP-01.
 		drainParent := context.WithoutCancel(s.serverCtx)
 		if err := s.batchWriter.StopWithTimeout(drainParent, 10*time.Second); err != nil {
 			s.logger.ErrorContext(drainParent, "batch writer drain timed out on shutdown",
@@ -832,22 +845,12 @@ func (s *Server) Close() {
 			)
 		}
 	}
-	s.metricsShutdown()
-	if s.stopRollup != nil {
-		s.stopRollup()
-	}
-	// Wait for the rollup goroutine to finish before closing the store,
-	// so it does not query a closed storage backend.
-	s.rollupWg.Wait()
-	// Close the geoip Manager AFTER the worker has joined via rollupWg
-	// so we never close a reader that is mid-Reload. Idempotent.
+
+	// Close the geoip Manager AFTER the workers have joined so we never close a
+	// reader that is mid-Reload. Idempotent.
 	if s.geoip != nil {
 		_ = s.geoip.Close()
 	}
-	// N-1: wait for any operator-driven background goroutines (panel
-	// self-update, manual update-check) so a graceful restart cannot
-	// race a half-applied binary swap.
-	s.bgWG.Wait()
 }
 
 func (s *Server) seedUsers(users []auth.User) error {

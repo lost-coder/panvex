@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -189,8 +190,24 @@ func (s *Server) advanceConfigApplyBatch(ctx context.Context, batch storage.Conf
 	anyFailed := false
 	for _, tgt := range targets {
 		status, message := tgt.Status, tgt.Message
+		jobID := tgt.JobID
+		if !isTerminalConfigApplyTargetStatus(status) && jobID == "" {
+			// The panel died between creating the job and recording its ID on
+			// this target. The job itself exists and the node may well have
+			// applied it, so declaring the target failed ("job lost") is a lie
+			// — and it is the lie that turned a panel restart into a fleet-wide
+			// red batch (R11 / R-6a). Find the job that was actually created
+			// for this target and adopt it.
+			jobID = s.findConfigApplyJobForTarget(ctx, batch, tgt.AgentID)
+			if jobID != "" {
+				if err := s.store.SetConfigApplyBatchTargetJob(ctx, batch.ID, tgt.AgentID, jobID, storage.ConfigApplyTargetStatusRunning); err != nil {
+					slog.WarnContext(ctx, "config-apply batch: adopting the orphaned job id failed",
+						"batch_id", batch.ID, "agent_id", tgt.AgentID, "job_id", jobID, "error", err)
+				}
+			}
+		}
 		if !isTerminalConfigApplyTargetStatus(status) {
-			status, message = s.configApplyJobStatus(ctx, tgt.JobID, tgt.AgentID)
+			status, message = s.configApplyJobStatus(ctx, jobID, tgt.AgentID)
 		}
 		if !isTerminalConfigApplyTargetStatus(status) {
 			return nil // still in flight — nothing to persist yet
@@ -274,4 +291,26 @@ func (s *Server) pollConfigApplyBatches(ctx context.Context) {
 				"batch_id", batch.ID, "fleet_group_id", batch.FleetGroupID, "error", err)
 		}
 	}
+}
+
+// findConfigApplyJobForTarget locates the config.apply job that was created for
+// this batch target but whose ID never made it onto the target row — the panel
+// restarted in the window between jobs.Enqueue and SetConfigApplyBatchTargetJob.
+//
+// Matching is by action, target agent and creation time: the job cannot predate
+// the batch, and a batch dispatches exactly one config.apply per agent. Returns
+// "" when no such job exists, which means the panel died BEFORE creating it —
+// there the target genuinely did not run.
+func (s *Server) findConfigApplyJobForTarget(ctx context.Context, batch storage.ConfigApplyBatchRecord, agentID string) string {
+	for _, job := range s.jobs.ListWithContext(ctx) {
+		if job.Action != jobs.ActionConfigApply || job.CreatedAt.Before(batch.CreatedAt) {
+			continue
+		}
+		for _, target := range job.Targets {
+			if target.AgentID == agentID {
+				return job.ID
+			}
+		}
+	}
+	return ""
 }
