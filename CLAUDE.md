@@ -169,6 +169,24 @@ go run ./cmd/control-plane bootstrap-admin -username admin -password '<pw>'
 - Boot-only paths (`New`, migrations) accept a caller-supplied ctx (typically `bootCtx` derived from `s.serverCtx`); never use `context.Background()` literal.
 - `golangci-lint noctx` enforces this; suppression `//nolint:noctx // reason:` requires an explicit rationale.
 
+## sqlc и «третий путь»
+
+Несколько доменов (`enrollment`, `bootstrap`, `agenttransport`, `settings`)
+осознанно ходят в БД через `internal/dbsqlc` напрямую, минуя `storage.Store`.
+Это разрешено, но с одним жёстким правилом:
+
+- **Новый sqlc-запрос, который вызывает домен, обязан готовиться на SQLite.**
+  sqlc генерируется из POSTGRES-схемы, поэтому PG-only синтаксис (`::uuid`,
+  `ANY($1::text[])`, `narg()`) компилируется, но падает в рантайме — только на
+  SQLite-инсталляциях. Прецедент: `enrollment/sqlstore.go` уже ломал enrollment
+  на всех SQLite-развёртываниях.
+- Гард: `internal/controlplane/storage/sqlcguard` — тест сканирует доменные
+  пакеты, собирает все вызванные sqlc-запросы и PREPARE'ит каждый на свежей
+  мигрированной SQLite-БД. Добавление пакета в `domainPackages` там —
+  осознанное архитектурное решение.
+- `*dbsqlc.Queries` берётся из `openStoreWithQueries` (cmd/control-plane), а не
+  через type-assertion к `interface{ Queries() ... }`.
+
 ## Слои control-plane (P8.2)
 
 - HTTP-хендлеры (`internal/controlplane/server/http_*.go`) ходят к данным
