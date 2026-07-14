@@ -55,29 +55,39 @@ func TestMergeClientUsageBatchRetainsQuotaState(t *testing.T) {
 	}
 }
 
-// TestUsageSnapshotJSONShapeHasQuotaFields guards the wire-contract
-// the frontend zod schema agrees on: the JSON field names for the new
-// fields are exactly "quota_used_bytes" and "quota_last_reset_unix".
-// A rename here would silently break the dashboard.
-func TestUsageSnapshotJSONShapeHasQuotaFields(t *testing.T) {
-	snap := clients.UsageSnapshot{
-		ClientID:           "c-1",
-		TrafficUsedBytes:   42,
-		UniqueIPsUsed:      1,
-		ActiveTCPConns:     2,
-		ActiveUniqueIPs:    3,
-		QuotaUsedBytes:     1024,
-		QuotaLastResetUnix: 1_715_000_000,
+// TestClientDeploymentResponseJSONShapeHasQuotaFields guards the wire
+// contract the frontend zod schema agrees on: the JSON field names are
+// exactly "quota_used_bytes" and "quota_last_reset_unix". A rename here
+// would silently break the dashboard.
+//
+// R6: this used to marshal clients.UsageSnapshot, which never reached the
+// wire — the deployment response below is what the handler actually emits,
+// and it owns the json tags. The guard now sits on the real type.
+func TestClientDeploymentResponseJSONShapeHasQuotaFields(t *testing.T) {
+	usage := map[string]clients.MirrorUsageEntry{
+		"agent-1": {
+			ClientID:           "c-1",
+			TrafficUsedBytes:   42,
+			QuotaUsedBytes:     1024,
+			QuotaLastResetUnix: 1_715_000_000,
+		},
+	}
+	responses := buildClientDeploymentResponses([]managedClientDeployment{{
+		AgentID:   "agent-1",
+		UpdatedAt: time.Unix(1, 0).UTC(),
+	}}, usage)
+	if len(responses) != 1 {
+		t.Fatalf("len(responses) = %d, want 1", len(responses))
 	}
 
-	raw, err := json.Marshal(snap)
+	raw, err := json.Marshal(responses[0])
 	if err != nil {
-		t.Fatalf("marshal UsageSnapshot: %v", err)
+		t.Fatalf("marshal clientDeploymentResponse: %v", err)
 	}
 
 	var decoded map[string]any
 	if err := json.Unmarshal(raw, &decoded); err != nil {
-		t.Fatalf("unmarshal UsageSnapshot: %v", err)
+		t.Fatalf("unmarshal clientDeploymentResponse: %v", err)
 	}
 
 	used, ok := decoded["quota_used_bytes"]

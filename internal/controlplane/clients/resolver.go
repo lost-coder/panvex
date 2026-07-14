@@ -71,9 +71,9 @@ func assignmentMatchesAgent(assignments []Assignment, agentID, agentFleetGroupID
 	return false
 }
 
-// AggregateUsage sums a per-agent UsageSnapshot map into a single
-// AggregatedUsage. A nil or empty map yields the zero value. Pure.
-func AggregateUsage(usageByAgent map[string]UsageSnapshot) AggregatedUsage {
+// AggregateUsage sums a per-agent usage map into a single AggregatedUsage.
+// A nil or empty map yields the zero value. Pure.
+func AggregateUsage(usageByAgent map[string]MirrorUsageEntry) AggregatedUsage {
 	usage := AggregatedUsage{}
 	for _, snapshot := range usageByAgent {
 		usage.TrafficUsedBytes += snapshot.TrafficUsedBytes
