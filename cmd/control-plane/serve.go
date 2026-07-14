@@ -16,7 +16,6 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/server"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
-	"github.com/lost-coder/panvex/internal/dbsqlc"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/logutil"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -96,7 +95,7 @@ func runServe(args []string) error {
 		return fmt.Errorf("control-plane: storage config rejected: %w", err)
 	}
 
-	store, err := openStore(context.Background(), options.Storage)
+	store, queries, err := openStoreWithQueries(context.Background(), options.Storage)
 	if err != nil {
 		return err
 	}
@@ -188,22 +187,10 @@ func runServe(args []string) error {
 	grpcServer := newControlPlaneGRPCServer(api.GRPCTLSConfig())
 	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api.Gateway())
 
-	// Шов 1 & 2: obtain *dbsqlc.Queries from the concrete store so the
-	// agenttransport.Manager, bootstrap.InstallCommandHandler, and
-	// bootstrap.EnrollDriver can execute transport/bootstrap SQL directly.
-	// Both sqlite.Store and postgres.Store expose a Queries() method that
-	// wraps the same connection pool. If the runtime store doesn't implement
-	// the interface (e.g. a test double) we fall back to nil and the
-	// downstream nil-guards keep the server functional without these features.
-	type queriesProvider interface {
-		Queries() *dbsqlc.Queries
-	}
-	var queries *dbsqlc.Queries
-	if qp, ok := store.(queriesProvider); ok {
-		queries = qp.Queries()
-	} else {
-		logger.Warn("storage backend does not expose Queries(); install-command and enrollment pre-flight disabled")
-	}
+	// `queries` is the sqlc handle bound to the same pool as `store`; it comes
+	// from openStoreWithQueries. agenttransport.Manager,
+	// bootstrap.InstallCommandHandler and bootstrap.EnrollDriver execute
+	// transport/bootstrap SQL through it directly.
 
 	// agenttransport.Manager owns outbound supervisors and (in a later task)
 	// the inbound dispatch path. Now wired with real DB queries so outbound

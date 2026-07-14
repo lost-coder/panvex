@@ -17,6 +17,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/postgres"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/dbsqlc"
 	_ "modernc.org/sqlite" // registers the "sqlite" driver for migrate-schema
 )
 
@@ -196,13 +197,37 @@ func parseCIDRList(raw string) ([]*net.IPNet, error) {
 // dial the DB synchronously, so ctx is documented but unused — keep
 // the parameter to satisfy contextcheck and to avoid a churn-y
 // signature change once the driver-side Open grows a ctx parameter.
-func openStore(_ context.Context, configuration config.StorageConfig) (storage.Store, error) {
+func openStore(ctx context.Context, configuration config.StorageConfig) (storage.Store, error) {
+	store, _, err := openStoreWithQueries(ctx, configuration)
+	return store, err
+}
+
+// openStoreWithQueries also returns the sqlc handle bound to the same
+// connection pool.
+//
+// A few domains (enrollment, bootstrap, agenttransport) deliberately talk sqlc
+// directly instead of going through storage.Store — see the "third path" note
+// in the architecture docs. They need *dbsqlc.Queries, and serve.go used to get
+// it by type-asserting the Store to an anonymous `interface{ Queries() ... }`.
+// That seam hid the dependency: nothing in the signature said the server needs
+// a SQL-backed store, and a store that did not provide one silently degraded to
+// "install-command and enrollment pre-flight disabled". The provider is
+// explicit now.
+func openStoreWithQueries(_ context.Context, configuration config.StorageConfig) (storage.Store, *dbsqlc.Queries, error) {
 	switch configuration.Driver {
 	case config.StorageDriverSQLite:
-		return sqlite.Open(configuration.DSN) //nolint:contextcheck // driver Open does not yet accept ctx; ctx is plumbed in for future use.
+		store, err := sqlite.Open(configuration.DSN) //nolint:contextcheck // driver Open does not yet accept ctx; ctx is plumbed in for future use.
+		if err != nil {
+			return nil, nil, err
+		}
+		return store, store.Queries(), nil
 	case config.StorageDriverPostgres:
-		return postgres.Open(configuration.DSN) //nolint:contextcheck // driver Open does not yet accept ctx; ctx is plumbed in for future use.
+		store, err := postgres.Open(configuration.DSN) //nolint:contextcheck // driver Open does not yet accept ctx; ctx is plumbed in for future use.
+		if err != nil {
+			return nil, nil, err
+		}
+		return store, store.Queries(), nil
 	default:
-		return nil, fmt.Errorf("unsupported storage driver %q", configuration.Driver)
+		return nil, nil, fmt.Errorf("unsupported storage driver %q", configuration.Driver)
 	}
 }
