@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -57,6 +58,11 @@ const LockoutDuration = 15 * time.Minute
 type LockoutTracker struct {
 	counterLockout
 
+	// cfgMu guards store + redactor. They are wired once at startup and read
+	// from the persist hooks, which now run OUTSIDE the counter lock (R7), so
+	// they need a guard of their own. It must never be held across a store
+	// call — snapshot under it, then call.
+	cfgMu sync.RWMutex
 	store LockoutStore
 
 	// redactor maps a raw username to the privacy-preserving identifier
@@ -92,8 +98,8 @@ func (t *LockoutTracker) SetThresholds(maxAttempts func() int, duration func() t
 // SetStore attaches a persistent backend. Safe to call once at startup
 // before any login traffic; subsequent calls replace the backend.
 func (t *LockoutTracker) SetStore(store LockoutStore) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.cfgMu.Lock()
+	defer t.cfgMu.Unlock()
 	t.store = store
 }
 
@@ -102,19 +108,21 @@ func (t *LockoutTracker) SetStore(store LockoutStore) {
 // its HMAC-prefix logUsername so production log aggregators see the
 // same correlatable id used elsewhere.
 func (t *LockoutTracker) SetRedactor(fn func(string) string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.cfgMu.Lock()
+	defer t.cfgMu.Unlock()
 	t.redactor = fn
 }
 
-// redactLocked reads t.redactor while the caller already holds t.mu — the
-// store-error log paths run inside the locked critical section, and
-// re-acquiring the mutex there would deadlock deterministically.
-func (t *LockoutTracker) redactLocked(username string) string {
-	if t.redactor != nil {
-		return t.redactor(username)
+// snapshotConfig returns the wired store and redactor. Callers use it to avoid
+// holding cfgMu across the store round-trip.
+func (t *LockoutTracker) snapshotConfig() (LockoutStore, func(string) string) {
+	t.cfgMu.RLock()
+	defer t.cfgMu.RUnlock()
+	redactor := t.redactor
+	if redactor == nil {
+		redactor = defaultRedact
 	}
-	return defaultRedact(username)
+	return t.store, redactor
 }
 
 func defaultRedact(username string) string {
@@ -131,9 +139,7 @@ func defaultRedact(username string) string {
 // the lockout window are skipped so an expired lockout does not silently
 // resurrect on restart.
 func (t *LockoutTracker) Restore(ctx context.Context, now time.Time) error {
-	t.mu.Lock()
-	store := t.store
-	t.mu.Unlock()
+	store, _ := t.snapshotConfig()
 	if store == nil {
 		return nil
 	}
@@ -159,11 +165,13 @@ func (t *LockoutTracker) Restore(ctx context.Context, now time.Time) error {
 }
 
 // persistEntry is the counterLockout onPersist hook: it mirrors the current
-// state for username to the attached store. Called with t.mu held. Errors are
-// logged, not returned — a store failure is an availability issue, not a
-// correctness issue for the local process.
+// state for username to the attached store. Called WITHOUT the counter lock —
+// this is a DB round-trip. Errors are logged, not returned: a store failure is
+// an availability issue, not a correctness issue for the local process, which
+// already holds the authoritative in-memory state.
 func (t *LockoutTracker) persistEntry(ctx context.Context, username string, entry lockoutEntry) {
-	if t.store == nil {
+	store, redact := t.snapshotConfig()
+	if store == nil {
 		return
 	}
 	record := LockoutRecord{
@@ -175,17 +183,19 @@ func (t *LockoutTracker) persistEntry(ctx context.Context, username string, entr
 		lockedAt := entry.lockedAt.UTC()
 		record.LockedAt = &lockedAt
 	}
-	if err := t.store.UpsertLoginLockout(ctx, record); err != nil {
-		slog.Warn("sessions: failed to persist login lockout", "username_hash", t.redactLocked(username), "error", err)
+	if err := store.UpsertLoginLockout(ctx, record); err != nil {
+		slog.Warn("sessions: failed to persist login lockout", "username_hash", redact(username), "error", err)
 	}
 }
 
-// deletePersisted is the counterLockout onDelete hook. Called with t.mu held.
+// deletePersisted is the counterLockout onDelete hook. Called WITHOUT the
+// counter lock, like persistEntry.
 func (t *LockoutTracker) deletePersisted(ctx context.Context, username string) {
-	if t.store == nil {
+	store, redact := t.snapshotConfig()
+	if store == nil {
 		return
 	}
-	if err := t.store.DeleteLoginLockout(ctx, username); err != nil {
-		slog.Warn("sessions: failed to delete login lockout", "username_hash", t.redactLocked(username), "error", err)
+	if err := store.DeleteLoginLockout(ctx, username); err != nil {
+		slog.Warn("sessions: failed to delete login lockout", "username_hash", redact(username), "error", err)
 	}
 }

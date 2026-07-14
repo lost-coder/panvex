@@ -124,8 +124,13 @@ func (t *Tracker) Evaluate(agentID string, now time.Time) State {
 	t.mu.RUnlock()
 
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.evaluateLocked(agentID, now)
+	next, transition := t.evaluateLocked(agentID, now)
+	t.mu.Unlock()
+
+	if transition != nil {
+		logTransitions([]presenceTransition{*transition})
+	}
+	return next
 }
 
 // deriveState computes the liveness state from the last-seen timestamp.
@@ -153,41 +158,67 @@ func (t *Tracker) deriveState(p agentPresence, now time.Time) State {
 // tick so the gauge reflects evaluated liveness, not raw map size.
 func (t *Tracker) EvaluateAll(now time.Time) (connected int) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	transitions := make([]presenceTransition, 0, 4)
 	for agentID := range t.agentTimestamps {
-		if t.evaluateLocked(agentID, now) != StateOffline {
+		state, transition := t.evaluateLocked(agentID, now)
+		if state != StateOffline {
 			connected++
 		}
+		if transition != nil {
+			transitions = append(transitions, *transition)
+		}
 	}
+	t.mu.Unlock()
+
+	// R7: log AFTER releasing the lock. This walks the whole fleet, and
+	// emitting slog.Info from inside the critical section meant a slow log
+	// sink (a blocked stderr pipe, a busy journald) stalled every heartbeat
+	// in the panel behind it.
+	logTransitions(transitions)
 	return connected
 }
 
-// evaluateLocked is the shared core of Evaluate/EvaluateAll. The caller
-// must hold t.mu (write lock — it may mutate cached lastState).
-func (t *Tracker) evaluateLocked(agentID string, now time.Time) State {
+// presenceTransition is one agent's state change, collected under the lock and
+// logged after it is released.
+type presenceTransition struct {
+	agentID string
+	from    State
+	to      State
+}
+
+func logTransitions(transitions []presenceTransition) {
+	for _, tr := range transitions {
+		// Info on every real transition. No ctx is available here — Evaluate is
+		// invoked from request handlers and background metric pollers alike;
+		// slog.Info propagates default attrs but drops the per-request span
+		// linkage. That is acceptable for an agent-level lifecycle event.
+		slog.Info("presence transition",
+			"agent_id", tr.agentID,
+			"from", string(tr.from),
+			"to", string(tr.to),
+		)
+	}
+}
+
+// evaluateLocked is the shared core of Evaluate/EvaluateAll. The caller must
+// hold t.mu (write lock — it may mutate the cached lastState). It does NOT log:
+// it RETURNS the transition, if any, so the caller can emit it after unlocking.
+func (t *Tracker) evaluateLocked(agentID string, now time.Time) (State, *presenceTransition) {
 	presence, ok := t.agentTimestamps[agentID]
 	if !ok {
-		return StateOffline
+		return StateOffline, nil
 	}
 
 	next := t.deriveState(presence, now)
-
 	prev := presence.lastState
+
+	var transition *presenceTransition
 	if prev != "" && prev != next {
-		// Emit Info on every real transition. No ctx is available here —
-		// Evaluate is invoked from request handlers and background metric
-		// pollers alike; using slog.Info propagates default attrs but
-		// drops the per-request span linkage. That's acceptable for an
-		// agent-level lifecycle event.
-		slog.Info("presence transition",
-			"agent_id", agentID,
-			"from", string(prev),
-			"to", string(next),
-		)
+		transition = &presenceTransition{agentID: agentID, from: prev, to: next}
 	}
 	if prev != next {
 		presence.lastState = next
 		t.agentTimestamps[agentID] = presence
 	}
-	return next
+	return next, transition
 }

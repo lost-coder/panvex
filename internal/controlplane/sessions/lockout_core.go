@@ -47,7 +47,15 @@ type counterLockout struct {
 	windowFn      func() time.Duration
 
 	// onPersist / onDelete mirror a mutation to durable storage. Nil for the
-	// memory-only TOTP tracker.
+	// memory-only TOTP tracker. They are invoked WITHOUT mu held — a store
+	// write is a DB round-trip, and running it inside the critical section
+	// blocked every other login attempt for its duration (R7).
+	//
+	// Dropping the lock does not reorder writes for a given key: callers hold
+	// AttemptLock (the per-key shard mutex) across the whole
+	// IsLocked → verify → Record sequence, so two mutations of the same
+	// account never overlap. Writes for DIFFERENT accounts may interleave,
+	// which is exactly what we want — they are independent rows.
 	onPersist func(ctx context.Context, key string, entry lockoutEntry)
 	onDelete  func(ctx context.Context, key string)
 
@@ -99,22 +107,44 @@ func lockoutShardFor(key string) uint32 {
 	return hash % lockoutShardCount
 }
 
+// storeOps is the durable work a mutation produced. It is collected under mu
+// and executed after the lock is released — see onPersist/onDelete.
+type storeOps struct {
+	persistKey   string
+	persistEntry lockoutEntry
+	persist      bool
+	deletes      []string
+}
+
+func (t *counterLockout) runOps(ctx context.Context, ops storeOps) {
+	if ops.persist && t.onPersist != nil {
+		t.onPersist(ctx, ops.persistKey, ops.persistEntry)
+	}
+	if t.onDelete == nil {
+		return
+	}
+	for _, key := range ops.deletes {
+		t.onDelete(ctx, key)
+	}
+}
+
 // IsLockedWithContext reports whether key is currently locked out. An expired
 // lockout is dropped (and unpersisted) on the way out so the caller starts
 // with a fresh budget.
 func (t *counterLockout) IsLockedWithContext(ctx context.Context, key string, now time.Time) bool {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	entry, ok := t.entries[key]
 	if !ok || entry.failures < t.maxAttemptsLocked() {
+		t.mu.Unlock()
 		return false
 	}
 	if now.Sub(entry.lockedAt) >= t.windowLocked() {
 		delete(t.entries, key)
-		t.deleteLocked(ctx, key)
+		t.mu.Unlock()
+		t.runOps(ctx, storeOps{deletes: []string{key}})
 		return false
 	}
+	t.mu.Unlock()
 	return true
 }
 
@@ -122,11 +152,11 @@ func (t *counterLockout) IsLockedWithContext(ctx context.Context, key string, no
 // the threshold (re-)arms the lockout window from now.
 func (t *counterLockout) RecordFailureWithContext(ctx context.Context, key string, now time.Time) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	ops := t.bumpLocked(key, t.entries[key], now)
+	ops.deletes = append(ops.deletes, t.cleanupLocked(now)...)
+	t.mu.Unlock()
 
-	entry := t.entries[key]
-	t.bumpLocked(ctx, key, entry, now)
-	t.cleanupLocked(ctx, now)
+	t.runOps(ctx, ops)
 }
 
 // CheckAndRecordFailureWithContext reports whether key was ALREADY locked and,
@@ -135,11 +165,10 @@ func (t *counterLockout) RecordFailureWithContext(ctx context.Context, key strin
 // closes the check → record race the two-call form leaves open.
 func (t *counterLockout) CheckAndRecordFailureWithContext(ctx context.Context, key string, now time.Time) bool {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	entry, ok := t.entries[key]
 	if ok && entry.failures >= t.maxAttemptsLocked() {
 		if now.Sub(entry.lockedAt) < t.windowLocked() {
+			t.mu.Unlock()
 			return true
 		}
 		// Expired lockout: start a fresh counter and fall through so this
@@ -147,30 +176,33 @@ func (t *counterLockout) CheckAndRecordFailureWithContext(ctx context.Context, k
 		entry = lockoutEntry{}
 	}
 
-	t.bumpLocked(ctx, key, entry, now)
-	t.cleanupLocked(ctx, now)
+	ops := t.bumpLocked(key, entry, now)
+	ops.deletes = append(ops.deletes, t.cleanupLocked(now)...)
+	t.mu.Unlock()
+
+	t.runOps(ctx, ops)
 	return false
 }
 
-// bumpLocked applies one failure to entry and persists the result.
-// Caller holds mu.
-func (t *counterLockout) bumpLocked(ctx context.Context, key string, entry lockoutEntry, now time.Time) {
+// bumpLocked applies one failure to entry and returns the durable work it
+// produced. Caller holds mu.
+func (t *counterLockout) bumpLocked(key string, entry lockoutEntry, now time.Time) storeOps {
 	entry.failures++
 	if entry.failures >= t.maxAttemptsLocked() {
 		entry.lockedAt = now
 	}
 	t.entries[key] = entry
-	t.persistLocked(ctx, key, entry)
+	return storeOps{persistKey: key, persistEntry: entry, persist: true}
 }
 
 // RecordSuccessWithContext clears the failure counter after a successful
 // verification.
 func (t *counterLockout) RecordSuccessWithContext(ctx context.Context, key string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	delete(t.entries, key)
-	t.deleteLocked(ctx, key)
+	t.mu.Unlock()
+
+	t.runOps(ctx, storeOps{deletes: []string{key}})
 }
 
 // ActiveCount returns the number of keys currently locked out. Used by the
@@ -193,28 +225,20 @@ func (t *counterLockout) ActiveCount(now time.Time) int {
 // cleanupLocked drops entries whose lockout has expired. Cheap (one map
 // iteration) but only run past a soft size threshold so steady-state traffic
 // does not pay the cost. Caller holds mu.
-func (t *counterLockout) cleanupLocked(ctx context.Context, now time.Time) {
+// cleanupLocked drops entries whose lockout has expired and returns their keys
+// so the caller can unpersist them AFTER releasing the lock. Caller holds mu.
+func (t *counterLockout) cleanupLocked(now time.Time) []string {
 	if len(t.entries) < 64 {
-		return
+		return nil
 	}
 	maxAttempts := t.maxAttemptsLocked()
 	window := t.windowLocked()
+	var evicted []string
 	for key, entry := range t.entries {
 		if entry.failures >= maxAttempts && now.Sub(entry.lockedAt) >= window {
 			delete(t.entries, key)
-			t.deleteLocked(ctx, key)
+			evicted = append(evicted, key)
 		}
 	}
-}
-
-func (t *counterLockout) persistLocked(ctx context.Context, key string, entry lockoutEntry) {
-	if t.onPersist != nil {
-		t.onPersist(ctx, key, entry)
-	}
-}
-
-func (t *counterLockout) deleteLocked(ctx context.Context, key string) {
-	if t.onDelete != nil {
-		t.onDelete(ctx, key)
-	}
+	return evicted
 }
