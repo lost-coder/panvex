@@ -9,12 +9,11 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/seqid"
 )
 
 var (
@@ -1550,7 +1549,7 @@ func (s *Service) installRestoredJob(job Job) {
 			s.keyTerminalAt[job.IdempotencyKey] = job.CreatedAt
 		}
 	}
-	s.sequence = maxJobSequence(s.sequence, job.ID)
+	s.sequence = seqid.MaxPrefixed(s.sequence, "job", job.ID)
 	s.updateSeq++
 	s.jobVersion[job.ID] = s.updateSeq
 	s.noteJobExpiryLocked(job)
@@ -1777,20 +1776,4 @@ func normalizedTargetStatus(status TargetStatus) TargetStatus {
 	}
 
 	return status
-}
-
-func maxJobSequence(current uint64, jobID string) uint64 {
-	if !strings.HasPrefix(jobID, "job-") {
-		return current
-	}
-
-	value, err := strconv.ParseUint(strings.TrimPrefix(jobID, "job-"), 10, 64)
-	if err != nil {
-		return current
-	}
-	if value > current {
-		return value
-	}
-
-	return current
 }

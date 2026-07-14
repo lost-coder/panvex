@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlshared"
 )
 
 func (s *Store) PutTelemetryRuntimeCurrent(ctx context.Context, record storage.TelemetryRuntimeCurrentRecord) error {
@@ -232,7 +233,7 @@ func (s *Store) ListAllTelemetryRuntimeUpstreams(ctx context.Context) ([]storage
 
 // AppendTelemetryRuntimeEvents persists runtime events for an agent.
 // Phase-2 §2.4: was a per-row loop inside one transaction; now a true
-// multi-row INSERT (chunked at bulkChunkSize) so a single agent posting
+// multi-row INSERT (chunked at sqlshared.BulkChunkSize) so a single agent posting
 // hundreds of events per second does not pay one round-trip per row.
 // ON CONFLICT semantics are preserved exactly: duplicate (agent_id,
 // sequence) rows update the four payload columns and the
@@ -243,8 +244,8 @@ func (s *Store) AppendTelemetryRuntimeEvents(ctx context.Context, agentID string
 	}
 	const cols = 7
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(records); start += bulkChunkSize {
-			end := start + bulkChunkSize
+		for start := 0; start < len(records); start += sqlshared.BulkChunkSize {
+			end := start + sqlshared.BulkChunkSize
 			if end > len(records) {
 				end = len(records)
 			}

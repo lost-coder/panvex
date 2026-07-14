@@ -15,7 +15,7 @@ import (
 )
 
 // shellQuote wraps s in single quotes, escaping any embedded single quote
-// as '\'' — the standard POSIX-safe form. Used so operator-controlled
+// as '\” — the standard POSIX-safe form. Used so operator-controlled
 // values (panel/script URLs) embedded in the install one-liner cannot
 // break out of the command.
 func shellQuote(s string) string {

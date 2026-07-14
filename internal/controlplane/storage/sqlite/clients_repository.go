@@ -15,6 +15,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlshared"
 )
 
 // clientsRepository implements clients.Repository against SQLite.
@@ -528,8 +529,8 @@ func (r *clientsRepository) bulkUpsertUsage(ctx context.Context, batch []clients
 
 	const cols = 11
 	exec := connExecutor{conn: conn}
-	for start := 0; start < len(batch); start += bulkChunkSize {
-		end := start + bulkChunkSize
+	for start := 0; start < len(batch); start += sqlshared.BulkChunkSize {
+		end := start + sqlshared.BulkChunkSize
 		if end > len(batch) {
 			end = len(batch)
 		}

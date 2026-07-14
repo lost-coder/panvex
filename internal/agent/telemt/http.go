@@ -239,4 +239,3 @@ func collectConnectionLinks(tlsLinks, secureLinks, classicLinks []string) []stri
 	}
 	return out
 }
-

@@ -87,10 +87,10 @@ func TestStripScheme(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]string{
-		"localhost:4317":          "localhost:4317",
-		"http://localhost:4317":   "localhost:4317",
+		"localhost:4317":         "localhost:4317",
+		"http://localhost:4317":  "localhost:4317",
 		"https://otel.example:1": "otel.example:1",
-		"grpc://tempo:4317":       "tempo:4317",
+		"grpc://tempo:4317":      "tempo:4317",
 	}
 	for in, want := range cases {
 		if got := stripScheme(in); got != want {

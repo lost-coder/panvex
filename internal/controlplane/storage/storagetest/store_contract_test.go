@@ -977,7 +977,6 @@ func (s *memoryStore) PutClientAssignment(_ context.Context, assignment storage.
 	return nil
 }
 
-
 func (s *memoryStore) ListClientAssignments(_ context.Context, clientID string) ([]storage.ClientAssignmentRecord, error) {
 	result := make([]storage.ClientAssignmentRecord, 0)
 	for _, assignment := range s.clientAssignments {

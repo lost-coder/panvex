@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlshared"
 )
 
 // dedupRuntimeCurrent keeps only the LAST occurrence per AgentID,
@@ -77,8 +78,8 @@ func inPlaceholders(n int) string {
 // deleteAgentRowsChunked deletes all rows of `table` belonging to the
 // given agent IDs, chunked so the IN-list never exceeds the bind cap.
 func deleteAgentRowsChunked(ctx context.Context, exec dbExecutor, table string, agentIDs []string) error {
-	for start := 0; start < len(agentIDs); start += bulkChunkSize {
-		s, e := chunkBounds(start, len(agentIDs))
+	for start := 0; start < len(agentIDs); start += sqlshared.BulkChunkSize {
+		s, e := sqlshared.ChunkBounds(start, len(agentIDs), sqlshared.BulkChunkSize)
 		chunk := agentIDs[s:e]
 		args := make([]any, len(chunk))
 		for i, id := range chunk {

@@ -38,8 +38,8 @@ func TestWorkerHappyPath(t *testing.T) {
 	now := time.Date(2026, 5, 8, 12, 0, 0, 0, time.UTC)
 	row := OutboxRow{
 		ID: "deliv-1", EndpointID: "ep-1",
-		EventAction: "agent.unhealthy",
-		Payload:     json.RawMessage(`{"agent":"a-1"}`),
+		EventAction:   "agent.unhealthy",
+		Payload:       json.RawMessage(`{"agent":"a-1"}`),
 		NextAttemptAt: now,
 		CreatedAt:     now,
 	}
@@ -136,7 +136,7 @@ func TestWorkerDeadLettersAfterMaxAttempts(t *testing.T) {
 	if err := store.InsertOutbox(context.Background(), OutboxRow{
 		ID: "r1", EndpointID: "ep-1",
 		EventAction: "x.y", Payload: json.RawMessage(`{}`),
-		Attempt:     2, // one tick away from MaxAttempts=3 below
+		Attempt:       2, // one tick away from MaxAttempts=3 below
 		NextAttemptAt: now, CreatedAt: now,
 	}); err != nil {
 		t.Fatalf("InsertOutbox: %v", err)
@@ -225,14 +225,14 @@ func TestWorkerPreflightRejectsPrivateCIDRWithoutOptIn(t *testing.T) {
 
 func TestExponentialBackoffCap(t *testing.T) {
 	cases := []struct {
-		attempt  int
-		minD     time.Duration
-		maxD     time.Duration
+		attempt int
+		minD    time.Duration
+		maxD    time.Duration
 	}{
 		{1, 30 * time.Second, 30 * time.Second},
 		{2, 60 * time.Second, 60 * time.Second},
 		{3, 120 * time.Second, 120 * time.Second},
-		{8, time.Hour, time.Hour}, // capped
+		{8, time.Hour, time.Hour},  // capped
 		{20, time.Hour, time.Hour}, // far past cap
 	}
 	for _, c := range cases {

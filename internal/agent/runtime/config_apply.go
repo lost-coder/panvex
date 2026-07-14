@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/atomicfile"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/configcanon"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -23,7 +23,7 @@ func backupConfigFile(path string) (string, error) {
 		return "", fmt.Errorf("read config for backup: %w", err)
 	}
 	backup := path + ".panvex.bak"
-	if err := writeFileAtomic(backup, data, 0o600); err != nil {
+	if err := atomicfile.Write(backup, data, 0o600, ".panvex-cfg-*.tmp"); err != nil {
 		return "", fmt.Errorf("write config backup: %w", err)
 	}
 	return backup, nil
@@ -76,35 +76,7 @@ func restoreConfigFile(backup, path string) error {
 	if err != nil {
 		return fmt.Errorf("read backup: %w", err)
 	}
-	return writeFileAtomic(path, data, 0o600)
-}
-
-// writeFileAtomic writes data to a temp file in the same directory, fsyncs it,
-// then renames it over path (crash-safe). Mirrors internal/agent/state/credentials.go.
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".panvex-cfg-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }() // no-op once renamed
-	if err := tmp.Chmod(perm); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
+	return atomicfile.Write(path, data, 0o600, ".panvex-cfg-*.tmp")
 }
 
 // configApplyPayload is the JSON body of a config.apply job.

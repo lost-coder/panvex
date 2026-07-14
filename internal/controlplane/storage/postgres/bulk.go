@@ -27,12 +27,8 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlshared"
 )
-
-// bulkChunkSize caps how many rows go into a single multi-row INSERT. See the
-// package doc for why 250 is safe across every bulk method (P3-PERF-01b
-// tuning: 500 -> 250 after benchmark sweep).
-const bulkChunkSize = 250
 
 // placeholders returns the VALUES ($n...) list for `rows` rows of `cols`
 // columns each, starting parameter numbering at 1. Kept as a helper so each
@@ -108,22 +104,6 @@ func (t txExecutor) QueryRowContext(ctx context.Context, query string, args ...a
 
 // nullStringFrom returns a sql.NullString that is Valid only when the
 // raw string is non-empty.
-func nullStringFrom(s string) sql.NullString {
-	if s == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: s, Valid: true}
-}
-
-// chunkBounds returns [start,end) for the next chunk that fits within total.
-func chunkBounds(start, total int) (int, int) {
-	end := start + bulkChunkSize
-	if end > total {
-		end = total
-	}
-	return start, end
-}
-
 // runBulkChunks runs fn over fixed-size slices of length-`total`, executing one
 // SQL statement per chunk via `exec`. queryFn rebuilds the SQL because the
 // trailing chunk has fewer placeholders. argsFn flattens one chunk's records.
@@ -137,8 +117,8 @@ func runBulkChunks(
 	queryFn func(placeholders string) string,
 	argsFn func(start, end int) ([]any, error),
 ) error {
-	for start := 0; start < total; start += bulkChunkSize {
-		s, e := chunkBounds(start, total)
+	for start := 0; start < total; start += sqlshared.BulkChunkSize {
+		s, e := sqlshared.ChunkBounds(start, total, sqlshared.BulkChunkSize)
 		args, err := argsFn(s, e)
 		if err != nil {
 			return err
@@ -202,7 +182,7 @@ func dedupClientIPHistory(records []storage.ClientIPHistoryRecord) []storage.Cli
 // simple.
 func agentBulkArgs(agent storage.AgentRecord) []any {
 	return []any{
-		agent.ID, agent.NodeName, nullStringFrom(agent.FleetGroupID), agent.Version,
+		agent.ID, agent.NodeName, sqlshared.NullString(agent.FleetGroupID), agent.Version,
 		agent.ReadOnly, agent.LastSeenAt.UTC(),
 		nullTimeFromPtr(agent.CertIssuedAt), nullTimeFromPtr(agent.CertExpiresAt),
 	}
@@ -220,8 +200,8 @@ func (s *Store) PutAgentsBulk(ctx context.Context, agents []storage.AgentRecord)
 	agents = dedupAgents(agents)
 	const cols = 8
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(agents); start += bulkChunkSize {
-			end := start + bulkChunkSize
+		for start := 0; start < len(agents); start += sqlshared.BulkChunkSize {
+			end := start + sqlshared.BulkChunkSize
 			if end > len(agents) {
 				end = len(agents)
 			}
@@ -255,8 +235,8 @@ func (s *Store) PutInstancesBulk(ctx context.Context, instances []storage.Instan
 	}
 	const cols = 8
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(instances); start += bulkChunkSize {
-			end := start + bulkChunkSize
+		for start := 0; start < len(instances); start += sqlshared.BulkChunkSize {
+			end := start + sqlshared.BulkChunkSize
 			if end > len(instances) {
 				end = len(instances)
 			}
@@ -380,8 +360,8 @@ func (s *Store) AppendDCHealthPointsBulk(ctx context.Context, records []storage.
 	}
 	const cols = 11
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(records); start += bulkChunkSize {
-			end := start + bulkChunkSize
+		for start := 0; start < len(records); start += sqlshared.BulkChunkSize {
+			end := start + sqlshared.BulkChunkSize
 			if end > len(records) {
 				end = len(records)
 			}
@@ -421,8 +401,8 @@ func (s *Store) UpsertClientIPHistoryBulk(ctx context.Context, records []storage
 	records = dedupClientIPHistory(records)
 	const cols = 5
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(records); start += bulkChunkSize {
-			end := start + bulkChunkSize
+		for start := 0; start < len(records); start += sqlshared.BulkChunkSize {
+			end := start + sqlshared.BulkChunkSize
 			if end > len(records) {
 				end = len(records)
 			}

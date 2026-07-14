@@ -49,4 +49,3 @@ func ShouldLookup(ip net.IP) bool {
 	}
 	return true
 }
-

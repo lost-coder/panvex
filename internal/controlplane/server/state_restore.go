@@ -2,11 +2,10 @@ package server
 
 import (
 	"context"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
+	"github.com/lost-coder/panvex/internal/seqid"
 )
 
 // restoreStoredState rehydrates the in-memory inventory from the storage
@@ -122,7 +121,7 @@ func (s *Server) restoreMetricSeq(ctx context.Context) error {
 		return err
 	}
 	for _, record := range metrics {
-		s.metricSeq = maxPrefixedSequence(s.metricSeq, "metric", record.ID)
+		s.metricSeq = seqid.MaxPrefixed(s.metricSeq, "metric", record.ID)
 	}
 	return nil
 }
@@ -171,7 +170,7 @@ func (s *Server) restoreAuditSeq(ctx context.Context) error {
 		return err
 	}
 	for _, record := range auditEvents {
-		s.auditSeq = maxPrefixedSequence(s.auditSeq, "audit", record.ID)
+		s.auditSeq = seqid.MaxPrefixed(s.auditSeq, "audit", record.ID)
 	}
 	tail, err := s.store.LatestAuditChainHash(ctx)
 	if err != nil {
@@ -180,24 +179,4 @@ func (s *Server) restoreAuditSeq(ctx context.Context) error {
 	s.auditChainTail = tail
 	s.auditChainLoaded = true
 	return nil
-}
-
-// maxPrefixedSequence returns the larger of `current` and the trailing
-// integer parsed out of `value` when it has the form `prefix-N`. Used
-// to seed in-memory sequence counters from the most-recently-persisted
-// IDs so new IDs minted after a restart never collide with old ones.
-func maxPrefixedSequence(current uint64, prefix string, value string) uint64 {
-	if !strings.HasPrefix(value, prefix+"-") {
-		return current
-	}
-
-	parsed, err := strconv.ParseUint(strings.TrimPrefix(value, prefix+"-"), 10, 64)
-	if err != nil {
-		return current
-	}
-	if parsed > current {
-		return parsed
-	}
-
-	return current
 }

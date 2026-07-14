@@ -10,6 +10,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/seqid"
 )
 
 const seqClientAssignment = "client-assignment"
@@ -239,13 +240,13 @@ func (s *Service) NextDiscoveredID() string {
 // record IDs. Must be called with s.mu held for writing.
 func (s *Service) recoverSequencesLocked(clientIDs, assignmentIDs, discoveredIDs []string) {
 	for _, id := range clientIDs {
-		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", id)
+		s.clientSeq = seqid.MaxPrefixed(s.clientSeq, "client", id)
 	}
 	for _, id := range assignmentIDs {
-		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, seqClientAssignment, id)
+		s.assignmentSeq = seqid.MaxPrefixed(s.assignmentSeq, seqClientAssignment, id)
 	}
 	for _, id := range discoveredIDs {
-		s.discoveredSeq = maxPrefixedSequence(s.discoveredSeq, "discovered", id)
+		s.discoveredSeq = seqid.MaxPrefixed(s.discoveredSeq, "discovered", id)
 	}
 }
 
@@ -457,19 +458,7 @@ func (s *Service) EncryptSecret(plaintext string) (string, error) {
 // DomainClientSecret key. A nil or disabled vault is a no-op.
 // An empty plaintext is returned unchanged.
 func (s *Service) encryptSecret(plaintext string) (string, error) {
-	if s.vault == nil || !s.vault.Enabled() || plaintext == "" {
-		return plaintext, nil
-	}
-	// Idempotency guard: never re-encrypt a value that already carries a
-	// vault prefix. A valid 32-hex client secret can never look encrypted,
-	// so a prefixed input means a ciphertext leaked into a save path (e.g.
-	// a pre-decrypt-on-load mirror that still held ciphertext). Encrypting
-	// it again would double-wrap the secret and corrupt the row — exactly
-	// the failure that shipped PVS2: ciphertext to telemt.
-	if secretvault.IsEncrypted(plaintext) {
-		return plaintext, nil
-	}
-	ct, err := s.vault.Encrypt(secretvault.DomainClientSecret, plaintext)
+	ct, err := s.vault.EncryptIfEnabled(secretvault.DomainClientSecret, plaintext)
 	if err != nil {
 		return "", fmt.Errorf("encryptSecret: %w", err)
 	}

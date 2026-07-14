@@ -65,4 +65,3 @@ func TestSaveAndLoadCredentialsRoundTripWithTransport(t *testing.T) {
 		t.Fatalf("loaded.ListenAddr = %q, want %q", loaded.ListenAddr, ":8443")
 	}
 }
-
