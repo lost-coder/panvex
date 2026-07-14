@@ -189,7 +189,6 @@ type FleetStore interface {
 // JobStore persists orchestration jobs and per-target result state.
 type JobStore interface {
 	PutJob(ctx context.Context, job JobRecord) error
-	GetJobByIdempotencyKey(ctx context.Context, idempotencyKey string) (JobRecord, error)
 	// GetJob returns a single job row by primary key, or ErrNotFound.
 	// P8.1 (audit #24): backs jobs.Service.GetWithContext — terminal jobs
 	// evicted from the in-memory maps are read back from here until the

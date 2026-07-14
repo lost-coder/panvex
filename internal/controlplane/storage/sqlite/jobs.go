@@ -25,30 +25,8 @@ func (s *Store) PutJob(ctx context.Context, job storage.JobRecord) error {
 	return err
 }
 
-func (s *Store) GetJobByIdempotencyKey(ctx context.Context, idempotencyKey string) (storage.JobRecord, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key, payload_json
-		FROM jobs
-		WHERE idempotency_key = ?
-	`, idempotencyKey)
-
-	var job storage.JobRecord
-	var createdAt int64
-	var ttlNanos int64
-	if err := row.Scan(&job.ID, &job.Action, &job.ActorID, &job.Status, &createdAt, &ttlNanos, &job.IdempotencyKey, &job.PayloadJSON); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return storage.JobRecord{}, storage.ErrNotFound
-		}
-		return storage.JobRecord{}, err
-	}
-
-	job.CreatedAt = fromUnix(createdAt)
-	job.TTL = time.Duration(ttlNanos)
-	return job, nil
-}
-
 // GetJob returns one job row by primary key, or storage.ErrNotFound.
-// Mirrors GetJobByIdempotencyKey; see storage.JobStore for the contract.
+// See storage.JobStore for the contract.
 func (s *Store) GetJob(ctx context.Context, id string) (storage.JobRecord, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, action, actor_id, status, created_at_unix, ttl_nanos, idempotency_key, payload_json

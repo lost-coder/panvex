@@ -1038,15 +1038,6 @@ func (s *memoryStore) PutJob(_ context.Context, job storage.JobRecord) error {
 	return nil
 }
 
-func (s *memoryStore) GetJobByIdempotencyKey(_ context.Context, idempotencyKey string) (storage.JobRecord, error) {
-	jobID, ok := s.jobsByKey[idempotencyKey]
-	if !ok {
-		return storage.JobRecord{}, storage.ErrNotFound
-	}
-
-	return s.jobs[jobID], nil
-}
-
 func (s *memoryStore) GetJob(_ context.Context, id string) (storage.JobRecord, error) {
 	job, ok := s.jobs[id]
 	if !ok {
