@@ -16,10 +16,15 @@ const (
 // publishes (re-publishes) these via FULL_SNAPSHOT reconcile messages;
 // the panel dedupes by (AgentID, ClientName) before persisting.
 type DiscoveredClient struct {
-	ID                 DiscoveredID
-	AgentID            string // agents-domain ID; not strong-typed yet (Wave 4.2-agents will)
-	ClientName         string
-	Secret             string // Telemt client secret (hex); carried for adopt + sibling-dedup
+	ID         DiscoveredID
+	AgentID    string // agents-domain ID; not strong-typed yet (Wave 4.2-agents will)
+	ClientName string
+	// Secret is the Telemt client secret (hex). It is carried here for the
+	// adopt path and for sibling deduplication, and it MUST NOT reach the wire:
+	// this type has no json tags and is never serialised — the HTTP layer
+	// projects it onto discoveredClientResponse, which has no secret field.
+	// (Audit item verified, not a leak; keep it that way.)
+	Secret             string
 	Status             Status
 	TotalOctets        uint64
 	CurrentConnections uint32

@@ -1,4 +1,14 @@
 // Package security mints and validates short-lived agent enrollment tokens.
+//
+// Why it stays its own package (R8-D reviewed it as a candidate for folding
+// into a consumer): the only coherent home would be
+// internal/controlplane/enrollment, which owns the enrollment domain — but that
+// package is compiled into the AGENT binary too. Token MINTING is a panel-only
+// capability, and R3 went to some trouble to keep the agent's dependency
+// surface thin (it carries no storage layer, no DB driver, no control-plane
+// server). Moving the minting code into a package the agent links would undo a
+// little of that for no benefit, so it lives here: a leaf, panel-only, with one
+// job.
 package security
 
 import (

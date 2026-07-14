@@ -55,19 +55,29 @@ type InstallCommandResponse struct {
 // mode) agent. Each call replaces any previously-issued token.
 type InstallCommandHandler struct {
 	queries    Queries
-	scriptURL  string
 	scriptHash string
 	panelCAPin string
 	panelCN    string
-	panelURL   string
 	listenAddr string
 	now        func() time.Time
 
-	// scriptURLFn / panelURLFn, when non-nil, are evaluated PER REQUEST
-	// and take precedence over scriptURL / panelURL. See the matching
-	// config fields.
-	scriptURLFn func(*http.Request) string
-	panelURLFn  func(*http.Request) string
+	// scriptURL / panelURL are resolvers, always non-nil. The config accepts
+	// either a static string or a per-request function, and NewInstallCommandHandler
+	// folds both into one resolver — the handler used to carry a string AND a
+	// function for each and re-derive the precedence rule on every request
+	// (R8-D).
+	scriptURL func(*http.Request) string
+	panelURL  func(*http.Request) string
+}
+
+// urlResolver folds the static/dynamic pair from the config into one function.
+// The per-request function wins when both are supplied, which is the precedence
+// the handler already implemented.
+func urlResolver(static string, dynamic func(*http.Request) string) func(*http.Request) string {
+	if dynamic != nil {
+		return dynamic
+	}
+	return func(*http.Request) string { return static }
 }
 
 // InstallCommandConfig groups the non-DB inputs to the handler so callers
@@ -116,16 +126,14 @@ func NewInstallCommandHandler(q Queries, cfg InstallCommandConfig) *InstallComma
 		now = time.Now
 	}
 	return &InstallCommandHandler{
-		queries:     q,
-		scriptURL:   cfg.ScriptURL,
-		scriptHash:  cfg.ScriptHash,
-		panelCAPin:  cfg.PanelCAPin,
-		panelCN:     cfg.PanelCN,
-		panelURL:    cfg.PanelURL,
-		listenAddr:  listen,
-		now:         now,
-		scriptURLFn: cfg.ScriptURLFn,
-		panelURLFn:  cfg.PanelURLFn,
+		queries:    q,
+		scriptURL:  urlResolver(cfg.ScriptURL, cfg.ScriptURLFn),
+		scriptHash: cfg.ScriptHash,
+		panelCAPin: cfg.PanelCAPin,
+		panelCN:    cfg.PanelCN,
+		panelURL:   urlResolver(cfg.PanelURL, cfg.PanelURLFn),
+		listenAddr: listen,
+		now:        now,
 	}
 }
 
@@ -138,14 +146,8 @@ func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	// Resolve the script + panel-gRPC URLs. When the *Fn resolvers are set
 	// (production wiring) they read the live panel settings per request;
 	// otherwise the static config strings apply (unit-test path).
-	scriptURL := h.scriptURL
-	if h.scriptURLFn != nil {
-		scriptURL = h.scriptURLFn(r)
-	}
-	panelURL := h.panelURL
-	if h.panelURLFn != nil {
-		panelURL = h.panelURLFn(r)
-	}
+	scriptURL := h.scriptURL(r)
+	panelURL := h.panelURL(r)
 	if scriptURL == "" {
 		http.Error(w, "install-command endpoint not configured: script_url not set", http.StatusServiceUnavailable)
 		return

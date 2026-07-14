@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -170,79 +172,100 @@ func (s *SQLStore) Fail(ctx context.Context, attemptID string, finishedAt time.T
 // for filtered queries that target older rows. Phase 2 can revisit if
 // telemetry shows attempts accumulating past the prefix before
 // retention prunes them.
-const listAttemptsPrefetchCap = 1000
+// defaultListAttemptsLimit bounds a filter that asks for no limit. The endpoint
+// is a debugging surface, not a bulk export.
+const defaultListAttemptsLimit = 100
 
-// ListAttempts pulls a bounded most-recent prefix from
-// enrollment_attempts via a hand-rolled SELECT (see the SQLStore type
-// doc for why we bypass sqlc here) and applies the ListFilter in Go.
-// Bad UUIDs in the filter resolve to "no match" rather than an error so
-// a malformed query string can't break the endpoint.
+// ListAttempts returns the most recent enrollment attempts matching the filter,
+// newest first, with keyset pagination.
+//
+// The filter is applied in SQL. It used to be applied in Go over a prefetched
+// prefix of the 1000 newest rows, which meant a filter that matched nothing in
+// that prefix silently returned empty — a node that failed to enroll yesterday
+// was simply invisible once a thousand attempts had happened since, and the
+// endpoint gave no hint that it had stopped looking.
+//
+// Bad UUIDs in the filter resolve to "no match" rather than an error so a
+// malformed query string cannot break the endpoint.
 func (s *SQLStore) ListAttempts(ctx context.Context, f ListFilter) ([]AttemptDTO, error) {
 	if s.db == nil {
 		return nil, errors.New("enrollment sqlstore: nil db")
 	}
-	const q = `SELECT id, token_id, agent_id, mode, client_addr, request_id,
+
+	var (
+		conditions []string
+		args       []any
+	)
+	add := func(clause string, value any) {
+		args = append(args, value)
+		conditions = append(conditions, fmt.Sprintf(clause, len(args)))
+	}
+
+	if f.TokenID != nil {
+		if _, err := uuid.Parse(*f.TokenID); err != nil {
+			// A syntactically invalid id can never match a stored row.
+			return []AttemptDTO{}, nil
+		}
+		add("token_id = $%d", *f.TokenID)
+	}
+	if f.AgentID != nil {
+		if _, err := uuid.Parse(*f.AgentID); err != nil {
+			return []AttemptDTO{}, nil
+		}
+		add("agent_id = $%d", *f.AgentID)
+	}
+	if f.Status != nil {
+		add("status = $%d", string(*f.Status))
+	}
+	if f.Mode != nil {
+		add("mode = $%d", string(*f.Mode))
+	}
+	if f.ErrorCode != nil {
+		add("error_code = $%d", *f.ErrorCode)
+	}
+	if f.StartedAfter != nil {
+		add("started_at >= $%d", *f.StartedAfter)
+	}
+	if f.StartedBefore != nil {
+		add("started_at < $%d", *f.StartedBefore)
+	}
+	// Keyset pagination over the (started_at DESC, id DESC) order: everything
+	// strictly older than the cursor row.
+	if f.CursorTs != nil {
+		if f.CursorID != nil {
+			args = append(args, *f.CursorTs, *f.CursorTs, *f.CursorID)
+			conditions = append(conditions, fmt.Sprintf(
+				"(started_at < $%d OR (started_at = $%d AND id < $%d))",
+				len(args)-2, len(args)-1, len(args)))
+		} else {
+			add("started_at < $%d", *f.CursorTs)
+		}
+	}
+
+	limit := f.Limit
+	if limit <= 0 {
+		limit = defaultListAttemptsLimit
+	}
+	args = append(args, limit)
+
+	query := `SELECT id, token_id, agent_id, mode, client_addr, request_id,
        status, error_code, error_message, started_at, finished_at
-FROM enrollment_attempts
-ORDER BY started_at DESC, id DESC
-LIMIT $1`
-	rows, err := s.db.QueryContext(ctx, q, listAttemptsPrefetchCap)
+FROM enrollment_attempts`
+	// The only thing concatenated into the SQL is placeholder text ($1, $2, ...)
+	// built from the argument count above. Every filter VALUE travels as a bound
+	// parameter; nothing derived from a request reaches the statement text.
+	if len(conditions) > 0 {
+		query += "\nWHERE " + strings.Join(conditions, " AND ") //nolint:gosec // reason: G202 — concatenated fragments are placeholder text only; all values are bound parameters.
+	}
+	query += fmt.Sprintf("\nORDER BY started_at DESC, id DESC\nLIMIT $%d", len(args)) //nolint:gosec // reason: G202 — the only interpolation is the placeholder index.
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var (
-		wantToken     string
-		wantTokenSet  bool
-		wantAgent     string
-		wantAgentSet  bool
-		wantStatus    string
-		wantStatusSet bool
-		wantMode      string
-		wantModeSet   bool
-		wantErrCode   string
-		wantErrSet    bool
-		cursorIDStr   string
-		cursorIDSet   bool
-	)
-	if f.TokenID != nil {
-		if _, perr := uuid.Parse(*f.TokenID); perr == nil {
-			wantToken = *f.TokenID
-			wantTokenSet = true
-		} else {
-			// A syntactically invalid token_id can never match a stored
-			// row, so short-circuit to an empty result rather than
-			// scanning the prefix.
-			return []AttemptDTO{}, nil
-		}
-	}
-	if f.AgentID != nil {
-		if _, perr := uuid.Parse(*f.AgentID); perr == nil {
-			wantAgent = *f.AgentID
-			wantAgentSet = true
-		} else {
-			return []AttemptDTO{}, nil
-		}
-	}
-	if f.Status != nil {
-		wantStatus = string(*f.Status)
-		wantStatusSet = true
-	}
-	if f.Mode != nil {
-		wantMode = string(*f.Mode)
-		wantModeSet = true
-	}
-	if f.ErrorCode != nil {
-		wantErrCode = *f.ErrorCode
-		wantErrSet = true
-	}
-	if f.CursorID != nil {
-		cursorIDStr = *f.CursorID
-		cursorIDSet = true
-	}
-
-	out := make([]AttemptDTO, 0, f.Limit)
+	out := make([]AttemptDTO, 0, limit)
 	for rows.Next() {
 		var r dbsqlc.EnrollmentAttempt
 		if err := rows.Scan(
@@ -260,47 +283,7 @@ LIMIT $1`
 		); err != nil {
 			return nil, err
 		}
-		if wantTokenSet {
-			if !r.TokenID.Valid || r.TokenID.UUID.String() != wantToken {
-				continue
-			}
-		}
-		if wantAgentSet {
-			if !r.AgentID.Valid || r.AgentID.UUID.String() != wantAgent {
-				continue
-			}
-		}
-		if wantStatusSet && r.Status != wantStatus {
-			continue
-		}
-		if wantModeSet && r.Mode != wantMode {
-			continue
-		}
-		if wantErrSet {
-			if !r.ErrorCode.Valid || r.ErrorCode.String != wantErrCode {
-				continue
-			}
-		}
-		if f.StartedAfter != nil && r.StartedAt.Before(*f.StartedAfter) {
-			continue
-		}
-		if f.StartedBefore != nil && !r.StartedAt.Before(*f.StartedBefore) {
-			continue
-		}
-		if f.CursorTs != nil {
-			if r.StartedAt.After(*f.CursorTs) {
-				continue
-			}
-			if r.StartedAt.Equal(*f.CursorTs) {
-				if !cursorIDSet || r.ID.String() >= cursorIDStr {
-					continue
-				}
-			}
-		}
 		out = append(out, rowToAttemptDTO(r))
-		if f.Limit > 0 && len(out) >= f.Limit {
-			break
-		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -378,7 +361,14 @@ func rowToEventDTO(r dbsqlc.EnrollmentEvent) EventDTO {
 	}
 	if r.FieldsJson != nil {
 		var f map[string]any
-		if err := json.Unmarshal(*r.FieldsJson, &f); err == nil {
+		if err := json.Unmarshal(*r.FieldsJson, &f); err != nil {
+			// A row we wrote ourselves failed to decode: the column is corrupt.
+			// Surface it rather than returning a silently field-less event —
+			// the operator would otherwise see a timeline entry whose detail
+			// simply vanished (R8-D).
+			slog.Warn("enrollment event fields are not decodable JSON; serving the event without them",
+				"step", r.Step, "error", err)
+		} else {
 			dto.Fields = f
 		}
 	}

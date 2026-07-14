@@ -14,7 +14,6 @@ import (
 	"errors"
 	"math/big"
 	"net"
-	"sync"
 	"testing"
 	"time"
 
@@ -719,36 +718,34 @@ func TestBootstrapToken_SingleUse(t *testing.T) {
 	}
 }
 
-// TestEnrollDriverPinWriterAtomicAccess locks down the atomic.Pointer wiring
-// for EnrollDriver.pinWriter (Task 11 / B-3). Concurrent SetCertPinWriter +
-// pinWriter.Load callers must not trip the race detector. The previous
-// implementation stored the writer as a plain interface field and documented
-// the resulting race; this test would fail under -race against that version.
-func TestEnrollDriverPinWriterAtomicAccess(t *testing.T) {
+// TestEnrollDriverPinWriterContract pins the wiring contract for the driver's
+// optional collaborators (R8-D): they are set once, before the first Run.
+//
+// This replaces TestEnrollDriverPinWriterAtomicAccess, which asserted that
+// SetCertPinWriter could be called concurrently with an in-flight Run. Nothing
+// does that — serve.go wires the writer at boot — and the driver's other two
+// collaborators (recorder, notifier) never offered the guarantee anyway, so the
+// atomic.Pointer advertised a capability the type did not actually have.
+func TestEnrollDriverPinWriterContract(t *testing.T) {
 	t.Parallel()
 
 	d := &EnrollDriver{}
 
-	const iters = 100
-	var wg sync.WaitGroup
-	wg.Add(iters * 2)
-	for i := 0; i < iters; i++ {
-		go func() {
-			defer wg.Done()
-			d.SetCertPinWriter(newFakeCertPinWriter())
-		}()
-		go func() {
-			defer wg.Done()
-			_ = d.pinWriter.Load()
-		}()
+	// Unset: pinning is skipped, and persistCertPin says so rather than
+	// silently succeeding.
+	if err := d.persistCertPin(context.Background(), "agent-1", &x509.Certificate{}); err == nil {
+		t.Fatal("persistCertPin with no writer wired: want an error, got nil")
 	}
-	wg.Wait()
 
-	// Also confirm SetCertPinWriter(nil) clears the pointer (regression
-	// guard for the nil branch in the setter).
+	writer := newFakeCertPinWriter()
+	d.SetCertPinWriter(writer)
+	if d.pinWriter == nil {
+		t.Fatal("SetCertPinWriter did not wire the writer")
+	}
+
 	d.SetCertPinWriter(nil)
-	if got := d.pinWriter.Load(); got != nil {
-		t.Fatalf("after SetCertPinWriter(nil): pinWriter.Load() = %v, want nil", got)
+	if d.pinWriter != nil {
+		t.Fatal("SetCertPinWriter(nil) must clear the writer")
 	}
 }
 

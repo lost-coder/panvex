@@ -171,7 +171,19 @@ func (r *Recorder) Begin(ctx context.Context, mode Mode, tokenID, clientAddr str
 func (r *Recorder) Event(ctx context.Context, attemptID string, step Step, level Level, message string, fields map[string]any) {
 	fieldsJSON := ""
 	if len(fields) > 0 {
-		if b, err := json.Marshal(fields); err == nil {
+		b, err := json.Marshal(fields)
+		if err != nil {
+			// The event still gets recorded, just without its fields — a
+			// timeline entry with no detail beats no entry at all. But say so:
+			// silently dropping the fields is how an enrollment failure ends up
+			// with an empty "why" in the UI and nobody knows the panel dropped
+			// it (R8-D).
+			r.log.LogAttrs(ctx, slog.LevelWarn, "enrollment event fields could not be encoded; recording the event without them",
+				slog.String("attempt_id", attemptID),
+				slog.String("step", string(step)),
+				slog.Any("error", err),
+			)
+		} else {
 			fieldsJSON = string(b)
 		}
 	}
