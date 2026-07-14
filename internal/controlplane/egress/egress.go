@@ -1,4 +1,12 @@
-package updates
+// Package egress owns outbound-HTTP safety for the control-plane: which
+// destinations the panel is allowed to reach and the clients that enforce it.
+//
+// The guard lives at Dialer.Control — after DNS resolution, before connect —
+// so it sees the IP the socket would actually reach. A URL-time or
+// resolve-time check cannot do that: the name can resolve to a public address
+// when checked and a private one when dialed (DNS rebinding), and every
+// redirect hop reopens the same window.
+package egress
 
 import (
 	"errors"
@@ -14,8 +22,7 @@ import (
 // CheckGeoIPURL validates a GeoIP source URL. Unlike self-update, GeoIP
 // sources are legitimately diverse (MaxMind, mirrors, private CDNs), so
 // there is no host allow-list here — only https is required. SSRF protection
-// is enforced at dial time by GeoIPDownloadClient's egress guard, which is
-// redirect- and DNS-rebinding-safe.
+// is enforced at dial time by GeoIPDownloadClient's guard.
 func CheckGeoIPURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -36,11 +43,15 @@ var extraBlockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("100.64.0.0/10"),
 }
 
-// isBlockedIP reports whether addr is an internal/non-public destination that
-// GeoIP downloads must never reach: loopback, RFC1918/RFC4193 private,
-// link-local (incl. 169.254.169.254 cloud metadata), multicast, unspecified,
-// or CGNAT shared address space (RFC6598). Public global unicast is allowed.
-func isBlockedIP(addr netip.Addr) bool {
+// IsBlocked reports whether addr is an internal/non-public destination the
+// panel must never reach: loopback, RFC1918/RFC4193 private, link-local
+// (incl. 169.254.169.254 cloud metadata), multicast, unspecified, or CGNAT
+// shared address space (RFC6598). Public global unicast is allowed.
+//
+// This is the single predicate behind every egress decision — the dial-time
+// guard below and the webhook worker's preflight both call it, so a range
+// added here is blocked everywhere.
+func IsBlocked(addr netip.Addr) bool {
 	if !addr.IsValid() {
 		return true
 	}
@@ -62,11 +73,9 @@ func isBlockedIP(addr netip.Addr) bool {
 	return false
 }
 
-// checkDialAddress rejects a resolved "ip:port" targeting a non-public
-// address. It runs from net.Dialer.Control after DNS resolution and before
-// connect, so it sees the actual IP the socket would reach — closing the
-// TOCTOU/DNS-rebinding gap a URL-time check would leave open.
-func checkDialAddress(address string) error {
+// CheckDialAddress rejects a resolved "ip:port" targeting a non-public
+// address. Wired into net.Dialer.Control.
+func CheckDialAddress(address string) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		return fmt.Errorf("parse dial address %q: %w", address, err)
@@ -75,20 +84,47 @@ func checkDialAddress(address string) error {
 	if err != nil {
 		return fmt.Errorf("dial address %q is not a literal IP: %w", host, err)
 	}
-	if isBlockedIP(addr) {
+	if IsBlocked(addr) {
 		return fmt.Errorf("refusing to connect to non-public address %s", addr)
 	}
 	return nil
 }
 
+// GuardedDialer is a net.Dialer that refuses to connect to any non-public
+// address. dialTimeout bounds the connect itself.
+func GuardedDialer(dialTimeout time.Duration) *net.Dialer {
+	return &net.Dialer{
+		Timeout:   dialTimeout,
+		KeepAlive: 30 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			return CheckDialAddress(address)
+		},
+	}
+}
+
+// GuardedClient returns an *http.Client whose every connection — including
+// each redirect hop — goes through the egress guard. Used by the webhook
+// worker for endpoints that have not opted into private destinations.
+func GuardedClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext:         GuardedDialer(10 * time.Second).DialContext,
+			ForceAttemptHTTP2:   true,
+			TLSHandshakeTimeout: 10 * time.Second,
+		},
+	}
+}
+
 // GeoIPDownloadClient returns an *http.Client that permits any public https
 // host but blocks internal destinations at dial time, on every redirect hop.
+// The long timeout fits a multi-hundred-MB database download.
 func GeoIPDownloadClient() *http.Client {
 	dialer := &net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
 		Control: func(_, address string, _ syscall.RawConn) error {
-			return checkDialAddress(address)
+			return CheckDialAddress(address)
 		},
 	}
 	return &http.Client{

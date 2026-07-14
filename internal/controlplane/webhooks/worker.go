@@ -8,10 +8,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/egress"
 )
 
 // EnvAllowInsecureWebhook opts into http:// receiver URLs (in
@@ -32,8 +35,10 @@ type WorkerConfig struct {
 	// Backoff returns the delay before the next attempt. Defaults
 	// to exponential 2^attempt * 30s capped at 1h.
 	Backoff func(attempt int) time.Duration
-	// HTTPClient drives the actual POST. A nil value uses a 10s
-	// timeout client.
+	// HTTPClient drives the POST to endpoints that opted into private
+	// destinations (allow_private). A nil value uses a 10s timeout client.
+	// Endpoints WITHOUT allow_private are delivered through a separate
+	// egress-guarded client instead — see Worker.clientFor.
 	HTTPClient *http.Client
 	// Clock — overridable for tests.
 	Clock func() time.Time
@@ -67,6 +72,11 @@ type DeadLetter struct {
 type Worker struct {
 	storage Storage
 	cfg     WorkerConfig
+	// guarded refuses to connect to any non-public address, checked at dial
+	// time on every redirect hop. This is the authoritative SSRF defence:
+	// preflight's resolve-time check below can be defeated by a name that
+	// resolves public when checked and private when dialed.
+	guarded *http.Client
 }
 
 // NewWorker fills in defaults on cfg and returns a ready Worker.
@@ -92,7 +102,11 @@ func NewWorker(storage Storage, cfg WorkerConfig) *Worker {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Worker{storage: storage, cfg: cfg}
+	return &Worker{
+		storage: storage,
+		cfg:     cfg,
+		guarded: egress.GuardedClient(10 * time.Second),
+	}
 }
 
 // Run drives the delivery loop until ctx.Done(). Errors from the
@@ -165,7 +179,7 @@ func (w *Worker) deliver(ctx context.Context, d Delivery) {
 	req.Header.Set("X-Panvex-Timestamp", string(timestamp))
 	req.Header.Set("X-Panvex-Signature", signature)
 
-	resp, err := w.cfg.HTTPClient.Do(req)
+	resp, err := w.clientFor(d.Endpoint).Do(req)
 	if err != nil {
 		w.recordFailure(ctx, d, fmt.Errorf("post: %w", err))
 		return
@@ -249,6 +263,15 @@ func (w *Worker) failPermanently(ctx context.Context, d Delivery, deliverErr err
 	})
 }
 
+// clientFor picks the delivery client for an endpoint: the egress-guarded one
+// unless the operator explicitly opted the endpoint into private destinations.
+func (w *Worker) clientFor(ep Endpoint) *http.Client {
+	if ep.AllowPrivate {
+		return w.cfg.HTTPClient
+	}
+	return w.guarded
+}
+
 // preflight rejects URLs the worker is not allowed to dial. Run
 // before each attempt because endpoint config can change between
 // publish and delivery (operator edits the URL after a row is
@@ -284,14 +307,18 @@ func insecureAllowed() bool {
 	return strings.TrimSpace(os.Getenv(EnvAllowInsecureWebhook)) == "1"
 }
 
-// isPrivateHost is a best-effort SSRF guard. Resolves the host and
-// flags any address in private / loopback / link-local space. The
-// real defence-in-depth is the AllowPrivate flag — this function
-// only catches the obvious cases without making the dev experience
-// painful (operators are expected to override deliberately).
+// isPrivateHost resolves the host and reports whether any answer is a
+// non-public address, using the same egress.IsBlocked predicate the dial-time
+// guard enforces — so a range added there is refused here too.
 //
-// Uses the context-aware resolver so a wedged DNS lookup can be
-// reaped by the worker's tick / shutdown context (noctx lint).
+// This check is for the OPERATOR, not for security: it fails the row at
+// preflight with a clear message (and dead-letters it immediately) instead of
+// burning eight attempts on a connection that the guarded client would refuse
+// anyway. The security boundary is the dial-time guard, which sees the address
+// the socket actually reaches.
+//
+// Uses the context-aware resolver so a wedged DNS lookup can be reaped by the
+// worker's tick / shutdown context (noctx lint).
 func isPrivateHost(ctx context.Context, host string) bool {
 	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
@@ -299,8 +326,8 @@ func isPrivateHost(ctx context.Context, host string) bool {
 		return true
 	}
 	for _, a := range addrs {
-		ip := a.IP
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		addr, ok := netip.AddrFromSlice(a.IP)
+		if !ok || egress.IsBlocked(addr) {
 			return true
 		}
 	}

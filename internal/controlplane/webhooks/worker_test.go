@@ -244,3 +244,39 @@ func TestExponentialBackoffCap(t *testing.T) {
 		})
 	}
 }
+
+// TestWorkerGuardsEgressForNonPrivateEndpoints checks the delivery client
+// selection: an endpoint without allow_private goes through the egress-guarded
+// client, which refuses a private destination at dial time even if preflight's
+// resolve-time check were bypassed (DNS rebinding). An allow_private endpoint
+// keeps the plain client so operators can reach an internal receiver.
+func TestWorkerGuardsEgressForNonPrivateEndpoints(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	worker := NewWorker(newMemStore(), WorkerConfig{HTTPClient: srv.Client()})
+
+	private := Endpoint{AllowPrivate: true}
+	if worker.clientFor(private) != worker.cfg.HTTPClient {
+		t.Fatal("allow_private endpoint must use the plain client")
+	}
+
+	public := Endpoint{AllowPrivate: false}
+	guarded := worker.clientFor(public)
+	if guarded == worker.cfg.HTTPClient {
+		t.Fatal("endpoint without allow_private must use the guarded client")
+	}
+
+	// The guarded client must refuse the loopback httptest server.
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := guarded.Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("guarded client reached a loopback address; want dial refused")
+	}
+}

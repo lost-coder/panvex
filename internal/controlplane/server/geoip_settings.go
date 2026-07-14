@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/egress"
 	"github.com/lost-coder/panvex/internal/controlplane/geoip"
-	"github.com/lost-coder/panvex/internal/controlplane/updates"
 )
 
 // geoipUpdateInterval is the cadence the auto/URL refresh worker uses
@@ -169,14 +169,14 @@ func validateGeoIPSettings(s geoip.Settings) error {
 }
 
 // validateGeoIPURLSources checks every enabled source's download URL for
-// URL mode (https-only via updates.CheckGeoIPURL; SSRF is enforced at dial
+// URL mode (https-only via egress.CheckGeoIPURL; SSRF is enforced at dial
 // time by the egress guard, not by a host allow-list).
 func validateGeoIPURLSources(s geoip.Settings) error {
 	for _, src := range []geoip.Source{s.City, s.ASN} {
 		if !src.Enabled {
 			continue
 		}
-		if err := updates.CheckGeoIPURL(src.URL); err != nil {
+		if err := egress.CheckGeoIPURL(src.URL); err != nil {
 			return err
 		}
 	}
@@ -280,7 +280,7 @@ func (s *Server) runGeoIPUpdate(ctx context.Context, k geoip.Kind) geoip.SourceS
 		return state
 
 	case geoip.ModeAuto:
-		fetcher := geoip.NewFetcher(updates.GeoIPDownloadClient(), "")
+		fetcher := geoip.NewFetcher(egress.GeoIPDownloadClient(), "")
 		url, err := fetcher.AssetURL(ctx, k)
 		if err != nil {
 			state.Error = err.Error()
@@ -307,7 +307,7 @@ func (s *Server) downloadGeoIP(ctx context.Context, k geoip.Kind, url string, pr
 	// (validated as JSON shape only) and reloaded unvalidated on restart, so
 	// the egress guard MUST be enforced here too. Covers URL mode and the
 	// auto-mode resolved GitHub asset URL.
-	if err := updates.CheckGeoIPURL(url); err != nil {
+	if err := egress.CheckGeoIPURL(url); err != nil {
 		state := prev
 		state.LastCheckedAt = now
 		state.Error = err.Error()
@@ -317,7 +317,7 @@ func (s *Server) downloadGeoIP(ctx context.Context, k geoip.Kind, url string, pr
 	// GeoIPDownloadClient enforces the dial-time egress guard on every
 	// redirect hop, so an open redirect on a public host cannot steer the
 	// fetch to an internal target.
-	d := geoip.NewDownloader(updates.GeoIPDownloadClient())
+	d := geoip.NewDownloader(egress.GeoIPDownloadClient())
 	res, err := d.Fetch(ctx, geoip.FetchRequest{URL: url, Dest: dest, Kind: k, IfNoneMatch: prev.ETag})
 
 	// Always start from prev so we never erase a known-good
