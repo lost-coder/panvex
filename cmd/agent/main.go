@@ -19,8 +19,6 @@ var (
 )
 
 const (
-	runtimeInitializationFastInterval = 3 * time.Second
-	gatewayStreamConnectTimeout       = 15 * time.Second
 	// selfUpdateRestartDelay is the window between handing the self-update
 	// JobResult to the worker and the systemd restart, sized to flush the
 	// result through criticalOutbound + the gRPC client buffer (cf. the
@@ -28,8 +26,6 @@ const (
 	// so the margin is much larger).
 	selfUpdateRestartDelay = 2 * time.Second
 )
-
-var errRuntimeCredentialsRefreshed = errors.New("runtime credentials refreshed")
 
 // agentDeregisteredExitCode signals to systemd that the panel has
 // removed our agent record. The install-script's unit file pairs this

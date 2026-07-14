@@ -1,4 +1,4 @@
-package main
+package conn
 
 import "time"
 
@@ -18,12 +18,12 @@ type pollingGroupConfig struct {
 	Interval time.Duration
 }
 
-type connectionSchedule struct {
+type Schedule struct {
 	groups map[pollingGroup]pollingGroupConfig
 }
 
-func newConnectionSchedule(heartbeat, runtimePoll, runtimeUpload, usageSnapshot, ipPoll, ipUpload time.Duration) connectionSchedule {
-	return connectionSchedule{
+func NewSchedule(heartbeat, runtimePoll, runtimeUpload, usageSnapshot, ipPoll, ipUpload time.Duration) Schedule {
+	return Schedule{
 		groups: map[pollingGroup]pollingGroupConfig{
 			pollHeartbeat:     {Enabled: heartbeat > 0, Interval: heartbeat},
 			pollRuntime:       {Enabled: runtimePoll > 0, Interval: runtimePoll},
@@ -35,7 +35,7 @@ func newConnectionSchedule(heartbeat, runtimePoll, runtimeUpload, usageSnapshot,
 	}
 }
 
-func (s connectionSchedule) config(group pollingGroup) pollingGroupConfig {
+func (s Schedule) config(group pollingGroup) pollingGroupConfig {
 	return s.groups[group]
 }
 

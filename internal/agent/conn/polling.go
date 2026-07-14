@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"context"
@@ -22,7 +22,7 @@ const telemtUnreachableThreshold = 30 * time.Second
 func startPollingWorkers(
 	connectionCtx context.Context,
 	streamWG *sync.WaitGroup,
-	schedule connectionSchedule,
+	schedule Schedule,
 	agent *runtime.Agent,
 	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
 	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,

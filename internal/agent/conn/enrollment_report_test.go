@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 // one-shot, so a reporter that has already flushed once must not pollute the
 // same enrollment_attempts row when later reconnect cycles call Record/Flush.
 func TestEnrollmentReporterDisableClearsAttempt(t *testing.T) {
-	r := newEnrollmentReporter()
+	r := NewEnrollmentReporter()
 	r.Bind("attempt-1")
 	r.Record("step1", "info", "msg", nil)
 	r.Disable()
@@ -47,6 +47,6 @@ func TestEnrollmentReporterDisableClearsAttempt(t *testing.T) {
 // safe — mirrors the nil-safety contract of Bind/Record/Flush so call sites
 // do not need to nil-check the reporter pointer.
 func TestEnrollmentReporterDisableNilSafe(t *testing.T) {
-	var r *enrollmentReporter
+	var r *EnrollmentReporter
 	r.Disable() // must not panic
 }

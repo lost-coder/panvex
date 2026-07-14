@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"context"
@@ -200,7 +200,7 @@ func TestStartPollingWorkersRoutesHeartbeatToCriticalChannel(t *testing.T) {
 	telemetry := make(chan *gatewayrpc.ConnectClientMessage) // full forever
 
 	// Only the heartbeat group enabled (20ms); every other interval 0 = off.
-	schedule := newConnectionSchedule(20*time.Millisecond, 0, 0, 0, 0, 0)
+	schedule := NewSchedule(20*time.Millisecond, 0, 0, 0, 0, 0)
 	startPollingWorkers(ctx, &wg, schedule, agent, critical, telemetry)
 
 	select {

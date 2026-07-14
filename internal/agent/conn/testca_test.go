@@ -1,10 +1,11 @@
-package main
+package conn
 
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -16,10 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testCA is the local signing CA used by cmd/agent's tests. The agent's
-// credential protocols now live in internal/agent/creds and internal/agent/conn,
-// each of which carries its own copy of this fixture: a test CA is scaffolding,
-// not production API, so it is duplicated per package rather than exported.
+// testCA is the local signing CA used by the connection-layer tests. Each agent
+// package carries its own copy of this fixture: a test CA is scaffolding, not
+// production API, so it is duplicated per package rather than exported.
 
 type testCA struct {
 	cert    *x509.Certificate
@@ -63,36 +63,37 @@ func newTestCA(t *testing.T) *testCA {
 	}
 }
 
-// signCSRForTest signs csrPEM with the testCA and returns a cert PEM.
-func (ca *testCA) signCSRForTest(t *testing.T, csrPEM string) string {
+// issueClientCert issues a client cert with the given CN, signed by this CA.
+// The returned tls.Certificate includes the CA cert in the chain.
+func (ca *testCA) issueClientCert(t *testing.T, cn string) tls.Certificate {
 	t.Helper()
-	block, _ := pem.Decode([]byte(csrPEM))
-	if block == nil {
-		t.Fatal("signCSRForTest: invalid PEM")
-	}
-	csr, err := x509.ParseCertificateRequest(block.Bytes)
-	if err != nil {
-		t.Fatalf("signCSRForTest: ParseCertificateRequest: %v", err)
-	}
-	if err := csr.CheckSignature(); err != nil {
-		t.Fatalf("signCSRForTest: CheckSignature: %v", err)
-	}
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
 
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		t.Fatalf("signCSRForTest: random serial: %v", err)
-	}
+	require.NoError(t, err)
+
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      csr.Subject,
+		Subject:      pkix.Name{CommonName: cn},
+		DNSNames:     []string{cn},
 		NotBefore:    time.Now().Add(-time.Minute),
-		NotAfter:     time.Now().Add(30 * 24 * time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.cert, csr.PublicKey, ca.key)
-	if err != nil {
-		t.Fatalf("signCSRForTest: CreateCertificate: %v", err)
-	}
-	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca.cert, &priv.PublicKey, ca.key)
+	require.NoError(t, err)
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyDER, err := x509.MarshalECPrivateKey(priv)
+	require.NoError(t, err)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	chainPEM := make([]byte, 0, len(certPEM)+len(ca.certPEM))
+	chainPEM = append(chainPEM, certPEM...)
+	chainPEM = append(chainPEM, ca.certPEM...)
+	tlsCert, err := tls.X509KeyPair(chainPEM, keyPEM)
+	require.NoError(t, err)
+	return tlsCert
 }

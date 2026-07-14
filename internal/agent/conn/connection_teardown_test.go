@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"context"
@@ -125,7 +125,7 @@ func TestAgentSideTeardownClosesConnectionWithoutServer(t *testing.T) {
 
 	// tr.cancel deliberately starts nil so the test can detect the moment
 	// runConnection registers the real per-connection cancel.
-	tr := &transportReloadState{}
+	tr := &TransportReload{}
 	agent := runtime.New(runtime.Config{AgentID: "agent-1", NodeName: "n1", Version: "test"}, quietTelemt{})
 
 	done := make(chan error, 1)
@@ -136,10 +136,11 @@ func TestAgentSideTeardownClosesConnectionWithoutServer(t *testing.T) {
 			stateFile:        stateFile,
 			credentialsState: creds,
 			agent:            agent,
-			schedule:         newConnectionSchedule(0, 0, 0, 0, 0, 0),
+			schedule:         NewSchedule(0, 0, 0, 0, 0, 0),
 			tr:               tr,
-			reporter:         newEnrollmentReporter(),
+			reporter:         NewEnrollmentReporter(),
 			jobInflight:      jobs.NewInflightTracker(),
+			backupCleanup:    &sync.Once{},
 		})
 		done <- err
 	}()
