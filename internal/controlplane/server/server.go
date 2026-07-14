@@ -294,7 +294,31 @@ type Server struct {
 	selfUpdateChecksumFetcher   func(ctx context.Context, checksumURL, token string) (string, bool)
 	selfUpdateArchiveDownloader func(ctx context.Context, downloadURL, expectedChecksum, token string) (string, bool)
 	selfUpdateInstaller         func(ctx context.Context, archivePath string) bool
-	retention                   RetentionSettings
+	// selfUpdateClaimMu closes the TOCTOU window in claimSelfUpdate between
+	// loading the previous self-update phase, checking it is idle/terminal,
+	// and persisting the new "downloading" phase. Two near-simultaneous POST
+	// /settings/panel/update requests (double-click, two admin tabs, a
+	// retrying client) would otherwise both observe e.g. an idle phase and
+	// both spawn performPanelUpdate, which independently races
+	// updates.AtomicReplaceBinary against itself. A dedicated mutex (rather
+	// than reusing settingsMu) is deliberate: settingsMu is a shared RWMutex
+	// read/written by many unrelated request paths (GET/PUT update+geoip+
+	// retention settings), and claimSelfUpdate's critical section performs a
+	// store round trip (LoadSelfUpdate + SaveSelfUpdate) — holding settingsMu
+	// across that I/O would serialize those unrelated readers behind a
+	// self-update claim. The claim's own I/O is a single small KV read+write,
+	// never the download/checksum/install work (that happens later, unlocked,
+	// in the detached performPanelUpdate goroutine), so the hold time is
+	// bounded and does not risk blocking on unbounded-duration I/O.
+	selfUpdateClaimMu sync.Mutex
+	// selfUpdateClaimHook is a test-only seam (nil in production): if set, it
+	// is invoked once inside claimSelfUpdate's locked section, after the
+	// phase check passes and before the "downloading" phase is persisted.
+	// Tests use it to deterministically pause a claim mid-flight (still
+	// holding selfUpdateClaimMu) and observe that a second concurrent caller
+	// blocks on the lock instead of also slipping past the phase check.
+	selfUpdateClaimHook func()
+	retention           RetentionSettings
 	// retentionDisabledWarned tracks which retention series (by table name)
 	// have already had their "retention disabled, table will grow unbounded"
 	// warning logged, so a steady-state disabled setting does not spam the

@@ -290,11 +290,15 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 			return
 		}
 
-		// Persisted BEFORE the 202 response (not inside performPanelUpdate's
-		// goroutine) so the dashboard's very first post-request refetch
-		// already observes the server-side phase instead of racing the
-		// background goroutine (R11b Task 2).
-		s.setSelfUpdatePhase(r.Context(), updates.SelfUpdateDownloading, s.version, targetVersion, "")
+		// Atomically re-checks the phase and persists "downloading" BEFORE the
+		// 202 response (not inside performPanelUpdate's goroutine), so the
+		// dashboard's very first post-request refetch already observes the
+		// server-side phase instead of racing the background goroutine, AND
+		// so a second concurrent request cannot also claim the same run (R11b
+		// Task 2 TOCTOU fix; see claimSelfUpdate).
+		if !s.claimSelfUpdate(w, r, s.version, targetVersion) {
+			return
+		}
 
 		writeJSON(w, http.StatusAccepted, panelUpdateResponse{
 			Status: "updating",
@@ -346,11 +350,23 @@ func (s *Server) setSelfUpdatePhase(ctx context.Context, phase updates.SelfUpdat
 	// event-aware poll instead — see the R11b Task 2 report for the decision.
 }
 
-// rejectConcurrentSelfUpdate guards against a double self-update start: if a
-// previous run's persisted phase is present and not terminal (i.e. still
-// downloading/installing/restart_pending), a second POST would race the
-// first — download into the same temp area, install over an already-staged
-// binary, or double-request a restart. Writes 409 and returns false when a
+// selfUpdatePhaseBlocksNewRun reports whether a previously-persisted phase
+// means a self-update run is still active (started but not yet resolved to
+// a terminal outcome: downloading/installing/restart_pending), so a new POST
+// would race the in-flight one — download into the same temp area, install
+// over an already-staged binary, or double-request a restart.
+func selfUpdatePhaseBlocksNewRun(phase updates.SelfUpdatePhase) bool {
+	return phase != updates.SelfUpdateIdle && !phase.Terminal()
+}
+
+// rejectConcurrentSelfUpdate is a cheap, best-effort fail-fast: it lets an
+// obviously-conflicting request bail out before handlePanelUpdate spends a
+// round trip resolving the target version and download assets (which can
+// include a GitHub API call). It is deliberately NOT the authoritative
+// guard — being unlocked, two near-simultaneous requests can both pass it.
+// The authoritative, race-closing check is claimSelfUpdate, called later
+// under selfUpdateClaimMu immediately before the phase is persisted and the
+// 202 written (R11b Task 2 TOCTOU fix). Writes 409 and returns false when a
 // run is already active; true (including "no store wired" / "load failed",
 // which fail open rather than blocking a legitimate retry on a read glitch)
 // otherwise.
@@ -363,10 +379,63 @@ func (s *Server) rejectConcurrentSelfUpdate(w http.ResponseWriter, r *http.Reque
 		s.logger.ErrorContext(r.Context(), "load self-update state failed", "error", err)
 		return true
 	}
-	if st.Phase != updates.SelfUpdateIdle && !st.Phase.Terminal() {
+	if selfUpdatePhaseBlocksNewRun(st.Phase) {
 		writeError(w, http.StatusConflict, "self-update already in progress")
 		return false
 	}
+	return true
+}
+
+// claimSelfUpdate is the authoritative, race-closing guard against a double
+// self-update start (the Critical finding from the R11b Task 2 review):
+// under selfUpdateClaimMu it loads the previous phase, checks it, and — only
+// if no run is active — persists the new "downloading" phase, all as one
+// atomic unit. This closes the TOCTOU window that existed when the check
+// (rejectConcurrentSelfUpdate) and the persist (formerly a bare
+// setSelfUpdatePhase call) were two independent, unlocked operations: two
+// concurrent POSTs could both observe an idle/terminal phase and both spawn
+// performPanelUpdate, each racing updates.AtomicReplaceBinary against the
+// other (internal/controlplane/updates/download.go).
+//
+// The lock is held only across the Load + phase check + the small persisted
+// KV write — never across the target-version/download-asset resolution that
+// happens earlier in handlePanelUpdate (which can make a real GitHub API
+// call), and never across the actual download/checksum/install work, which
+// happens later, unlocked, inside the detached performPanelUpdate goroutine.
+// So no unbounded-duration I/O ever executes while holding selfUpdateClaimMu.
+//
+// Writes 409 and returns false when a run is already active (matching
+// rejectConcurrentSelfUpdate's response exactly, so the fail-fast path and
+// this authoritative path are indistinguishable to the caller); true
+// (including "no store wired" / "load failed", which fail open) otherwise,
+// having already persisted the "downloading" phase.
+func (s *Server) claimSelfUpdate(w http.ResponseWriter, r *http.Request, fromVersion, targetVersion string) bool {
+	if s.updatesSvc == nil {
+		return true
+	}
+
+	s.selfUpdateClaimMu.Lock()
+	defer s.selfUpdateClaimMu.Unlock()
+
+	st, err := s.updatesSvc.LoadSelfUpdate(r.Context())
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "load self-update state failed", "error", err)
+		return true
+	}
+	if selfUpdatePhaseBlocksNewRun(st.Phase) {
+		writeError(w, http.StatusConflict, "self-update already in progress")
+		return false
+	}
+
+	// Test-only seam (nil in production): lets tests deterministically pause
+	// here, still holding selfUpdateClaimMu, to prove a second concurrent
+	// caller blocks on the lock instead of also observing the pre-claim
+	// phase.
+	if s.selfUpdateClaimHook != nil {
+		s.selfUpdateClaimHook()
+	}
+
+	s.setSelfUpdatePhase(r.Context(), updates.SelfUpdateDownloading, fromVersion, targetVersion, "")
 	return true
 }
 
@@ -423,8 +492,9 @@ func (s *Server) resolvePanelDownloadAssets(w http.ResponseWriter, r *http.Reque
 // performPanelUpdate downloads, verifies the SHA-256 checksum (mandatory), and
 // installs a new panel binary, then requests a service restart. The
 // "downloading" phase is already persisted synchronously by the caller
-// (handlePanelUpdate, before the 202 response) — this method only carries the
-// transitions past that point: installing -> restart_pending -> (optionally)
+// (handlePanelUpdate's claimSelfUpdate, before the 202 response) — this
+// method only carries the transitions past that point: installing ->
+// restart_pending -> (optionally)
 // failed on any error, so a restart or crash mid-update leaves an accurate,
 // terminal-eventually phase for finalizeSelfUpdateState to resolve at boot.
 func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, token string) {
