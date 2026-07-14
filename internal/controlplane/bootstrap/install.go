@@ -22,13 +22,13 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// installCommandTTL bounds how long an issued bootstrap token is valid.
+// InstallCommandTTL bounds how long an issued bootstrap token is valid.
 // 5 minutes is the S-02 upper-bound: an operator copies the curl one-liner
 // and runs it immediately; a leaked token is only exploitable for a very short
 // window before it expires.  Changing this constant above 5 minutes would
 // violate the S-02 security requirement — see the regression test
 // TestBootstrapToken_DefaultTTLIsAtMost5Minutes.
-const installCommandTTL = 5 * time.Minute
+const InstallCommandTTL = 5 * time.Minute
 
 // defaultListenAddr is what the agent binds to when reverse-mode is selected
 // without an explicit override. :8443 mirrors the panel's gRPC listen port
@@ -175,7 +175,7 @@ func (h *InstallCommandHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	issued, err := IssueToken(h.now(), installCommandTTL)
+	issued, err := IssueToken(h.now(), InstallCommandTTL)
 	if err != nil {
 		http.Error(w, "token issue failed", http.StatusInternalServerError)
 		return
