@@ -252,10 +252,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatalf("jobs[3].Action = %q, want %q", queuedJobs[3].Action, jobs.ActionClientDelete)
 	}
 
-	storedClient, err := store.GetClientByID(context.Background(), created.ID)
-	if err != nil {
-		t.Fatalf("GetClientByID() error = %v", err)
-	}
+	storedClient := findStoredClient(t, store, created.ID)
 	if storedClient.DeletedAt == nil {
 		t.Fatal("storedClient.DeletedAt = nil, want soft delete timestamp")
 	}
@@ -876,4 +873,22 @@ func TestSubscriptionURLForBuildsAndGuards(t *testing.T) {
 	if got := s.subscriptionURLFor(""); got != "" {
 		t.Fatalf("empty token: got %q, want empty", got)
 	}
+}
+
+// findStoredClient reads one client row back from the store by ID, including
+// soft-deleted rows (ListClients has no deleted_at filter). Replaces the
+// removed storage.GetClientByID, which had no production callers (R5).
+func findStoredClient(t *testing.T, store *sqlite.Store, id string) storage.ClientRecord {
+	t.Helper()
+	rows, err := store.ListClients(context.Background())
+	if err != nil {
+		t.Fatalf("ListClients() error = %v", err)
+	}
+	for _, row := range rows {
+		if row.ID == id {
+			return row
+		}
+	}
+	t.Fatalf("client %q not found in store", id)
+	return storage.ClientRecord{}
 }

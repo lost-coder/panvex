@@ -93,29 +93,6 @@ func (s *Store) PutClient(ctx context.Context, client storage.ClientRecord) erro
 	return nil
 }
 
-func (s *Store) GetClientByID(ctx context.Context, clientID string) (storage.ClientRecord, error) {
-	row := s.db.QueryRowContext(ctx, `
-		SELECT
-			id,
-			name,
-			secret_ciphertext,
-			user_ad_tag,
-			enabled,
-			max_tcp_conns,
-			max_unique_ips,
-			data_quota_bytes,
-			expiration_rfc3339,
-			subscription_token,
-			created_at,
-			updated_at,
-			deleted_at
-		FROM clients
-		WHERE id = $1
-	`, clientID)
-
-	return scanClientRow(row)
-}
-
 func (s *Store) ListClients(ctx context.Context) ([]storage.ClientRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
@@ -212,14 +189,6 @@ func (s *Store) PutClientAssignment(ctx context.Context, assignment storage.Clie
 		    agent_id = EXCLUDED.agent_id,
 		    created_at = EXCLUDED.created_at
 	`, assignment.ID, assignment.ClientID, assignment.TargetType, fleetGroupID, agentID, assignment.CreatedAt.UTC())
-	return err
-}
-
-func (s *Store) DeleteClientAssignments(ctx context.Context, clientID string) error {
-	_, err := s.db.ExecContext(ctx, `
-		DELETE FROM client_assignments
-		WHERE client_id = $1
-	`, clientID)
 	return err
 }
 

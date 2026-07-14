@@ -397,10 +397,8 @@ type CertificateAuthorityStore interface {
 // for MigrationStore (migrate-schema CLI) and storagetest Transact contract tests.
 type ClientStore interface {
 	PutClient(ctx context.Context, client ClientRecord) error
-	GetClientByID(ctx context.Context, clientID string) (ClientRecord, error)
 	ListClients(ctx context.Context) ([]ClientRecord, error)
 	PutClientAssignment(ctx context.Context, assignment ClientAssignmentRecord) error
-	DeleteClientAssignments(ctx context.Context, clientID string) error
 	ListClientAssignments(ctx context.Context, clientID string) ([]ClientAssignmentRecord, error)
 	PutClientDeployment(ctx context.Context, deployment ClientDeploymentRecord) error
 	ListClientDeployments(ctx context.Context, clientID string) ([]ClientDeploymentRecord, error)
