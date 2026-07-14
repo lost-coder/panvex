@@ -361,7 +361,7 @@ func secretIfRevealed(secret string, reveal bool) string {
 
 // buildClientDeploymentResponses converts the deployment slice into the
 // JSON response shape, normalising the optional LastAppliedAt timestamp.
-func buildClientDeploymentResponses(deployments []managedClientDeployment, usageByAgent map[string]clients.UsageSnapshot) []clientDeploymentResponse {
+func buildClientDeploymentResponses(deployments []managedClientDeployment, usageByAgent map[string]clients.MirrorUsageEntry) []clientDeploymentResponse {
 	out := make([]clientDeploymentResponse, 0, len(deployments))
 	for _, deployment := range deployments {
 		lastAppliedAt := int64(0)

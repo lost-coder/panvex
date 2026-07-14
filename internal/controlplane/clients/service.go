@@ -10,45 +10,10 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/seqid"
 )
 
 const seqClientAssignment = "client-assignment"
-
-// usageMirror is the in-Service snapshot of (client, agent) usage.
-// Distinct from clients.Usage (Repository row type) and
-// clients.UsageSnapshot (the handler-facing value type) to avoid a name
-// collision.
-type usageMirror struct {
-	ClientID           ClientID
-	TrafficUsedBytes   uint64
-	UniqueIPsUsed      int
-	ActiveTCPConns     int
-	ActiveUniqueIPs    int
-	QuotaUsedBytes     uint64
-	QuotaLastResetUnix uint64
-	ObservedAt         time.Time
-	// AgentBootID + LastTotalBytes: P4 watermark of the reporting agent's
-	// cumulative counter. Empty boot id = row seeded before any
-	// cumulative report (discovery adoption) — the first report for the
-	// pair baselines instead of accumulating.
-	AgentBootID    string
-	LastTotalBytes uint64
-}
-
-// snapshot projects the in-memory usageMirror row onto the handler-facing
-// UsageSnapshot value type.
-func (u usageMirror) snapshot() UsageSnapshot {
-	return UsageSnapshot{
-		ClientID:           u.ClientID,
-		TrafficUsedBytes:   u.TrafficUsedBytes,
-		UniqueIPsUsed:      u.UniqueIPsUsed,
-		ActiveTCPConns:     u.ActiveTCPConns,
-		ActiveUniqueIPs:    u.ActiveUniqueIPs,
-		QuotaUsedBytes:     u.QuotaUsedBytes,
-		QuotaLastResetUnix: u.QuotaLastResetUnix,
-		ObservedAt:         u.ObservedAt,
-	}
-}
 
 // ErrNotFound is returned by Service.Get when the requested Client ID
 // is not present in the in-memory mirror. Use errors.Is for checks.
@@ -111,7 +76,7 @@ type Service struct {
 	mirrorClients     map[ClientID]Client
 	mirrorAssignments map[ClientID][]Assignment
 	mirrorDeployments map[ClientID]map[string]Deployment // outer=ClientID, inner=AgentID
-	mirrorUsage       map[ClientID]map[string]usageMirror
+	mirrorUsage       map[ClientID]map[string]MirrorUsageEntry
 	// mirrorNamesIndex maps a client display name to the set of client IDs
 	// carrying that name (P6-6.2a, finding #12). Client names are unique
 	// only within an assignment scope, hence a set. Maintained by
@@ -163,7 +128,7 @@ func NewService(cfg ServiceConfig) *Service {
 		mirrorClients:     make(map[ClientID]Client),
 		mirrorAssignments: make(map[ClientID][]Assignment),
 		mirrorDeployments: make(map[ClientID]map[string]Deployment),
-		mirrorUsage:       make(map[ClientID]map[string]usageMirror),
+		mirrorUsage:       make(map[ClientID]map[string]MirrorUsageEntry),
 		mirrorNamesIndex:  make(map[string]map[ClientID]struct{}),
 		saveLocks:         make(map[ClientID]*sync.Mutex),
 	}
@@ -238,7 +203,7 @@ func (s *Service) ResolveTargetAgentIDs(assignments []Assignment, topology Agent
 
 // AggregateUsage is a method wrapper over the package-level pure
 // helper. See AggregateUsage in resolver.go.
-func (s *Service) AggregateUsage(usageByAgent map[string]UsageSnapshot) AggregatedUsage {
+func (s *Service) AggregateUsage(usageByAgent map[string]MirrorUsageEntry) AggregatedUsage {
 	return AggregateUsage(usageByAgent)
 }
 
@@ -275,13 +240,13 @@ func (s *Service) NextDiscoveredID() string {
 // record IDs. Must be called with s.mu held for writing.
 func (s *Service) recoverSequencesLocked(clientIDs, assignmentIDs, discoveredIDs []string) {
 	for _, id := range clientIDs {
-		s.clientSeq = maxPrefixedSequence(s.clientSeq, "client", id)
+		s.clientSeq = seqid.MaxPrefixed(s.clientSeq, "client", id)
 	}
 	for _, id := range assignmentIDs {
-		s.assignmentSeq = maxPrefixedSequence(s.assignmentSeq, seqClientAssignment, id)
+		s.assignmentSeq = seqid.MaxPrefixed(s.assignmentSeq, seqClientAssignment, id)
 	}
 	for _, id := range discoveredIDs {
-		s.discoveredSeq = maxPrefixedSequence(s.discoveredSeq, "discovered", id)
+		s.discoveredSeq = seqid.MaxPrefixed(s.discoveredSeq, "discovered", id)
 	}
 }
 
@@ -318,7 +283,7 @@ func (s *Service) Restore(ctx context.Context) error {
 	s.mirrorClients = make(map[ClientID]Client, len(list))
 	s.mirrorAssignments = make(map[ClientID][]Assignment, len(list))
 	s.mirrorDeployments = make(map[ClientID]map[string]Deployment, len(list))
-	s.mirrorUsage = make(map[ClientID]map[string]usageMirror)
+	s.mirrorUsage = make(map[ClientID]map[string]MirrorUsageEntry)
 	s.mirrorNamesIndex = make(map[string]map[ClientID]struct{}, len(list))
 
 	for _, c := range list {
@@ -361,9 +326,9 @@ func (s *Service) Restore(ctx context.Context) error {
 	}
 	for _, u := range usages {
 		if s.mirrorUsage[u.ClientID] == nil {
-			s.mirrorUsage[u.ClientID] = make(map[string]usageMirror)
+			s.mirrorUsage[u.ClientID] = make(map[string]MirrorUsageEntry)
 		}
-		s.mirrorUsage[u.ClientID][u.AgentID] = usageMirror{
+		s.mirrorUsage[u.ClientID][u.AgentID] = MirrorUsageEntry{
 			ClientID:           u.ClientID,
 			TrafficUsedBytes:   u.TrafficUsedBytes,
 			UniqueIPsUsed:      u.UniqueIPsUsed,
@@ -493,19 +458,7 @@ func (s *Service) EncryptSecret(plaintext string) (string, error) {
 // DomainClientSecret key. A nil or disabled vault is a no-op.
 // An empty plaintext is returned unchanged.
 func (s *Service) encryptSecret(plaintext string) (string, error) {
-	if s.vault == nil || !s.vault.Enabled() || plaintext == "" {
-		return plaintext, nil
-	}
-	// Idempotency guard: never re-encrypt a value that already carries a
-	// vault prefix. A valid 32-hex client secret can never look encrypted,
-	// so a prefixed input means a ciphertext leaked into a save path (e.g.
-	// a pre-decrypt-on-load mirror that still held ciphertext). Encrypting
-	// it again would double-wrap the secret and corrupt the row — exactly
-	// the failure that shipped PVS2: ciphertext to telemt.
-	if secretvault.IsEncrypted(plaintext) {
-		return plaintext, nil
-	}
-	ct, err := s.vault.Encrypt(secretvault.DomainClientSecret, plaintext)
+	ct, err := s.vault.EncryptIfEnabled(secretvault.DomainClientSecret, plaintext)
 	if err != nil {
 		return "", fmt.Errorf("encryptSecret: %w", err)
 	}
@@ -705,9 +658,10 @@ func (s *Service) PersistDeployment(ctx context.Context, d Deployment) error {
 
 // --- mirror snapshot / read accessors ---
 
-// MirrorUsageEntry is the per-(client, agent) usage value returned by
-// MirrorSnapshot. It mirrors usageMirror but is exported so the server
-// package can read it.
+// MirrorUsageEntry is the per-(client, agent) usage value: both the in-memory
+// mirror's row type and what MirrorSnapshot hands back. TrafficUsedBytes is
+// the panel-accumulated absolute; AgentBootID/LastTotalBytes are the P4
+// watermark used to derive the delta from the agent's cumulative counter.
 type MirrorUsageEntry struct {
 	ClientID           ClientID
 	TrafficUsedBytes   uint64
@@ -766,18 +720,7 @@ func (s *Service) MirrorSnapshot() MirrorState {
 	for k, byAgent := range s.mirrorUsage {
 		cp := make(map[string]MirrorUsageEntry, len(byAgent))
 		for agentID, u := range byAgent {
-			cp[agentID] = MirrorUsageEntry{
-				ClientID:           u.ClientID,
-				TrafficUsedBytes:   u.TrafficUsedBytes,
-				UniqueIPsUsed:      u.UniqueIPsUsed,
-				ActiveTCPConns:     u.ActiveTCPConns,
-				ActiveUniqueIPs:    u.ActiveUniqueIPs,
-				QuotaUsedBytes:     u.QuotaUsedBytes,
-				QuotaLastResetUnix: u.QuotaLastResetUnix,
-				ObservedAt:         u.ObservedAt,
-				AgentBootID:        u.AgentBootID,
-				LastTotalBytes:     u.LastTotalBytes,
-			}
+			cp[agentID] = u
 		}
 		usage[k] = cp
 	}
@@ -874,13 +817,13 @@ func (s *Service) SeedUsageMirror(clientID, agentID string, trafficBytes uint64,
 	cid := ClientID(clientID)
 	byAgent, ok := s.mirrorUsage[cid]
 	if !ok {
-		byAgent = make(map[string]usageMirror)
+		byAgent = make(map[string]MirrorUsageEntry)
 		s.mirrorUsage[cid] = byAgent
 	}
 	if _, exists := byAgent[agentID]; exists {
 		return
 	}
-	byAgent[agentID] = usageMirror{
+	byAgent[agentID] = MirrorUsageEntry{
 		ClientID:         cid,
 		TrafficUsedBytes: trafficBytes,
 		UniqueIPsUsed:    activeUniqueIPs,
@@ -894,9 +837,9 @@ func (s *Service) SeedUsageMirror(clientID, agentID string, trafficBytes uint64,
 // s.mu held for writing.
 func (s *Service) applyUsageMirrorLocked(u Usage) {
 	if s.mirrorUsage[u.ClientID] == nil {
-		s.mirrorUsage[u.ClientID] = make(map[string]usageMirror)
+		s.mirrorUsage[u.ClientID] = make(map[string]MirrorUsageEntry)
 	}
-	s.mirrorUsage[u.ClientID][u.AgentID] = usageMirror{
+	s.mirrorUsage[u.ClientID][u.AgentID] = MirrorUsageEntry{
 		ClientID:           u.ClientID,
 		TrafficUsedBytes:   u.TrafficUsedBytes,
 		UniqueIPsUsed:      u.UniqueIPsUsed,
@@ -933,15 +876,15 @@ func (s *Service) MirrorAgentTotalTraffic(agentID string) uint64 {
 }
 
 // MirrorUsageByAgent returns a defensive copy of the per-(client, agent)
-// usage map for one client, projected to UsageSnapshot. Mirror-side
-// counterpart of the server's clientUsageByAgent.
-func (s *Service) MirrorUsageByAgent(clientID string) map[string]UsageSnapshot {
+// usage map for one client. Mirror-side counterpart of the server's
+// clientUsageByAgent.
+func (s *Service) MirrorUsageByAgent(clientID string) map[string]MirrorUsageEntry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	byAgent := s.mirrorUsage[ClientID(clientID)]
-	out := make(map[string]UsageSnapshot, len(byAgent))
+	out := make(map[string]MirrorUsageEntry, len(byAgent))
 	for agentID, u := range byAgent {
-		out[agentID] = u.snapshot()
+		out[agentID] = u
 	}
 	return out
 }
@@ -1076,16 +1019,5 @@ func (s *Service) MirrorUsageEntryFor(clientID, agentID string) (MirrorUsageEntr
 	if !ok {
 		return MirrorUsageEntry{}, false
 	}
-	return MirrorUsageEntry{
-		ClientID:           u.ClientID,
-		TrafficUsedBytes:   u.TrafficUsedBytes,
-		UniqueIPsUsed:      u.UniqueIPsUsed,
-		ActiveTCPConns:     u.ActiveTCPConns,
-		ActiveUniqueIPs:    u.ActiveUniqueIPs,
-		QuotaUsedBytes:     u.QuotaUsedBytes,
-		QuotaLastResetUnix: u.QuotaLastResetUnix,
-		ObservedAt:         u.ObservedAt,
-		AgentBootID:        u.AgentBootID,
-		LastTotalBytes:     u.LastTotalBytes,
-	}, true
+	return u, true
 }

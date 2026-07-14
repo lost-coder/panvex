@@ -194,4 +194,3 @@ func applyUserMetric(m *UserMetrics, metricName, valuePart string) {
 		}
 	}
 }
-

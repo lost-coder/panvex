@@ -17,16 +17,16 @@ type SystemInfo struct {
 
 // UserInfo represents one user as returned by GET /v1/users.
 type UserInfo struct {
-	Username           string   `json:"username"`
-	InRuntime          bool     `json:"in_runtime"`
-	UserADTag          *string  `json:"user_ad_tag"`
-	MaxTCPConns        *int     `json:"max_tcp_conns"`
-	ExpirationRFC3339  *string  `json:"expiration_rfc3339"`
-	DataQuotaBytes     *uint64  `json:"data_quota_bytes"`
-	MaxUniqueIPs       *int     `json:"max_unique_ips"`
-	CurrentConnections int      `json:"current_connections"`
-	ActiveUniqueIPs    int      `json:"active_unique_ips"`
-	TotalOctets        uint64   `json:"total_octets"`
+	Username           string    `json:"username"`
+	InRuntime          bool      `json:"in_runtime"`
+	UserADTag          *string   `json:"user_ad_tag"`
+	MaxTCPConns        *int      `json:"max_tcp_conns"`
+	ExpirationRFC3339  *string   `json:"expiration_rfc3339"`
+	DataQuotaBytes     *uint64   `json:"data_quota_bytes"`
+	MaxUniqueIPs       *int      `json:"max_unique_ips"`
+	CurrentConnections int       `json:"current_connections"`
+	ActiveUniqueIPs    int       `json:"active_unique_ips"`
+	TotalOctets        uint64    `json:"total_octets"`
 	Links              UserLinks `json:"links"`
 }
 

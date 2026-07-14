@@ -217,25 +217,25 @@ export function ServerDetailPage({
   const { current, currentMe, currentDirect, activeUsers } = connections;
   const { connectionsTotal, configuredUsers, connectionsBadTotal } = summary;
 
-  const desktopPulseItems = useMemo<PulseTickData[]>(
-    () =>
-      buildPulseItems(t, "desktop", {
-        current,
-        currentMe,
-        currentDirect,
-        activeUsers,
-        connectionsTotal,
-        configuredUsers,
-        connectionsBadTotal,
-        badRate,
-        avgCoverage,
-        minCoverage,
-        dcOk,
-        dcWarn,
-        dcErr,
-      }),
+  // Both breakpoints feed buildPulseItems the same numbers and differ only in
+  // the layout argument, so they share one memo over one inputs object.
+  const pulseInputs = useMemo(
+    () => ({
+      current,
+      currentMe,
+      currentDirect,
+      activeUsers,
+      connectionsTotal,
+      configuredUsers,
+      connectionsBadTotal,
+      badRate,
+      avgCoverage,
+      minCoverage,
+      dcOk,
+      dcWarn,
+      dcErr,
+    }),
     [
-      t,
       current,
       currentMe,
       currentDirect,
@@ -252,39 +252,13 @@ export function ServerDetailPage({
     ],
   );
 
+  const desktopPulseItems = useMemo<PulseTickData[]>(
+    () => buildPulseItems(t, "desktop", pulseInputs),
+    [t, pulseInputs],
+  );
   const mobilePulseItems = useMemo<PulseTickData[]>(
-    () =>
-      buildPulseItems(t, "mobile", {
-        current,
-        currentMe,
-        currentDirect,
-        activeUsers,
-        connectionsTotal,
-        configuredUsers,
-        connectionsBadTotal,
-        badRate,
-        avgCoverage,
-        minCoverage,
-        dcOk,
-        dcWarn,
-        dcErr,
-      }),
-    [
-      t,
-      current,
-      currentMe,
-      currentDirect,
-      activeUsers,
-      connectionsTotal,
-      configuredUsers,
-      connectionsBadTotal,
-      badRate,
-      avgCoverage,
-      minCoverage,
-      dcOk,
-      dcWarn,
-      dcErr,
-    ],
+    () => buildPulseItems(t, "mobile", pulseInputs),
+    [t, pulseInputs],
   );
 
   const connectionsContent = useMemo(

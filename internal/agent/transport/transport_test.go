@@ -346,8 +346,8 @@ func TestListenTransportAcceptsIncomingStream(t *testing.T) {
 	// Dial in as the panel: gRPC client uses the panel's leaf cert as its
 	// client cert; trusts the agent's cert via the same CA.
 	clientTLS := &tls.Config{
-		ServerName:   "127.0.0.1",
-		RootCAs:      certPoolFromCert(caCert),
+		ServerName: "127.0.0.1",
+		RootCAs:    certPoolFromCert(caCert),
 		Certificates: []tls.Certificate{{
 			Certificate: [][]byte{panelCert.Raw},
 			PrivateKey:  panelKey,

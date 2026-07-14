@@ -228,7 +228,7 @@ func severityDirect(in SeverityInput) (severity, reason string) {
 // severity; the boundary just adds the ME-pool context to the reason.
 func severityFallback(in SeverityInput) (severity, reason string) {
 	directSev, directReason := severityDirect(in)
-	baselineSev := maxSeverity(directSev, "warn")
+	baselineSev := CombineSeverity(directSev, SeverityWarn)
 	var baselineReason string
 	switch directSev {
 	case "ok":
@@ -245,34 +245,63 @@ func severityFallback(in SeverityInput) (severity, reason string) {
 	return baselineSev, baselineReason
 }
 
-func maxSeverity(a, b string) string {
-	rank := func(s string) int {
-		switch s {
-		case "ok":
-			return 0
-		case "warn":
-			return 1
-		case "critical":
-			return 2
-		case "bad":
-			return 3
-		}
-		return 0
-	}
-	if rank(a) >= rank(b) {
+// Severity is the operator-facing state of one node. The four values are not
+// a single ordered scale, which is why there are two ranking functions below —
+// they answer different questions and their orders genuinely disagree.
+type Severity = string
+
+const (
+	// SeverityOK — nothing to report.
+	SeverityOK Severity = "ok"
+	// SeverityWarn — degraded but serving.
+	SeverityWarn Severity = "warn"
+	// SeverityCritical — serving is broken while the node is still reporting
+	// (Telemt unreachable, all upstreams down, no DCs).
+	SeverityCritical Severity = "critical"
+	// SeverityOffline — the node itself stopped reporting. Named "bad" on the
+	// wire for historical reasons; the dashboard renders it as "down".
+	SeverityOffline Severity = "bad"
+)
+
+// CombineSeverity merges two signals about the SAME node into the one the
+// operator should be shown. Offline wins over critical: once a node stops
+// reporting, everything else we know about it is stale guesswork, so
+// "offline" is the honest headline.
+func CombineSeverity(a, b Severity) Severity {
+	if combineRank(a) >= combineRank(b) {
 		return a
 	}
 	return b
 }
 
-// SeverityRank orders server summaries by severity.
-func SeverityRank(value string) int {
-	switch value {
-	case "critical":
-		return 4
-	case "bad":
+func combineRank(s Severity) int {
+	switch s {
+	case SeverityWarn:
+		return 1
+	case SeverityCritical:
+		return 2
+	case SeverityOffline:
 		return 3
-	case "warn":
+	default: // SeverityOK and anything unrecognised
+		return 0
+	}
+}
+
+// SeverityRank orders the server LIST for the operator, and here critical
+// outranks offline — the opposite of CombineSeverity. That is deliberate: an
+// offline node is a known, settled state, while a node that is still up and
+// failing to serve traffic is the one the operator has to act on right now.
+//
+// Keep the two apart. Collapsing them into one scale would either bury
+// actively-failing nodes below offline ones in the list, or make a stale
+// reading override "offline" in a node's own summary.
+func SeverityRank(value Severity) int {
+	switch value {
+	case SeverityCritical:
+		return 4
+	case SeverityOffline:
+		return 3
+	case SeverityWarn:
 		return 2
 	default:
 		return 1

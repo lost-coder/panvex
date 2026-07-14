@@ -82,14 +82,10 @@ func (s *Service) SetVault(vault *secretvault.Vault) {
 // no-op (returned unchanged), matching the pass-through contract used
 // elsewhere.
 func (s *Service) encryptProviderConfig(raw []byte) ([]byte, error) {
-	if s.vault == nil || !s.vault.Enabled() || len(raw) == 0 {
+	if len(raw) == 0 {
 		return raw, nil
 	}
-	// Idempotency guard: never re-encrypt an already-sealed blob.
-	if secretvault.IsEncrypted(string(raw)) {
-		return raw, nil
-	}
-	ct, err := s.vault.Encrypt(secretvault.DomainIntegrationConfig, string(raw))
+	ct, err := s.vault.EncryptIfEnabled(secretvault.DomainIntegrationConfig, string(raw))
 	if err != nil {
 		return nil, fmt.Errorf("encrypt provider config: %w", err)
 	}

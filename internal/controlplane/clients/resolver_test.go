@@ -140,7 +140,7 @@ func TestAggregateUsage(t *testing.T) {
 
 	t.Run("sums across agents", func(t *testing.T) {
 		t.Parallel()
-		in := map[string]UsageSnapshot{
+		in := map[string]MirrorUsageEntry{
 			"agent-1": {TrafficUsedBytes: 100, UniqueIPsUsed: 3, ActiveTCPConns: 2},
 			"agent-2": {TrafficUsedBytes: 50, UniqueIPsUsed: 1, ActiveTCPConns: 5},
 		}

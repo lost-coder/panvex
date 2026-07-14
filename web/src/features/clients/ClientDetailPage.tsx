@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 
 import { ClientDetailHero } from "./components/ClientDetailHero";
 import { ClientDetailPulse } from "./components/ClientDetailPulse";
-import { ClientEditSheet } from "./components/ClientEditSheet";
+import { ClientMutationSheet } from "./components/ClientMutationSheet";
 import { DeployLinksCard } from "./components/DeployLinksCard";
 import { IPHistoryCard } from "./components/IPHistoryCard";
 import { LimitsCard } from "./components/LimitsCard";
@@ -211,7 +211,8 @@ export function ClientDetailPage({
       </div>
 
       {onEdit && (
-        <ClientEditSheet
+        <ClientMutationSheet
+          mode="edit"
           open={editOpen}
           data={editData}
           onChange={setEditData}

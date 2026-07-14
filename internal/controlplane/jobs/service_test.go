@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/seqid"
 )
 
 // TestJobIDFormatIs12Digit (R4, audit §1.10): generated IDs are zero-padded to
@@ -86,11 +88,11 @@ func TestRecordResultOnExpiredTargetIsNoOp(t *testing.T) {
 // (job-%06d) and new (job-%012d) IDs must recover the true max sequence.
 func TestMaxJobSequenceMixedWidths(t *testing.T) {
 	var seq uint64
-	seq = maxJobSequence(seq, "job-000005")       // old 6-digit
-	seq = maxJobSequence(seq, "job-000000000010") // new 12-digit
-	seq = maxJobSequence(seq, "job-000000000003") // lower, ignored
+	seq = seqid.MaxPrefixed(seq, "job", "job-000005")       // old 6-digit
+	seq = seqid.MaxPrefixed(seq, "job", "job-000000000010") // new 12-digit
+	seq = seqid.MaxPrefixed(seq, "job", "job-000000000003") // lower, ignored
 	if seq != 10 {
-		t.Fatalf("maxJobSequence mixed widths = %d, want 10", seq)
+		t.Fatalf("seqid.MaxPrefixed mixed widths = %d, want 10", seq)
 	}
 	if "job-000000999999" >= "job-000001000000" {
 		t.Fatal("12-digit IDs must sort lexicographically by numeric value")

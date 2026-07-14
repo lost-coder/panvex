@@ -12,17 +12,17 @@ func TestProducerPublishFansOutToMatchingEndpoints(t *testing.T) {
 	store := newMemStore()
 	store.addEndpoint(Endpoint{
 		ID: "ep-agent", Name: "Slack-agents",
-		URL: "https://hooks.example.com/slack",
+		URL:    "https://hooks.example.com/slack",
 		Secret: []byte("k1"), EventFilter: []string{"agent.*"}, Enabled: true,
 	})
 	store.addEndpoint(Endpoint{
 		ID: "ep-audit", Name: "PD-security",
-		URL: "https://events.pagerduty.com/x",
+		URL:    "https://events.pagerduty.com/x",
 		Secret: []byte("k2"), EventFilter: []string{"audit.security.*"}, Enabled: true,
 	})
 	store.addEndpoint(Endpoint{
 		ID: "ep-disabled", Name: "Old",
-		URL: "https://nope.example.com",
+		URL:    "https://nope.example.com",
 		Secret: []byte("k3"), EventFilter: nil, Enabled: false,
 	})
 

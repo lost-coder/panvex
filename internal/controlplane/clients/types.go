@@ -85,22 +85,6 @@ type Deployment struct {
 	LastResetEpochSecs uint64
 }
 
-// UsageSnapshot is the per-(client, agent) live-counter snapshot that
-// the usage aggregator accumulates. Mirrors the internal
-// clientUsageSnapshot struct on controlplane/server.Server but is
-// exposed here for consumers that want to reason about client usage
-// without depending on server internals.
-type UsageSnapshot struct {
-	ClientID           ClientID  `json:"client_id"`
-	TrafficUsedBytes   uint64    `json:"traffic_used_bytes"`
-	UniqueIPsUsed      int       `json:"unique_ips_used"`
-	ActiveTCPConns     int       `json:"active_tcp_conns"`
-	ActiveUniqueIPs    int       `json:"active_unique_ips"`
-	QuotaUsedBytes     uint64    `json:"quota_used_bytes"`
-	QuotaLastResetUnix uint64    `json:"quota_last_reset_unix"`
-	ObservedAt         time.Time `json:"observed_at"`
-}
-
 // UsageReport is one inbound per-(client, agent) usage row decoded from
 // the agent wire snapshot (P4, cumulative counters). TotalBytes is the
 // agent-process-cumulative traffic counter; the batch-level agent boot
@@ -108,9 +92,8 @@ type UsageSnapshot struct {
 // The panel derives the accumulation delta against its stored watermark
 // — see server.mergeClientUsageBatch.
 //
-// Distinct from UsageSnapshot (the outbound mirror projection, where
-// TrafficUsedBytes is the panel-accumulated absolute) and from Usage
-// (the persisted row type).
+// Distinct from MirrorUsageEntry (the mirror row, where TrafficUsedBytes is
+// the panel-accumulated absolute) and from Usage (the persisted row type).
 type UsageReport struct {
 	ClientID           ClientID
 	TotalBytes         uint64
@@ -127,8 +110,8 @@ type UsageReport struct {
 // strong-typed ClientID. AgentID stays as plain string until
 // agents-domain strong typing lands (Wave 4.2-agents).
 //
-// Distinct from UsageSnapshot, which is the in-memory mirror's value
-// type (missing AgentID since the map key already encodes it).
+// Distinct from MirrorUsageEntry, the in-memory mirror's value type (which
+// has no AgentID — the map key already encodes it).
 type Usage struct {
 	ClientID           ClientID
 	AgentID            string
@@ -145,7 +128,7 @@ type Usage struct {
 	ObservedAt     time.Time
 }
 
-// AggregatedUsage is the sum-over-agents of UsageSnapshot for a single
+// AggregatedUsage is the sum-over-agents of MirrorUsageEntry for a single
 // client. Returned by Service.AggregateUsage and the equivalent method
 // on controlplane/server.Server.
 type AggregatedUsage struct {

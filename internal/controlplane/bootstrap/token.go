@@ -15,8 +15,8 @@ const tokenSize = 32
 // (Hash + ExpiresAt) for later verification. Raw is intentionally never
 // stored on the panel side — only the SHA-256 hash is.
 type TokenIssued struct {
-	Raw       string    // base64url; shown to operator exactly once
-	Hash      [32]byte  // SHA-256 of the raw token bytes; stored in DB
+	Raw       string   // base64url; shown to operator exactly once
+	Hash      [32]byte // SHA-256 of the raw token bytes; stored in DB
 	ExpiresAt time.Time
 }
 

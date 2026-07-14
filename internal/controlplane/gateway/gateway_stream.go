@@ -20,11 +20,11 @@ import (
 // running for one Connect() invocation. Held entirely on the stack — no
 // references escape past Connect()'s return.
 type agentStreamChannels struct {
-	priorityInbound       chan *gatewayrpc.ConnectClientMessage
-	priorityAuditEffects  chan auditEffect
-	priorityResultEffects chan jobResultEffect
-	regularInbound        chan *gatewayrpc.ConnectClientMessage
-	regularSnapshots      chan AgentSnapshot
+	priorityInbound       *boundedQueue[*gatewayrpc.ConnectClientMessage]
+	priorityAuditEffects  *boundedQueue[auditEffect]
+	priorityResultEffects *boundedQueue[jobResultEffect]
+	regularInbound        *boundedQueue[*gatewayrpc.ConnectClientMessage]
+	regularSnapshots      *boundedQueue[AgentSnapshot]
 	receiveErrors         chan error
 	dispatchErrors        chan error
 	processErrors         chan error
@@ -32,11 +32,11 @@ type agentStreamChannels struct {
 
 func newAgentStreamChannels() *agentStreamChannels {
 	return &agentStreamChannels{
-		priorityInbound:       make(chan *gatewayrpc.ConnectClientMessage, 32),
-		priorityAuditEffects:  make(chan auditEffect, priorityAuditQueueCapacity),
-		priorityResultEffects: make(chan jobResultEffect, priorityResultEffectQueueCapacity),
-		regularInbound:        make(chan *gatewayrpc.ConnectClientMessage, 64),
-		regularSnapshots:      make(chan AgentSnapshot, regularSnapshotQueueCapacity),
+		priorityInbound:       newBoundedQueue[*gatewayrpc.ConnectClientMessage](32, policyBlock),
+		priorityAuditEffects:  newBoundedQueue[auditEffect](priorityAuditQueueCapacity, policyTryOnce),
+		priorityResultEffects: newBoundedQueue[jobResultEffect](priorityResultEffectQueueCapacity, policyTryOnce),
+		regularInbound:        newBoundedQueue[*gatewayrpc.ConnectClientMessage](64, policyDropOldest),
+		regularSnapshots:      newBoundedQueue[AgentSnapshot](regularSnapshotQueueCapacity, policyDropOldest),
 		receiveErrors:         make(chan error, 1),
 		dispatchErrors:        make(chan error, 1),
 		processErrors:         make(chan error, 1),
@@ -56,10 +56,14 @@ func nonBlockingSend(ch chan<- error, err error) {
 // startReceiveLoop reads messages off the gRPC stream and routes them into
 // the priority/regular inbound queues until the stream errors out.
 func (g *Gateway) startReceiveLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, ch *agentStreamChannels) {
-	var dropCounter prometheus.Counter
+	var inboundDrops prometheus.Counter
 	if g.obs != nil {
-		dropCounter = g.obs.AgentInboundDropsTotal
+		inboundDrops = g.obs.AgentInboundDropsTotal
 	}
+	ch.regularInbound.withDropObserver(inboundDrops, nil)
+	ch.regularSnapshots.withDropObserver(g.snapshotDropCounter(), func(dropCtx context.Context, snapshot AgentSnapshot) {
+		g.logger.DebugContext(dropCtx, "dropped fresh regular snapshot under backpressure", "agent_id", snapshot.AgentID)
+	})
 	go func() {
 		defer g.recoverAgentStreamGoroutine(agentID, "receive", cancel)
 		for {
@@ -68,7 +72,7 @@ func (g *Gateway) startReceiveLoop(ctx context.Context, cancel context.CancelFun
 				nonBlockingSend(ch.receiveErrors, err)
 				return
 			}
-			if !enqueueInboundAgentMessage(ctx, ch.priorityInbound, ch.regularInbound, message, dropCounter) {
+			if !enqueueInboundAgentMessage(ctx, ch.priorityInbound, ch.regularInbound, message) {
 				return
 			}
 		}
@@ -86,7 +90,7 @@ func (g *Gateway) startPriorityInboundWorkers(ctx context.Context, cancel contex
 				select {
 				case <-ctx.Done():
 					return
-				case message := <-ch.priorityInbound:
+				case message := <-ch.priorityInbound.recv():
 					if message == nil {
 						continue
 					}
@@ -112,11 +116,14 @@ func (g *Gateway) startAuditEffectsLoop(ctx context.Context, cancel context.Canc
 				// Drain runs after ctx is cancelled, so reusing it here
 				// would immediately abort the audit flush. Background()
 				// is the intentional detachment for the shutdown path.
-				drainPriorityAuditEffects(ch.priorityAuditEffects, func(actorID string, action string, targetID string, details map[string]any) { //nolint:contextcheck
-					g.deps.AppendAudit(context.Background(), actorID, action, targetID, details)
+				ch.priorityAuditEffects.drain(func(effect auditEffect) { //nolint:contextcheck
+					if effect.action == "" {
+						return
+					}
+					g.deps.AppendAudit(context.Background(), effect.actorID, effect.action, effect.targetID, effect.details)
 				})
 				return
-			case effect := <-ch.priorityAuditEffects:
+			case effect := <-ch.priorityAuditEffects.recv():
 				if effect.action == "" {
 					continue
 				}
@@ -134,11 +141,14 @@ func (g *Gateway) startResultEffectsLoop(ctx context.Context, cancel context.Can
 		for {
 			select {
 			case <-ctx.Done():
-				drainPriorityResultEffects(ch.priorityResultEffects, func(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) { //nolint:contextcheck
-					g.deps.RecordClientJobResult(context.Background(), agentID, jobID, success, message, resultJSON, observedAt)
+				ch.priorityResultEffects.drain(func(effect jobResultEffect) { //nolint:contextcheck
+					if effect.jobID == "" {
+						return
+					}
+					g.deps.RecordClientJobResult(context.Background(), effect.agentID, effect.jobID, effect.success, effect.message, effect.resultJSON, effect.observedAt)
 				})
 				return
-			case effect := <-ch.priorityResultEffects:
+			case effect := <-ch.priorityResultEffects.recv():
 				if effect.jobID == "" {
 					continue
 				}
@@ -164,11 +174,14 @@ func (g *Gateway) startSnapshotApplyLoop(ctx context.Context, cancel context.Can
 		for {
 			select {
 			case <-ctx.Done():
-				drainRegularSnapshots(ch.regularSnapshots, func(snapshot AgentSnapshot) error { //nolint:contextcheck
-					return g.deps.ApplyAgentSnapshot(context.Background(), snapshot)
+				ch.regularSnapshots.drain(func(snapshot AgentSnapshot) { //nolint:contextcheck
+					if snapshot.AgentID == "" {
+						return
+					}
+					_ = g.deps.ApplyAgentSnapshot(context.Background(), snapshot)
 				})
 				return
-			case snapshot := <-ch.regularSnapshots:
+			case snapshot := <-ch.regularSnapshots.recv():
 				if snapshot.AgentID == "" {
 					continue
 				}
@@ -190,7 +203,7 @@ func (g *Gateway) startRegularInboundLoop(ctx context.Context, cancel context.Ca
 			select {
 			case <-ctx.Done():
 				return
-			case message := <-ch.regularInbound:
+			case message := <-ch.regularInbound.recv():
 				if message == nil {
 					continue
 				}

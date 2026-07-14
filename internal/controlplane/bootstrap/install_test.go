@@ -99,7 +99,7 @@ func TestInstallCommandHappyPath(t *testing.T) {
 	if strings.Contains(resp.Command, "| sudo bash") {
 		t.Errorf("pinned-hash command unexpectedly contains legacy `| sudo bash` pipeline\ncmd=%s", resp.Command)
 	}
-	if resp.ExpiresAtUnix != time.Unix(1_000_000, 0).Add(installCommandTTL).Unix() {
+	if resp.ExpiresAtUnix != time.Unix(1_000_000, 0).Add(InstallCommandTTL).Unix() {
 		t.Errorf("ExpiresAtUnix mismatch")
 	}
 	if fake.last == nil {

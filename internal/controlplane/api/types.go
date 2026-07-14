@@ -13,7 +13,7 @@ type Agent struct {
 	// TransportReconnectPending is true when the operator switched this
 	// agent to outbound transport and no agent session has been accepted
 	// since (A2 "switched but never reconnected"). Request-time derived.
-	TransportReconnectPending bool                                   `json:"transport_reconnect_pending,omitempty"`
+	TransportReconnectPending bool `json:"transport_reconnect_pending,omitempty"`
 	// BootstrapState is the enrollment lifecycle state of the underlying
 	// agents row: "pending" (provisioned, awaiting first enrollment),
 	// "expired" (bootstrap token lapsed before enrollment), or "active"
@@ -27,8 +27,8 @@ type Agent struct {
 	// classic/middle_proxy runtime mode (R9a).
 	DialTransportMode   string                                 `json:"dial_transport_mode,omitempty"`
 	CertificateRecovery *AgentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
-	CertIssuedAt              *time.Time                             `json:"cert_issued_at,omitempty"`
-	CertExpiresAt             *time.Time                             `json:"cert_expires_at,omitempty"`
+	CertIssuedAt        *time.Time                             `json:"cert_issued_at,omitempty"`
+	CertExpiresAt       *time.Time                             `json:"cert_expires_at,omitempty"`
 	// CertSerial is the serial of the most recently issued client cert.
 	// Used to pin agent identity at gRPC connect time (Q4.U-S-04). Not
 	// exposed in the public JSON shape — operators don't need it and

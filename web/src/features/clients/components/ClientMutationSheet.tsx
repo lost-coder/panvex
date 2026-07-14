@@ -1,5 +1,10 @@
-// R-Q-08: Add-client sheet extracted from ClientsPage.tsx. Owns only
-// open/close transitions on its props — form state stays with the host.
+// R-Q-08: the client add/edit sheet. Owns only the open/close transitions on
+// its props — form state stays with the host page (the detail page seeds it
+// from the latest server snapshot each time the sheet opens).
+//
+// R6: create and edit were two files that differed in exactly two tokens (the
+// ClientFormSheet mode and the title key), so they are one component with a
+// mode prop now.
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,7 +21,8 @@ import {
   type FleetGroupOption,
 } from "@/ui";
 
-export interface ClientsCreateSheetProps {
+export interface ClientMutationSheetProps {
+  mode: "create" | "edit";
   open: boolean;
   data: ClientFormData;
   onChange: (data: Readonly<ClientFormData>) => void;
@@ -28,7 +34,8 @@ export interface ClientsCreateSheetProps {
   agents?: ClientAgentOption[] | undefined;
 }
 
-export function ClientsCreateSheet({
+export function ClientMutationSheet({
+  mode,
   open,
   data,
   onChange,
@@ -38,7 +45,7 @@ export function ClientsCreateSheet({
   error,
   fleetGroups,
   agents,
-}: Readonly<ClientsCreateSheetProps>) {
+}: Readonly<ClientMutationSheetProps>) {
   const { t } = useTranslation("clients");
   const { t: tc } = useTranslation("common");
   const confirm = useConfirm();
@@ -82,14 +89,14 @@ export function ClientsCreateSheet({
     >
       <SheetContent
         side="bottom"
-        title={t("detail.addSheetTitle")}
+        title={t(mode === "create" ? "detail.addSheetTitle" : "detail.editSheetTitle")}
         onOpenChange={(next) => {
           if (!next) void requestClose();
         }}
       >
         <SheetBody>
           <ClientFormSheet
-            mode="create"
+            mode={mode}
             data={data}
             onChange={onChange}
             onSubmit={onSubmit}

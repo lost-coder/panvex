@@ -157,20 +157,7 @@ func (s *Server) listClientsListingSnapshot() clientListingSnapshot {
 		}
 
 		if usageByAgent := mirror.Usage[clientID]; len(usageByAgent) > 0 {
-			snapshot := make(map[string]clients.UsageSnapshot, len(usageByAgent))
-			for agentID, value := range usageByAgent {
-				snapshot[agentID] = clients.UsageSnapshot{
-					ClientID:           value.ClientID,
-					TrafficUsedBytes:   value.TrafficUsedBytes,
-					UniqueIPsUsed:      value.UniqueIPsUsed,
-					ActiveTCPConns:     value.ActiveTCPConns,
-					ActiveUniqueIPs:    value.ActiveUniqueIPs,
-					QuotaUsedBytes:     value.QuotaUsedBytes,
-					QuotaLastResetUnix: value.QuotaLastResetUnix,
-					ObservedAt:         value.ObservedAt,
-				}
-			}
-			usage[id] = s.clientsSvc.AggregateUsage(snapshot)
+			usage[id] = s.clientsSvc.AggregateUsage(usageByAgent)
 		}
 	}
 

@@ -663,13 +663,13 @@ func TestEnrollDriverHappyPath_PersistsCertPin(t *testing.T) {
 
 // TestBootstrapToken_DefaultTTLIsAtMost5Minutes locks down the S-02
 // requirement that the production default bootstrap-token TTL must not exceed
-// 5 minutes.  A future change that bumps installCommandTTL above 5 minutes
+// 5 minutes.  A future change that bumps InstallCommandTTL above 5 minutes
 // will fail here immediately.
 func TestBootstrapToken_DefaultTTLIsAtMost5Minutes(t *testing.T) {
 	t.Parallel()
 	const maxTTL = 5 * time.Minute
-	if installCommandTTL > maxTTL {
-		t.Fatalf("installCommandTTL = %s, want <= %s (S-02 hardening)", installCommandTTL, maxTTL)
+	if InstallCommandTTL > maxTTL {
+		t.Fatalf("InstallCommandTTL = %s, want <= %s (S-02 hardening)", InstallCommandTTL, maxTTL)
 	}
 }
 

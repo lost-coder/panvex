@@ -95,22 +95,22 @@ func TestServerPendingJobsForAgentRedeliversAcknowledgedAfterRetryWindow(t *test
 }
 
 func TestEnqueueInboundAgentMessageDropsStaleRegularUpdateWhenQueueIsFull(t *testing.T) {
-	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
-	regularInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	priorityInbound := newBoundedQueue[*gatewayrpc.ConnectClientMessage](1, policyBlock)
+	regularInbound := newBoundedQueue[*gatewayrpc.ConnectClientMessage](1, policyDropOldest)
 	stale := heartbeatMessageForTest("stale")
 	latest := heartbeatMessageForTest("latest")
-	regularInbound <- stale
+	regularInbound.ch <- stale
 
-	ok := enqueueInboundAgentMessage(context.Background(), priorityInbound, regularInbound, latest, nil)
+	ok := enqueueInboundAgentMessage(context.Background(), priorityInbound, regularInbound, latest)
 	if !ok {
 		t.Fatal("enqueueInboundAgentMessage() = false, want true")
 	}
-	if len(priorityInbound) != 0 {
-		t.Fatalf("len(priorityInbound) = %d, want %d", len(priorityInbound), 0)
+	if len(priorityInbound.ch) != 0 {
+		t.Fatalf("len(priorityInbound.ch) = %d, want %d", len(priorityInbound.ch), 0)
 	}
 
 	select {
-	case received := <-regularInbound:
+	case received := <-regularInbound.ch:
 		if received != latest {
 			t.Fatal("regularInbound received stale message, want latest")
 		}
@@ -120,25 +120,25 @@ func TestEnqueueInboundAgentMessageDropsStaleRegularUpdateWhenQueueIsFull(t *tes
 }
 
 func TestEnqueueInboundAgentMessagePrioritizesJobAcknowledgement(t *testing.T) {
-	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
-	regularInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	priorityInbound := newBoundedQueue[*gatewayrpc.ConnectClientMessage](1, policyBlock)
+	regularInbound := newBoundedQueue[*gatewayrpc.ConnectClientMessage](1, policyDropOldest)
 	stale := heartbeatMessageForTest("stale")
 	ack := jobAcknowledgementMessageForTest("job-1")
-	regularInbound <- stale
+	regularInbound.ch <- stale
 
-	ok := enqueueInboundAgentMessage(context.Background(), priorityInbound, regularInbound, ack, nil)
+	ok := enqueueInboundAgentMessage(context.Background(), priorityInbound, regularInbound, ack)
 	if !ok {
 		t.Fatal("enqueueInboundAgentMessage() = false, want true")
 	}
-	if len(priorityInbound) != 1 {
-		t.Fatalf("len(priorityInbound) = %d, want %d", len(priorityInbound), 1)
+	if len(priorityInbound.ch) != 1 {
+		t.Fatalf("len(priorityInbound.ch) = %d, want %d", len(priorityInbound.ch), 1)
 	}
-	if len(regularInbound) != 1 {
-		t.Fatalf("len(regularInbound) = %d, want %d", len(regularInbound), 1)
+	if len(regularInbound.ch) != 1 {
+		t.Fatalf("len(regularInbound.ch) = %d, want %d", len(regularInbound.ch), 1)
 	}
 
 	select {
-	case received := <-priorityInbound:
+	case received := <-priorityInbound.ch:
 		if received != ack {
 			t.Fatal("priorityInbound received unexpected message")
 		}
@@ -146,7 +146,7 @@ func TestEnqueueInboundAgentMessagePrioritizesJobAcknowledgement(t *testing.T) {
 		t.Fatal("priorityInbound = empty, want acknowledgement message")
 	}
 	select {
-	case received := <-regularInbound:
+	case received := <-regularInbound.ch:
 		if received != stale {
 			t.Fatal("regularInbound message changed, want stale heartbeat to remain")
 		}
@@ -159,18 +159,18 @@ func TestEnqueueInboundAgentMessageStopsWhenContextCancelled(t *testing.T) {
 	connectionCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
-	regularInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	priorityInbound := newBoundedQueue[*gatewayrpc.ConnectClientMessage](1, policyBlock)
+	regularInbound := newBoundedQueue[*gatewayrpc.ConnectClientMessage](1, policyDropOldest)
 
-	ok := enqueueInboundAgentMessage(connectionCtx, priorityInbound, regularInbound, heartbeatMessageForTest("latest"), nil)
+	ok := enqueueInboundAgentMessage(connectionCtx, priorityInbound, regularInbound, heartbeatMessageForTest("latest"))
 	if ok {
 		t.Fatal("enqueueInboundAgentMessage() = true, want false")
 	}
-	if len(priorityInbound) != 0 {
-		t.Fatalf("len(priorityInbound) = %d, want %d", len(priorityInbound), 0)
+	if len(priorityInbound.ch) != 0 {
+		t.Fatalf("len(priorityInbound.ch) = %d, want %d", len(priorityInbound.ch), 0)
 	}
-	if len(regularInbound) != 0 {
-		t.Fatalf("len(regularInbound) = %d, want %d", len(regularInbound), 0)
+	if len(regularInbound.ch) != 0 {
+		t.Fatalf("len(regularInbound.ch) = %d, want %d", len(regularInbound.ch), 0)
 	}
 }
 
@@ -180,19 +180,19 @@ func TestEnqueueInboundAgentMessageStopsWhenContextCancelled(t *testing.T) {
 // with no concurrent reader/writer makes every select hit `default`, so the
 // drop path is reached deterministically and the counter must increment.
 func TestEnqueueInboundAgentMessageIncrementsDropCounter(t *testing.T) {
-	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
-	regularInbound := make(chan *gatewayrpc.ConnectClientMessage) // unbuffered → all selects miss
+	priorityInbound := newBoundedQueue[*gatewayrpc.ConnectClientMessage](1, policyBlock)
+	regularInbound := newBoundedQueue[*gatewayrpc.ConnectClientMessage](0, policyDropOldest) // unbuffered → all selects miss
 	counter := prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "panvex_agent_inbound_drops_total_test",
 		Help: "test-local counter",
 	})
 
+	regularInbound.withDropObserver(counter, nil)
 	ok := enqueueInboundAgentMessage(
 		context.Background(),
 		priorityInbound,
 		regularInbound,
 		heartbeatMessageForTest("dropped"),
-		counter,
 	)
 	if !ok {
 		t.Fatal("enqueueInboundAgentMessage() = false, want true (drop path still reports routed=true)")
@@ -200,8 +200,8 @@ func TestEnqueueInboundAgentMessageIncrementsDropCounter(t *testing.T) {
 	if got := testutil.ToFloat64(counter); got != 1 {
 		t.Fatalf("dropCounter = %v, want 1", got)
 	}
-	if len(priorityInbound) != 0 {
-		t.Fatalf("len(priorityInbound) = %d, want 0", len(priorityInbound))
+	if len(priorityInbound.ch) != 0 {
+		t.Fatalf("len(priorityInbound.ch) = %d, want 0", len(priorityInbound.ch))
 	}
 }
 
@@ -209,19 +209,19 @@ func TestEnqueueInboundAgentMessageIncrementsDropCounter(t *testing.T) {
 // spurious Inc() in the happy path: when the first non-blocking send accepts
 // the message, the counter must remain at zero.
 func TestEnqueueInboundAgentMessageDoesNotIncrementOnSuccess(t *testing.T) {
-	priorityInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
-	regularInbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
+	priorityInbound := newBoundedQueue[*gatewayrpc.ConnectClientMessage](1, policyBlock)
+	regularInbound := newBoundedQueue[*gatewayrpc.ConnectClientMessage](1, policyDropOldest)
 	counter := prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "panvex_agent_inbound_drops_total_test_success",
 		Help: "test-local counter",
 	})
 
+	regularInbound.withDropObserver(counter, nil)
 	ok := enqueueInboundAgentMessage(
 		context.Background(),
 		priorityInbound,
 		regularInbound,
 		heartbeatMessageForTest("ok"),
-		counter,
 	)
 	if !ok {
 		t.Fatal("enqueueInboundAgentMessage() = false, want true")
@@ -232,7 +232,7 @@ func TestEnqueueInboundAgentMessageDoesNotIncrementOnSuccess(t *testing.T) {
 }
 
 func TestEnqueueRegularSnapshotDropsStaleUpdateWhenQueueIsFull(t *testing.T) {
-	regularSnapshots := make(chan AgentSnapshot, 1)
+	regularSnapshots := newBoundedQueue[AgentSnapshot](1, policyDropOldest)
 	stale := AgentSnapshot{
 		AgentID:    "agent-1",
 		Snap:       &gatewayrpc.Snapshot{NodeName: "stale"},
@@ -243,15 +243,15 @@ func TestEnqueueRegularSnapshotDropsStaleUpdateWhenQueueIsFull(t *testing.T) {
 		Snap:       &gatewayrpc.Snapshot{NodeName: "latest"},
 		ObservedAt: time.Unix(2, 0).UTC(),
 	}
-	regularSnapshots <- stale
+	regularSnapshots.ch <- stale
 
-	ok := enqueueRegularSnapshot(context.Background(), regularSnapshots, latest, nil, nil)
+	ok := regularSnapshots.enqueue(context.Background(), latest)
 	if !ok {
-		t.Fatal("enqueueRegularSnapshot() = false, want true")
+		t.Fatal("regularSnapshots.enqueue() = false, want true")
 	}
 
 	select {
-	case received := <-regularSnapshots:
+	case received := <-regularSnapshots.ch:
 		if received.Snap.NodeName != "latest" {
 			t.Fatalf("received.Snap.NodeName = %q, want %q", received.Snap.NodeName, "latest")
 		}
@@ -266,7 +266,7 @@ func TestProcessRegularAgentMessageRoutesAckToPriorityHandler(t *testing.T) {
 	job := enqueueJobForAgent(t, svc, "agent-1", "regular-routes-ack", currentTime)
 	svc.MarkDelivered(context.Background(), "agent-1", job.ID, currentTime.Add(time.Second))
 
-	regularSnapshots := make(chan AgentSnapshot, 1)
+	regularSnapshots := newBoundedQueue[AgentSnapshot](1, policyDropOldest)
 	message := &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_JobAcknowledgement{
 			JobAcknowledgement: &gatewayrpc.JobAcknowledgement{
@@ -279,8 +279,8 @@ func TestProcessRegularAgentMessageRoutesAckToPriorityHandler(t *testing.T) {
 		t.Fatalf("processRegularAgentMessage() error = %v", err)
 	}
 
-	if len(regularSnapshots) != 0 {
-		t.Fatalf("len(regularSnapshots) = %d, want %d", len(regularSnapshots), 0)
+	if len(regularSnapshots.ch) != 0 {
+		t.Fatalf("len(regularSnapshots.ch) = %d, want %d", len(regularSnapshots.ch), 0)
 	}
 	listedJobs := svc.ListWithContext(context.Background())
 	if len(listedJobs) != 1 {
@@ -359,7 +359,7 @@ func TestProcessPriorityAgentMessageAsyncQueuesClientResultEffect(t *testing.T) 
 	job := enqueueJobForAgent(t, svc, "agent-1", "priority-result-async", currentTime)
 	svc.MarkDelivered(context.Background(), "agent-1", job.ID, currentTime.Add(time.Second))
 
-	effects := make(chan jobResultEffect, 1)
+	effects := newBoundedQueue[jobResultEffect](1, policyTryOnce)
 	message := &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_JobResult{
 			JobResult: &gatewayrpc.JobResult{
@@ -375,10 +375,10 @@ func TestProcessPriorityAgentMessageAsyncQueuesClientResultEffect(t *testing.T) 
 		t.Fatalf("processPriorityAgentMessageAsync() error = %v", err)
 	}
 
-	if len(effects) != 1 {
-		t.Fatalf("len(effects) = %d, want %d", len(effects), 1)
+	if len(effects.ch) != 1 {
+		t.Fatalf("len(effects.ch) = %d, want %d", len(effects.ch), 1)
 	}
-	effect := <-effects
+	effect := <-effects.ch
 	if effect.jobID != job.ID {
 		t.Fatalf("effect.jobID = %q, want %q", effect.jobID, job.ID)
 	}
@@ -399,8 +399,8 @@ func TestEnqueuePriorityResultEffectStopsWhenContextCancelled(t *testing.T) {
 	connectionCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	effects := make(chan jobResultEffect, 1)
-	ok := enqueuePriorityResultEffect(connectionCtx, effects, jobResultEffect{
+	effects := newBoundedQueue[jobResultEffect](1, policyTryOnce)
+	ok := effects.enqueue(connectionCtx, jobResultEffect{
 		agentID:    "agent-1",
 		jobID:      "job-1",
 		success:    true,
@@ -409,10 +409,10 @@ func TestEnqueuePriorityResultEffectStopsWhenContextCancelled(t *testing.T) {
 		observedAt: time.Unix(1, 0).UTC(),
 	})
 	if ok {
-		t.Fatal("enqueuePriorityResultEffect() = true, want false")
+		t.Fatal("priorityResultEffects.enqueue() = true, want false")
 	}
-	if len(effects) != 0 {
-		t.Fatalf("len(effects) = %d, want %d", len(effects), 0)
+	if len(effects.ch) != 0 {
+		t.Fatalf("len(effects.ch) = %d, want %d", len(effects.ch), 0)
 	}
 }
 
@@ -420,8 +420,8 @@ func TestEnqueuePriorityAuditEffectStopsWhenContextCancelled(t *testing.T) {
 	connectionCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	effects := make(chan auditEffect, 1)
-	ok := enqueuePriorityAuditEffect(connectionCtx, effects, auditEffect{
+	effects := newBoundedQueue[auditEffect](1, policyTryOnce)
+	ok := effects.enqueue(connectionCtx, auditEffect{
 		actorID:  "agent-1",
 		action:   "jobs.result",
 		targetID: "job-1",
@@ -430,16 +430,16 @@ func TestEnqueuePriorityAuditEffectStopsWhenContextCancelled(t *testing.T) {
 		},
 	})
 	if ok {
-		t.Fatal("enqueuePriorityAuditEffect() = true, want false")
+		t.Fatal("priorityAuditEffects.enqueue() = true, want false")
 	}
-	if len(effects) != 0 {
-		t.Fatalf("len(effects) = %d, want %d", len(effects), 0)
+	if len(effects.ch) != 0 {
+		t.Fatalf("len(effects.ch) = %d, want %d", len(effects.ch), 0)
 	}
 }
 
 func TestDrainPriorityResultEffectsProcessesQueuedEffects(t *testing.T) {
-	effects := make(chan jobResultEffect, 2)
-	effects <- jobResultEffect{
+	effects := newBoundedQueue[jobResultEffect](2, policyTryOnce)
+	effects.ch <- jobResultEffect{
 		agentID:    "agent-1",
 		jobID:      "job-1",
 		success:    true,
@@ -449,27 +449,27 @@ func TestDrainPriorityResultEffectsProcessesQueuedEffects(t *testing.T) {
 	}
 
 	calls := 0
-	drainPriorityResultEffects(effects, func(agentID string, jobID string, success bool, message string, resultJSON string, observedAt time.Time) {
+	effects.drain(func(effect jobResultEffect) {
 		calls++
-		if agentID != "agent-1" {
-			t.Fatalf("agentID = %q, want %q", agentID, "agent-1")
+		if effect.agentID != "agent-1" {
+			t.Fatalf("agentID = %q, want %q", effect.agentID, "agent-1")
 		}
-		if jobID != "job-1" {
-			t.Fatalf("jobID = %q, want %q", jobID, "job-1")
+		if effect.jobID != "job-1" {
+			t.Fatalf("jobID = %q, want %q", effect.jobID, "job-1")
 		}
 	})
 
 	if calls != 1 {
 		t.Fatalf("calls = %d, want %d", calls, 1)
 	}
-	if len(effects) != 0 {
-		t.Fatalf("len(effects) = %d, want %d", len(effects), 0)
+	if len(effects.ch) != 0 {
+		t.Fatalf("len(effects.ch) = %d, want %d", len(effects.ch), 0)
 	}
 }
 
 func TestDrainPriorityAuditEffectsProcessesQueuedEffects(t *testing.T) {
-	effects := make(chan auditEffect, 2)
-	effects <- auditEffect{
+	effects := newBoundedQueue[auditEffect](2, policyTryOnce)
+	effects.ch <- auditEffect{
 		actorID:  "agent-1",
 		action:   "jobs.result",
 		targetID: "job-1",
@@ -479,49 +479,48 @@ func TestDrainPriorityAuditEffectsProcessesQueuedEffects(t *testing.T) {
 	}
 
 	calls := 0
-	drainPriorityAuditEffects(effects, func(actorID string, action string, targetID string, details map[string]any) {
+	effects.drain(func(effect auditEffect) {
 		calls++
-		if actorID != "agent-1" {
-			t.Fatalf("actorID = %q, want %q", actorID, "agent-1")
+		if effect.actorID != "agent-1" {
+			t.Fatalf("actorID = %q, want %q", effect.actorID, "agent-1")
 		}
-		if action != "jobs.result" {
-			t.Fatalf("action = %q, want %q", action, "jobs.result")
+		if effect.action != "jobs.result" {
+			t.Fatalf("action = %q, want %q", effect.action, "jobs.result")
 		}
-		if targetID != "job-1" {
-			t.Fatalf("targetID = %q, want %q", targetID, "job-1")
+		if effect.targetID != "job-1" {
+			t.Fatalf("targetID = %q, want %q", effect.targetID, "job-1")
 		}
 	})
 
 	if calls != 1 {
 		t.Fatalf("calls = %d, want %d", calls, 1)
 	}
-	if len(effects) != 0 {
-		t.Fatalf("len(effects) = %d, want %d", len(effects), 0)
+	if len(effects.ch) != 0 {
+		t.Fatalf("len(effects.ch) = %d, want %d", len(effects.ch), 0)
 	}
 }
 
 func TestDrainRegularSnapshotsProcessesQueuedSnapshots(t *testing.T) {
-	snapshots := make(chan AgentSnapshot, 2)
-	snapshots <- AgentSnapshot{
+	snapshots := newBoundedQueue[AgentSnapshot](2, policyDropOldest)
+	snapshots.ch <- AgentSnapshot{
 		AgentID:    "agent-1",
 		Snap:       &gatewayrpc.Snapshot{NodeName: "node-a"},
 		ObservedAt: time.Unix(1, 0).UTC(),
 	}
 
 	calls := 0
-	drainRegularSnapshots(snapshots, func(snapshot AgentSnapshot) error {
+	snapshots.drain(func(snapshot AgentSnapshot) {
 		calls++
 		if snapshot.AgentID != "agent-1" {
 			t.Fatalf("snapshot.AgentID = %q, want %q", snapshot.AgentID, "agent-1")
 		}
-		return nil
 	})
 
 	if calls != 1 {
 		t.Fatalf("calls = %d, want %d", calls, 1)
 	}
-	if len(snapshots) != 0 {
-		t.Fatalf("len(snapshots) = %d, want %d", len(snapshots), 0)
+	if len(snapshots.ch) != 0 {
+		t.Fatalf("len(snapshots.ch) = %d, want %d", len(snapshots.ch), 0)
 	}
 }
 

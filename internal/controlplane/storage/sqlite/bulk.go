@@ -24,11 +24,8 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlshared"
 )
-
-// bulkChunkSize mirrors the Postgres helper — see package doc for rationale
-// (P3-PERF-01b tuning: 500 -> 250 after benchmark sweep).
-const bulkChunkSize = 250
 
 // rowPlaceholders returns "(?,?,...)," groups repeated `rows` times, each with
 // `cols` placeholders. Kept separate from Postgres's numbered $N version
@@ -99,22 +96,6 @@ func (s *Store) execInTx(ctx context.Context, fn func(exec dbExecutor) error) er
 // (UPSERT on id); duplicate IDs in the same batch collapse to last-wins.
 // nullStringFrom returns a sql.NullString that is Valid only when the
 // raw string is non-empty.
-func nullStringFrom(s string) sql.NullString {
-	if s == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: s, Valid: true}
-}
-
-// chunkBounds returns [start,end) for the next chunk that fits within total.
-func chunkBounds(start, total int) (int, int) {
-	end := start + bulkChunkSize
-	if end > total {
-		end = total
-	}
-	return start, end
-}
-
 // runBulkChunks runs fn over fixed-size slices of length-`total`, executing one
 // SQL statement per chunk via `exec`. The query is rebuilt per chunk because
 // the placeholder count varies for the trailing chunk.
@@ -129,8 +110,8 @@ func runBulkChunks(
 	queryFn func(placeholders string) string,
 	argsFn func(start, end int) ([]any, error),
 ) error {
-	for start := 0; start < total; start += bulkChunkSize {
-		s, e := chunkBounds(start, total)
+	for start := 0; start < total; start += sqlshared.BulkChunkSize {
+		s, e := sqlshared.ChunkBounds(start, total, sqlshared.BulkChunkSize)
 		args, err := argsFn(s, e)
 		if err != nil {
 			return err
@@ -157,7 +138,7 @@ func nullUnixFromPtr(t *time.Time) sql.NullInt64 {
 // simple.
 func agentBulkArgs(agent storage.AgentRecord) []any {
 	return []any{
-		agent.ID, agent.NodeName, nullStringFrom(agent.FleetGroupID), agent.Version,
+		agent.ID, agent.NodeName, sqlshared.NullString(agent.FleetGroupID), agent.Version,
 		boolToInt(agent.ReadOnly), toUnix(agent.LastSeenAt),
 		nullUnixFromPtr(agent.CertIssuedAt), nullUnixFromPtr(agent.CertExpiresAt),
 	}
@@ -169,8 +150,8 @@ func (s *Store) PutAgentsBulk(ctx context.Context, agents []storage.AgentRecord)
 	}
 	const cols = 8
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(agents); start += bulkChunkSize {
-			end := start + bulkChunkSize
+		for start := 0; start < len(agents); start += sqlshared.BulkChunkSize {
+			end := start + sqlshared.BulkChunkSize
 			if end > len(agents) {
 				end = len(agents)
 			}
@@ -205,8 +186,8 @@ func (s *Store) PutInstancesBulk(ctx context.Context, instances []storage.Instan
 	}
 	const cols = 8
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(instances); start += bulkChunkSize {
-			end := start + bulkChunkSize
+		for start := 0; start < len(instances); start += sqlshared.BulkChunkSize {
+			end := start + sqlshared.BulkChunkSize
 			if end > len(instances) {
 				end = len(instances)
 			}
@@ -333,8 +314,8 @@ func (s *Store) AppendDCHealthPointsBulk(ctx context.Context, records []storage.
 	}
 	const cols = 11
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(records); start += bulkChunkSize {
-			end := start + bulkChunkSize
+		for start := 0; start < len(records); start += sqlshared.BulkChunkSize {
+			end := start + sqlshared.BulkChunkSize
 			if end > len(records) {
 				end = len(records)
 			}
@@ -371,8 +352,8 @@ func (s *Store) UpsertClientIPHistoryBulk(ctx context.Context, records []storage
 	}
 	const cols = 5
 	return s.execInTx(ctx, func(exec dbExecutor) error {
-		for start := 0; start < len(records); start += bulkChunkSize {
-			end := start + bulkChunkSize
+		for start := 0; start < len(records); start += sqlshared.BulkChunkSize {
+			end := start + sqlshared.BulkChunkSize
 			if end > len(records) {
 				end = len(records)
 			}

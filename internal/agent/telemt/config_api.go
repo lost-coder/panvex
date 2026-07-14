@@ -7,7 +7,6 @@ import (
 	"net/http"
 )
 
-
 // ErrConfigEditUnsupported is returned when the local Telemt build predates the
 // PATCH/GET /v1/config endpoints (HTTP 404 on the route). Lets the panel render
 // "Config editing unavailable (upgrade Telemt)" per-node instead of a transport error.

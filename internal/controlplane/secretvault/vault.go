@@ -261,6 +261,20 @@ func (v *Vault) decryptWithKey(domain, body string) (string, error) {
 	return string(plaintext), nil
 }
 
+// EncryptIfEnabled is the encrypt idiom every domain needs: a nil or disabled
+// vault passes the value through (the no-key mode), an empty value is a no-op,
+// and a value that ALREADY carries a vault prefix is returned unchanged.
+//
+// That last guard is not cosmetic. Encrypting a ciphertext again double-wraps
+// it and corrupts the row — the failure that once shipped a literal "PVS2:..."
+// string to Telemt as a client secret. Callers must not hand-roll this.
+func (v *Vault) EncryptIfEnabled(domain, plaintext string) (string, error) {
+	if v == nil || !v.Enabled() || plaintext == "" || IsEncrypted(plaintext) {
+		return plaintext, nil
+	}
+	return v.Encrypt(domain, plaintext)
+}
+
 // IsEncrypted reports whether the value carries any vault prefix. Used
 // by migration tooling to decide whether to re-encrypt a row.
 func IsEncrypted(value string) bool {

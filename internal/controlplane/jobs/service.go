@@ -9,12 +9,11 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/seqid"
 )
 
 var (
@@ -751,36 +750,84 @@ func expireCoveredTargets(targets []JobTarget, newTargets map[string]struct{}, s
 	return changed
 }
 
-// applySupersededJob recomputes the job status after its targets were expired,
-// persists the in-memory mutation + indexes, and returns a persist candidate
-// for the post-unlock fan-out (nil when no store is wired). Caller must hold
-// s.mu (write).
-func (s *Service) applySupersededJob(jobID string, job Job, supersederID, supersedeKey string, now time.Time) *persistCandidate {
+// jobCommit tunes the shared commit tail below. The defaults (derive the
+// status, re-point the key, no expiry note) match the common case.
+type jobCommit struct {
+	// forceStatus overrides deriveJobStatus. The TTL paths need it: a job can
+	// hold succeeded targets and still be expired as a whole, which deriving
+	// from the targets would never produce.
+	forceStatus Status
+	// keepKeyOwner leaves keys[IdempotencyKey] alone. Set by the supersede
+	// path: by then the key belongs to the SUPERSEDING job, and re-pointing it
+	// at the superseded one would resurrect the old job for the next
+	// idempotent enqueue.
+	keepKeyOwner bool
+	// noteExpiry refreshes the next-expiry watermark. Needed wherever the
+	// commit can change when this job next expires.
+	noteExpiry bool
+	// clearKeyTerminalOnNonTerminal un-marks the key's terminal timestamp when
+	// the job rolls back to a non-terminal status (a target-level retry after
+	// a failure). Only the target-mutation path can go that direction.
+	clearKeyTerminalOnNonTerminal bool
+}
+
+// commitJobLocked is the one "job mutated → rederive status → reindex →
+// persist" path. Every mutator (supersede, prune, TTL expiry, target update)
+// used to spell this out for itself, which is how they drifted: three of them
+// re-pointed the idempotency key and one did not, two counted the
+// failure metric and two forgot to.
+//
+// The caller mutates job.Targets and hands the job over; job.Status must still
+// hold the PRE-mutation status so the failure-transition metric fires once.
+// Returns the persist candidate for the post-unlock fan-out, or nil when no
+// store is wired. Caller must hold s.mu (write).
+func (s *Service) commitJobLocked(job Job, now time.Time, opts jobCommit) *persistCandidate {
 	prevStatus := job.Status
-	job.Status = deriveJobStatus(job.Targets)
+	if opts.forceStatus != "" {
+		job.Status = opts.forceStatus
+	} else {
+		job.Status = deriveJobStatus(job.Targets)
+	}
 	if job.Status == StatusFailed && prevStatus != StatusFailed {
 		s.metrics.ObserveJobFailed()
 	}
-	s.jobs[jobID] = job
+
+	s.jobs[job.ID] = job
 	s.syncJobTargetsIndexLocked(job)
-	if isTerminalStatus(job.Status) {
-		s.markKeyTerminalLocked(job.IdempotencyKey, now)
+	if !opts.keepKeyOwner {
+		s.keys[job.IdempotencyKey] = job.ID
 	}
+	switch {
+	case isTerminalStatus(job.Status):
+		s.markKeyTerminalLocked(job.IdempotencyKey, now)
+	case opts.clearKeyTerminalOnNonTerminal:
+		s.clearKeyTerminalLocked(job.IdempotencyKey)
+	}
+	if opts.noteExpiry {
+		s.noteJobExpiryLocked(job)
+	}
+
+	if s.jobStore == nil {
+		return nil
+	}
+	s.updateSeq++
+	s.jobVersion[job.ID] = s.updateSeq
+	return &persistCandidate{
+		jobID:   job.ID,
+		version: s.updateSeq,
+		job:     cloneJob(job),
+	}
+}
+
+// applySupersededJob commits a job whose targets were just expired by a newer
+// job in the same supersede group. Caller must hold s.mu (write).
+func (s *Service) applySupersededJob(jobID string, job Job, supersederID, supersedeKey string, now time.Time) *persistCandidate {
 	slog.Info("job targets superseded by newer job in the same supersede group",
 		"superseded_job_id", jobID,
 		"new_job_id", supersederID,
 		"supersede_key", supersedeKey,
 	)
-	if s.jobStore == nil {
-		return nil
-	}
-	s.updateSeq++
-	s.jobVersion[jobID] = s.updateSeq
-	return &persistCandidate{
-		jobID:   jobID,
-		version: s.updateSeq,
-		job:     cloneJob(job),
-	}
+	return s.commitJobLocked(job, now, jobCommit{keepKeyOwner: true})
 }
 
 // List returns a snapshot of the queued jobs known to the service.
@@ -1132,13 +1179,13 @@ func (s *Service) PruneAcknowledgedTargets(ctx context.Context, olderThan time.D
 	cutoff := now.Add(-olderThan)
 	expired := 0
 
-	for jobID, job := range s.jobs {
+	for _, job := range s.jobs {
 		jobExpired := expireAcknowledgedTargets(&job, cutoff, now)
 		if jobExpired == 0 {
 			continue
 		}
 		expired += jobExpired
-		candidates = s.commitPrunedJobLocked(jobID, job, now, candidates)
+		candidates = s.commitPrunedJobLocked(job, now, candidates)
 	}
 	s.mu.Unlock()
 
@@ -1170,33 +1217,13 @@ func expireAcknowledgedTargets(job *Job, cutoff, now time.Time) int {
 	return expired
 }
 
-// commitPrunedJobLocked refreshes the in-memory indexes for a job whose
-// acknowledged targets were just expired and, if a job store is wired,
-// queues a persist candidate for the post-unlock fan-out. Caller must
-// hold s.mu.
-func (s *Service) commitPrunedJobLocked(jobID string, job Job, now time.Time, candidates []persistCandidate) []persistCandidate {
-	prevStatus := job.Status
-	job.Status = deriveJobStatus(job.Targets)
-	if job.Status == StatusFailed && prevStatus != StatusFailed {
-		s.metrics.ObserveJobFailed()
+// commitPrunedJobLocked commits a job whose acknowledged targets were just
+// expired by the ack-TTL sweep. Caller must hold s.mu.
+func (s *Service) commitPrunedJobLocked(job Job, now time.Time, candidates []persistCandidate) []persistCandidate {
+	if candidate := s.commitJobLocked(job, now, jobCommit{noteExpiry: true}); candidate != nil {
+		candidates = append(candidates, *candidate)
 	}
-	s.jobs[jobID] = job
-	s.syncJobTargetsIndexLocked(job)
-	s.keys[job.IdempotencyKey] = jobID
-	if isTerminalStatus(job.Status) {
-		s.markKeyTerminalLocked(job.IdempotencyKey, now)
-	}
-	s.noteJobExpiryLocked(job)
-	if s.jobStore == nil {
-		return candidates
-	}
-	s.updateSeq++
-	s.jobVersion[jobID] = s.updateSeq
-	return append(candidates, persistCandidate{
-		jobID:   jobID,
-		version: s.updateSeq,
-		job:     cloneJob(job),
-	})
+	return candidates
 }
 
 // StartAcknowledgedExpiryWorker runs PruneAcknowledgedTargets on a ticker
@@ -1277,40 +1304,19 @@ func (s *Service) RecordResult(ctx context.Context, agentID, jobID string, succe
 	return applied
 }
 
-// expireJobAndCollectCandidatesLocked transitions every still-active
-// target on `job` to "expired" and marks the job itself as expired,
-// returning a persist candidate when the store is configured. Caller
-// must hold s.mu.
+// expireJobAndCollectCandidatesLocked transitions every still-active target on
+// `job` to expired and marks the job itself expired. Returns nil when the job
+// was already fully expired (nothing to do). Caller must hold s.mu.
 func (s *Service) expireJobAndCollectCandidatesLocked(job Job, now time.Time) []persistCandidate {
-	updated := false
-	for index := range job.Targets {
-		target := &job.Targets[index]
-		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
-			continue
-		}
-		target.Status = TargetStatusExpired
-		target.UpdatedAt = now
-		updated = true
-	}
-	if !updated && job.Status == StatusExpired {
+	_, expired, ok := expireJobTargets(job, now)
+	if !ok {
 		return nil
 	}
-	job.Status = StatusExpired
-	s.jobs[job.ID] = job
-	s.syncJobTargetsIndexLocked(job)
-	s.keys[job.IdempotencyKey] = job.ID
-	s.markKeyTerminalLocked(job.IdempotencyKey, now)
-
-	if s.jobStore == nil {
+	candidate := s.commitJobLocked(expired, now, jobCommit{forceStatus: StatusExpired})
+	if candidate == nil {
 		return nil
 	}
-	s.updateSeq++
-	s.jobVersion[job.ID] = s.updateSeq
-	return []persistCandidate{{
-		jobID:   job.ID,
-		version: s.updateSeq,
-		job:     cloneJob(job),
-	}}
+	return []persistCandidate{*candidate}
 }
 
 // applyTargetMutationLocked applies `mutate` to the job target whose
@@ -1341,31 +1347,14 @@ func (s *Service) applyTargetMutationLocked(job Job, agentID string, now time.Ti
 		return nil, false
 	}
 
-	prevStatus := job.Status
-	job.Status = deriveJobStatus(job.Targets)
-	if job.Status == StatusFailed && prevStatus != StatusFailed {
-		s.metrics.ObserveJobFailed()
-	}
-	s.jobs[job.ID] = job
-	s.syncJobTargetsIndexLocked(job)
-	s.keys[job.IdempotencyKey] = job.ID
-	if isTerminalStatus(job.Status) {
-		s.markKeyTerminalLocked(job.IdempotencyKey, now)
-	} else {
-		s.clearKeyTerminalLocked(job.IdempotencyKey)
-	}
-	s.noteJobExpiryLocked(job)
-
-	if s.jobStore == nil {
+	candidate := s.commitJobLocked(job, now, jobCommit{
+		noteExpiry:                    true,
+		clearKeyTerminalOnNonTerminal: true,
+	})
+	if candidate == nil {
 		return nil, true
 	}
-	s.updateSeq++
-	s.jobVersion[job.ID] = s.updateSeq
-	return []persistCandidate{{
-		jobID:   job.ID,
-		version: s.updateSeq,
-		job:     cloneJob(job),
-	}}, true
+	return []persistCandidate{*candidate}, true
 }
 
 // updateTarget applies `mutate` to the matching target. D3: the target's
@@ -1403,29 +1392,15 @@ func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, mutat
 }
 
 func (s *Service) expireJobsLocked(now time.Time) []persistCandidate {
-	persisting := s.jobStore != nil
 	var candidates []persistCandidate
-	if persisting {
+	if s.jobStore != nil {
 		candidates = make([]persistCandidate, 0)
 	}
 	for _, job := range s.jobs {
 		if !jobShouldExpire(job, now) {
 			continue
 		}
-		updated, expiredJob, ok := expireJobTargets(job, now)
-		if !ok {
-			continue
-		}
-		s.applyExpiredJobLocked(expiredJob, now)
-		if persisting && updated {
-			s.updateSeq++
-			s.jobVersion[expiredJob.ID] = s.updateSeq
-			candidates = append(candidates, persistCandidate{
-				jobID:   expiredJob.ID,
-				version: s.updateSeq,
-				job:     cloneJob(expiredJob),
-			})
-		}
+		candidates = append(candidates, s.expireJobAndCollectCandidatesLocked(job, now)...)
 	}
 	s.recomputeNextExpiryLocked()
 	return candidates
@@ -1451,15 +1426,6 @@ func expireJobTargets(job Job, now time.Time) (bool, Job, bool) {
 	}
 	job.Status = StatusExpired
 	return updated, job, true
-}
-
-// applyExpiredJobLocked commits the expired job back into the in-memory
-// state and refreshes the per-key terminal-time index.
-func (s *Service) applyExpiredJobLocked(job Job, now time.Time) {
-	s.jobs[job.ID] = job
-	s.syncJobTargetsIndexLocked(job)
-	s.keys[job.IdempotencyKey] = job.ID
-	s.markKeyTerminalLocked(job.IdempotencyKey, now)
 }
 
 func jobShouldExpire(job Job, now time.Time) bool {
@@ -1550,7 +1516,7 @@ func (s *Service) installRestoredJob(job Job) {
 			s.keyTerminalAt[job.IdempotencyKey] = job.CreatedAt
 		}
 	}
-	s.sequence = maxJobSequence(s.sequence, job.ID)
+	s.sequence = seqid.MaxPrefixed(s.sequence, "job", job.ID)
 	s.updateSeq++
 	s.jobVersion[job.ID] = s.updateSeq
 	s.noteJobExpiryLocked(job)
@@ -1777,20 +1743,4 @@ func normalizedTargetStatus(status TargetStatus) TargetStatus {
 	}
 
 	return status
-}
-
-func maxJobSequence(current uint64, jobID string) uint64 {
-	if !strings.HasPrefix(jobID, "job-") {
-		return current
-	}
-
-	value, err := strconv.ParseUint(strings.TrimPrefix(jobID, "job-"), 10, 64)
-	if err != nil {
-		return current
-	}
-	if value > current {
-		return value
-	}
-
-	return current
 }

@@ -7,8 +7,12 @@
     "pending": "ЗАПУСК"
   },
   "empty": "Нет данных",
-  "toast": { "close": "Закрыть уведомление" },
-  "typeToConfirm": { "prompt": "Чтобы подтвердить, введите" },
+  "toast": {
+    "close": "Закрыть уведомление"
+  },
+  "typeToConfirm": {
+    "prompt": "Чтобы подтвердить, введите"
+  },
   "sortBy": "Сортировка",
   "sortNone": "По умолчанию",
   "sortAscending": "По возрастанию",
@@ -19,8 +23,13 @@
     "hoursAgo": "{{count}} ч назад",
     "daysAgo": "{{count}} д назад"
   },
-  "search": { "placeholder": "Поиск…" },
-  "errorState": { "title": "Что-то пошло не так", "retry": "Повторить" },
+  "search": {
+    "placeholder": "Поиск…"
+  },
+  "errorState": {
+    "title": "Что-то пошло не так",
+    "retry": "Повторить"
+  },
   "reason": {
     "offline": "Агент не на связи",
     "telemtUnreachable": "Telemt API недоступен с",
@@ -46,6 +55,19 @@
     "leave": "Уйти без сохранения",
     "stay": "Остаться"
   },
-  "copy": { "copy": "Копировать", "copied": "Скопировано" },
-  "bulkBar": { "clear": "Снять выделение" }
+  "copy": {
+    "copy": "Копировать",
+    "copied": "Скопировано"
+  },
+  "bulkBar": {
+    "clear": "Снять выделение"
+  },
+  "table": {
+    "filter": "Фильтр",
+    "all": "Все",
+    "toggleColumns": "Переключить колонки",
+    "columns": "Колонки",
+    "cardView": "Карточки",
+    "listView": "Список"
+  }
 }

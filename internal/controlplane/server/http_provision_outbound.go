@@ -266,11 +266,12 @@ func (s *Server) provisionOutboundAgentRow(
 		return "", "", 0, false
 	}
 
-	// Issue a 5-minute bootstrap token + persist its hash. Same
-	// flow as bootstrap.InstallCommandHandler — we re-use IssueToken
-	// directly rather than the handler so we can apply our chosen
-	// script URL when calling BuildInstallCommand below.
-	issued, err := bootstrap.IssueToken(nowT, 5*time.Minute)
+	// Issue a bootstrap token + persist its hash. Same flow as
+	// bootstrap.InstallCommandHandler — we re-use IssueToken directly rather
+	// than the handler so we can apply our chosen script URL when calling
+	// BuildInstallCommand below. The TTL is the bootstrap package's constant,
+	// not a literal, so the S-02 regression test bounds BOTH issue paths.
+	issued, err := bootstrap.IssueToken(nowT, bootstrap.InstallCommandTTL)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "issue bootstrap token failed", "agent_id", agentID, "error", err)
 		// Best-effort cleanup: drop the row so the operator can retry

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/lost-coder/panvex/internal/agent/atomicfile"
 )
 
 // TransportSnapshot captures the transport-relevant fields as they were
@@ -115,35 +117,10 @@ func saveLocked(path string, credentials Credentials) error {
 		return err
 	}
 
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-
-	tmp, err := os.CreateTemp(dir, ".credentials-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	// Best-effort cleanup; a no-op once the rename below succeeds.
-	defer func() { _ = os.Remove(tmpName) }()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
+	return atomicfile.Write(path, data, 0o600, ".credentials-*.tmp")
 }
 
 // Update loads the state file, applies mutate to the freshly loaded
@@ -164,4 +141,3 @@ func Update(path string, mutate func(*Credentials)) (Credentials, error) {
 	}
 	return current, nil
 }
-

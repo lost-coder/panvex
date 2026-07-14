@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -42,13 +41,11 @@ const LockoutMaxAttempts = 5
 const LockoutDuration = 15 * time.Minute
 
 // LockoutTracker tracks consecutive failed login attempts per username
-// and temporarily locks accounts after too many failures.
+// and temporarily locks accounts after too many failures. The counting,
+// threshold and cleanup mechanics live in counterLockout; this type adds
+// what is specific to the password factor: durability and log redaction.
 //
 // Concurrency: all methods are safe for use by multiple goroutines.
-//
-// The lockout thresholds default to LockoutMaxAttempts / LockoutDuration.
-// Call SetThresholds to wire live getters from an OperationalStore so
-// operator changes are picked up without restarting the control-plane.
 //
 // Persistence (S7): when a LockoutStore is attached via SetStore, every
 // mutation (failure record, release after window, success reset) is
@@ -58,30 +55,26 @@ const LockoutDuration = 15 * time.Minute
 // security property "locked in memory" is preserved even if the DB is
 // briefly unavailable, we just lose durability for that window.
 type LockoutTracker struct {
-	mu       sync.Mutex
-	accounts map[string]lockoutEntry
-	store    LockoutStore
+	counterLockout
+
+	store LockoutStore
 
 	// redactor maps a raw username to the privacy-preserving identifier
-	// used in slog warnings (R-S-09). Kept behind a mutex so SetRedactor
-	// is safe to call after construction; defaults to a tracker-internal
-	// SHA-256 prefix so unwired tests never accidentally leak raw
-	// usernames either.
+	// used in slog warnings (R-S-09). Read/written under the core mutex so
+	// SetRedactor is safe to call after construction; defaults to a
+	// tracker-internal SHA-256 prefix so unwired tests never accidentally
+	// leak raw usernames either.
 	redactor func(string) string
+}
 
-	// maxAttemptsFn / lockoutDurationFn, when non-nil, override the
-	// LockoutMaxAttempts / LockoutDuration constants so that operator
-	// changes via the OperationalStore are visible on the next auth
-	// attempt without a panel restart. Set via SetThresholds.
-	maxAttemptsFn     func() int
-	lockoutDurationFn func() time.Duration
-
-	// shards holds 16 attempt-mutexes used by AttemptLock to serialize
-	// the read-verify-write sequence on a single username (Q2.U-S-15).
-	// Sharding keeps the lock cheap — different users hash to different
-	// slots and never block each other except on collisions, which are
-	// short-lived (one auth attempt).
-	shards [lockoutShardCount]sync.Mutex
+// NewLockoutTracker constructs a fresh, empty LockoutTracker.
+func NewLockoutTracker() *LockoutTracker {
+	t := &LockoutTracker{
+		counterLockout: newCounterLockout(LockoutMaxAttempts, LockoutDuration),
+	}
+	t.onPersist = t.persistEntry
+	t.onDelete = t.deletePersisted
+	return t
 }
 
 // SetThresholds wires live getter functions for the lockout thresholds.
@@ -92,63 +85,8 @@ type LockoutTracker struct {
 func (t *LockoutTracker) SetThresholds(maxAttempts func() int, duration func() time.Duration) {
 	t.mu.Lock()
 	t.maxAttemptsFn = maxAttempts
-	t.lockoutDurationFn = duration
+	t.windowFn = duration
 	t.mu.Unlock()
-}
-
-// maxAttemptsLocked returns the effective max-attempts threshold.
-// Caller must hold t.mu.
-func (t *LockoutTracker) maxAttemptsLocked() int {
-	if t.maxAttemptsFn != nil {
-		return t.maxAttemptsFn()
-	}
-	return LockoutMaxAttempts
-}
-
-// lockoutDurationLocked returns the effective lockout duration.
-// Caller must hold t.mu.
-func (t *LockoutTracker) lockoutDurationLocked() time.Duration {
-	if t.lockoutDurationFn != nil {
-		return t.lockoutDurationFn()
-	}
-	return LockoutDuration
-}
-
-const lockoutShardCount = 16
-
-type lockoutEntry struct {
-	failures int
-	lockedAt time.Time
-}
-
-// NewLockoutTracker constructs a fresh, empty LockoutTracker.
-func NewLockoutTracker() *LockoutTracker {
-	return &LockoutTracker{
-		accounts: make(map[string]lockoutEntry),
-	}
-}
-
-// AttemptLock acquires a per-username serialisation lock that closes
-// the IsLocked → verify → RecordFailure race (Q2.U-S-15). Callers MUST
-// invoke the returned release function once the verify+record sequence
-// finishes. Sharded across 16 mutexes so unrelated usernames do not
-// queue on each other.
-func (t *LockoutTracker) AttemptLock(username string) func() {
-	shard := lockoutShardFor(username)
-	t.shards[shard].Lock()
-	return t.shards[shard].Unlock
-}
-
-// lockoutShardFor returns the shard index for a username via FNV-1a
-// 32-bit hash modulo the shard count. FNV is non-cryptographic but
-// stable and zero-allocation, which fits a hot path.
-func lockoutShardFor(username string) uint32 {
-	var hash uint32 = 2166136261
-	for i := 0; i < len(username); i++ {
-		hash ^= uint32(username[i])
-		hash *= 16777619
-	}
-	return hash % lockoutShardCount
 }
 
 // SetStore attaches a persistent backend. Safe to call once at startup
@@ -169,14 +107,9 @@ func (t *LockoutTracker) SetRedactor(fn func(string) string) {
 	t.redactor = fn
 }
 
-// redactLocked is the variant of redact callable while the caller
-// already holds t.mu — used by persistLocked / deletePersistedLocked
-// in their store-error log paths. Reading t.redactor without
-// re-locking is safe because the caller holds t.mu (matched against
-// SetRedactor which writes under the same lock). Avoiding the
-// re-acquisition prevents a deterministic deadlock when the store
-// returns an error (e.g. ctx cancellation) inside a locked critical
-// section.
+// redactLocked reads t.redactor while the caller already holds t.mu — the
+// store-error log paths run inside the locked critical section, and
+// re-acquiring the mutex there would deadlock deterministically.
 func (t *LockoutTracker) redactLocked(username string) string {
 	if t.redactor != nil {
 		return t.redactor(username)
@@ -195,8 +128,8 @@ func defaultRedact(username string) string {
 
 // Restore loads the persisted lockout state into memory (S7). Should
 // be called after SetStore during server bootstrap. Records older than
-// LockoutDuration for a locked account are skipped so an expired
-// lockout does not silently resurrect on restart.
+// the lockout window are skipped so an expired lockout does not silently
+// resurrect on restart.
 func (t *LockoutTracker) Restore(ctx context.Context, now time.Time) error {
 	t.mu.Lock()
 	store := t.store
@@ -211,25 +144,25 @@ func (t *LockoutTracker) Restore(ctx context.Context, now time.Time) error {
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	lockoutDuration := t.lockoutDurationLocked()
+	window := t.windowLocked()
 	for _, record := range records {
 		entry := lockoutEntry{failures: record.Failures}
 		if record.LockedAt != nil {
-			if now.Sub(*record.LockedAt) >= lockoutDuration {
+			if now.Sub(*record.LockedAt) >= window {
 				continue
 			}
 			entry.lockedAt = *record.LockedAt
 		}
-		t.accounts[record.Username] = entry
+		t.entries[record.Username] = entry
 	}
 	return nil
 }
 
-// persistLocked writes the current state for username to the attached
-// store (if any). Caller must hold t.mu. Errors are logged but not
-// returned; callers already hold the lock and any failure is an
-// availability issue, not a correctness issue for the local process.
-func (t *LockoutTracker) persistLocked(ctx context.Context, username string, entry lockoutEntry) {
+// persistEntry is the counterLockout onPersist hook: it mirrors the current
+// state for username to the attached store. Called with t.mu held. Errors are
+// logged, not returned — a store failure is an availability issue, not a
+// correctness issue for the local process.
+func (t *LockoutTracker) persistEntry(ctx context.Context, username string, entry lockoutEntry) {
 	if t.store == nil {
 		return
 	}
@@ -247,118 +180,12 @@ func (t *LockoutTracker) persistLocked(ctx context.Context, username string, ent
 	}
 }
 
-func (t *LockoutTracker) deletePersistedLocked(ctx context.Context, username string) {
+// deletePersisted is the counterLockout onDelete hook. Called with t.mu held.
+func (t *LockoutTracker) deletePersisted(ctx context.Context, username string) {
 	if t.store == nil {
 		return
 	}
 	if err := t.store.DeleteLoginLockout(ctx, username); err != nil {
 		slog.Warn("sessions: failed to delete login lockout", "username_hash", t.redactLocked(username), "error", err)
-	}
-}
-
-// IsLockedWithContext
-func (t *LockoutTracker) IsLockedWithContext(ctx context.Context, username string, now time.Time) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	entry, ok := t.accounts[username]
-	if !ok {
-		return false
-	}
-	if entry.failures < t.maxAttemptsLocked() {
-		return false
-	}
-	if now.Sub(entry.lockedAt) >= t.lockoutDurationLocked() {
-		delete(t.accounts, username)
-		t.deletePersistedLocked(ctx, username)
-		return false
-	}
-	return true
-}
-
-// RecordFailureWithContext
-func (t *LockoutTracker) RecordFailureWithContext(ctx context.Context, username string, now time.Time) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	maxAttempts := t.maxAttemptsLocked()
-	entry := t.accounts[username]
-	entry.failures++
-	if entry.failures >= maxAttempts {
-		entry.lockedAt = now
-	}
-	t.accounts[username] = entry
-	t.persistLocked(ctx, username, entry)
-
-	t.cleanupLocked(ctx, now)
-}
-
-// CheckAndRecordFailureWithContext is the ctx-aware variant of
-// CheckAndRecordFailure.
-func (t *LockoutTracker) CheckAndRecordFailureWithContext(ctx context.Context, username string, now time.Time) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	maxAttempts := t.maxAttemptsLocked()
-	lockoutDuration := t.lockoutDurationLocked()
-	entry, ok := t.accounts[username]
-	if ok && entry.failures >= maxAttempts {
-		if now.Sub(entry.lockedAt) < lockoutDuration {
-			return true
-		}
-		entry = lockoutEntry{}
-	}
-
-	entry.failures++
-	if entry.failures >= maxAttempts {
-		entry.lockedAt = now
-	}
-	t.accounts[username] = entry
-	t.persistLocked(ctx, username, entry)
-	t.cleanupLocked(ctx, now)
-	return false
-}
-
-// ActiveCount returns the number of usernames whose account is currently
-// locked out. Used by the metrics subsystem to expose panvex_lockout_active.
-func (t *LockoutTracker) ActiveCount(now time.Time) int {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	maxAttempts := t.maxAttemptsLocked()
-	lockoutDuration := t.lockoutDurationLocked()
-	count := 0
-	for _, entry := range t.accounts {
-		if entry.failures < maxAttempts {
-			continue
-		}
-		if now.Sub(entry.lockedAt) >= lockoutDuration {
-			continue
-		}
-		count++
-	}
-	return count
-}
-
-// RecordSuccessWithContext is the ctx-aware variant of RecordSuccess.
-func (t *LockoutTracker) RecordSuccessWithContext(ctx context.Context, username string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	delete(t.accounts, username)
-	t.deletePersistedLocked(ctx, username)
-}
-
-func (t *LockoutTracker) cleanupLocked(ctx context.Context, now time.Time) {
-	if len(t.accounts) < 64 {
-		return
-	}
-	maxAttempts := t.maxAttemptsLocked()
-	lockoutDuration := t.lockoutDurationLocked()
-	for username, entry := range t.accounts {
-		if entry.failures >= maxAttempts && now.Sub(entry.lockedAt) >= lockoutDuration {
-			delete(t.accounts, username)
-			t.deletePersistedLocked(ctx, username)
-		}
 	}
 }

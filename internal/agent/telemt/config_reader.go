@@ -12,36 +12,36 @@ import (
 // Only fields needed today are mapped; the rest is preserved as raw TOML tables
 // so future features can read additional sections without changing this struct.
 type TelemtConfig struct {
-	General    TelemtGeneralConfig              `toml:"general"`
-	Network    TelemtNetworkConfig              `toml:"network"`
-	Server     TelemtServerConfig               `toml:"server"`
-	Access     TelemtAccessConfig               `toml:"access"`
-	Censorship map[string]any                   `toml:"censorship"`
-	Timeouts   map[string]any                   `toml:"timeouts"`
-	Upstreams  []map[string]any                 `toml:"upstreams"`
-	ShowLink   map[string]any                   `toml:"show_link"`
+	General    TelemtGeneralConfig `toml:"general"`
+	Network    TelemtNetworkConfig `toml:"network"`
+	Server     TelemtServerConfig  `toml:"server"`
+	Access     TelemtAccessConfig  `toml:"access"`
+	Censorship map[string]any      `toml:"censorship"`
+	Timeouts   map[string]any      `toml:"timeouts"`
+	Upstreams  []map[string]any    `toml:"upstreams"`
+	ShowLink   map[string]any      `toml:"show_link"`
 }
 
 // TelemtGeneralConfig holds the [general] section.
 type TelemtGeneralConfig struct {
-	LogLevel     string `toml:"log_level"`
-	Mode         string `toml:"mode"`
+	LogLevel     string   `toml:"log_level"`
+	Mode         string   `toml:"mode"`
 	ProxySecrets []string `toml:"proxy_secrets"`
 }
 
 // TelemtNetworkConfig holds the [network] section.
 type TelemtNetworkConfig struct {
-	IPv4      string `toml:"ipv4"`
-	IPv6      string `toml:"ipv6"`
-	StunURL   string `toml:"stun_url"`
-	DNS       string `toml:"dns"`
+	IPv4    string `toml:"ipv4"`
+	IPv6    string `toml:"ipv6"`
+	StunURL string `toml:"stun_url"`
+	DNS     string `toml:"dns"`
 }
 
 // TelemtServerConfig holds the [server] section.
 type TelemtServerConfig struct {
-	Port       int    `toml:"port"`
-	APIBind    string `toml:"api_bind"`
-	TLSDomain  string `toml:"tls_domain"`
+	Port      int    `toml:"port"`
+	APIBind   string `toml:"api_bind"`
+	TLSDomain string `toml:"tls_domain"`
 }
 
 // TelemtAccessConfig holds the [access] section with user management.

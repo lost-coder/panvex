@@ -69,16 +69,7 @@ func (s *Service) persistConsumedTotp(ctx context.Context, userID, code string, 
 // encryptTotp returns the storage form of the TOTP secret, applying
 // vault encryption when configured. Empty values pass through.
 func (s *Service) encryptTotp(value string) (string, error) {
-	if value == "" {
-		return value, nil
-	}
-	if s.vault == nil || !s.vault.Enabled() {
-		return value, nil
-	}
-	if secretvault.IsEncrypted(value) {
-		return value, nil
-	}
-	return s.vault.Encrypt(secretvault.DomainTOTP, value)
+	return s.vault.EncryptIfEnabled(secretvault.DomainTOTP, value)
 }
 
 // decryptTotp reverses encryptTotp. Plaintext rows from before the
