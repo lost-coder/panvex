@@ -147,13 +147,13 @@ type UpdateInput struct {
 	Description string
 }
 
-func (s *Service) Create(ctx context.Context, input CreateInput) (storage.FleetGroupRecord, error) {
+func (s *Service) Create(ctx context.Context, input CreateInput) (Group, error) {
 	name := strings.TrimSpace(strings.ToLower(input.Name))
 	label := strings.TrimSpace(input.Label)
 	description := strings.TrimSpace(input.Description)
 
 	if err := validateName(name); err != nil {
-		return storage.FleetGroupRecord{}, err
+		return Group{}, err
 	}
 	if label == "" {
 		// Fall back to name for label so operators who only care about
@@ -161,23 +161,23 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (storage.FleetG
 		label = name
 	}
 	if err := validateLabel(label); err != nil {
-		return storage.FleetGroupRecord{}, err
+		return Group{}, err
 	}
 	if err := validateDescription(description); err != nil {
-		return storage.FleetGroupRecord{}, err
+		return Group{}, err
 	}
 
 	// Cheap pre-check for a friendly error. The final guard is the
 	// DB's UNIQUE(name) constraint, which CreateFleetGroup surfaces as
 	// a driver error; we translate here for the HTTP path.
 	if _, err := s.store.GetFleetGroupByName(ctx, name); err == nil {
-		return storage.FleetGroupRecord{}, ErrNameInUse
+		return Group{}, ErrNameInUse
 	} else if !errors.Is(err, storage.ErrNotFound) {
-		return storage.FleetGroupRecord{}, err
+		return Group{}, err
 	}
 
 	now := s.now().UTC()
-	record := storage.FleetGroupRecord{
+	group := Group{
 		ID:          s.newID(),
 		Name:        name,
 		Label:       label,
@@ -185,21 +185,21 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (storage.FleetG
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	if err := s.store.CreateFleetGroup(ctx, record); err != nil {
+	if err := s.store.CreateFleetGroup(ctx, groupToRecord(group)); err != nil {
 		// Race on UNIQUE(name): surface the friendly error regardless
 		// of which SQL driver wraps the constraint violation.
 		if isUniqueViolation(err) {
-			return storage.FleetGroupRecord{}, ErrNameInUse
+			return Group{}, ErrNameInUse
 		}
-		return storage.FleetGroupRecord{}, err
+		return Group{}, err
 	}
-	return record, nil
+	return group, nil
 }
 
-func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (storage.FleetGroupRecord, error) {
+func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (Group, error) {
 	existing, err := s.store.GetFleetGroup(ctx, id)
 	if err != nil {
-		return storage.FleetGroupRecord{}, err
+		return Group{}, err
 	}
 
 	label := strings.TrimSpace(input.Label)
@@ -208,31 +208,43 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (sto
 		label = existing.Label
 	}
 	if err := validateLabel(label); err != nil {
-		return storage.FleetGroupRecord{}, err
+		return Group{}, err
 	}
 	if err := validateDescription(description); err != nil {
-		return storage.FleetGroupRecord{}, err
+		return Group{}, err
 	}
 
 	existing.Label = label
 	existing.Description = description
 	existing.UpdatedAt = s.now().UTC()
 	if err := s.store.UpdateFleetGroup(ctx, existing); err != nil {
-		return storage.FleetGroupRecord{}, err
+		return Group{}, err
 	}
-	return existing, nil
+	return groupFromRecord(existing), nil
 }
 
-func (s *Service) Get(ctx context.Context, id string) (storage.FleetGroupRecord, error) {
-	return s.store.GetFleetGroup(ctx, id)
+func (s *Service) Get(ctx context.Context, id string) (Group, error) {
+	record, err := s.store.GetFleetGroup(ctx, id)
+	if err != nil {
+		return Group{}, err
+	}
+	return groupFromRecord(record), nil
 }
 
-func (s *Service) GetByName(ctx context.Context, name string) (storage.FleetGroupRecord, error) {
-	return s.store.GetFleetGroupByName(ctx, strings.ToLower(strings.TrimSpace(name)))
+func (s *Service) GetByName(ctx context.Context, name string) (Group, error) {
+	record, err := s.store.GetFleetGroupByName(ctx, strings.ToLower(strings.TrimSpace(name)))
+	if err != nil {
+		return Group{}, err
+	}
+	return groupFromRecord(record), nil
 }
 
-func (s *Service) List(ctx context.Context) ([]storage.FleetGroupRecord, error) {
-	return s.store.ListFleetGroups(ctx)
+func (s *Service) List(ctx context.Context) ([]Group, error) {
+	records, err := s.store.ListFleetGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return groupsFromRecords(records), nil
 }
 
 // DeletionPreview reports how many FK rows reference the group. Used
@@ -301,11 +313,11 @@ func reassignFleetGroupMembers(ctx context.Context, tx storage.Store, id, reassi
 // control-plane startup: fresh databases need at least one group for
 // enrollment tokens to reference. Returns the existing row if already
 // present, or a new one if freshly seeded.
-func (s *Service) EnsureDefault(ctx context.Context) (storage.FleetGroupRecord, error) {
+func (s *Service) EnsureDefault(ctx context.Context) (Group, error) {
 	if existing, err := s.store.GetFleetGroupByName(ctx, defaultFleetGroupName); err == nil {
-		return existing, nil
+		return groupFromRecord(existing), nil
 	} else if !errors.Is(err, storage.ErrNotFound) {
-		return storage.FleetGroupRecord{}, err
+		return Group{}, err
 	}
 	return s.Create(ctx, CreateInput{
 		Name:        defaultFleetGroupName,

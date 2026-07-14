@@ -354,7 +354,7 @@ func (s *Server) patchAgentFleetGroupMembership(deletedID, reassignTo string) {
 // the server's in-memory agent snapshot so it matches the live
 // /agents endpoint — persistence lags heartbeats by a batch interval
 // and would show stale membership.
-func (s *Server) fleetGroupToResponse(ctx context.Context, g storage.FleetGroupRecord, withIntegrations bool) fleetGroupResponse {
+func (s *Server) fleetGroupToResponse(ctx context.Context, g fleet.Group, withIntegrations bool) fleetGroupResponse {
 	agentCount := 0
 	for _, agent := range s.live.List() {
 		if agent.FleetGroupID == g.ID {
