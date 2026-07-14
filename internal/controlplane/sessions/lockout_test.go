@@ -211,7 +211,7 @@ func TestLockoutCleanupExpiredEntries(t *testing.T) {
 	tracker.RecordFailureWithContext(context.Background(), "trigger-cleanup", future)
 
 	tracker.mu.Lock()
-	count := len(tracker.accounts)
+	count := len(tracker.entries)
 	tracker.mu.Unlock()
 
 	// All 70 expired entries should be cleaned, leaving only "trigger-cleanup".
@@ -338,5 +338,36 @@ func TestLockoutRestoreSkipsExpiredLockouts(t *testing.T) {
 	}
 	if tracker.IsLockedWithContext(context.Background(), "ghost", future) {
 		t.Fatal("expired lockout resurrected by Restore")
+	}
+}
+
+// TestLockoutRecordFailureExtendsDeadline pins the behavioural difference
+// between the counter trackers and the IP tracker: RecordFailure on an
+// already-locked account pushes lockedAt forward (the account tracker's
+// callers only reach it after a real verify attempt), whereas the IP
+// tracker deliberately does NOT extend (see
+// TestIPLockoutTracker_LockedAttemptsDoNotExtendDeadline). Both semantics
+// must survive any deduplication of the trackers.
+func TestLockoutRecordFailureExtendsDeadline(t *testing.T) {
+	tracker := NewLockoutTracker()
+	ctx := context.Background()
+	base := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+
+	for i := 0; i < LockoutMaxAttempts; i++ {
+		tracker.RecordFailureWithContext(ctx, "alice", base)
+	}
+	if !tracker.IsLockedWithContext(ctx, "alice", base) {
+		t.Fatal("account not locked after max attempts")
+	}
+
+	// One more failure 10 minutes in re-arms the 15-minute window from
+	// that moment, so the account is still locked 20 minutes after the
+	// original trip.
+	tracker.RecordFailureWithContext(ctx, "alice", base.Add(10*time.Minute))
+	if !tracker.IsLockedWithContext(ctx, "alice", base.Add(20*time.Minute)) {
+		t.Fatal("RecordFailure while locked must extend the lockout deadline")
+	}
+	if tracker.IsLockedWithContext(ctx, "alice", base.Add(26*time.Minute)) {
+		t.Fatal("lockout must end one window after the last failure")
 	}
 }
