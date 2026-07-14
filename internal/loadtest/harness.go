@@ -13,7 +13,7 @@ import (
 // fleetGroupID is the fixed UUID seeded in every harness so agents enrolled
 // across scenarios share a fleet group. UUIDv7 picked at authoring time;
 // kept stable so the bench output is reproducible across runs.
-const fleetGroupID = "0190e000-0000-7000-8000-loadtestfleet"
+const fleetGroupID = "0190e000-0000-7000-8000-000010adfeed"
 
 // openHarnessStore opens a fresh SQLite store under the test's TempDir,
 // seeds a single fleet group (the FK target every AgentRecord needs), and

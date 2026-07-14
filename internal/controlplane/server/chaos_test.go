@@ -109,7 +109,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 		AgentIDs:  []string{"agent-A"},
 	}
 
-	jobsBefore := len(server.jobs.List())
+	jobsBefore := len(server.jobs.ListWithContext(context.Background()))
 
 	_, _, _, createErr := server.createClient(ctx, "user-1", input, now)
 	if !errors.Is(createErr, chaosErr) {
@@ -140,7 +140,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 	// BEFORE enqueueClientJob; a persist failure must short-circuit the
 	// whole sequence so agents are never commanded to create a client the
 	// CP does not know about.
-	if jobsAfter := len(server.jobs.List()); jobsAfter != jobsBefore {
+	if jobsAfter := len(server.jobs.ListWithContext(context.Background())); jobsAfter != jobsBefore {
 		t.Fatalf("jobs enqueued after failed transact = %d, want %d (no side-effect)", jobsAfter-jobsBefore, 0)
 	}
 }

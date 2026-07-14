@@ -108,10 +108,10 @@ func TestSecureDownloadClient_RejectsExternalRedirect(t *testing.T) {
 	}))
 	t.Cleanup(origin.Close)
 
-	// Exercise RestrictedRedirectPolicy in isolation: the real SecureDownloadClient
+	// Exercise restrictedRedirectPolicy in isolation: the real SecureDownloadClient
 	// would reject the origin URL itself (httptest server is not on the allow-list),
 	// so we use a bare client with only the CheckRedirect wired in.
-	client := &http.Client{CheckRedirect: RestrictedRedirectPolicy()}
+	client := &http.Client{CheckRedirect: restrictedRedirectPolicy()}
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin.URL, nil)
 	if err != nil {
 		t.Fatalf("NewRequest error = %v", err)

@@ -100,7 +100,7 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 		t.Fatalf("seed SaveState() error = %v", err)
 	}
 
-	jobsBefore := len(server.jobs.List())
+	jobsBefore := len(server.jobs.ListWithContext(context.Background()))
 
 	// Now arm the persist failure for the delete tombstone write.
 	failingRepo.saveErr = persistErr
@@ -110,7 +110,7 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 		t.Fatalf("deleteClient() error = %v, want %v", err, persistErr)
 	}
 
-	jobsAfter := server.jobs.List()
+	jobsAfter := server.jobs.ListWithContext(context.Background())
 	if len(jobsAfter) != jobsBefore {
 		t.Fatalf("jobs queued after failed persist = %d, want %d (no job should be enqueued when persist fails)", len(jobsAfter)-jobsBefore, 0)
 	}

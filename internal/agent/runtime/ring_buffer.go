@@ -47,13 +47,6 @@ func (b *RuntimeRingBuffer) Push(sample RuntimeSample) {
 	}
 }
 
-// DroppedCount returns the number of samples dropped due to capacity overflow.
-func (b *RuntimeRingBuffer) DroppedCount() uint64 {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.dropped
-}
-
 // snapshotOrdered returns the buffered samples in oldest-first order
 // without holding the lock past the copy. The caller takes ownership.
 func (b *RuntimeRingBuffer) snapshotOrdered() []RuntimeSample {

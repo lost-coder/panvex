@@ -259,3 +259,21 @@ func TestLiveStoreReplaceIsScopedToOneAgent(t *testing.T) {
 		t.Fatalf("AllInstances after Remove = %d, want 1", len(all))
 	}
 }
+
+// Has reports whether the agent is present in the live mirror. Test-only:
+// production code never asks "is this agent live?" — the snapshot
+// resurrection guard keys off revokedAgentIDs in the server, not live
+// presence.
+func (s *LiveStore) Has(agentID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.agents[agentID]
+	return ok
+}
+
+// Len reports the number of agents in the live mirror. Test-only.
+func (s *LiveStore) Len() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.agents)
+}

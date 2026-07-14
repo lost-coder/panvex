@@ -52,7 +52,7 @@ func TestLazyExpirySealsQueuedJob(t *testing.T) {
 	currentNow = start.Add(2 * time.Minute)
 	service.ListWithContext(context.Background())
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("List len = %d, want 1", len(list))
 	}
@@ -203,7 +203,7 @@ func TestConcurrentEnqueueListRecordResult(t *testing.T) {
 		}
 	}
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != enqueuers*perEnq {
 		t.Fatalf("List len after seals = %d, want %d (jobs must not be dropped)", len(list), enqueuers*perEnq)
 	}

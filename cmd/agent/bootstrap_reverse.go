@@ -364,4 +364,3 @@ func makeBootstrapVerifier(caPinB64, panelCN string) (func([][]byte, [][]*x509.C
 			panelCN, leaf.Subject.CommonName, leaf.DNSNames)
 	}, nil
 }
-

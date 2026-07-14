@@ -12,8 +12,6 @@
 //     a slice of assignments to the concrete set of agent IDs they
 //     resolve to, given caller-supplied snapshots of the agent/fleet
 //     topology.
-//   - ResolveIDByName: pure lookup helper that resolves a managed client
-//     ID from (agent, clientName) given caller-supplied snapshots.
 //   - A stub Service struct that will eventually own managed-client
 //     orchestration (create/update/rotate/delete/adopt); it currently
 //     exposes only the pure helpers as methods so callers that want to

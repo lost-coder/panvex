@@ -40,7 +40,7 @@ func TestResetQuotaHappyPath(t *testing.T) {
 	}
 	agent := New(Config{AgentID: "agent-1"}, stub)
 	job := makeResetQuotaJob(t, "client-1", "alice")
-	result := runResetQuotaJob(t, agent,job)
+	result := runResetQuotaJob(t, agent, job)
 
 	if !result.GetSuccess() {
 		t.Fatalf("expected success, got message=%q", result.GetMessage())
@@ -68,7 +68,7 @@ func TestResetQuotaHappyPath(t *testing.T) {
 func TestResetQuotaUnsupportedFlagsTypedReason(t *testing.T) {
 	stub := &fakeTelemtClient{resetQuotaErr: telemt.ErrResetQuotaUnsupported}
 	agent := New(Config{AgentID: "agent-1"}, stub)
-	result := runResetQuotaJob(t, agent,makeResetQuotaJob(t, "client-1", "alice"))
+	result := runResetQuotaJob(t, agent, makeResetQuotaJob(t, "client-1", "alice"))
 
 	if result.GetSuccess() {
 		t.Fatal("expected success=false when endpoint is unsupported")
@@ -93,7 +93,7 @@ func TestResetQuotaUnsupportedFlagsTypedReason(t *testing.T) {
 func TestResetQuotaReadOnlyFlagsTypedReason(t *testing.T) {
 	stub := &fakeTelemtClient{resetQuotaErr: telemt.ErrResetQuotaReadOnly}
 	agent := New(Config{AgentID: "agent-1"}, stub)
-	result := runResetQuotaJob(t, agent,makeResetQuotaJob(t, "client-1", "alice"))
+	result := runResetQuotaJob(t, agent, makeResetQuotaJob(t, "client-1", "alice"))
 
 	if result.GetSuccess() {
 		t.Fatal("expected success=false when Telemt is read-only")
@@ -114,7 +114,7 @@ func TestResetQuotaReadOnlyFlagsTypedReason(t *testing.T) {
 func TestResetQuotaGenericFailureSkipsTypedReason(t *testing.T) {
 	stub := &fakeTelemtClient{resetQuotaErr: errDummy}
 	agent := New(Config{AgentID: "agent-1"}, stub)
-	result := runResetQuotaJob(t, agent,makeResetQuotaJob(t, "client-1", "alice"))
+	result := runResetQuotaJob(t, agent, makeResetQuotaJob(t, "client-1", "alice"))
 
 	if result.GetSuccess() {
 		t.Fatal("expected success=false on generic failure")
@@ -132,7 +132,7 @@ func TestResetQuotaInvalidPayloadRejects(t *testing.T) {
 	stub := &fakeTelemtClient{}
 	agent := New(Config{AgentID: "agent-1"}, stub)
 	job := makeResetQuotaJob(t, "client-1", "")
-	result := runResetQuotaJob(t, agent,job)
+	result := runResetQuotaJob(t, agent, job)
 
 	if result.GetSuccess() {
 		t.Fatal("expected success=false on empty name")

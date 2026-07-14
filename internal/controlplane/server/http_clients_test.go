@@ -94,9 +94,9 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 		t.Fatalf("len(created.user_ad_tag) = %d, want %d", len(created.UserADTag), 32)
 	}
 
-	enqueuedJobs := server.jobs.List()
+	enqueuedJobs := server.jobs.ListWithContext(context.Background())
 	if len(enqueuedJobs) != 1 {
-		t.Fatalf("len(server.jobs.List()) = %d, want %d", len(enqueuedJobs), 1)
+		t.Fatalf("len(jobs.List) = %d, want %d", len(enqueuedJobs), 1)
 	}
 	if enqueuedJobs[0].Action != jobs.ActionClientCreate {
 		t.Fatalf("jobs[0].Action = %q, want %q", enqueuedJobs[0].Action, jobs.ActionClientCreate)
@@ -203,9 +203,9 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatalf("PUT /api/clients/{id} status = %d, want %d", updateResponse.Code, http.StatusOK)
 	}
 
-	queuedJobs := server.jobs.List()
+	queuedJobs := server.jobs.ListWithContext(context.Background())
 	if len(queuedJobs) != 2 {
-		t.Fatalf("len(server.jobs.List()) after update = %d, want %d", len(queuedJobs), 2)
+		t.Fatalf("len(jobs.List) after update = %d, want %d", len(queuedJobs), 2)
 	}
 	if queuedJobs[1].Action != jobs.ActionClientUpdate {
 		t.Fatalf("jobs[1].Action = %q, want %q", queuedJobs[1].Action, jobs.ActionClientUpdate)
@@ -232,9 +232,9 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatal("rotated.secret = original secret, want changed secret")
 	}
 
-	queuedJobs = server.jobs.List()
+	queuedJobs = server.jobs.ListWithContext(context.Background())
 	if len(queuedJobs) != 3 {
-		t.Fatalf("len(server.jobs.List()) after rotate = %d, want %d", len(queuedJobs), 3)
+		t.Fatalf("len(jobs.List) after rotate = %d, want %d", len(queuedJobs), 3)
 	}
 	if queuedJobs[2].Action != jobs.ActionClientRotateSecret {
 		t.Fatalf("jobs[2].Action = %q, want %q", queuedJobs[2].Action, jobs.ActionClientRotateSecret)
@@ -245,9 +245,9 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatalf("DELETE /api/clients/{id} status = %d, want %d", deleteResponse.Code, http.StatusNoContent)
 	}
 
-	queuedJobs = server.jobs.List()
+	queuedJobs = server.jobs.ListWithContext(context.Background())
 	if len(queuedJobs) != 4 {
-		t.Fatalf("len(server.jobs.List()) after delete = %d, want %d", len(queuedJobs), 4)
+		t.Fatalf("len(jobs.List) after delete = %d, want %d", len(queuedJobs), 4)
 	}
 	if queuedJobs[3].Action != jobs.ActionClientDelete {
 		t.Fatalf("jobs[3].Action = %q, want %q", queuedJobs[3].Action, jobs.ActionClientDelete)
@@ -491,9 +491,9 @@ func TestHTTPClientsListingReflectsDeploymentAndUsage(t *testing.T) {
 		t.Fatalf("json.Unmarshal(create) error = %v", err)
 	}
 
-	enqueuedJobs := server.jobs.List()
+	enqueuedJobs := server.jobs.ListWithContext(context.Background())
 	if len(enqueuedJobs) != 1 {
-		t.Fatalf("len(server.jobs.List()) = %d, want %d", len(enqueuedJobs), 1)
+		t.Fatalf("len(jobs.List) = %d, want %d", len(enqueuedJobs), 1)
 	}
 	recordJobResultForTest(server, context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
@@ -606,7 +606,7 @@ func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
 	}
 
 	// (1) Job-deployment write-path: record a successful client-create job.
-	createJobs := server.jobs.List()
+	createJobs := server.jobs.ListWithContext(context.Background())
 	if len(createJobs) != 1 {
 		t.Fatalf("len(create jobs) = %d, want 1", len(createJobs))
 	}
@@ -643,7 +643,7 @@ func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
 		t.Fatalf("POST reset-quota status = %d, want 200/202", resetResponse.Code)
 	}
 	var resetJobID string
-	for _, j := range server.jobs.List() {
+	for _, j := range server.jobs.ListWithContext(context.Background()) {
 		if j.Action == jobs.ActionClientResetQuota {
 			resetJobID = j.ID
 		}
@@ -768,9 +768,9 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 		t.Fatalf("createClient() error = %v", err)
 	}
 
-	jobList := server.jobs.List()
+	jobList := server.jobs.ListWithContext(context.Background())
 	if len(jobList) != 1 {
-		t.Fatalf("len(jobs.List()) = %d, want %d", len(jobList), 1)
+		t.Fatalf("len(jobs.List) = %d, want %d", len(jobList), 1)
 	}
 
 	store.putClientDeploymentErr = errors.New("put client deployment failed")

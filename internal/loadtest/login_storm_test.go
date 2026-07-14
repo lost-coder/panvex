@@ -11,11 +11,11 @@
 //     account_lockout tracker must trip after exactly LockoutMaxAttempts
 //     (5) failures and reject every subsequent attempt for the lockout
 //     window. The Test variant asserts that:
-//       * every good-password worker got a session (no false-negatives)
-//       * the lockout fired (no false-positive successful login on a
-//         locked account)
-//       * the failed-attempt counter stopped at the lockout threshold
-//         (the locked branch short-circuits before another verify)
+//   - every good-password worker got a session (no false-negatives)
+//   - the lockout fired (no false-positive successful login on a
+//     locked account)
+//   - the failed-attempt counter stopped at the lockout threshold
+//     (the locked branch short-circuits before another verify)
 //
 // How to run
 //

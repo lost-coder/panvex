@@ -1,9 +1,5 @@
 package config
 
-import (
-	"errors"
-)
-
 const (
 	// DefaultHTTPListenAddress points to the default control-plane HTTP bind address.
 	DefaultHTTPListenAddress = ":8080"
@@ -23,16 +19,3 @@ const (
 	// `ps` output and host-level backups).
 	EnvDBPassword = "PANVEX_DB_PASSWORD"
 )
-
-var (
-	// ErrInvalidPanelTLSMode reports an unsupported TLS mode in control-plane runtime config.
-	ErrInvalidPanelTLSMode = errors.New("invalid panel tls mode")
-	// ErrInvalidRestartMode reports an unsupported restart mode in control-plane runtime config.
-	ErrInvalidRestartMode = errors.New("invalid restart mode")
-	// ErrInvalidRootPath reports a root-path that escapes the public mount
-	// point after path cleaning (S12). In practice `path.Clean` eliminates
-	// `..` segments from any absolute input, so this check is a tripwire
-	// against future refactors that remove the forced leading slash.
-	ErrInvalidRootPath = errors.New("invalid root path")
-)
-

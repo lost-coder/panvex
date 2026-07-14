@@ -440,9 +440,9 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			s.enrollmentRec = enrollment.NewRecorder(
 				enrollment.NewSQLStore(dbsqlc.New(rawDB), rawDB),
 				s.now,
-			).
-				WithPublisher(enrollmentBusAdapter{bus: s.events}).
-				WithLogger(s.logger)
+				enrollmentBusAdapter{bus: s.events},
+				s.logger,
+			)
 		}
 	}
 

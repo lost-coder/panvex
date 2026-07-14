@@ -17,7 +17,7 @@ func fixedClock(t time.Time) func() time.Time {
 
 func TestRecorderBeginEventComplete(t *testing.T) {
 	store := enrollmenttest.NewMemStore()
-	rec := enrollment.NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)))
+	rec := enrollment.NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)), nil, nil)
 
 	ctx := enrollment.WithRequestID(context.Background(), "req-1")
 	attemptID, err := rec.Begin(ctx, enrollment.ModeInbound, "tok-1", "10.0.0.5")
@@ -66,7 +66,7 @@ func TestRecorderBeginEventComplete(t *testing.T) {
 
 func TestRecorderFailIsTerminal(t *testing.T) {
 	store := enrollmenttest.NewMemStore()
-	rec := enrollment.NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)))
+	rec := enrollment.NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)), nil, nil)
 
 	ctx := enrollment.WithRequestID(context.Background(), "req-2")
 	attemptID, err := rec.Begin(ctx, enrollment.ModeInbound, "tok-2", "10.0.0.6")
@@ -105,7 +105,7 @@ func TestRecorderFailIsTerminal(t *testing.T) {
 
 func TestRecorderIngestAgentEvents(t *testing.T) {
 	store := enrollmenttest.NewMemStore()
-	rec := enrollment.NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)))
+	rec := enrollment.NewRecorder(store, fixedClock(time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)), nil, nil)
 
 	ctx := context.Background()
 	attemptID, err := rec.Begin(ctx, enrollment.ModeInbound, "tok-3", "10.0.0.7")
@@ -145,7 +145,7 @@ func TestListAttemptsFiltersByMode(t *testing.T) {
 		t := tick
 		tick = tick.Add(time.Millisecond)
 		return t
-	})
+	}, nil, nil)
 	ctx := context.Background()
 
 	id1, err := rec.Begin(ctx, enrollment.ModeInbound, "", "addr1")
@@ -188,7 +188,7 @@ func TestListAttemptsCursorPagination(t *testing.T) {
 		t := tick
 		tick = tick.Add(2 * time.Millisecond)
 		return t
-	})
+	}, nil, nil)
 	ctx := context.Background()
 
 	ids := []string{}

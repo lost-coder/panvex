@@ -202,4 +202,3 @@ func BenchmarkAgentBurst(b *testing.B) {
 		b.ReportMetric(float64(hbLat.Percentile(0.99).Microseconds()), "heartbeat-p99-us")
 	}
 }
-

@@ -207,7 +207,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		t.Fatalf("len(detail.security_inventory.entries) = %d, want %d", len(detailPayload.SecurityInventory.Entries), 2)
 	}
 
-	jobsList := server.jobs.List()
+	jobsList := server.jobs.ListWithContext(context.Background())
 	foundRefreshJob := false
 	for _, job := range jobsList {
 		if string(job.Action) == "telemetry.refresh_diagnostics" {
@@ -216,7 +216,7 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 		}
 	}
 	if !foundRefreshJob {
-		t.Fatal("jobs.List() did not contain telemetry.refresh_diagnostics job")
+		t.Fatal("job list did not contain telemetry.refresh_diagnostics job")
 	}
 
 	// F4: detail boost is in-memory only and intentionally NOT persisted —
