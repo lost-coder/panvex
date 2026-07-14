@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -353,7 +354,11 @@ func TestResetTotpRevokesSessions(t *testing.T) {
 	}
 }
 
-func TestServiceGetSessionPrunesOtherExpiredSessions(t *testing.T) {
+// R7: GetSession no longer sweeps the whole session map — that ran on every
+// authenticated request. The two properties that matter are asserted here
+// instead: an expired session is refused (and evicted) the moment it is asked
+// for, and the background sweeper reclaims expired sessions nobody asks about.
+func TestExpiredSessionIsRefusedImmediatelyAndSweptInBackground(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 	service.SetNow(func() time.Time { return now })
@@ -367,7 +372,7 @@ func TestServiceGetSessionPrunesOtherExpiredSessions(t *testing.T) {
 		t.Fatalf("BootstrapUser() error = %v", err)
 	}
 
-	session, err := service.Authenticate(context.Background(), LoginInput{
+	live, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "viewer",
 		Password: "Viewer1password",
 	}, now)
@@ -383,16 +388,52 @@ func TestServiceGetSessionPrunesOtherExpiredSessions(t *testing.T) {
 	}
 	service.mu.Unlock()
 
-	if _, err := service.GetSession(session.ID); err != nil {
-		t.Fatalf("GetSession() error = %v", err)
+	// Refused on the spot, without waiting for any sweeper tick.
+	if _, err := service.GetSession("session-expired"); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("GetSession(expired) error = %v, want ErrSessionNotFound", err)
 	}
-
 	service.mu.RLock()
 	_, stillPresent := service.sessions["session-expired"]
 	service.mu.RUnlock()
 	if stillPresent {
-		t.Fatal("expired session still present after GetSession()")
+		t.Fatal("expired session must be evicted when it is asked for")
 	}
+
+	// A live session is unaffected.
+	if _, err := service.GetSession(live.ID); err != nil {
+		t.Fatalf("GetSession(live) error = %v", err)
+	}
+
+	// The sweeper reclaims an expired session nobody asks about.
+	service.mu.Lock()
+	service.sessions["session-forgotten"] = Session{
+		ID:        "session-forgotten",
+		UserID:    user.ID,
+		CreatedAt: now.Add(-sessionTTL - time.Minute),
+	}
+	service.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	service.StartSessionCleanupWorker(ctx, 5*time.Millisecond, &wg)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		service.mu.RLock()
+		_, present := service.sessions["session-forgotten"]
+		service.mu.RUnlock()
+		if !present {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("cleanup worker did not reclaim the expired session")
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	cancel()
+	wg.Wait()
 }
 
 // TestServiceLoadUsers seeds a service from a static user list (the

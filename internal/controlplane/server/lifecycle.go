@@ -459,6 +459,11 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 // startBackgroundWorkers launches the rollup, key-eviction, ack-expiry and
 // metrics-poller goroutines. Returns the rollup ctx so the caller stays in
 // charge of cleanup wiring.
+// sessionCleanupInterval is how often expired sessions and consumed TOTP codes
+// are reclaimed from memory. Not an operator tunable: it only affects when
+// dead entries are freed, never when a session stops working.
+const sessionCleanupInterval = time.Minute
+
 func (s *Server) startBackgroundWorkers() {
 	// Resolve worker cadences: prefer OperationalStore getters when a store
 	// is wired (production); fall back to s.intervals for tests and
@@ -491,6 +496,13 @@ func (s *Server) startBackgroundWorkers() {
 	// startup poll naturally resumes any batch left running by a prior
 	// process (panel restart resilience).
 	s.startConfigApplyBatchWorker(rollupCtx, configApplyPollInterval)
+
+	// R7: reclaim expired sessions + consumed TOTP codes on a ticker. This
+	// sweep used to run under the auth write lock on EVERY GetSession — i.e.
+	// on every authenticated request. Expiry itself is still immediate:
+	// GetSession refuses and evicts an expired session when it is asked for.
+	s.rollupWg.Add(1)
+	s.auth.StartSessionCleanupWorker(rollupCtx, sessionCleanupInterval, &s.rollupWg)
 
 	// Evict idempotency keys for terminal jobs on an hourly tick to keep
 	// jobs.Service.keys bounded. See P2-PERF-03. TTL of 24h matches the

@@ -202,6 +202,40 @@ func (s *Service) installRestoredSessions(records []storage.SessionRecord, cutof
 	}
 }
 
+// StartSessionCleanupWorker sweeps expired sessions and consumed-TOTP codes on
+// a ticker until ctx is cancelled. The sweep is O(sessions + consumed codes)
+// under the write lock, which is why it does NOT run on the request path any
+// more: it used to fire on every GetSession — i.e. on every authenticated HTTP
+// request — serialising the whole fleet's requests behind a full map scan.
+//
+// Expiry itself is not deferred to this worker. GetSession still rejects and
+// evicts an expired session the moment it is asked for one; the worker only
+// reclaims the memory of sessions nobody asks about any more.
+//
+// The caller owns wg.Add(1); the worker Done()s on exit.
+func (s *Service) StartSessionCleanupWorker(ctx context.Context, interval time.Duration, wg *sync.WaitGroup) {
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	go func() {
+		if wg != nil {
+			defer wg.Done()
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.mu.Lock()
+				s.cleanupExpiredSessionsLocked(s.now().UTC())
+				s.mu.Unlock()
+			}
+		}
+	}()
+}
+
 func (s *Service) cleanupExpiredSessionsLocked(now time.Time) {
 	maxCutoff := now.UTC().Add(-s.effectiveSessionMaxLifetime())
 	idleCutoff := now.UTC().Add(-s.effectiveSessionIdleTimeout())
@@ -273,18 +307,16 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// TOTP verification and replay check must both happen under the lock to
 	// prevent a TOCTOU race where two concurrent requests with the same code
 	// both pass verification before either records consumption.
 	if user.TotpEnabled {
 		if err := s.verifyTotpAndConsumeLocked(ctx, user, input.TotpCode, now); err != nil {
+			s.mu.Unlock()
 			return Session{}, err
 		}
 	}
-
-	s.cleanupExpiredSessionsLocked(now)
 
 	// P2-SEC-01: invalidate any pre-authentication session the browser carried
 	// into this login. Without this step, an attacker who planted a session
@@ -308,6 +340,7 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 
 	cookieToken, sessionID, err := s.issueSessionIdentityLocked()
 	if err != nil {
+		s.mu.Unlock()
 		return Session{}, err
 	}
 	session := Session{
@@ -316,17 +349,29 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 		CreatedAt:  now.UTC(),
 		LastSeenAt: now.UTC(),
 	}
+	s.mu.Unlock()
 
-	// P2-SEC-07: persist the session before inserting it into the in-memory
-	// map. If the store rejects the write we must NOT create the session at
-	// all — an in-memory-only session would silently disappear on the next
-	// control-plane restart, leaving the operator logged in but unable to
-	// recover cleanly. Surface the failure so the caller retries / fails over.
+	// The store write happens OUTSIDE s.mu. It is a DB round-trip, and holding
+	// the lock across it stalled every concurrent GetSession — that is, every
+	// authenticated request in flight — for the duration of a login's disk I/O.
+	//
+	// Dropping the lock here is safe because nothing can reach the new session
+	// yet: its cookie has not left this function. The prior session, if any, is
+	// already gone from the map (deleted above, under the lock), so a failed
+	// persist leaves exactly the state it left before — no prior session, no
+	// new one — and the login is rejected.
+	//
+	// P2-SEC-07: persist BEFORE publishing the session in memory. If the store
+	// rejects the write we must NOT create the session at all — an
+	// in-memory-only session would silently disappear on the next control-plane
+	// restart, leaving the operator logged in but unable to recover cleanly.
 	if err := s.persistAuthenticatedSession(ctx, session, priorLookupID); err != nil {
 		return Session{}, err
 	}
 
+	s.mu.Lock()
 	s.sessions[session.ID] = session
+	s.mu.Unlock()
 
 	// Attach the opaque cookie token to the *returned* Session only —
 	// the in-memory map stores Session.Cookie as zero so an attacker
@@ -404,19 +449,26 @@ func (s *Service) RevokeSessionsForUserExcept(ctx context.Context, userID, excep
 // reported as ErrSessionNotFound and evicted from memory. Use TouchSession
 // to slide the idle-timeout forward during an authenticated request.
 func (s *Service) GetSession(sessionID string) (Session, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// Hot path: every authenticated HTTP request lands here. It takes the READ
+	// lock and touches exactly one map entry — no full-map sweep (that moved to
+	// StartSessionCleanupWorker) and no write lock unless this particular
+	// session turns out to be expired.
+	s.mu.RLock()
 	now := s.now().UTC()
-	s.cleanupExpiredSessionsLocked(now)
-
 	session, ok := s.sessions[sessionID]
+	expired := ok && (now.After(session.CreatedAt.Add(s.effectiveSessionMaxLifetime())) ||
+		now.After(session.LastSeenAt.Add(s.effectiveSessionIdleTimeout())))
+	s.mu.RUnlock()
+
 	if !ok {
 		return Session{}, ErrSessionNotFound
 	}
-	if now.After(session.CreatedAt.Add(s.effectiveSessionMaxLifetime())) ||
-		now.After(session.LastSeenAt.Add(s.effectiveSessionIdleTimeout())) {
+	if expired {
+		// Evict immediately — an expired session must not be usable while it
+		// waits for the sweeper.
+		s.mu.Lock()
 		delete(s.sessions, sessionID)
+		s.mu.Unlock()
 		return Session{}, ErrSessionNotFound
 	}
 
@@ -474,7 +526,6 @@ func (s *Service) Logout(ctx context.Context, sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.cleanupExpiredSessionsLocked(s.now().UTC())
 	if _, ok := s.sessions[sessionID]; !ok {
 		return ErrSessionNotFound
 	}
