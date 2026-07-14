@@ -234,19 +234,11 @@ func (s *OperationalStore) SubscriptionPublicBaseURL() string {
 }
 
 func (s *OperationalStore) PasswordMinLength() int {
-	n, _ := strconv.Atoi(s.rawByName("auth.password_min_length"))
-	if n == 0 {
-		return 10
-	}
-	return n
+	return s.intByName("auth.password_min_length")
 }
 
 func (s *OperationalStore) UpdatesChannel() string {
-	v := s.rawByName("updates.channel")
-	if v == "" {
-		return "stable"
-	}
-	return v
+	return s.stringByName("updates.channel")
 }
 func (s *OperationalStore) UpdatesAllowPrerelease() bool {
 	b, _ := strconv.ParseBool(s.rawByName("updates.allow_prerelease"))
@@ -261,11 +253,9 @@ func (s *OperationalStore) durationByName(name string) time.Duration {
 			return d
 		}
 	}
-	for _, f := range AllFields() {
-		if f.Name == name && f.HasDefault {
-			d, _ := time.ParseDuration(f.Default)
-			return d
-		}
+	if def, ok := defaultFor(name); ok {
+		d, _ := time.ParseDuration(def)
+		return d
 	}
 	return 0
 }
@@ -276,13 +266,20 @@ func (s *OperationalStore) intByName(name string) int {
 			return n
 		}
 	}
-	for _, f := range AllFields() {
-		if f.Name == name && f.HasDefault {
-			n, _ := strconv.Atoi(f.Default)
-			return n
-		}
+	if def, ok := defaultFor(name); ok {
+		n, _ := strconv.Atoi(def)
+		return n
 	}
 	return 0
+}
+
+// stringByName returns the stored value, or the registry default when unset.
+func (s *OperationalStore) stringByName(name string) string {
+	if raw := s.rawByName(name); raw != "" {
+		return raw
+	}
+	def, _ := defaultFor(name)
+	return def
 }
 
 // --- typed getters for audited operational fields ---

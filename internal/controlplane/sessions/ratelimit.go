@@ -22,7 +22,17 @@ type RateLimiter struct {
 	limit   int
 	window  time.Duration
 	buckets map[string]rateLimitBucket
+	// sinceSweep counts Allow calls since the last stale-bucket sweep. The
+	// sweep is O(buckets) under the lock and used to run on EVERY Allow once
+	// the map passed 128 entries — i.e. on every login attempt from a busy
+	// fleet. It is amortised over sweepEvery calls now; stale buckets are
+	// inert (a stale bucket cannot allow or deny anything, it just occupies
+	// memory), so reclaiming them a few hundred calls late costs nothing.
+	sinceSweep int
 }
+
+// sweepEvery is how many Allow calls pass between stale-bucket sweeps.
+const sweepEvery = 256
 
 type rateLimitBucket struct {
 	windowStart int64
@@ -73,6 +83,8 @@ func (l *RateLimiter) Allow(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	defer l.maybeSweepLocked(nowNanos)
+
 	bucket, ok := l.buckets[key]
 	if !ok || bucket.windowStart != windowStart {
 		l.buckets[key] = rateLimitBucket{
@@ -80,21 +92,29 @@ func (l *RateLimiter) Allow(key string, now time.Time) bool {
 			count:       1,
 			lastSeen:    nowNanos,
 		}
-		l.cleanupStaleBucketsLocked(nowNanos)
 		return true
 	}
 	if bucket.count >= l.limit {
 		bucket.lastSeen = nowNanos
 		l.buckets[key] = bucket
-		l.cleanupStaleBucketsLocked(nowNanos)
 		return false
 	}
 
 	bucket.count++
 	bucket.lastSeen = nowNanos
 	l.buckets[key] = bucket
-	l.cleanupStaleBucketsLocked(nowNanos)
 	return true
+}
+
+// maybeSweepLocked runs the stale-bucket sweep once every sweepEvery calls.
+// Caller must hold l.mu.
+func (l *RateLimiter) maybeSweepLocked(nowNanos int64) {
+	l.sinceSweep++
+	if l.sinceSweep < sweepEvery {
+		return
+	}
+	l.sinceSweep = 0
+	l.cleanupStaleBucketsLocked(nowNanos)
 }
 
 func (l *RateLimiter) cleanupStaleBucketsLocked(nowNanos int64) {
