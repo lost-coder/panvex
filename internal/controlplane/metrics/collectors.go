@@ -127,6 +127,12 @@ type Collectors struct {
 	// labelled by result. Bounded enum: ok|mismatch|missing.
 	// Pre-initialised to zero for PromQL alert stability. (S-02)
 	AgentCertPinTotal *prometheus.CounterVec
+	// AgentConnectRejectedTotal counts agent connections the panel refused, by
+	// reason. A listen-mode node whose renewal handshake was interrupted shows
+	// up here as a stream of serial_mismatch — which is the only signal that
+	// distinguishes "node is down" from "node is up and we are refusing it"
+	// (R11).
+	AgentConnectRejectedTotal *prometheus.CounterVec
 	// AgentCertPinPersistFailuresTotal counts issuance-time failures to
 	// persist an agent's SPKI pin. A growing value means certs were issued
 	// whose pins never reached the store, so the fail-closed outbound dial
@@ -311,6 +317,10 @@ func NewCollectors() *Collectors {
 			Name: "panvex_bootstrap_attempts_total",
 			Help: "Reverse-mode bootstrap enrollment attempts by result. Bounded label enum: success|expired|mismatch|agent_id_mismatch|misbehavior|error.",
 		}, []string{"result"}),
+		AgentConnectRejectedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "panvex_agent_connect_rejected_total",
+			Help: "Agent connections refused by the panel, by reason (revoked|serial_mismatch|serial_lookup_failed). A sustained serial_mismatch for one agent means its credentials and the panel's have diverged — typically an interrupted certificate renewal.",
+		}, []string{"reason"}),
 		AgentCertPinTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_agent_cert_pin_total",
 			Help: "Dial-time SPKI pin verification outcomes per outbound agent TLS handshake. Bounded label enum: ok|mismatch|missing. (S-02)",
@@ -365,6 +375,7 @@ func NewCollectors() *Collectors {
 		mc.OutboundSupervisorsTotal,
 		mc.BootstrapAttemptsTotal,
 		mc.AgentCertPinTotal,
+		mc.AgentConnectRejectedTotal,
 		mc.AgentCertPinPersistFailuresTotal,
 		mc.CACertExpiryTimestamp,
 		mc.ServerCertExpiryTimestamp,
@@ -445,6 +456,15 @@ func (c *Collectors) ObserveAgentCertPin(result string) {
 		return
 	}
 	c.AgentCertPinTotal.WithLabelValues(result).Inc()
+}
+
+// ObserveAgentConnectRejected counts one refused agent connection.
+// Safe to call on a nil receiver (metrics disabled).
+func (c *Collectors) ObserveAgentConnectRejected(reason string) {
+	if c == nil {
+		return
+	}
+	c.AgentConnectRejectedTotal.WithLabelValues(reason).Inc()
 }
 
 // ObserveAgentCertPinPersistFailure records a failure to persist a freshly

@@ -42,6 +42,7 @@ func (s *Server) AuthorizeAgentConnect(ctx context.Context, sess agenttransport.
 	_, revoked := s.revokedAgentIDs[agentID]
 	s.mu.RUnlock()
 	if revoked {
+		s.obs.ObserveAgentConnectRejected("revoked")
 		return "", "", agentrevocation.RevokedStatus("agent certificate has been revoked").Err()
 	}
 	// Q4.U-S-04: cert pinning. The CN match (already covered by
@@ -71,13 +72,16 @@ func (s *Server) AuthorizeAgentConnect(ctx context.Context, sess agenttransport.
 					"agent_id", agentID,
 					"error", err)
 			}
+			s.obs.ObserveAgentConnectRejected("serial_lookup_failed")
 			return "", "", status.Error(codes.Unavailable, "agent cert pin check unavailable")
 		}
 		if expected != "" && expected != presentedSerial {
 			s.logger.WarnContext(ctx, "agent cert serial mismatch — rejecting connect",
 				"agent_id", agentID,
 				"expected_serial", expected,
-				"presented_serial", presentedSerial)
+				"presented_serial", presentedSerial,
+				"alert", "agent_cert_serial_mismatch")
+			s.obs.ObserveAgentConnectRejected("serial_mismatch")
 			return "", "", status.Error(codes.PermissionDenied, "agent certificate not pinned for this agent")
 		}
 	}
@@ -120,7 +124,17 @@ func (s *Server) ShouldTerminateForRevocation(ctx context.Context, agentID, pres
 		return true
 	}
 	if expected != "" && expected != presentedSerial {
-		s.logger.InfoContext(ctx, "mid-stream cert pin mismatch, terminating", "agent_id", agentID)
+		// Warn, not Info: this is the signal that tells an operator the node is
+		// UP and being refused, rather than simply down — the difference
+		// between "the box is off" and "an interrupted renewal left the two
+		// sides holding different certificates" (R11).
+		s.logger.WarnContext(ctx, "mid-stream cert serial mismatch, terminating agent stream",
+			"agent_id", agentID,
+			"expected_serial", expected,
+			"presented_serial", presentedSerial,
+			"alert", "agent_cert_serial_mismatch",
+		)
+		s.obs.ObserveAgentConnectRejected("serial_mismatch")
 		return true
 	}
 	return false
