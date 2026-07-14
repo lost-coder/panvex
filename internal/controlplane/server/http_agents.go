@@ -389,6 +389,14 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 			"new_fleet_group_id": newGroupID,
 		})
 
+		// R10 (C4): the move changed which nodes each client targets. Roll the
+		// clients of the group it joined onto this node, and pull the clients
+		// of the group it left off it. Without this the panel claimed a
+		// deployment the node had never heard of — and, worse, left the old
+		// group's clients live on a node that is no longer supposed to serve
+		// them.
+		s.reconcileClientTopology(r.Context(), session.UserID, s.now())
+
 		writeJSON(w, http.StatusOK, current)
 	}
 }

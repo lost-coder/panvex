@@ -100,6 +100,7 @@ func (g *Gateway) runAgentSession(ctx context.Context, sess agenttransport.Agent
 	// MarkConnected and the connectedAt timestamp moves forward.
 	g.presence.MarkConnected(agentID, g.now())
 	g.deps.MarkTransportSwitchResolved(agentID)
+	g.deps.OnAgentConnected(agentID)
 	g.logger.InfoContext(connectionCtx, "accepted agent stream", "agent_id", agentID)
 
 	channels := newAgentStreamChannels()

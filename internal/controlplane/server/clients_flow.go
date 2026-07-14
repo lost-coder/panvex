@@ -581,6 +581,13 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 		return
 	}
 
+	// R10: the node answered, so the reconciler's retry bookkeeping for this
+	// pair starts fresh — a deployment that diverges again later gets its full
+	// attempt budget rather than inheriting the last round's counter.
+	if success && s.clientReconcile != nil {
+		s.clientReconcile.confirm(reconcileKey(clients.ClientID(payload.ClientID), agentID))
+	}
+
 	if s.clientsSvc != nil {
 		if err := s.clientsSvc.PersistDeployment(ctx, deployment); err != nil {
 			s.logger.ErrorContext(ctx, "client deployment persistence failed", "client_id", payload.ClientID, "agent_id", agentID, "error", err)

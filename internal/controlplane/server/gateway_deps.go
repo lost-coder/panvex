@@ -135,6 +135,19 @@ func (s *Server) MarkTransportSwitchResolved(agentID string) {
 	s.mu.Unlock()
 }
 
+// OnAgentConnected runs the per-node client reconcile (R10). This is the
+// trigger that closes the offline-during-delete hole: everything the node
+// failed to confirm while it was away is re-sent now, from the CURRENT desired
+// state — no operator action, no Redeploy button.
+//
+// It runs off the stream goroutine because it walks the client mirror and
+// enqueues jobs, and the connect path must not wait on that. It runs on
+// serverCtx rather than the stream ctx so a re-enqueue is not cancelled just
+// because this particular connection drops again mid-pass.
+func (s *Server) OnAgentConnected(agentID string) {
+	go s.reconcileClientDeployments(s.Context(), agentID)
+}
+
 // RenewAgentCertificate is the post-authentication core of the unary
 // RenewCertificate RPC: revocation check, agent/request identity match,
 // CSR issuance, in-memory cert-date update, serial persist and pin. The

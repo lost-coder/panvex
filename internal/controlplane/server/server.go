@@ -161,6 +161,10 @@ type Server struct {
 	// trio. All agent-stream wake/done/terminate bookkeeping now lives in
 	// the new package; the server only holds a pointer.
 	sessions *agents.SessionManager
+	// clientReconcile drives the convergent re-delivery of client state to
+	// nodes that missed a job (R10). See clients_reconcile.go.
+	clientReconcile *clientReconciler
+
 	// clientsSvc is the managed-client service introduced by P3-ARCH-01b.
 	// initStoreBackedSubsystems wires it with the full NewService deps (Repo,
 	// DiscoveredRepo, UoW) so persistence and mirror operations route through
