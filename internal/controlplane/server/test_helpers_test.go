@@ -41,6 +41,14 @@ func testCSRPEM(t *testing.T) string {
 // still call New directly.
 func mustNew(t *testing.T, options Options) *Server {
 	t.Helper()
+	// Disable the background client-reconcile worker by default: many tests
+	// mutate a fake clock (via the Now closure) that the worker's goroutine
+	// would read concurrently, tripping the race detector. The reconcile logic
+	// is exercised directly through reconcileClientDeployments. A test that
+	// needs the live worker sets a non-negative Intervals.ClientReconcile.
+	if options.Intervals.ClientReconcile == 0 {
+		options.Intervals.ClientReconcile = -1
+	}
 	srv, err := New(options)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)

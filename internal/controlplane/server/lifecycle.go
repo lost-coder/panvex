@@ -511,8 +511,14 @@ func (s *Server) startBackgroundWorkers() {
 	// deployments left queued by a panel that died between persisting client
 	// state and enqueueing its job, plus every job that expired while the panel
 	// was down.
-	s.rollupWg.Add(1)
-	s.startClientReconcileWorker(rollupCtx, clientReconcileInterval, &s.rollupWg)
+	// A negative ClientReconcile interval disables the background worker
+	// (unit tests, which drive reconcileClientDeployments directly and mutate
+	// a fake clock the worker would otherwise read concurrently). Zero uses
+	// the worker's built-in default.
+	if s.intervals.ClientReconcile >= 0 {
+		s.rollupWg.Add(1)
+		s.startClientReconcileWorker(rollupCtx, s.intervals.ClientReconcile, &s.rollupWg)
+	}
 
 	// R7: reclaim expired sessions + consumed TOTP codes on a ticker. This
 	// sweep used to run under the auth write lock on EVERY GetSession — i.e.
