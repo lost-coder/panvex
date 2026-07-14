@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
@@ -155,7 +156,7 @@ func TestServerApplyAgentSnapshotUpdatesInventoryMetricsAndPresence(t *testing.T
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -271,7 +272,7 @@ func TestApplyAgentSnapshotIgnoresRevokedAgent(t *testing.T) {
 	server.revokedAgentIDs[identity.AgentID] = struct{}{}
 	server.mu.Unlock()
 
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -323,7 +324,7 @@ func TestServerApplyAgentSnapshotPersistsInventoryAndMetricsAcrossRestart(t *tes
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	if err := first.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := first.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -424,7 +425,7 @@ func TestServerApplyAgentSnapshotUpdatesInMemoryStateEvenWhenPersistenceFails(t 
 	store.putAgentErr = errors.New("put agent failed")
 
 	// Async batch writer means persistence failures do not block the caller.
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -471,7 +472,7 @@ func TestServerApplyAgentSnapshotTracksRuntimeLifecycleState(t *testing.T) {
 	runtime.InitializationProgressPct = 10
 	runtime.Degraded = true
 
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -512,7 +513,7 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 	initializingRuntime.InitializationStage = "warming_me_pool"
 	initializingRuntime.InitializationProgressPct = 38
 
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -530,7 +531,7 @@ func TestServerApplyAgentSnapshotStartsInitializationWatchCooldownAfterReadyTran
 	}
 
 	readyObservedAt := now.Add(50 * time.Second)
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -647,7 +648,7 @@ func TestServerApplyAgentSnapshotKeepsEnrolledScopeWhenSnapshotDiffers(t *testin
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -699,7 +700,7 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 	}
 
 	// Seed three instances for agent A.
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -724,7 +725,7 @@ func TestApplyAgentSnapshotPrunesStaleInstances(t *testing.T) {
 	}
 
 	// Apply a new snapshot reporting only two instances — inst-3 must be pruned.
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -798,7 +799,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 		t.Fatalf("enrollAgent(B) error = %v", err)
 	}
 
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: agentA.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -812,7 +813,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot(A) error = %v", err)
 	}
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: agentB.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-b",
@@ -827,7 +828,7 @@ func TestApplyAgentSnapshotDoesNotPruneOtherAgentsInstances(t *testing.T) {
 	}
 
 	// Agent A reports only inst-a1 now. inst-a2 must be pruned; inst-b1 must remain.
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: agentA.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",

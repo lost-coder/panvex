@@ -125,7 +125,7 @@ func (s *Server) listClientsListingSnapshot() clientListingSnapshot {
 	clientsList := make([]managedClient, 0, len(mirror.Clients))
 	assignments := make(map[string][]managedClientAssignment, len(mirror.Clients))
 	deployments := make(map[string][]managedClientDeployment, len(mirror.Clients))
-	usage := make(map[string]aggregatedClientUsage, len(mirror.Clients))
+	usage := make(map[string]clients.AggregatedUsage, len(mirror.Clients))
 
 	for clientID, client := range mirror.Clients {
 		if client.DeletedAt != nil {

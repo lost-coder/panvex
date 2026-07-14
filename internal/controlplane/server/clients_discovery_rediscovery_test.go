@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -23,7 +24,7 @@ func TestApplyTelemtReachabilityTransitionRequestsRediscovery(t *testing.T) {
 			MeRuntimeReady:    true,
 			TelemtUnreachable: unreachable,
 		}
-		if err := s.applyAgentSnapshot(context.Background(), agentSnapshot{
+		if err := s.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 			AgentID: agentID,
 			Snap: &gatewayrpc.Snapshot{
 				NodeName: "node-eu-1",

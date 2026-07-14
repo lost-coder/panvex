@@ -12,6 +12,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
@@ -373,7 +374,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		t.Fatalf("json.Unmarshal(create) error = %v", err)
 	}
 
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: "agent-000001",
 		Snap: &gatewayrpc.Snapshot{
 			AgentBootId:    "boot-1",
@@ -394,7 +395,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot(agent-000001) error = %v", err)
 	}
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: "agent-000002",
 		Snap: &gatewayrpc.Snapshot{
 			AgentBootId:    "boot-1",
@@ -496,7 +497,7 @@ func TestHTTPClientsListingReflectsDeploymentAndUsage(t *testing.T) {
 	}
 	recordJobResultForTest(server, context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: "agent-000001",
 		Snap: &gatewayrpc.Snapshot{
 			AgentBootId:    "boot-1",
@@ -613,7 +614,7 @@ func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
 		`{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
 	// (2) Usage-snapshot write-path: apply a live usage tick.
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: "agent-000001",
 		Snap: &gatewayrpc.Snapshot{
 			AgentBootId:    "boot-1",

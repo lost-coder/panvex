@@ -6,6 +6,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	controltelemetry "github.com/lost-coder/panvex/internal/controlplane/telemetry"
 )
 
@@ -18,7 +19,7 @@ import (
 //
 // Caller must hold s.mu (for the cooldown table). The live store has its own
 // lock; live.Get is taken under s.mu, preserving the s.mu -> live ordering.
-func (s *Server) updateAgentRecordFromSnapshot(snapshot agentSnapshot) Agent {
+func (s *Server) updateAgentRecordFromSnapshot(snapshot gateway.AgentSnapshot) Agent {
 	snap := snapshot.Snap
 	agent, _ := s.live.Get(snapshot.AgentID)
 	agent.ID = snapshot.AgentID
@@ -90,7 +91,7 @@ func (s *Server) updateAgentIdentity(id string, mutate func(*Agent)) (Agent, boo
 // "initialization watch" UI signal does not flap on every heartbeat once the
 // agent has finished initializing. Caller must hold s.mu. `now` — панельные
 // часы приёма снапшота (P3-3.2): cooldown сравнивается с ними же.
-func (s *Server) refreshInitializationWatchCooldown(snapshot agentSnapshot, current, previous AgentRuntime, now time.Time) {
+func (s *Server) refreshInitializationWatchCooldown(snapshot gateway.AgentSnapshot, current, previous AgentRuntime, now time.Time) {
 	currentNeedsWatch := runtimeNeedsInitializationWatch(current)
 	previousNeedsWatch := runtimeNeedsInitializationWatch(previous)
 	switch {
@@ -110,7 +111,7 @@ func (s *Server) refreshInitializationWatchCooldown(snapshot agentSnapshot, curr
 // in-memory Instance shape. Pure function — does no map mutation. The former
 // instanceSnapshot copy-type is gone (P8.3): this is the single proto→domain
 // mapping for instances.
-func instancesFromSnapshot(snapshot agentSnapshot) []Instance {
+func instancesFromSnapshot(snapshot gateway.AgentSnapshot) []Instance {
 	wire := snapshot.Snap.Instances
 	instances := make([]Instance, 0, len(wire))
 	for _, instance := range wire {
@@ -228,7 +229,7 @@ func (s *Server) applyTelemtReachabilityTransition(ctx context.Context, agent Ag
 // applyClientUsageSnapshot regardless, so no information is lost. The IP
 // snapshot's addresses are still persisted to client_ip_history by
 // enqueueClientIPHistory elsewhere in the snapshot pipeline.
-func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot agentSnapshot) {
+func (s *Server) commitClientSnapshotsLocked(ctx context.Context, snapshot gateway.AgentSnapshot) {
 	if snapshot.Snap.HasClientUsage {
 		s.applyClientUsageSnapshot(ctx, snapshot.AgentID, snapshot.Snap.GetAgentBootId(), snapshot.Clients)
 	}
@@ -267,7 +268,7 @@ func (s *Server) clampObservedAt(ctx context.Context, agentID string, observed t
 // s.mu. The store is the sole source of truth for metric history (A2: the old
 // in-memory ring is gone); the metricsAuditMu guards metricSeq so concurrent
 // minting stays race-free.
-func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnapshot {
+func (s *Server) commitMetricSnapshotLocked(snapshot gateway.AgentSnapshot) *MetricSnapshot {
 	if len(snapshot.Snap.Metrics) == 0 {
 		return nil
 	}
@@ -283,7 +284,7 @@ func (s *Server) commitMetricSnapshotLocked(snapshot agentSnapshot) *MetricSnaps
 	return &metric
 }
 
-func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot agentSnapshot) error {
+func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot gateway.AgentSnapshot) error {
 	s.logger.DebugContext(ctx, "agent heartbeat applied", "agent_id", snapshot.AgentID, "node", snapshot.Snap.NodeName)
 
 	// Lock section: build all state objects AND commit to in-memory maps

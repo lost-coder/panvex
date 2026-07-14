@@ -33,6 +33,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/controlplane/runtimeevents"
 	"github.com/lost-coder/panvex/internal/controlplane/secretvault"
+	"github.com/lost-coder/panvex/internal/controlplane/sessions"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/uow"
@@ -106,20 +107,20 @@ type Server struct {
 	now                       func() time.Time
 	panelRuntime              PanelRuntime
 	requestRestart            func() error
-	loginRateLimiter          *fixedWindowRateLimiter
-	agentBootstrapRateLimiter *fixedWindowRateLimiter
-	grpcConnectRateLimiter    *fixedWindowRateLimiter
-	sensitiveRateLimiter      *fixedWindowRateLimiter
-	installScriptRateLimiter  *fixedWindowRateLimiter
-	loginLockout              *accountLockoutTracker
-	totpLockout               *totpLockoutTracker
+	loginRateLimiter          *sessions.RateLimiter
+	agentBootstrapRateLimiter *sessions.RateLimiter
+	grpcConnectRateLimiter    *sessions.RateLimiter
+	sensitiveRateLimiter      *sessions.RateLimiter
+	installScriptRateLimiter  *sessions.RateLimiter
+	loginLockout              *sessions.LockoutTracker
+	totpLockout               *sessions.TOTPLockoutTracker
 	// ipLockout counts failed login attempts per source IP over a 15-minute
 	// rolling window and locks the IP for 30 min once the budget is hit
 	// (Task 6, S-medium). Runs PARALLEL to loginLockout — usernames and
 	// IPs each have their own counter so an attacker who enumerates
 	// usernames can no longer lock every account by triggering 5 fails per
 	// user. State is in-memory only by design.
-	ipLockout *ipLockoutTracker
+	ipLockout *sessions.IPLockoutTracker
 	// wsConnLimiter caps the number of live /events WebSocket connections
 	// per user-id (and per-IP for unauthenticated callers, defence-in-depth).
 	// Goroutine exhaustion otherwise — every accepted socket holds a reader

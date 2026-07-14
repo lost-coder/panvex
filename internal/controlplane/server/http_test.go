@@ -17,6 +17,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/csrf"
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -691,7 +692,7 @@ func TestHTTPFleetInventoryAndMetricsSurviveRestart(t *testing.T) {
 		t.Fatalf("enrollAgent() error = %v", err)
 	}
 
-	if err := first.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := first.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: identity.AgentID,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",

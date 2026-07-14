@@ -17,7 +17,7 @@ func TestAuditDuplicateNodeName(t *testing.T) {
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
-		Logger:          slog.New(h),
+		Logger:           slog.New(h),
 	})
 	defer server.Close()
 

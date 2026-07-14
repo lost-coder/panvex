@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -115,7 +116,7 @@ func TestRuntimeFromCurrentRecordPropagatesTelemtUnreachable(t *testing.T) {
 func TestTelemetryWriteUnitCarriesForwardHashGatedDiagnostics(t *testing.T) {
 	agent := Agent{ID: "agent-1"}
 	observedAt := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
-	base := agentSnapshot{
+	base := gateway.AgentSnapshot{
 		AgentID:    "agent-1",
 		ObservedAt: observedAt,
 		Snap: &gatewayrpc.Snapshot{

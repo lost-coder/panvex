@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -34,7 +35,7 @@ func TestRevokedSnapshotDropWarnsOncePerAgent(t *testing.T) {
 	server := mustNew(t, Options{
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return now },
-		Logger:          slog.New(h),
+		Logger:           slog.New(h),
 	})
 	defer server.Close()
 
@@ -42,8 +43,8 @@ func TestRevokedSnapshotDropWarnsOncePerAgent(t *testing.T) {
 	server.revokedAgentIDs["agent-rev"] = struct{}{}
 	server.mu.Unlock()
 
-	mk := func() agentSnapshot {
-		return agentSnapshot{
+	mk := func() gateway.AgentSnapshot {
+		return gateway.AgentSnapshot{
 			AgentID:    "agent-rev",
 			Snap:       &gatewayrpc.Snapshot{NodeName: "node-rev", Runtime: &gatewayrpc.RuntimeSnapshot{}},
 			ObservedAt: now,

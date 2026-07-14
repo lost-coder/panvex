@@ -109,12 +109,6 @@ type clientResetQuotaJobResultPayload struct {
 	LastResetEpochSecs uint64 `json:"last_reset_epoch_secs"`
 }
 
-// aggregatedClientUsage now lives in controlplane/clients as
-// AggregatedUsage. Kept as a server-local alias so existing call sites
-// (HTTP response composition, test assertions) keep compiling until
-// they are renamed to use the clients package directly.
-type aggregatedClientUsage = clients.AggregatedUsage
-
 func (s *Server) createClient(ctx context.Context, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
 	observedAt = observedAt.UTC()
 
