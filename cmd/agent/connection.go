@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/jobs"
 	"github.com/lost-coder/panvex/internal/agent/probation"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
@@ -75,7 +76,7 @@ type runConnectionParams struct {
 	clientDataConcurrency int
 	tr                    *transportReloadState
 	reporter              *enrollmentReporter
-	jobInflight           *jobInflightTracker
+	jobInflight           *jobs.InflightTracker
 	transportProbation    time.Duration
 }
 
@@ -204,10 +205,10 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 
 		criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 32)
 		telemetryOutbound := make(chan *gatewayrpc.ConnectClientMessage, 64)
-		jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-			jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
-			jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
-			jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+		jobQueues := map[jobs.Pipeline]chan *gatewayrpc.JobCommand{
+			jobs.PipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, jobs.QueueCapacity),
+			jobs.PipelineClientMutation: make(chan *gatewayrpc.JobCommand, jobs.QueueCapacity),
+			jobs.PipelineDefault:        make(chan *gatewayrpc.JobCommand, jobs.QueueCapacity),
 		}
 		// Q4.U-P-08: graceful drain. Every goroutine spawned for this
 		// connection adds 1 to streamWG and defers wg.Done(); RunOnce
@@ -220,7 +221,7 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 		// just released.
 		defer func() {
 			streamWG.Wait()
-			releaseQueuedJobs(jobInflight, jobQueues)
+			jobs.ReleaseQueued(jobInflight, jobQueues)
 		}()
 		defer cancelConnection()
 		sendErrors := make(chan error, 1)
@@ -245,7 +246,7 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 		// main loop is momentarily not yet waiting.
 		renewalResponses := make(chan *gatewayrpc.RenewalResponse, 1)
 		startInboundPump(connectionCtx, &streamWG, stream, agent, jobInflight, jobQueues, criticalOutbound, clientDataSem, renewalResponses, sendErrorAndCancel)
-		startJobWorkers(connectionCtx, &streamWG, agent, jobInflight, jobQueues, criticalOutbound)
+		jobs.StartWorkers(connectionCtx, &streamWG, agent, jobInflight, jobQueues, criticalOutbound)
 
 		// TLS handshake succeeded by the time RunOnce calls back — the
 		// stream is live and authenticated. Record before the initial
@@ -343,8 +344,8 @@ func startInboundPump(
 	streamWG *sync.WaitGroup,
 	stream agentTransport.BidiStream,
 	agent *runtime.Agent,
-	jobInflight *jobInflightTracker,
-	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
+	jobInflight *jobs.InflightTracker,
+	jobQueues map[jobs.Pipeline]chan *gatewayrpc.JobCommand,
 	criticalOutbound chan *gatewayrpc.ConnectClientMessage,
 	clientDataSem chan struct{},
 	renewalResponses chan<- *gatewayrpc.RenewalResponse,
@@ -361,7 +362,7 @@ func startInboundPump(
 			}
 			if job := message.GetJob(); job != nil {
 				slog.Debug("job received", "job_id", job.GetId(), "action", job.GetAction())
-				enqueueReceivedJob(connectionCtx, agent.AgentID(), agent, jobInflight, jobQueues, criticalOutbound, job)
+				jobs.EnqueueReceived(connectionCtx, agent.AgentID(), agent, jobInflight, jobQueues, criticalOutbound, job)
 				continue
 			}
 			if req := message.GetClientDataRequest(); req != nil {

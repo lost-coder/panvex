@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/jobs"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
@@ -26,54 +27,6 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc"
 )
-
-func TestJobPipelineForActionRoutesRuntimeReload(t *testing.T) {
-	pipeline := jobPipelineForAction("runtime.reload")
-	if pipeline != jobPipelineRuntimeReload {
-		t.Fatalf("jobPipelineForAction(runtime.reload) = %q, want %q", pipeline, jobPipelineRuntimeReload)
-	}
-}
-
-func TestJobPipelineForActionRoutesDiagnosticsRefreshToRuntimePipeline(t *testing.T) {
-	pipeline := jobPipelineForAction("telemetry.refresh_diagnostics")
-	if pipeline != jobPipelineRuntimeReload {
-		t.Fatalf("jobPipelineForAction(telemetry.refresh_diagnostics) = %q, want %q", pipeline, jobPipelineRuntimeReload)
-	}
-}
-
-func TestJobPipelineForActionRoutesClientMutations(t *testing.T) {
-	clientActions := []string{
-		"client.create",
-		"client.update",
-		"client.rotate_secret",
-		"client.delete",
-	}
-	for _, action := range clientActions {
-		pipeline := jobPipelineForAction(action)
-		if pipeline != jobPipelineClientMutation {
-			t.Fatalf("jobPipelineForAction(%q) = %q, want %q", action, pipeline, jobPipelineClientMutation)
-		}
-	}
-}
-
-func TestJobPipelineForActionRoutesUnknownActionsToDefault(t *testing.T) {
-	pipeline := jobPipelineForAction("users.create")
-	if pipeline != jobPipelineDefault {
-		t.Fatalf("jobPipelineForAction(users.create) = %q, want %q", pipeline, jobPipelineDefault)
-	}
-}
-
-func TestShouldSendRuntimeSnapshotAfterJobOnlyForSuccessfulDiagnosticsRefresh(t *testing.T) {
-	if !shouldSendRuntimeSnapshotAfterJob("telemetry.refresh_diagnostics", true) {
-		t.Fatal("shouldSendRuntimeSnapshotAfterJob(refresh, true) = false, want true")
-	}
-	if shouldSendRuntimeSnapshotAfterJob("telemetry.refresh_diagnostics", false) {
-		t.Fatal("shouldSendRuntimeSnapshotAfterJob(refresh, false) = true, want false")
-	}
-	if shouldSendRuntimeSnapshotAfterJob("runtime.reload", true) {
-		t.Fatal("shouldSendRuntimeSnapshotAfterJob(runtime.reload, true) = true, want false")
-	}
-}
 
 func TestSendInitialMessagesContinuesWhenUsageMetricsAreUnavailable(t *testing.T) {
 	telemtClient := &fakeInitialSyncTelemtClient{
@@ -136,105 +89,6 @@ func TestSendInitialMessagesContinuesWhenUsageMetricsAreUnavailable(t *testing.T
 	}
 }
 
-func TestRunJobWorkerSendsDiagnosticsSnapshotBeforeSuccessResult(t *testing.T) {
-	connectionCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	telemtClient := &fakeDiagnosticsRefreshTelemtClient{
-		state: telemt.RuntimeState{
-			Version: "2026.03",
-			Gates: telemt.RuntimeGates{
-				AcceptingNewConnections: true,
-				MERuntimeReady:          true,
-				StartupStatus:           "ready",
-				StartupStage:            "steady_state",
-				StartupProgressPct:      100,
-			},
-			Initialization: telemt.RuntimeInitialization{
-				Status:        "ready",
-				CurrentStage:  "steady_state",
-				ProgressPct:   100,
-				TransportMode: "direct",
-			},
-			ConnectionTotals: telemt.RuntimeConnectionTotals{
-				CurrentConnections: 4,
-				ActiveUsers:        2,
-			},
-			Diagnostics: telemt.RuntimeDiagnostics{
-				State:          "fresh",
-				SystemInfoJSON: `{"version":"2026.03"}`,
-			},
-		},
-	}
-	agent := runtime.New(runtime.Config{
-		AgentID:      "agent-1",
-		NodeName:     "node-a",
-		FleetGroupID: "default",
-		Version:      "test",
-	}, telemtClient)
-
-	tracker := newJobInflightTracker()
-	jobQueue := make(chan *gatewayrpc.JobCommand, 1)
-	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 4)
-
-	go runJobWorker(connectionCtx, agent, tracker, jobQueue, criticalOutbound)
-
-	jobQueue <- &gatewayrpc.JobCommand{
-		Id:     "job-refresh",
-		Action: "telemetry.refresh_diagnostics",
-	}
-
-	first := <-criticalOutbound
-	second := <-criticalOutbound
-
-	if first.GetSnapshot() == nil {
-		t.Fatal("first outbound message = nil snapshot, want diagnostics snapshot first")
-	}
-	if second.GetJobResult() == nil {
-		t.Fatal("second outbound message = nil job result, want success result after snapshot")
-	}
-	if !second.GetJobResult().GetSuccess() {
-		t.Fatalf("job result success = false, want true: %s", second.GetJobResult().GetMessage())
-	}
-}
-
-func TestRunJobWorkerMarksDiagnosticsRefreshFailedWhenSnapshotBuildFails(t *testing.T) {
-	connectionCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	telemtClient := &fakeDiagnosticsRefreshTelemtClient{
-		fetchErrAfterInvalidation: true,
-	}
-	agent := runtime.New(runtime.Config{
-		AgentID:      "agent-1",
-		NodeName:     "node-a",
-		FleetGroupID: "default",
-		Version:      "test",
-	}, telemtClient)
-
-	tracker := newJobInflightTracker()
-	jobQueue := make(chan *gatewayrpc.JobCommand, 1)
-	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 2)
-
-	go runJobWorker(connectionCtx, agent, tracker, jobQueue, criticalOutbound)
-
-	jobQueue <- &gatewayrpc.JobCommand{
-		Id:     "job-refresh-fail",
-		Action: "telemetry.refresh_diagnostics",
-	}
-
-	message := <-criticalOutbound
-	if message.GetJobResult() == nil {
-		t.Fatal("outbound message = nil job result, want failure result")
-	}
-	if message.GetJobResult().GetSuccess() {
-		t.Fatal("job result success = true, want false when snapshot build fails")
-	}
-	if !strings.Contains(message.GetJobResult().GetMessage(), "diagnostics refresh failed") {
-		t.Fatalf("job result message = %q, want diagnostics refresh failure", message.GetJobResult().GetMessage())
-	}
-}
-
 func TestEnqueueOutboundMessageReturnsTrueWhenQueued(t *testing.T) {
 	connectionCtx := context.Background()
 	outbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
@@ -274,113 +128,6 @@ func TestEnqueueOutboundMessageReturnsFalseWhenContextCancelled(t *testing.T) {
 	}
 	if len(outbound) != 0 {
 		t.Fatalf("len(outbound) = %d, want %d", len(outbound), 0)
-	}
-}
-
-func TestJobInflightTrackerReserveRelease(t *testing.T) {
-	tracker := newJobInflightTracker()
-
-	if !tracker.reserve("job-1") {
-		t.Fatal("reserve(job-1) = false, want true")
-	}
-	if tracker.reserve("job-1") {
-		t.Fatal("reserve(job-1) = true, want false for duplicate")
-	}
-
-	tracker.release("job-1")
-
-	if !tracker.reserve("job-1") {
-		t.Fatal("reserve(job-1) after release = false, want true")
-	}
-}
-
-func TestEnqueueReceivedJobQueuesAndAcknowledges(t *testing.T) {
-	connectionCtx := context.Background()
-	tracker := newJobInflightTracker()
-	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
-	}
-	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
-	job := &gatewayrpc.JobCommand{
-		Id:     "job-1",
-		Action: "runtime.reload",
-	}
-
-	queued := enqueueReceivedJob(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
-	if !queued {
-		t.Fatal("enqueueReceivedJob() = false, want true")
-	}
-	if len(jobQueues[jobPipelineRuntimeReload]) != 1 {
-		t.Fatalf("len(runtime reload queue) = %d, want %d", len(jobQueues[jobPipelineRuntimeReload]), 1)
-	}
-	if len(criticalOutbound) != 1 {
-		t.Fatalf("len(criticalOutbound) = %d, want %d", len(criticalOutbound), 1)
-	}
-
-	ack := <-criticalOutbound
-	if ack.GetJobAcknowledgement() == nil {
-		t.Fatal("ack body = nil, want job acknowledgement")
-	}
-	if ack.GetJobAcknowledgement().GetJobId() != "job-1" {
-		t.Fatalf("ack job id = %q, want %q", ack.GetJobAcknowledgement().GetJobId(), "job-1")
-	}
-}
-
-func TestEnqueueReceivedJobSkipsDuplicateQueueEntry(t *testing.T) {
-	connectionCtx := context.Background()
-	tracker := newJobInflightTracker()
-	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 2),
-		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
-	}
-	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 2)
-	job := &gatewayrpc.JobCommand{
-		Id:     "job-dup",
-		Action: "runtime.reload",
-	}
-
-	firstQueued := enqueueReceivedJob(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
-	secondQueued := enqueueReceivedJob(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
-
-	if !firstQueued {
-		t.Fatal("first enqueueReceivedJob() = false, want true")
-	}
-	if !secondQueued {
-		t.Fatal("second enqueueReceivedJob() = false, want true")
-	}
-	if len(jobQueues[jobPipelineRuntimeReload]) != 1 {
-		t.Fatalf("len(runtime reload queue) = %d, want %d", len(jobQueues[jobPipelineRuntimeReload]), 1)
-	}
-	if len(criticalOutbound) != 2 {
-		t.Fatalf("len(criticalOutbound) = %d, want %d", len(criticalOutbound), 2)
-	}
-}
-
-func TestEnqueueReceivedJobQueuesCommandWithoutIdentifier(t *testing.T) {
-	connectionCtx := context.Background()
-	tracker := newJobInflightTracker()
-	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
-	}
-	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
-	job := &gatewayrpc.JobCommand{
-		Action: "runtime.reload",
-	}
-
-	queued := enqueueReceivedJob(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
-	if !queued {
-		t.Fatal("enqueueReceivedJob() = false, want true")
-	}
-	if len(jobQueues[jobPipelineRuntimeReload]) != 1 {
-		t.Fatalf("len(runtime reload queue) = %d, want %d", len(jobQueues[jobPipelineRuntimeReload]), 1)
-	}
-	if len(criticalOutbound) != 1 {
-		t.Fatalf("len(criticalOutbound) = %d, want %d", len(criticalOutbound), 1)
 	}
 }
 
@@ -918,71 +665,6 @@ func (c *fakeInitialSyncTelemtClient) HealthReady(context.Context) (bool, string
 	return true, "", nil
 }
 
-type fakeDiagnosticsRefreshTelemtClient struct {
-	state                     telemt.RuntimeState
-	invalidateSlowDataCalls   int
-	fetchErrAfterInvalidation bool
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
-	if c.fetchErrAfterInvalidation && c.invalidateSlowDataCalls > 0 {
-		return telemt.RuntimeState{}, context.DeadlineExceeded
-	}
-	return c.state, nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {
-	return telemt.ClientUsageMetricsSnapshot{}, nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) FetchActiveIPs(context.Context) ([]telemt.UserActiveIPs, error) {
-	return nil, nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) ExecuteRuntimeReload(context.Context) error {
-	return nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
-	return telemt.ClientApplyResult{}, nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) UpdateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
-	return telemt.ClientApplyResult{}, nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) DeleteClient(context.Context, string) error {
-	return nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) {
-	return telemt.SystemInfo{}, nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) FetchDiscoveredUsers(context.Context, string) ([]telemt.DiscoveredUser, error) {
-	return nil, nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) InvalidateSlowDataCache() {
-	c.invalidateSlowDataCalls++
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
-	return telemt.ResetUserQuotaResult{}, nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
-	return telemt.PatchConfigResult{}, nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
-	return nil, "", nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) HealthReady(context.Context) (bool, string, error) {
-	return true, "", nil
-}
-
 func (r *fakeCertificateRenewer) RenewCertificate(_ context.Context, request *gatewayrpc.RenewCertificateRequest, _ ...grpc.CallOption) (*gatewayrpc.RenewCertificateResponse, error) {
 	r.request = request
 	if r.err != nil {
@@ -1273,11 +955,11 @@ func TestStartInboundPumpRoutesRenewalResponseToChannel(t *testing.T) {
 		AgentID:  "agent-1",
 		NodeName: "node-a",
 	}, nil)
-	tracker := newJobInflightTracker()
-	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
+	tracker := jobs.NewInflightTracker()
+	jobQueues := map[jobs.Pipeline]chan *gatewayrpc.JobCommand{
+		jobs.PipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
+		jobs.PipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
+		jobs.PipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
 	}
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
 	renewalResponses := make(chan *gatewayrpc.RenewalResponse, 1)

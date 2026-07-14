@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/jobs"
 	"github.com/lost-coder/panvex/internal/agent/probation"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	"github.com/lost-coder/panvex/internal/agent/runtimeevents"
@@ -317,7 +318,7 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 	// B4: the in-flight tracker outlives individual connections so a job
 	// re-delivered right after a reconnect cannot run concurrently with its
 	// still-draining first execution from the previous connection.
-	jobInflight := newJobInflightTracker()
+	jobInflight := jobs.NewInflightTracker()
 	for {
 		// Honour shutdown before we begin another iteration.
 		if err := supervisorCtx.Err(); err != nil {

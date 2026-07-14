@@ -1,4 +1,4 @@
-package main
+package jobs
 
 import (
 	"context"
@@ -16,17 +16,17 @@ import (
 // in-flight reservation so the panel's retry can be executed later.
 func TestEnqueueReceivedJobQueueFullFailsFast(t *testing.T) {
 	ctx := context.Background()
-	tracker := newJobInflightTracker()
-	jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
-		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
-		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+	tracker := NewInflightTracker()
+	jobQueues := map[Pipeline]chan *gatewayrpc.JobCommand{
+		PipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, QueueCapacity),
+		PipelineClientMutation: make(chan *gatewayrpc.JobCommand, QueueCapacity),
+		PipelineDefault:        make(chan *gatewayrpc.JobCommand, QueueCapacity),
 	}
 	critical := make(chan *gatewayrpc.ConnectClientMessage, 64)
 
-	for i := 0; i < jobQueueCapacity; i++ {
+	for i := 0; i < QueueCapacity; i++ {
 		job := &gatewayrpc.JobCommand{Id: fmt.Sprintf("job-%d", i), Action: "config.apply"}
-		if !enqueueReceivedJob(ctx, "agent-1", nil, tracker, jobQueues, critical, job) {
+		if !EnqueueReceived(ctx, "agent-1", nil, tracker, jobQueues, critical, job) {
 			t.Fatalf("enqueue job-%d: want accepted", i)
 		}
 	}
@@ -36,13 +36,13 @@ func TestEnqueueReceivedJobQueueFullFailsFast(t *testing.T) {
 	// so renewal responses would never be processed).
 	overflowDone := make(chan bool, 1)
 	go func() {
-		overflowDone <- enqueueReceivedJob(ctx, "agent-1", nil, tracker, jobQueues, critical,
+		overflowDone <- EnqueueReceived(ctx, "agent-1", nil, tracker, jobQueues, critical,
 			&gatewayrpc.JobCommand{Id: "job-overflow", Action: "config.apply"})
 	}()
 	select {
 	case <-overflowDone:
 	case <-time.After(2 * time.Second):
-		t.Fatal("enqueueReceivedJob blocked on a full lane")
+		t.Fatal("EnqueueReceived blocked on a full lane")
 	}
 
 	// It must have produced a terminal failed JobResult on criticalOutbound.

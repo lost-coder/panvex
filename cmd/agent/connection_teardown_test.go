@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/lost-coder/panvex/internal/agent/jobs"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
@@ -138,7 +139,7 @@ func TestAgentSideTeardownClosesConnectionWithoutServer(t *testing.T) {
 			schedule:         newConnectionSchedule(0, 0, 0, 0, 0, 0),
 			tr:               tr,
 			reporter:         newEnrollmentReporter(),
-			jobInflight:      newJobInflightTracker(),
+			jobInflight:      jobs.NewInflightTracker(),
 		})
 		done <- err
 	}()

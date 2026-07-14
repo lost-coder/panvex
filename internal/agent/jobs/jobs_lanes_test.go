@@ -1,4 +1,4 @@
-package main
+package jobs
 
 import "testing"
 
@@ -7,13 +7,13 @@ import "testing"
 // runtime.reload can never race telemetry.refresh_diagnostics against the
 // same local Telemt admin API (audit minor finding, Plan 4 Task 3).
 func TestJobWorkerCountIsOnePerLane(t *testing.T) {
-	for _, pipeline := range []jobPipeline{
-		jobPipelineRuntimeReload,
-		jobPipelineClientMutation,
-		jobPipelineDefault,
+	for _, pipeline := range []Pipeline{
+		PipelineRuntimeReload,
+		PipelineClientMutation,
+		PipelineDefault,
 	} {
-		if got := jobWorkerCountForPipeline(pipeline); got != 1 {
-			t.Fatalf("jobWorkerCountForPipeline(%s) = %d, want 1", pipeline, got)
+		if got := workerCountForPipeline(pipeline); got != 1 {
+			t.Fatalf("workerCountForPipeline(%s) = %d, want 1", pipeline, got)
 		}
 	}
 }
