@@ -1,4 +1,4 @@
-package main
+package probation
 
 import (
 	"log/slog"
@@ -7,19 +7,19 @@ import (
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 )
 
-const defaultTransportProbation = 10 * time.Minute
+const DefaultWindow = 10 * time.Minute
 
-// maybeRevertTransportSwitch rolls the transport state back to the
+// MaybeRevert rolls the transport state back to the
 // pre-switch snapshot when no panel session has been established within the
 // probation window (A2). Mutates *creds and persists to stateFile. Returns
 // true when a revert was performed so the caller refreshes its derived
 // gateway address/server-name.
-func maybeRevertTransportSwitch(stateFile string, creds *agentstate.Credentials, window time.Duration, now time.Time) bool {
+func MaybeRevert(stateFile string, creds *agentstate.Credentials, window time.Duration, now time.Time) bool {
 	if creds.PrevTransport == nil || creds.TransportSwitchedAtUnix == 0 {
 		return false
 	}
 	if window <= 0 {
-		window = defaultTransportProbation
+		window = DefaultWindow
 	}
 	switchedAt := time.Unix(creds.TransportSwitchedAtUnix, 0)
 	if now.Sub(switchedAt) < window {
@@ -55,9 +55,9 @@ func maybeRevertTransportSwitch(stateFile string, creds *agentstate.Credentials,
 	return true
 }
 
-// clearTransportProbation confirms the post-switch transport: called when a
+// Clear confirms the post-switch transport: called when a
 // panel session is established. No-op when probation is not active.
-func clearTransportProbation(stateFile string, creds *agentstate.Credentials) {
+func Clear(stateFile string, creds *agentstate.Credentials) {
 	if creds.PrevTransport == nil && creds.TransportSwitchedAtUnix == 0 {
 		return
 	}

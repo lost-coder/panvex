@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"context"
@@ -22,7 +22,7 @@ const telemtUnreachableThreshold = 30 * time.Second
 func startPollingWorkers(
 	connectionCtx context.Context,
 	streamWG *sync.WaitGroup,
-	schedule connectionSchedule,
+	schedule Schedule,
 	agent *runtime.Agent,
 	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
 	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
@@ -62,7 +62,7 @@ func makeHeartbeatTick(connectionCtx context.Context, agent *runtime.Agent, crit
 
 func makeUsageSnapshotTick(connectionCtx context.Context, agent *runtime.Agent, telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage) func(time.Time) {
 	return func(observedAt time.Time) {
-		usageCtx, cancelUsage := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+		usageCtx, cancelUsage := context.WithTimeout(connectionCtx, runtime.OperationTimeout)
 		snapshot, err := agent.BuildUsageSnapshot(usageCtx, observedAt)
 		cancelUsage()
 		if err != nil {
@@ -85,7 +85,7 @@ func makeUsageSnapshotTick(connectionCtx context.Context, agent *runtime.Agent, 
 
 func makeIPPollTick(connectionCtx context.Context, agent *runtime.Agent) func(time.Time) {
 	return func(observedAt time.Time) {
-		ipPollCtx, cancelIPPoll := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+		ipPollCtx, cancelIPPoll := context.WithTimeout(connectionCtx, runtime.OperationTimeout)
 		err := agent.PollActiveIPs(ipPollCtx)
 		cancelIPPoll()
 		if err != nil {
@@ -231,7 +231,7 @@ func performRuntimePoll(
 	consecutiveFailures *int,
 	tracker *telemtReachabilityTracker,
 ) {
-	runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+	runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtime.OperationTimeout)
 	snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, observedAt.UTC())
 	cancelRuntime()
 	if err != nil {

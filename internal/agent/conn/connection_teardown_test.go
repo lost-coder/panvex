@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"context"
@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/lost-coder/panvex/internal/agent/jobs"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
@@ -124,7 +125,7 @@ func TestAgentSideTeardownClosesConnectionWithoutServer(t *testing.T) {
 
 	// tr.cancel deliberately starts nil so the test can detect the moment
 	// runConnection registers the real per-connection cancel.
-	tr := &transportReloadState{}
+	tr := &TransportReload{}
 	agent := runtime.New(runtime.Config{AgentID: "agent-1", NodeName: "n1", Version: "test"}, quietTelemt{})
 
 	done := make(chan error, 1)
@@ -135,10 +136,11 @@ func TestAgentSideTeardownClosesConnectionWithoutServer(t *testing.T) {
 			stateFile:        stateFile,
 			credentialsState: creds,
 			agent:            agent,
-			schedule:         newConnectionSchedule(0, 0, 0, 0, 0, 0),
+			schedule:         NewSchedule(0, 0, 0, 0, 0, 0),
 			tr:               tr,
-			reporter:         newEnrollmentReporter(),
-			jobInflight:      newJobInflightTracker(),
+			reporter:         NewEnrollmentReporter(),
+			jobInflight:      jobs.NewInflightTracker(),
+			backupCleanup:    &sync.Once{},
 		})
 		done <- err
 	}()

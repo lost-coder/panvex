@@ -93,6 +93,14 @@ type runtimeLifecycleState struct {
 const defaultCompletedJobRetention = 2 * time.Hour
 const runtimeInitializationCooldown = 90 * time.Second
 
+// OperationTimeout bounds a single Agent operation driven from the connection
+// layer — a runtime/usage snapshot build or an active-IP poll. It used to be
+// cmd/agent's package-level runtimeOperationTimeout; it lives here because the
+// job runner (internal/agent/jobs) and the polling/outbound workers
+// (internal/agent/conn) both need the same budget and neither may import the
+// other. The value is unchanged.
+const OperationTimeout = 20 * time.Second
+
 type completedJobRecord struct {
 	CompletedAt time.Time
 	Success     bool

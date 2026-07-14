@@ -1,4 +1,4 @@
-package main
+package probation
 
 import (
 	"path/filepath"
@@ -31,7 +31,7 @@ func TestMaybeRevertTransportSwitchRestoresPreviousState(t *testing.T) {
 	}
 	path := writeProbationState(t, creds)
 
-	if !maybeRevertTransportSwitch(path, &creds, 10*time.Minute, time.Now()) {
+	if !MaybeRevert(path, &creds, 10*time.Minute, time.Now()) {
 		t.Fatal("expected revert after probation window elapsed")
 	}
 	if creds.TransportMode != "dial" || creds.PrevTransport != nil || creds.TransportSwitchedAtUnix != 0 {
@@ -54,7 +54,7 @@ func TestMaybeRevertTransportSwitchWaitsOutTheWindow(t *testing.T) {
 		TransportSwitchedAtUnix: time.Now().Add(-1 * time.Minute).Unix(),
 	}
 	path := writeProbationState(t, creds)
-	if maybeRevertTransportSwitch(path, &creds, 10*time.Minute, time.Now()) {
+	if MaybeRevert(path, &creds, 10*time.Minute, time.Now()) {
 		t.Fatal("must not revert inside the probation window")
 	}
 	if creds.TransportMode != "listen" {
@@ -70,7 +70,7 @@ func TestClearTransportProbationPersists(t *testing.T) {
 		TransportSwitchedAtUnix: time.Now().Unix(),
 	}
 	path := writeProbationState(t, creds)
-	clearTransportProbation(path, &creds)
+	Clear(path, &creds)
 	if creds.PrevTransport != nil || creds.TransportSwitchedAtUnix != 0 {
 		t.Fatalf("in-memory probation not cleared: %+v", creds)
 	}

@@ -1,4 +1,4 @@
-package main
+package creds
 
 import (
 	"context"
@@ -26,7 +26,7 @@ import (
 
 const reverseBootstrapTimeout = 5 * time.Minute
 
-type reverseBootstrapConfig struct {
+type ReverseBootstrapConfig struct {
 	StateFile      string
 	BootstrapToken string
 	AgentID        string
@@ -102,7 +102,7 @@ func (s *reverseBootstrapServer) EnrollOutbound(stream gatewayrpc.AgentGateway_E
 	return nil
 }
 
-func reverseBootstrap(cfg reverseBootstrapConfig) error {
+func ReverseBootstrap(cfg ReverseBootstrapConfig) error {
 	// 1. Generate ECDSA P-256 keypair.
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

@@ -1,4 +1,4 @@
-package main
+package jobs
 
 import (
 	"context"
@@ -47,19 +47,19 @@ func TestJobExecutionBudget(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := jobExecutionBudget(tc.job); got != tc.want {
-				t.Fatalf("jobExecutionBudget = %v, want %v", got, tc.want)
+			if got := executionBudget(tc.job); got != tc.want {
+				t.Fatalf("executionBudget = %v, want %v", got, tc.want)
 			}
 		})
 	}
 }
 
 // newTestJobQueues returns the three per-pipeline queues with capacity 1.
-func newTestJobQueues() map[jobPipeline]chan *gatewayrpc.JobCommand {
-	return map[jobPipeline]chan *gatewayrpc.JobCommand{
-		jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
-		jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
+func newTestJobQueues() map[Pipeline]chan *gatewayrpc.JobCommand {
+	return map[Pipeline]chan *gatewayrpc.JobCommand{
+		PipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, 1),
+		PipelineClientMutation: make(chan *gatewayrpc.JobCommand, 1),
+		PipelineDefault:        make(chan *gatewayrpc.JobCommand, 1),
 	}
 }
 
@@ -71,10 +71,10 @@ func TestStartJobWorkersJoinWaitGroupOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	agent := runtime.New(runtime.Config{AgentID: "agent-1"}, failingTelemt{})
-	tracker := newJobInflightTracker()
+	tracker := NewInflightTracker()
 	out := make(chan *gatewayrpc.ConnectClientMessage, 8)
 
-	startJobWorkers(ctx, &wg, agent, tracker, newTestJobQueues(), out)
+	StartWorkers(ctx, &wg, agent, tracker, newTestJobQueues(), out)
 	cancel()
 
 	done := make(chan struct{})
@@ -91,15 +91,15 @@ func TestStartJobWorkersJoinWaitGroupOnCancel(t *testing.T) {
 // worker must have their reservations released at teardown, or they could
 // never be executed again after reconnect.
 func TestReleaseQueuedJobsFreesReservations(t *testing.T) {
-	tracker := newJobInflightTracker()
+	tracker := NewInflightTracker()
 	queues := newTestJobQueues()
 	job := &gatewayrpc.JobCommand{Id: "job-9", Action: "runtime.reload"}
 	if !tracker.reserve(job.GetId()) {
 		t.Fatal("setup: reserve failed")
 	}
-	queues[jobPipelineRuntimeReload] <- job
+	queues[PipelineRuntimeReload] <- job
 
-	releaseQueuedJobs(tracker, queues)
+	ReleaseQueued(tracker, queues)
 
 	if !tracker.reserve("job-9") {
 		t.Fatal("queued job reservation must be released after drain")
@@ -111,30 +111,30 @@ func TestReleaseQueuedJobsFreesReservations(t *testing.T) {
 // new connection while its first execution is still running must be answered
 // with an ack/cached result instead of being queued for a second execution.
 func TestDuplicateDeliveryAcrossConnectionsIsNotReExecuted(t *testing.T) {
-	tracker := newJobInflightTracker() // hoisted: one tracker, two connections
+	tracker := NewInflightTracker() // hoisted: one tracker, two connections
 	agent := runtime.New(runtime.Config{AgentID: "agent-1"}, failingTelemt{})
 	job := &gatewayrpc.JobCommand{Id: "job-7", Action: "runtime.reload"}
 
 	// Connection 1 accepts the job; no worker runs, so it stays in flight.
 	queues1 := newTestJobQueues()
 	out1 := make(chan *gatewayrpc.ConnectClientMessage, 4)
-	if !enqueueReceivedJob(context.Background(), "agent-1", agent, tracker, queues1, out1, job) {
+	if !EnqueueReceived(context.Background(), "agent-1", agent, tracker, queues1, out1, job) {
 		t.Fatal("first delivery must be accepted")
 	}
 
 	// Connection 2 (after reconnect) re-delivers the same job.
 	queues2 := newTestJobQueues()
 	out2 := make(chan *gatewayrpc.ConnectClientMessage, 4)
-	if !enqueueReceivedJob(context.Background(), "agent-1", agent, tracker, queues2, out2, job) {
+	if !EnqueueReceived(context.Background(), "agent-1", agent, tracker, queues2, out2, job) {
 		t.Fatal("duplicate delivery must still be answered with an ack")
 	}
-	if got := len(queues2[jobPipelineRuntimeReload]); got != 0 {
+	if got := len(queues2[PipelineRuntimeReload]); got != 0 {
 		t.Fatalf("duplicate must not be queued for re-execution, queue len = %d", got)
 	}
 }
 
 func TestResetQuotaRidesClientMutationLane(t *testing.T) {
-	if got := jobPipelineForAction("client.reset_quota"); got != jobPipelineClientMutation {
-		t.Fatalf("jobPipelineForAction(client.reset_quota) = %q, want %q (per-client mutations must serialise in delivery order)", got, jobPipelineClientMutation)
+	if got := pipelineForAction("client.reset_quota"); got != PipelineClientMutation {
+		t.Fatalf("pipelineForAction(client.reset_quota) = %q, want %q (per-client mutations must serialise in delivery order)", got, PipelineClientMutation)
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"context"
@@ -22,28 +22,28 @@ type localEvent struct {
 	fields  map[string]string
 }
 
-// enrollmentReporter is the agent-side collector that buffers local
+// EnrollmentReporter is the agent-side collector that buffers local
 // enrollment timeline events and ships them to the panel via
 // ReportEnrollmentSteps once the connection is up.
 //
 // Safe for concurrent use: every external call takes mu. A reporter with an
 // empty attemptID silently drops Record / Flush calls so callers do not have
 // to nil-check on every step.
-type enrollmentReporter struct {
+type EnrollmentReporter struct {
 	mu        sync.Mutex
 	attemptID string
 	events    []localEvent
 }
 
-// newEnrollmentReporter constructs an empty reporter. The caller must Bind an
+// NewEnrollmentReporter constructs an empty reporter. The caller must Bind an
 // attempt id before any Record call has effect.
-func newEnrollmentReporter() *enrollmentReporter { return &enrollmentReporter{} }
+func NewEnrollmentReporter() *EnrollmentReporter { return &EnrollmentReporter{} }
 
 // Disable clears the bound attempt id and discards any buffered events.
 // Use after a successful flush to mark enrollment as one-shot — subsequent
 // reconnects are not enrollment events and must not pollute the same
 // enrollment_attempts row.
-func (r *enrollmentReporter) Disable() {
+func (r *EnrollmentReporter) Disable() {
 	if r == nil {
 		return
 	}
@@ -57,7 +57,7 @@ func (r *enrollmentReporter) Disable() {
 // attemptID is allowed (treated as "reporting disabled"). Resetting the
 // attempt id discards any previously buffered events because they belong to
 // the prior attempt.
-func (r *enrollmentReporter) Bind(attemptID string) {
+func (r *EnrollmentReporter) Bind(attemptID string) {
 	if r == nil {
 		return
 	}
@@ -70,7 +70,7 @@ func (r *enrollmentReporter) Bind(attemptID string) {
 // Record appends one step to the buffer. No-op when the reporter is nil or
 // no attempt id has been bound — keeps the call-site cheap inside hot dial
 // / handshake paths.
-func (r *enrollmentReporter) Record(step, level, message string, fields map[string]string) {
+func (r *EnrollmentReporter) Record(step, level, message string, fields map[string]string) {
 	if r == nil {
 		return
 	}
@@ -91,7 +91,7 @@ func (r *enrollmentReporter) Record(step, level, message string, fields map[stri
 // RecordAt is like Record but stamps the event with the caller-supplied
 // timestamp. Used to back-date agent_persisted_cert with the bootstrap's
 // disk-write time after the runtime starts a fresh process.
-func (r *enrollmentReporter) RecordAt(step, level, message string, ts time.Time, fields map[string]string) {
+func (r *EnrollmentReporter) RecordAt(step, level, message string, ts time.Time, fields map[string]string) {
 	if r == nil {
 		return
 	}
@@ -116,7 +116,7 @@ func (r *enrollmentReporter) RecordAt(step, level, message string, ts time.Time,
 // success. A flush failure is non-fatal: the events stay in the buffer so a
 // subsequent reconnect can retry. No-op when the buffer is empty, the
 // reporter is nil, or no attempt id is bound.
-func (r *enrollmentReporter) Flush(ctx context.Context, client gatewayrpc.AgentGatewayClient) error {
+func (r *EnrollmentReporter) Flush(ctx context.Context, client gatewayrpc.AgentGatewayClient) error {
 	if r == nil || client == nil {
 		return nil
 	}

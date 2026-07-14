@@ -1,4 +1,4 @@
-package main
+package creds
 
 import (
 	"context"
@@ -86,12 +86,12 @@ func TestRefreshRuntimeCredentialsIfNeededRejectsCNMismatch(t *testing.T) {
 		},
 	}
 
-	updated, err := refreshRuntimeCredentialsIfNeeded(context.Background(), statePath, current, renewer, now)
+	updated, err := RefreshIfNeeded(context.Background(), statePath, current, renewer, now)
 	if err == nil {
-		t.Fatal("refreshRuntimeCredentialsIfNeeded() error = nil, want CN mismatch rejection")
+		t.Fatal("RefreshIfNeeded() error = nil, want CN mismatch rejection")
 	}
 	if !errors.Is(err, errRenewalCNMismatch) {
-		t.Fatalf("refreshRuntimeCredentialsIfNeeded() error = %v, want errRenewalCNMismatch", err)
+		t.Fatalf("RefreshIfNeeded() error = %v, want errRenewalCNMismatch", err)
 	}
 	if updated != current {
 		t.Fatalf("updated = %#v, want unchanged %#v", updated, current)
@@ -140,12 +140,12 @@ func TestRenewCertificateInStreamRejectsCNMismatch(t *testing.T) {
 		}
 	}()
 
-	updated, err := renewCertificateInStream(context.Background(), current, statePath, criticalOutbound, renewalResponses)
+	updated, err := RenewInStream(context.Background(), current, statePath, criticalOutbound, renewalResponses)
 	if err == nil {
-		t.Fatal("renewCertificateInStream() error = nil, want CN mismatch rejection")
+		t.Fatal("RenewInStream() error = nil, want CN mismatch rejection")
 	}
 	if !errors.Is(err, errRenewalCNMismatch) {
-		t.Fatalf("renewCertificateInStream() error = %v, want errRenewalCNMismatch", err)
+		t.Fatalf("RenewInStream() error = %v, want errRenewalCNMismatch", err)
 	}
 	if updated != current {
 		t.Fatalf("updated = %#v, want unchanged %#v", updated, current)

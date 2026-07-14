@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"context"
@@ -16,33 +16,48 @@ import (
 // accumulated during the interval ship as a single batch.
 const runtimeEventsPushInterval = 5 * time.Second
 
-// startRuntimeEventsPusher binds the package-level runtimeEventsBuf +
-// runtimeEventsNotify (set by runRuntime) to the per-connection telemetry
-// outbound channel and spawns the pusher goroutine on streamWG. The
-// goroutine exits when connectionCtx is cancelled. No-op if the buffer
-// hasn't been initialised (e.g. unit-test wiring that bypasses runRuntime).
+// RuntimeEvents carries the process-level ring of recent Info+ slog records,
+// the urgent (Warn/Error) notify channel, and the push cursor from the agent
+// entrypoint into the connection layer. All three used to be package-level
+// globals in cmd/agent (runtimeEventsBuf / runtimeEventsNotify /
+// runtimeEventsCursor). They MUST outlive individual connections: the ring
+// survives a reconnect, so a per-connection cursor replayed up to 200
+// already-delivered events (audit #9b). The Loop owns one RuntimeEvents for
+// the whole process and hands it to every connection.
+type RuntimeEvents struct {
+	Buf    *runtimeevents.Buffer
+	Notify chan struct{}
+	Cursor *atomic.Uint64
+}
+
+// startRuntimeEventsPusher binds the process-level event ring + urgent notify
+// (set up by the agent entrypoint) to the per-connection telemetry outbound
+// channel and spawns the pusher goroutine on streamWG. The goroutine exits
+// when connectionCtx is cancelled. No-op if the buffer hasn't been initialised
+// (e.g. unit-test wiring that bypasses the entrypoint).
 func startRuntimeEventsPusher(
 	connectionCtx context.Context,
 	streamWG *sync.WaitGroup,
+	events RuntimeEvents,
 	agentID string,
 	telemetryOutbound chan<- *gatewayrpc.ConnectClientMessage,
 ) {
-	if runtimeEventsBuf == nil {
+	if events.Buf == nil {
 		slog.DebugContext(connectionCtx, "runtime events pusher disabled (buffer not initialised)")
 		return
 	}
-	notify := runtimeEventsNotify
+	notify := events.Notify
 	if notify == nil {
 		// No urgent-callback wiring: still run the pusher on its tick so
 		// Info events ship; urgent-immediate just degrades to "next tick".
 		notify = make(chan struct{})
 	}
 	pusher := newRuntimeEventsPusher(
-		runtimeEventsBuf,
+		events.Buf,
 		sendRuntimeEventsFunc(connectionCtx, telemetryOutbound, agentID),
 		runtimeEventsPushInterval,
 		notify,
-		runtimeEventsCursor,
+		events.Cursor,
 	)
 	streamWG.Add(1)
 	go func() {
@@ -68,9 +83,9 @@ type runtimeEventsPusher struct {
 	tickInterval time.Duration
 	notify       <-chan struct{}
 	// cursor is the last successfully handed-off Seq. It is SHARED
-	// across connections (package-level runtimeEventsCursor in
-	// runtime.go): the ring outlives a reconnect, so a per-connection
-	// cursor re-sent up to 200 buffered events after every reconnect
+	// across connections (RuntimeEvents.Cursor, owned by the Loop):
+	// the ring outlives a reconnect, so a per-connection cursor
+	// re-sent up to 200 buffered events after every reconnect
 	// (audit #9b).
 	cursor *atomic.Uint64
 }

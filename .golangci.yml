@@ -390,7 +390,7 @@ linters:
       # production code uses the verified pinning verifier.
       - linters: [gosec]
         text: "G402"
-        path: "cmd/agent/bootstrap_reverse_test.go"
+        path: "internal/agent/creds/reverse_test.go"
 
       # G403 — weak RSA key size. authority_test.go deliberately mints a
       # 1024-bit RSA key to pin the 3.4 CSR key-strength rejection path;
@@ -400,14 +400,16 @@ linters:
         path: "internal/controlplane/server/authority_test.go"
 
       # G404 — math/rand for non-cryptographic backoff jitter.
-      # agenttransport/outbound.go and cmd/agent/runtime.go use math/rand/v2
-      # to add full jitter to reconnect timers — not security-sensitive.
+      # agenttransport/outbound.go and the agent's reconnect loop use
+      # math/rand/v2 to add full jitter to reconnect timers — not
+      # security-sensitive. (The agent's loop moved from cmd/agent/runtime.go to
+      # internal/agent/conn/reconnect.go in R8.)
       - linters: [gosec]
         text: "G404"
         path: "internal/controlplane/agenttransport/outbound.go"
       - linters: [gosec]
         text: "G404"
-        path: "cmd/agent/runtime.go"
+        path: "internal/agent/conn/reconnect.go"
 
       # G505 — SHA-1 import. auth/totp.go imports crypto/sha1 because
       # RFC 6238 (TOTP) mandates HMAC-SHA1 for Google Authenticator

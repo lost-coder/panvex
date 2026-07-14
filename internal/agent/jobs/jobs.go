@@ -1,4 +1,4 @@
-package main
+package jobs
 
 import (
 	"context"
@@ -11,24 +11,43 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
-type jobPipeline string
+// Pipeline is a job execution lane. Lanes exist for isolation — a slow lane
+// must not head-of-line-block another.
+type Pipeline string
 
 const (
-	jobPipelineRuntimeReload  jobPipeline = "runtime_reload"
-	jobPipelineClientMutation jobPipeline = "client_mutation"
-	jobPipelineDefault        jobPipeline = "default"
+	PipelineRuntimeReload  Pipeline = "runtime_reload"
+	PipelineClientMutation Pipeline = "client_mutation"
+	PipelineDefault        Pipeline = "default"
 )
 
-func jobPipelineForAction(action string) jobPipeline {
+const (
+	// QueueCapacity is the per-lane channel capacity. The connection layer
+	// sizes the lane channels with it; a full lane fails the job fast rather
+	// than blocking the inbound pump (audit #9a).
+	QueueCapacity = 16
+
+	jobExecutionTimeout = 30 * time.Second
+	// A5: per-action execution budgets. config.apply = health-probe budget
+	// (from the payload, default 30s) + a restart allowance + safety margin;
+	// the blanket jobExecutionTimeout strangled the apply sequence and
+	// killed the ctx mid-health-poll. Self-update needs room for the
+	// archive download on slow links.
+	configApplyRestartAllowance = 30 * time.Second
+	configApplyBudgetMargin     = 30 * time.Second
+	selfUpdateExecutionTimeout  = 5 * time.Minute
+)
+
+func pipelineForAction(action string) Pipeline {
 	switch action {
 	case "runtime.reload":
-		return jobPipelineRuntimeReload
+		return PipelineRuntimeReload
 	case "telemetry.refresh_diagnostics":
-		return jobPipelineRuntimeReload
+		return PipelineRuntimeReload
 	case "client.create", "client.update", "client.rotate_secret", "client.delete", "client.reset_quota":
-		return jobPipelineClientMutation
+		return PipelineClientMutation
 	default:
-		return jobPipelineDefault
+		return PipelineDefault
 	}
 }
 
@@ -40,7 +59,7 @@ func shouldSendRuntimeSnapshotAfterJob(action string, success bool) bool {
 	return action == "telemetry.refresh_diagnostics"
 }
 
-// jobWorkerCountForPipeline sets per-lane concurrency. Every lane is
+// workerCountForPipeline sets per-lane concurrency. Every lane is
 // single-worker BY DESIGN; the lanes exist for isolation (a slow lane cannot
 // head-of-line-block another), not for intra-lane parallelism:
 //
@@ -53,16 +72,16 @@ func shouldSendRuntimeSnapshotAfterJob(action string, success bool) bool {
 //     two workers would let client.update#2 overtake #1.
 //   - default: config.apply / self-update / transport switches are
 //     heavyweight node-level operations — one at a time is the safe default.
-func jobWorkerCountForPipeline(jobPipeline) int {
+func workerCountForPipeline(Pipeline) int {
 	return 1
 }
 
-// jobExecutionBudget returns the ctx deadline for executing one job.
+// executionBudget returns the ctx deadline for executing one job.
 // config.apply derives its budget from the payload's health_timeout_s
 // (panel sends 30 by default) so the agent-side deadline always exceeds
 // the apply sequence it has to cover: preflight + PATCH + restart +
 // health polls. Everything else keeps the conservative default.
-func jobExecutionBudget(job *gatewayrpc.JobCommand) time.Duration {
+func executionBudget(job *gatewayrpc.JobCommand) time.Duration {
 	switch job.GetAction() {
 	case "config.apply":
 		var p struct {
@@ -81,18 +100,18 @@ func jobExecutionBudget(job *gatewayrpc.JobCommand) time.Duration {
 	}
 }
 
-type jobInflightTracker struct {
+type InflightTracker struct {
 	mu     sync.Mutex
 	jobIDs map[string]struct{}
 }
 
-func newJobInflightTracker() *jobInflightTracker {
-	return &jobInflightTracker{
+func NewInflightTracker() *InflightTracker {
+	return &InflightTracker{
 		jobIDs: make(map[string]struct{}),
 	}
 }
 
-func (t *jobInflightTracker) reserve(jobID string) bool {
+func (t *InflightTracker) reserve(jobID string) bool {
 	if jobID == "" {
 		return false
 	}
@@ -106,7 +125,7 @@ func (t *jobInflightTracker) reserve(jobID string) bool {
 	return true
 }
 
-func (t *jobInflightTracker) release(jobID string) {
+func (t *InflightTracker) release(jobID string) {
 	if jobID == "" {
 		return
 	}
@@ -116,12 +135,12 @@ func (t *jobInflightTracker) release(jobID string) {
 	t.mu.Unlock()
 }
 
-func enqueueReceivedJob(
+func EnqueueReceived(
 	connectionCtx context.Context,
 	agentID string,
 	agent *runtime.Agent,
-	tracker *jobInflightTracker,
-	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
+	tracker *InflightTracker,
+	jobQueues map[Pipeline]chan *gatewayrpc.JobCommand,
 	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
 	job *gatewayrpc.JobCommand,
 ) bool {
@@ -136,7 +155,7 @@ func enqueueReceivedJob(
 		// JobResult lost in transit after the first ack still reaches the
 		// control-plane on its retry — without re-executing the job. Falls
 		// back to an ack when no result is cached yet (still executing).
-		outbound := jobAcknowledgementMessage(agentID, jobID, time.Now())
+		outbound := acknowledgementMessage(agentID, jobID, time.Now())
 		if agent != nil {
 			if cached, ok := agent.CompletedJobResult(jobID, time.Now()); ok {
 				outbound = &gatewayrpc.ConnectClientMessage{
@@ -152,7 +171,7 @@ func enqueueReceivedJob(
 		}
 	}
 
-	targetQueue := jobQueues[jobPipelineForAction(job.GetAction())]
+	targetQueue := jobQueues[pipelineForAction(job.GetAction())]
 	select {
 	case <-connectionCtx.Done():
 		tracker.release(jobID)
@@ -187,42 +206,42 @@ func enqueueReceivedJob(
 	case <-connectionCtx.Done():
 		tracker.release(jobID)
 		return false
-	case criticalOutbound <- jobAcknowledgementMessage(agentID, jobID, time.Now()):
+	case criticalOutbound <- acknowledgementMessage(agentID, jobID, time.Now()):
 		return true
 	}
 }
 
-func startJobWorkers(
+func StartWorkers(
 	connectionCtx context.Context,
 	streamWG *sync.WaitGroup,
 	agent *runtime.Agent,
-	tracker *jobInflightTracker,
-	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
+	tracker *InflightTracker,
+	jobQueues map[Pipeline]chan *gatewayrpc.JobCommand,
 	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
 ) {
 	for pipeline, queue := range jobQueues {
-		workerCount := jobWorkerCountForPipeline(pipeline)
+		workerCount := workerCountForPipeline(pipeline)
 		for workerIndex := 0; workerIndex < workerCount; workerIndex++ {
 			streamWG.Add(1)
 			go func(queue <-chan *gatewayrpc.JobCommand) {
 				defer streamWG.Done()
-				runJobWorker(connectionCtx, agent, tracker, queue, criticalOutbound)
+				runWorker(connectionCtx, agent, tracker, queue, criticalOutbound)
 			}(queue)
 		}
 	}
 }
 
-// releaseQueuedJobs drains jobs still sitting in the per-connection queues
+// ReleaseQueued drains jobs still sitting in the per-connection queues
 // after the workers exited and releases their in-flight reservations. B4:
 // the tracker outlives the connection, so anything left reserved here
 // would never be executable again after reconnect.
-func releaseQueuedJobs(tracker *jobInflightTracker, jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand) {
+func ReleaseQueued(tracker *InflightTracker, jobQueues map[Pipeline]chan *gatewayrpc.JobCommand) {
 	for _, queue := range jobQueues {
-		drainJobQueue(tracker, queue)
+		drainQueue(tracker, queue)
 	}
 }
 
-func drainJobQueue(tracker *jobInflightTracker, queue <-chan *gatewayrpc.JobCommand) {
+func drainQueue(tracker *InflightTracker, queue <-chan *gatewayrpc.JobCommand) {
 	for {
 		select {
 		case job := <-queue:
@@ -235,10 +254,10 @@ func drainJobQueue(tracker *jobInflightTracker, queue <-chan *gatewayrpc.JobComm
 	}
 }
 
-func runJobWorker(
+func runWorker(
 	connectionCtx context.Context,
 	agent *runtime.Agent,
-	tracker *jobInflightTracker,
+	tracker *InflightTracker,
 	jobQueue <-chan *gatewayrpc.JobCommand,
 	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
 ) {
@@ -254,13 +273,13 @@ func runJobWorker(
 		}
 		jobID := job.GetId()
 
-		jobCtx, cancelJob := context.WithTimeout(connectionCtx, jobExecutionBudget(job))
+		jobCtx, cancelJob := context.WithTimeout(connectionCtx, executionBudget(job))
 		result := agent.HandleJob(jobCtx, job, time.Now())
 		cancelJob()
 		slog.Debug("job completed", "job_id", jobID, "action", job.GetAction(), "success", result.Success)
 
 		if shouldSendRuntimeSnapshotAfterJob(job.GetAction(), result.Success) {
-			runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+			runtimeCtx, cancelRuntime := context.WithTimeout(connectionCtx, runtime.OperationTimeout)
 			snapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, time.Now())
 			cancelRuntime()
 			if err != nil {
@@ -289,7 +308,7 @@ func runJobWorker(
 	}
 }
 
-func jobAcknowledgementMessage(agentID string, jobID string, observedAt time.Time) *gatewayrpc.ConnectClientMessage {
+func acknowledgementMessage(agentID string, jobID string, observedAt time.Time) *gatewayrpc.ConnectClientMessage {
 	return &gatewayrpc.ConnectClientMessage{
 		Body: &gatewayrpc.ConnectClientMessage_JobAcknowledgement{
 			JobAcknowledgement: &gatewayrpc.JobAcknowledgement{

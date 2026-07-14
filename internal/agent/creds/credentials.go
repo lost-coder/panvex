@@ -1,4 +1,4 @@
-package main
+package creds
 
 import (
 	"context"
@@ -24,11 +24,22 @@ import (
 	"google.golang.org/grpc"
 )
 
-type certificateRenewer interface {
+const (
+	// renewWindow is how long before expiry the agent starts renewing.
+	renewWindow = 24 * time.Hour
+	// RenewRetry is the delay before a failed in-stream/unary renewal is
+	// retried. The connection layer's refresh timer resets to it.
+	RenewRetry = time.Minute
+	// RefreshTimeout bounds a single certificate refresh round-trip
+	// (unary RenewCertificate, in-stream RenewalResponse wait, HTTP recovery).
+	RefreshTimeout = 15 * time.Second
+)
+
+type CertificateRenewer interface {
 	RenewCertificate(context.Context, *gatewayrpc.RenewCertificateRequest, ...grpc.CallOption) (*gatewayrpc.RenewCertificateResponse, error)
 }
 
-func loadRuntimeCredentials(stateFile string) (agentstate.Credentials, error) {
+func LoadCredentials(stateFile string) (agentstate.Credentials, error) {
 	credentialsState, err := agentstate.Load(stateFile)
 	if err == nil {
 		return credentialsState, nil
@@ -39,12 +50,12 @@ func loadRuntimeCredentials(stateFile string) (agentstate.Credentials, error) {
 	return agentstate.Credentials{}, err
 }
 
-func renewRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, gatewayAddr string, serverName string, current agentstate.Credentials, now time.Time) (agentstate.Credentials, error) {
-	if !runtimeCredentialsNeedRefresh(current, now) {
+func RenewIfNeeded(ctx context.Context, stateFile string, gatewayAddr string, serverName string, current agentstate.Credentials, now time.Time) (agentstate.Credentials, error) {
+	if !NeedsRefresh(current, now) {
 		return current, nil
 	}
-	if runtimeCredentialsNeedRecovery(current, now) {
-		return recoverRuntimeCredentialsIfNeeded(ctx, stateFile, current, nil, now)
+	if needsRecovery(current, now) {
+		return recoverCredentials(ctx, stateFile, current, nil, now)
 	}
 
 	certificate, err := tls.X509KeyPair([]byte(current.CertificatePEM), []byte(current.PrivateKeyPEM))
@@ -62,7 +73,7 @@ func renewRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, gate
 	var updated agentstate.Credentials
 	runErr := agentTransport.NewDialTransport(cfg).RunOnce(ctx, func(_ context.Context, _ agentTransport.BidiStream, client gatewayrpc.AgentGatewayClient) error {
 		var refreshErr error
-		updated, refreshErr = refreshRuntimeCredentialsIfNeeded(ctx, stateFile, current, client, now)
+		updated, refreshErr = RefreshIfNeeded(ctx, stateFile, current, client, now)
 		return refreshErr
 	})
 	if runErr != nil {
@@ -71,8 +82,8 @@ func renewRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, gate
 	return updated, nil
 }
 
-func refreshRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, current agentstate.Credentials, renewer certificateRenewer, now time.Time) (agentstate.Credentials, error) {
-	if !runtimeCredentialsNeedRefresh(current, now) {
+func RefreshIfNeeded(ctx context.Context, stateFile string, current agentstate.Credentials, renewer CertificateRenewer, now time.Time) (agentstate.Credentials, error) {
+	if !NeedsRefresh(current, now) {
 		return current, nil
 	}
 
@@ -134,7 +145,7 @@ func refreshRuntimeCredentialsIfNeeded(ctx context.Context, stateFile string, cu
 	return persisted, nil
 }
 
-func runtimeCredentialsNeedRefresh(current agentstate.Credentials, now time.Time) bool {
+func NeedsRefresh(current agentstate.Credentials, now time.Time) bool {
 	if current.AgentID == "" {
 		return false
 	}
@@ -142,10 +153,10 @@ func runtimeCredentialsNeedRefresh(current agentstate.Credentials, now time.Time
 		return false
 	}
 
-	return !now.Add(runtimeCertificateRenewWindow).Before(current.ExpiresAt.UTC())
+	return !now.Add(renewWindow).Before(current.ExpiresAt.UTC())
 }
 
-func runtimeCredentialsNeedRecovery(current agentstate.Credentials, now time.Time) bool {
+func needsRecovery(current agentstate.Credentials, now time.Time) bool {
 	if strings.TrimSpace(current.PanelURL) == "" {
 		return false
 	}
@@ -156,12 +167,12 @@ func runtimeCredentialsNeedRecovery(current agentstate.Credentials, now time.Tim
 	return !current.ExpiresAt.UTC().After(now.UTC())
 }
 
-func runtimeCredentialRefreshDelay(current agentstate.Credentials, now time.Time) time.Duration {
-	if runtimeCredentialsNeedRefresh(current, now) {
+func RefreshDelay(current agentstate.Credentials, now time.Time) time.Duration {
+	if NeedsRefresh(current, now) {
 		return 0
 	}
 
-	refreshAt := current.ExpiresAt.UTC().Add(-runtimeCertificateRenewWindow)
+	refreshAt := current.ExpiresAt.UTC().Add(-renewWindow)
 	if !refreshAt.After(now) {
 		return 0
 	}
@@ -169,15 +180,15 @@ func runtimeCredentialRefreshDelay(current agentstate.Credentials, now time.Time
 	return refreshAt.Sub(now)
 }
 
-func newRuntimeCredentialRefreshTimer(current agentstate.Credentials, now time.Time) *time.Timer {
+func NewRefreshTimer(current agentstate.Credentials, now time.Time) *time.Timer {
 	if current.ExpiresAt.IsZero() {
 		return nil
 	}
 
-	return time.NewTimer(runtimeCredentialRefreshDelay(current, now))
+	return time.NewTimer(RefreshDelay(current, now))
 }
 
-func resetRuntimeCredentialRefreshTimer(timer *time.Timer, delay time.Duration) {
+func ResetRefreshTimer(timer *time.Timer, delay time.Duration) {
 	if timer == nil {
 		return
 	}
@@ -219,8 +230,8 @@ var errRenewalCNMismatch = errors.New("renewal: certificate CN mismatch")
 
 // checkRenewedCertCN validates that a freshly-renewed certificate's leaf CN
 // matches the expected agent ID before the caller persists/applies it.
-// Both the unary (refreshRuntimeCredentialsIfNeeded) and in-stream
-// (renewCertificateInStream) renewal paths call this immediately after their
+// Both the unary (RefreshIfNeeded) and in-stream
+// (RenewInStream) renewal paths call this immediately after their
 // tls.X509KeyPair pairing check succeeds — a cert that pairs with the key we
 // just generated but was issued for a DIFFERENT agent identity indicates a
 // misrouted or malicious panel response and must not be adopted.
@@ -264,29 +275,29 @@ func renewedCertCN(cert tls.Certificate) string {
 	return leaf.Subject.CommonName
 }
 
-// recoverListenCredentialsIfExpired handles the listen-mode dead end the
+// RecoverListenIfExpired handles the listen-mode dead end the
 // audit flagged: an EXPIRED cert cannot complete any mTLS handshake (neither
 // the panel's dial-in nor in-stream renewal), and the dial-mode unary
 // renewal pre-flight is skipped in listen mode. The HTTP certificate
 // recovery flow works over HTTPS to PanelURL regardless of transport mode,
 // so run it before re-entering the listen loop. client==nil uses the
 // default bootstrap HTTP client.
-func recoverListenCredentialsIfExpired(ctx context.Context, stateFile string, current agentstate.Credentials, client *http.Client, now time.Time) (agentstate.Credentials, error) {
-	if !runtimeCredentialsNeedRecovery(current, now) {
+func RecoverListenIfExpired(ctx context.Context, stateFile string, current agentstate.Credentials, client *http.Client, now time.Time) (agentstate.Credentials, error) {
+	if !needsRecovery(current, now) {
 		return current, nil
 	}
 	slog.Warn("listen mode: certificate expired; attempting HTTP recovery",
 		"agent_id", current.AgentID, "expired_at", current.ExpiresAt.UTC().Format(time.RFC3339))
-	return recoverRuntimeCredentialsIfNeeded(ctx, stateFile, current, client, now)
+	return recoverCredentials(ctx, stateFile, current, client, now)
 }
 
-// renewCertificateInStream performs in-stream cert renewal over the existing
+// RenewInStream performs in-stream cert renewal over the existing
 // Connect bidi-stream. It generates a fresh ECDSA P-256 keypair, builds a
 // CSR signed with the new key, sends a RenewalRequest via criticalOutbound,
-// and waits up to certificateRefreshTimeout for the panel's RenewalResponse.
+// and waits up to RefreshTimeout for the panel's RenewalResponse.
 // On success it validates the returned cert pairs with the new key, atomically
 // updates the in-memory credentials, and persists them to disk.
-func renewCertificateInStream(
+func RenewInStream(
 	ctx context.Context,
 	current agentstate.Credentials,
 	stateFile string,
@@ -320,7 +331,7 @@ func renewCertificateInStream(
 	}
 
 	// Wait for the panel's response.
-	renewCtx, cancel := context.WithTimeout(ctx, certificateRefreshTimeout)
+	renewCtx, cancel := context.WithTimeout(ctx, RefreshTimeout)
 	defer cancel()
 	var resp *gatewayrpc.RenewalResponse
 	select {

@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"context"
@@ -9,6 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/creds"
+	"github.com/lost-coder/panvex/internal/agent/jobs"
+	"github.com/lost-coder/panvex/internal/agent/probation"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	agentTransport "github.com/lost-coder/panvex/internal/agent/transport"
@@ -17,27 +20,52 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
-// transportReloadState coordinates transport mode switches requested via a
+// TransportReload coordinates transport mode switches requested via a
 // switch_transport_mode job. The job handler writes new state to disk, sets
 // pending=true, and calls cancel() to drop the current connection; the loop
 // then reloads credentials from disk before establishing the next connection.
-type transportReloadState struct {
+type TransportReload struct {
 	mu      sync.Mutex
 	pending bool
 	cancel  func()
 }
 
+// NewTransportReload returns a reload coordinator whose cancel is a safe no-op
+// until the first connection registers its own.
+func NewTransportReload() *TransportReload {
+	return &TransportReload{cancel: func() {}}
+}
+
+// SetPending marks a transport reload as pending and returns the cancel func of
+// the connection that is currently live, so the caller can drop it. The caller
+// (the switch_transport_mode job handler) defers the cancel to give the job
+// worker time to flush its JobResult onto the outbound stream.
+func (t *TransportReload) SetPending() func() {
+	t.mu.Lock()
+	t.pending = true
+	cancel := t.cancel
+	t.mu.Unlock()
+	return cancel
+}
+
+// takePending consumes the pending flag, returning whether a reload was
+// requested since the last call.
+func (t *TransportReload) takePending() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.pending {
+		return false
+	}
+	t.pending = false
+	return true
+}
+
 // panelClientCN mirrors server.PanelClientCN — the protocol-fixed CN of the
 // control-plane's outbound client certificate. Duplicated as a literal
-// because cmd/agent must not import the control-plane server package: the
+// because the agent must not import the control-plane server package: the
 // agent's transitive deps are guarded to contain no controlplane/server (and
-// no DB layer) — see agent_deps_test.go (R3).
+// no DB layer) — see cmd/agent/agent_deps_test.go (R3).
 const panelClientCN = "control-plane.panvex.internal"
-
-// updateBackupCleanupOnce gates the one-shot removal of the self-update
-// backup binary: the first successful panel sync of this process is the
-// health-check that makes the previous binary's .bak disposable.
-var updateBackupCleanupOnce sync.Once
 
 // selectTransport returns either a listen-mode or dial-mode Transport based on
 // the TransportMode field of the credentials state. It is extracted as a
@@ -70,12 +98,23 @@ type runConnectionParams struct {
 	stateFile             string
 	credentialsState      agentstate.Credentials
 	agent                 *runtime.Agent
-	schedule              connectionSchedule
+	schedule              Schedule
 	clientDataConcurrency int
-	tr                    *transportReloadState
-	reporter              *enrollmentReporter
-	jobInflight           *jobInflightTracker
+	tr                    *TransportReload
+	reporter              *EnrollmentReporter
+	jobInflight           *jobs.InflightTracker
 	transportProbation    time.Duration
+	// events carries the process-level runtime-event ring, its urgent notify
+	// channel and the shared push cursor. These were package-level globals in
+	// cmd/agent (runtimeEventsBuf / runtimeEventsNotify / runtimeEventsCursor);
+	// they are now owned by the Loop and threaded through here.
+	events RuntimeEvents
+	// backupCleanup gates the one-shot removal of the self-update backup
+	// binary: the first successful panel sync of this process is the
+	// health-check that makes the previous binary's .bak disposable. It was
+	// the package-level updateBackupCleanupOnce; the Loop owns it now, which
+	// keeps it process-scoped exactly as before.
+	backupCleanup *sync.Once
 }
 
 func runConnection(supervisorCtx context.Context, p runConnectionParams) (agentstate.Credentials, error) {
@@ -137,7 +176,7 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 	if credentialsState.PrevTransport != nil && credentialsState.TransportSwitchedAtUnix > 0 {
 		window := transportProbation
 		if window <= 0 {
-			window = defaultTransportProbation
+			window = probation.DefaultWindow
 		}
 		deadline := time.Unix(credentialsState.TransportSwitchedAtUnix, 0).Add(window)
 		var cancelProbation context.CancelFunc
@@ -152,7 +191,7 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 		// taint-analysis warning is a false positive.
 		//nolint:gosec // G706: structured logging, no format-string injection vector
 		slog.Info("connected to control-plane", "agent_id", agent.AgentID(), "gateway", gatewayAddr)
-		clearTransportProbation(stateFile, &credentialsState)
+		probation.Clear(stateFile, &credentialsState)
 
 		// Derive the connection context from the supervisor ctx so SIGTERM
 		// reaches every per-connection worker (outbound pump, inbound pump,
@@ -203,10 +242,10 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 
 		criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 32)
 		telemetryOutbound := make(chan *gatewayrpc.ConnectClientMessage, 64)
-		jobQueues := map[jobPipeline]chan *gatewayrpc.JobCommand{
-			jobPipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
-			jobPipelineClientMutation: make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
-			jobPipelineDefault:        make(chan *gatewayrpc.JobCommand, jobQueueCapacity),
+		jobQueues := map[jobs.Pipeline]chan *gatewayrpc.JobCommand{
+			jobs.PipelineRuntimeReload:  make(chan *gatewayrpc.JobCommand, jobs.QueueCapacity),
+			jobs.PipelineClientMutation: make(chan *gatewayrpc.JobCommand, jobs.QueueCapacity),
+			jobs.PipelineDefault:        make(chan *gatewayrpc.JobCommand, jobs.QueueCapacity),
 		}
 		// Q4.U-P-08: graceful drain. Every goroutine spawned for this
 		// connection adds 1 to streamWG and defers wg.Done(); RunOnce
@@ -219,7 +258,7 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 		// just released.
 		defer func() {
 			streamWG.Wait()
-			releaseQueuedJobs(jobInflight, jobQueues)
+			jobs.ReleaseQueued(jobInflight, jobQueues)
 		}()
 		defer cancelConnection()
 		sendErrors := make(chan error, 1)
@@ -244,7 +283,7 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 		// main loop is momentarily not yet waiting.
 		renewalResponses := make(chan *gatewayrpc.RenewalResponse, 1)
 		startInboundPump(connectionCtx, &streamWG, stream, agent, jobInflight, jobQueues, criticalOutbound, clientDataSem, renewalResponses, sendErrorAndCancel)
-		startJobWorkers(connectionCtx, &streamWG, agent, jobInflight, jobQueues, criticalOutbound)
+		jobs.StartWorkers(connectionCtx, &streamWG, agent, jobInflight, jobQueues, criticalOutbound)
 
 		// TLS handshake succeeded by the time RunOnce calls back — the
 		// stream is live and authenticated. Record before the initial
@@ -267,7 +306,7 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 		// Health-check confirmation for a preceding self-update: the new
 		// binary connected and completed the initial sync, so the old
 		// binary's .bak is no longer needed for rollback (audit #9c).
-		updateBackupCleanupOnce.Do(func() { updater.RemoveBackup(slog.Default()) })
+		p.backupCleanup.Do(func() { updater.RemoveBackup(slog.Default()) })
 
 		// First sync confirmed: outbound queue accepted heartbeat + snapshot.
 		// Flush buffered events to the panel. Failure is non-fatal — events
@@ -302,12 +341,12 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 			reporter.Disable()
 		}
 
-		credentialRefreshTimer := newRuntimeCredentialRefreshTimer(credentialsState, time.Now())
+		credentialRefreshTimer := creds.NewRefreshTimer(credentialsState, time.Now())
 		if credentialRefreshTimer != nil {
 			defer credentialRefreshTimer.Stop()
 		}
 		startPollingWorkers(connectionCtx, &streamWG, schedule, agent, criticalOutbound, telemetryOutbound)
-		startRuntimeEventsPusher(connectionCtx, &streamWG, agent.AgentID(), telemetryOutbound)
+		startRuntimeEventsPusher(connectionCtx, &streamWG, p.events, agent.AgentID(), telemetryOutbound)
 
 		var loopErr error
 		updatedCredentials, loopErr = runConnectionMainLoop(connectionCtx, cancelConnection, credentialsState, stateFile, client, criticalOutbound, renewalResponses, credentialRefreshTimer, sendErrors)
@@ -342,8 +381,8 @@ func startInboundPump(
 	streamWG *sync.WaitGroup,
 	stream agentTransport.BidiStream,
 	agent *runtime.Agent,
-	jobInflight *jobInflightTracker,
-	jobQueues map[jobPipeline]chan *gatewayrpc.JobCommand,
+	jobInflight *jobs.InflightTracker,
+	jobQueues map[jobs.Pipeline]chan *gatewayrpc.JobCommand,
 	criticalOutbound chan *gatewayrpc.ConnectClientMessage,
 	clientDataSem chan struct{},
 	renewalResponses chan<- *gatewayrpc.RenewalResponse,
@@ -360,7 +399,7 @@ func startInboundPump(
 			}
 			if job := message.GetJob(); job != nil {
 				slog.Debug("job received", "job_id", job.GetId(), "action", job.GetAction())
-				enqueueReceivedJob(connectionCtx, agent.AgentID(), agent, jobInflight, jobQueues, criticalOutbound, job)
+				jobs.EnqueueReceived(connectionCtx, agent.AgentID(), agent, jobInflight, jobQueues, criticalOutbound, job)
 				continue
 			}
 			if req := message.GetClientDataRequest(); req != nil {
@@ -395,7 +434,7 @@ func startInboundPump(
 // runConnectionMainLoop blocks until either the outbound pump signals
 // a fatal send error or a credential refresh either fails or yields
 // new credentials (which trigger a reconnect via
-// errRuntimeCredentialsRefreshed). Splitting it out keeps
+// ErrCredentialsRefreshed). Splitting it out keeps
 // runConnection's CC below the 15 threshold.
 func runConnectionMainLoop(
 	connectionCtx context.Context,
@@ -436,8 +475,8 @@ func runConnectionMainLoop(
 			cancelConnection()
 			return credentialsState, err
 		case <-timerChan(credentialRefreshTimer):
-			if !runtimeCredentialsNeedRefresh(credentialsState, time.Now()) {
-				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
+			if !creds.NeedsRefresh(credentialsState, time.Now()) {
+				creds.ResetRefreshTimer(credentialRefreshTimer, creds.RefreshDelay(credentialsState, time.Now()))
 				continue
 			}
 			// In-stream renewal: works for both dial and listen modes because
@@ -445,7 +484,7 @@ func runConnectionMainLoop(
 			// RenewCertificate RPC (dial-only) is now only used in the outer
 			// pre-connection path for dial-mode agents.
 			if criticalOutbound != nil {
-				updatedCredentials, err := renewCertificateInStream(connectionCtx, credentialsState, stateFile, criticalOutbound, renewalResponses)
+				updatedCredentials, err := creds.RenewInStream(connectionCtx, credentialsState, stateFile, criticalOutbound, renewalResponses)
 				if err != nil {
 					// A cancelled connection ctx (server-side close, supervisor
 					// shutdown) propagates as context.Canceled here. The
@@ -455,20 +494,20 @@ func runConnectionMainLoop(
 					} else {
 						slog.Error("in-stream certificate renewal failed", "error", err)
 					}
-					resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
+					creds.ResetRefreshTimer(credentialRefreshTimer, creds.RenewRetry)
 					continue
 				}
 				cancelConnection()
-				return updatedCredentials, errRuntimeCredentialsRefreshed
+				return updatedCredentials, ErrCredentialsRefreshed
 			}
 			// Fallback: dial-mode without a stream available (should not
 			// normally happen when criticalOutbound is wired).
 			if client == nil {
-				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
+				creds.ResetRefreshTimer(credentialRefreshTimer, creds.RefreshDelay(credentialsState, time.Now()))
 				continue
 			}
-			refreshCtx, cancelRefresh := context.WithTimeout(connectionCtx, certificateRefreshTimeout)
-			updatedCredentials, err := refreshRuntimeCredentialsIfNeeded(refreshCtx, stateFile, credentialsState, client, time.Now())
+			refreshCtx, cancelRefresh := context.WithTimeout(connectionCtx, creds.RefreshTimeout)
+			updatedCredentials, err := creds.RefreshIfNeeded(refreshCtx, stateFile, credentialsState, client, time.Now())
 			cancelRefresh()
 			if err != nil {
 				// Same demotion as the in-stream path: a cancelled
@@ -479,14 +518,14 @@ func runConnectionMainLoop(
 				} else {
 					slog.Error("certificate renewal failed", "error", err)
 				}
-				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
+				creds.ResetRefreshTimer(credentialRefreshTimer, creds.RenewRetry)
 				continue
 			}
 			if updatedCredentials != credentialsState {
 				cancelConnection()
-				return updatedCredentials, errRuntimeCredentialsRefreshed
+				return updatedCredentials, ErrCredentialsRefreshed
 			}
-			resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
+			creds.ResetRefreshTimer(credentialRefreshTimer, creds.RefreshDelay(credentialsState, time.Now()))
 		}
 	}
 }

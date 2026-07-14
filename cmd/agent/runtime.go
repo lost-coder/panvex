@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -14,31 +13,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/conn"
+	"github.com/lost-coder/panvex/internal/agent/creds"
+	"github.com/lost-coder/panvex/internal/agent/probation"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	"github.com/lost-coder/panvex/internal/agent/runtimeevents"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
-	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/logutil"
 	"github.com/lost-coder/panvex/internal/updatehosts"
-)
-
-// runtimeEventsBuf is the process-wide ring of recent Info+ slog records
-// populated by the runtimeevents.Handler installed in runRuntime. It is
-// drained by the pusher goroutine started in runConnection. We use a
-// package-level handle (rather than a state struct) because cmd/agent
-// already threads cross-cutting hooks through positional parameters and
-// the slog default itself is process-global — see runtime.go comment
-// near the wiring for the rationale.
-var (
-	runtimeEventsBuf    *runtimeevents.Buffer
-	runtimeEventsNotify chan struct{}
-	// runtimeEventsCursor is the PROCESS-level "last handed-off Seq"
-	// cursor for the pusher. It must outlive individual connections:
-	// the ring buffer survives a reconnect, so a per-connection cursor
-	// replayed up to 200 already-delivered events (audit #9b).
-	runtimeEventsCursor *atomic.Uint64
 )
 
 // runtimeFlags holds the parsed CLI options for the agent runtime. Pulling
@@ -94,7 +78,7 @@ func parseRuntimeFlags(args []string) (runtimeFlags, error) {
 	flags.StringVar(&cfg.logFormat, "log-format", os.Getenv("PANVEX_LOG_FORMAT"),
 		"Log output format (text or json). Env: PANVEX_LOG_FORMAT.")
 	flags.IntVar(&cfg.clientDataConcurrency, "client-data-concurrency", clientDataConcurrencyDefault(), "Max concurrent in-flight ClientDataRequest goroutines (env: PANVEX_AGENT_CLIENT_DATA_CONCURRENCY)")
-	flags.DurationVar(&cfg.transportProbation, "transport-probation", defaultTransportProbation, "How long a transport-mode switch may go without a panel session before the agent reverts to the previous mode (0 = default 10m)")
+	flags.DurationVar(&cfg.transportProbation, "transport-probation", probation.DefaultWindow, "How long a transport-mode switch may go without a panel session before the agent reverts to the previous mode (0 = default 10m)")
 	if err := flags.Parse(args); err != nil {
 		return runtimeFlags{}, err
 	}
@@ -117,12 +101,12 @@ func runRuntime(args []string) error {
 		Sink:   os.Stderr,
 	})
 	// runtimeBuf is the agent-side ring of recent Info+ slog records. The
-	// pusher goroutine started in connection.go drains this buffer and
-	// ships batches to the panel via the Connect bidi-stream. We park it
-	// on a package-level handle (runtimeEventsBuf) because the existing
-	// cmd/agent code threads cross-cutting hooks through positional
-	// parameters and there is no aggregate state struct; introducing one
-	// purely for the buffer would touch every connection.go callsite.
+	// pusher goroutine started by the connection layer drains this buffer and
+	// ships batches to the panel via the Connect bidi-stream. The ring, its
+	// urgent-notify channel and the push cursor are handed to conn.Loop as a
+	// conn.RuntimeEvents value: all three must outlive an individual
+	// connection (the ring survives a reconnect, so a per-connection cursor
+	// would replay up to 200 already-delivered events — audit #9b).
 	runtimeBuf := runtimeevents.NewBuffer(200)
 	runtimeHandler := runtimeevents.NewHandler(inner, runtimeBuf)
 	// runtimeNotify wakes the pusher goroutine immediately whenever a Warn
@@ -142,11 +126,13 @@ func runRuntime(args []string) error {
 	if updatehosts.PolicyFromEnv().Disabled() {
 		slog.Warn("update host allow-list DISABLED via PANVEX_UPDATE_ALLOWED_HOSTS=* — agent self-update accepts any https host")
 	}
-	runtimeEventsBuf = runtimeBuf
-	runtimeEventsNotify = runtimeNotify
-	runtimeEventsCursor = new(atomic.Uint64)
+	runtimeEvents := conn.RuntimeEvents{
+		Buf:    runtimeBuf,
+		Notify: runtimeNotify,
+		Cursor: new(atomic.Uint64),
+	}
 
-	credentialsState, err := loadRuntimeCredentials(cfg.stateFile)
+	credentialsState, err := creds.LoadCredentials(cfg.stateFile)
 	if err != nil {
 		return err
 	}
@@ -170,11 +156,9 @@ func runRuntime(args []string) error {
 
 	// transportReload coordinates a transport mode switch requested via a
 	// switch_transport_mode job. The job handler writes the new state to disk
-	// and sets the flag; runRuntimeReconnectLoop reloads state from disk at
-	// the top of the next iteration before establishing a new connection.
-	transportReload := &transportReloadState{
-		cancel: func() {}, // safe no-op until first connection
-	}
+	// and sets the flag; conn.Loop reloads state from disk at the top of the
+	// next iteration before establishing a new connection.
+	transportReload := conn.NewTransportReload()
 
 	agent := runtime.New(runtime.Config{
 		AgentID:          credentialsState.AgentID,
@@ -188,8 +172,8 @@ func runRuntime(args []string) error {
 			// package's write lock (audit #7) — a concurrent usage-seq tick
 			// or renewal must not interleave its own Load→Save. The
 			// reconnect loop re-reads disk at the top of its next iteration
-			// (guarded by transportReload.pending) so the new mode takes
-			// effect on the subsequent connection without a process restart.
+			// (guarded by the pending flag SetPending raises) so the new mode
+			// takes effect on the subsequent connection without a process restart.
 			if _, err := agentstate.Update(statePath, func(current *agentstate.Credentials) {
 				if current.TransportMode != mode {
 					// A2: snapshot the pre-switch state so the reconnect loop
@@ -212,10 +196,7 @@ func runRuntime(args []string) error {
 			}
 			slog.Info("transport mode updated; reconnecting to apply",
 				"mode", mode, "listen_addr", listenAddr)
-			transportReload.mu.Lock()
-			transportReload.pending = true
-			cancel := transportReload.cancel
-			transportReload.mu.Unlock()
+			cancel := transportReload.SetPending()
 			// Defer the cancel so the worker that is invoking us has time to
 			// flush the JobResult onto the outbound stream before the
 			// connection goes away. Cancelling synchronously here races with
@@ -256,7 +237,7 @@ func runRuntime(args []string) error {
 		},
 	}, telemtClient)
 
-	schedule := newConnectionSchedule(cfg.heartbeat, cfg.runtimePoll, cfg.runtimeUpload, cfg.usageSnapshot, cfg.ipPoll, cfg.ipUpload)
+	schedule := conn.NewSchedule(cfg.heartbeat, cfg.runtimePoll, cfg.runtimeUpload, cfg.usageSnapshot, cfg.ipPoll, cfg.ipUpload)
 	slog.Info("agent starting",
 		"agent_id", credentialsState.AgentID,
 		"node", cfg.nodeName,
@@ -273,7 +254,7 @@ func runRuntime(args []string) error {
 	// no-op. We back-date agent_persisted_cert with the bootstrap's
 	// disk-write timestamp so the panel timeline reflects when the cert
 	// actually landed on disk, not when the agent runtime started.
-	reporter := newEnrollmentReporter()
+	reporter := conn.NewEnrollmentReporter()
 	if credentialsState.EnrollmentAttemptID != "" {
 		reporter.Bind(credentialsState.EnrollmentAttemptID)
 		reporter.RecordAt(
@@ -291,211 +272,24 @@ func runRuntime(args []string) error {
 	supervisorCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	err = runRuntimeReconnectLoop(supervisorCtx, &cfg, &credentialsState, agent, schedule, transportReload, reporter)
+	loop := &conn.Loop{
+		StateFile:             cfg.stateFile,
+		GatewayAddr:           cfg.gatewayAddr,
+		ServerName:            cfg.gatewayServerName,
+		Credentials:           credentialsState,
+		Agent:                 agent,
+		Schedule:              schedule,
+		Reload:                transportReload,
+		Reporter:              reporter,
+		Events:                runtimeEvents,
+		ClientDataConcurrency: cfg.clientDataConcurrency,
+		TransportProbation:    cfg.transportProbation,
+	}
+	err = loop.Run(supervisorCtx)
 	if errors.Is(err, context.Canceled) && supervisorCtx.Err() != nil {
 		// Shutdown signalled — treat as clean exit.
 		slog.Info("agent shutting down on signal")
 		return nil
 	}
 	return err
-}
-
-// runRuntimeReconnectLoop is the agent's outer main-loop: refresh certs,
-// run the gRPC stream, and reconnect with backoff on failure. Extracted so
-// runRuntime stays under the CC threshold.
-//
-// Returns agentrevocation.ErrAgentRevoked when the panel signals (via the
-// AGENT_REVOKED ErrorInfo on a PermissionDenied status) that this agent
-// has been deregistered. In that case there is no point reconnecting —
-// the propagated sentinel maps to exit code 78 in main, paired with
-// systemd's RestartPreventExitStatus=78 in the unit file written by
-// install-agent.sh. Any other error keeps the historic forever-retry
-// behaviour.
-func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, credentialsState *agentstate.Credentials, agent *runtime.Agent, schedule connectionSchedule, tr *transportReloadState, reporter *enrollmentReporter) error {
-	reconnectAttempt := 0
-	// B4: the in-flight tracker outlives individual connections so a job
-	// re-delivered right after a reconnect cannot run concurrently with its
-	// still-draining first execution from the previous connection.
-	jobInflight := newJobInflightTracker()
-	for {
-		// Honour shutdown before we begin another iteration.
-		if err := supervisorCtx.Err(); err != nil {
-			return err
-		}
-
-		// If a switch_transport_mode job fired during the last connection, reload
-		// state from disk so the new mode and listen address take effect.
-		tr.mu.Lock()
-		if tr.pending {
-			tr.pending = false
-			tr.mu.Unlock()
-			if reloaded, loadErr := agentstate.Load(cfg.stateFile); loadErr == nil {
-				*credentialsState = reloaded
-				if reloaded.GRPCEndpoint != "" {
-					cfg.gatewayAddr = reloaded.GRPCEndpoint
-				}
-				if reloaded.GRPCServerName != "" {
-					cfg.gatewayServerName = reloaded.GRPCServerName
-				}
-			} else {
-				slog.Error("transport reload: failed to reload state from disk", "error", loadErr)
-			}
-		} else {
-			tr.mu.Unlock()
-		}
-
-		// A2: probation expiry check. On revert, refresh the derived dial
-		// target the same way the transport-reload path above does.
-		if maybeRevertTransportSwitch(cfg.stateFile, credentialsState, cfg.transportProbation, time.Now()) {
-			if credentialsState.GRPCEndpoint != "" {
-				cfg.gatewayAddr = credentialsState.GRPCEndpoint
-			}
-			if credentialsState.GRPCServerName != "" {
-				cfg.gatewayServerName = credentialsState.GRPCServerName
-			}
-		}
-
-		// In listen mode the agent has no outbound dial route, so handle two
-		// distinct cert lifecycle windows differently:
-		//   - BEFORE expiry: in-stream renewal (RenewalRequest/RenewalResponse
-		//     over the Connect bidi-stream) closes the window; the dial-mode
-		//     unary pre-connection RenewCertificate RPC is skipped.
-		//   - AFTER expiry: the cert is dead — no mTLS handshake can complete
-		//     (neither the panel's dial-in nor in-stream renewal). Use the HTTP
-		//     recovery flow (recoverListenCredentialsIfExpired) which works over
-		//     plain HTTPS to PanelURL regardless of transport mode.
-		if credentialsState.TransportMode == "listen" {
-			refreshCtx, cancelRefresh := context.WithTimeout(supervisorCtx, certificateRefreshTimeout)
-			recovered, recErr := recoverListenCredentialsIfExpired(refreshCtx, cfg.stateFile, *credentialsState, nil, time.Now())
-			cancelRefresh()
-			if recErr != nil {
-				if supervisorCtx.Err() != nil {
-					return supervisorCtx.Err()
-				}
-				reconnectAttempt++
-				slog.Error("listen mode: certificate recovery failed; will retry",
-					"error", recErr,
-					"hint", "create a recovery grant: POST /api/agents/{id}/certificate-recovery-grants")
-				if waitErr := waitWithCancel(supervisorCtx, reconnectDelay(reconnectAttempt)); waitErr != nil {
-					return waitErr
-				}
-				continue
-			}
-			*credentialsState = recovered
-		}
-
-		// In dial mode: use the pre-connection unary RenewCertificate RPC for
-		// cert refresh. This path is skipped in listen mode (handled above).
-		if credentialsState.TransportMode != "listen" {
-			// Derive the refresh ctx from supervisorCtx so SIGTERM during
-			// the renewal RPC also unblocks promptly.
-			refreshCtx, cancelRefresh := context.WithTimeout(supervisorCtx, certificateRefreshTimeout)
-			refreshed, err := renewRuntimeCredentialsIfNeeded(refreshCtx, cfg.stateFile, cfg.gatewayAddr, cfg.gatewayServerName, *credentialsState, time.Now())
-			cancelRefresh()
-			if err != nil {
-				if agentrevocation.IsAgentRevoked(err) {
-					return agentrevocation.ErrAgentRevoked
-				}
-				if supervisorCtx.Err() != nil {
-					return supervisorCtx.Err()
-				}
-				reconnectAttempt++
-				// A wrapped context.Canceled at this point means the refresh
-				// RPC was torn down by a near-simultaneous shutdown — the
-				// outer ctx.Err() check above just missed it. Demote to Info
-				// so shutdown does not produce a stray Error line.
-				if errors.Is(err, context.Canceled) {
-					slog.Info("certificate refresh aborted (context cancelled)")
-				} else {
-					slog.Error("certificate refresh failed", "error", err)
-				}
-				if waitErr := waitWithCancel(supervisorCtx, reconnectDelay(reconnectAttempt)); waitErr != nil {
-					return waitErr
-				}
-				continue
-			}
-			*credentialsState = refreshed
-		}
-
-		afterConn, connErr := runConnection(supervisorCtx, runConnectionParams{
-			gatewayAddr:           cfg.gatewayAddr,
-			serverName:            cfg.gatewayServerName,
-			stateFile:             cfg.stateFile,
-			credentialsState:      *credentialsState,
-			agent:                 agent,
-			schedule:              schedule,
-			clientDataConcurrency: cfg.clientDataConcurrency,
-			tr:                    tr,
-			reporter:              reporter,
-			jobInflight:           jobInflight,
-			transportProbation:    cfg.transportProbation,
-		})
-		*credentialsState = afterConn
-		if connErr == nil || errors.Is(connErr, errRuntimeCredentialsRefreshed) {
-			reconnectAttempt = 0
-			continue
-		}
-		if agentrevocation.IsAgentRevoked(connErr) {
-			return agentrevocation.ErrAgentRevoked
-		}
-		if supervisorCtx.Err() != nil {
-			return supervisorCtx.Err()
-		}
-		reconnectAttempt++
-		// A connection that ends because its own connection ctx was cancelled
-		// (e.g. switch_transport_mode job dropping the stream, in-stream cert
-		// renewal triggering a reconnect, or a server-side close that races a
-		// shutdown signal) surfaces a wrapped context.Canceled here. That is
-		// not an Error condition — it's expected lifecycle. Demote to Info so
-		// the reconnect remains visible without polluting the Error stream.
-		if errors.Is(connErr, context.Canceled) {
-			slog.Info("connection ended (context cancelled); reconnecting")
-		} else {
-			slog.Error("connection ended", "error", connErr)
-		}
-		if waitErr := waitWithCancel(supervisorCtx, reconnectDelay(reconnectAttempt)); waitErr != nil {
-			return waitErr
-		}
-	}
-}
-
-// waitWithCancel sleeps for d, returning early with ctx.Err() if the
-// supervisor ctx is cancelled. Replaces bare time.Sleep so a SIGTERM
-// during the reconnect backoff (up to 45s) does not hold up shutdown.
-func waitWithCancel(ctx context.Context, d time.Duration) error {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-// reconnectBaseDelay / reconnectMaxDelay bound the exponential backoff of the
-// agent's outer reconnect loop. The cap stays well below the panel's 90s
-// offline threshold (presence tracker defaults, lifecycle.go), so even an
-// agent sleeping a full max window keeps its presence within "degraded".
-const (
-	reconnectBaseDelay = time.Second
-	reconnectMaxDelay  = 45 * time.Second
-)
-
-// reconnectDelay returns the backoff for the given attempt with full jitter:
-// the deterministic exponential value is the ceiling and the actual sleep is
-// uniform in [ceiling/2, ceiling]. Mirrors agenttransport/outbound.go's
-// jitter() so both transport directions damp herd reconnects identically.
-// Without jitter a panel restart made the whole fleet retry in lockstep
-// waves (D1). The attempt counter is reset by the caller on any successful
-// connection (runRuntimeReconnectLoop).
-func reconnectDelay(attempt int) time.Duration {
-	if attempt < 1 {
-		attempt = 1
-	}
-	delay := reconnectBaseDelay << min(attempt-1, 6)
-	if delay > reconnectMaxDelay {
-		delay = reconnectMaxDelay
-	}
-	return delay/2 + time.Duration(rand.Int64N(int64(delay/2+1)))
 }

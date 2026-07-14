@@ -1,4 +1,4 @@
-package main
+package conn
 
 import (
 	"context"
@@ -106,7 +106,7 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 		return err
 	}
 
-	runtimeCtx, cancelRuntime := context.WithTimeout(ctx, runtimeOperationTimeout)
+	runtimeCtx, cancelRuntime := context.WithTimeout(ctx, runtime.OperationTimeout)
 	runtimeSnapshot, err := agent.BuildRuntimeSnapshot(runtimeCtx, time.Now())
 	cancelRuntime()
 	if err != nil {
@@ -119,7 +119,7 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 	}
 	slog.Info("initial runtime snapshot sent", "agent_id", agent.AgentID(), "node", agent.NodeName())
 
-	usageCtx, cancelUsage := context.WithTimeout(ctx, runtimeOperationTimeout)
+	usageCtx, cancelUsage := context.WithTimeout(ctx, runtime.OperationTimeout)
 	usageSnapshot, err := agent.BuildUsageSnapshot(usageCtx, time.Now())
 	cancelUsage()
 	if err == nil {
@@ -132,7 +132,7 @@ func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.Connec
 		slog.Warn("initial usage snapshot unavailable, continuing without metrics", "error", err)
 	}
 
-	ipPollCtx, cancelIPPoll := context.WithTimeout(ctx, runtimeOperationTimeout)
+	ipPollCtx, cancelIPPoll := context.WithTimeout(ctx, runtime.OperationTimeout)
 	if err := agent.PollActiveIPs(ipPollCtx); err == nil {
 		ipSnapshot := agent.BuildIPSnapshot(time.Now())
 		slog.Info("initial ip snapshot built", "client_ips_count", len(ipSnapshot.ClientIps))
@@ -158,7 +158,7 @@ func handleClientDataRequest(
 	criticalOutbound chan<- *gatewayrpc.ConnectClientMessage,
 	req *gatewayrpc.ClientDataRequest,
 ) {
-	reqCtx, cancel := context.WithTimeout(connectionCtx, runtimeOperationTimeout)
+	reqCtx, cancel := context.WithTimeout(connectionCtx, runtime.OperationTimeout)
 	response := agent.HandleClientDataRequest(reqCtx, req.GetRequestId())
 	cancel()
 
