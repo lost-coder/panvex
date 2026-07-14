@@ -41,6 +41,17 @@ func (f *fakeRepo) CountUniqueClientIPs(context.Context, string) (int, error) {
 	return f.count, f.countErr
 }
 
+func (f *fakeRepo) CountUniqueClientIPsForClients(_ context.Context, clientIDs []string) (map[string]int, error) {
+	if f.countErr != nil {
+		return nil, f.countErr
+	}
+	out := make(map[string]int, len(clientIDs))
+	for _, id := range clientIDs {
+		out[id] = f.count
+	}
+	return out, nil
+}
+
 func mkAgg(n int) []storage.ClientIPAggregateRecord {
 	out := make([]storage.ClientIPAggregateRecord, n)
 	for i := range out {
@@ -108,5 +119,21 @@ func TestServerLoadPointsDelegates(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].AgentID != "a1" {
 		t.Fatalf("delegation failed: %#v", got)
+	}
+}
+
+// TestCountUniqueClientIPsForClientsSkipsTheQueryOnAnEmptyPage: the clients list
+// calls this once per page, and an empty page must not turn into a round-trip
+// with an empty IN () list.
+func TestCountUniqueClientIPsForClientsSkipsTheQueryOnAnEmptyPage(t *testing.T) {
+	repo := &fakeRepo{countErr: errors.New("the repository must not be called")}
+	svc := NewService(repo)
+
+	got, err := svc.CountUniqueClientIPsForClients(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("CountUniqueClientIPsForClients(nil) error = %v, want nil", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("CountUniqueClientIPsForClients(nil) = %v, want an empty map", got)
 	}
 }
