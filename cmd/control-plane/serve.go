@@ -501,13 +501,13 @@ func resolvePanelRuntime(configuration serveConfig) (server.PanelRuntime, error)
 	// They are intentionally left unset on PanelRuntime here; the struct
 	// fields remain only as the no-store fallback for test fixtures.
 	runtime := server.PanelRuntime{
-		HTTPRootPath: configuration.HTTPRootPath,
-		TLSMode:      tlsMode,
-		TLSCertFile:       configuration.TLSCertFile,
-		TLSKeyFile:        configuration.TLSKeyFile,
-		RestartSupported:  configuration.RestartMode == config.RestartModeSupervised,
-		ConfigSource:      server.PanelRuntimeSourceLegacy,
-		ConfigPath:        configuration.ConfigPath,
+		HTTPRootPath:     configuration.HTTPRootPath,
+		TLSMode:          tlsMode,
+		TLSCertFile:      configuration.TLSCertFile,
+		TLSKeyFile:       configuration.TLSKeyFile,
+		RestartSupported: configuration.RestartMode == config.RestartModeSupervised,
+		ConfigSource:     server.PanelRuntimeSourceLegacy,
+		ConfigPath:       configuration.ConfigPath,
 	}
 	if configuration.ConfigManagedRuntime {
 		runtime.ConfigSource = server.PanelRuntimeSourceConfigFile

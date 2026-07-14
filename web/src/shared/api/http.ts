@@ -37,22 +37,6 @@ export interface RequestOpts {
 }
 
 /**
- * Name of the CustomEvent dispatched on window when a response passes the
- * HTTP checks but fails our Zod schema (P2-FE-01 / DF-10). ToastProvider
- * (or any other boundary) can subscribe and surface a user-visible
- * toast; the raw ZodError is attached on `event.detail.error` for
- * debugging. We fire a DOM CustomEvent rather than importing ToastProvider
- * directly so that api.ts stays framework-free and testable in isolation.
- */
-export const API_SCHEMA_MISMATCH_EVENT = "panvex:api-schema-mismatch";
-
-export interface ApiSchemaMismatchDetail {
-  path: string;
-  error: unknown;
-  message: string;
-}
-
-/**
  * Error thrown on schema validation failure. Separate from ApiError so
  * React Query can distinguish "server said 500" from "server said 200 but
  * the shape is wrong" — both are user-visible, but the latter is a bug
@@ -311,19 +295,8 @@ function parseWithSchema<T>(path: string, schema: ZodType<T>, json: unknown): T 
     });
   }
 
-  if (globalThis.window !== undefined) {
-    const detail: ApiSchemaMismatchDetail = {
-      path,
-      error: parsed.error,
-      message: `Unexpected response shape from ${path}`,
-    };
-    globalThis.dispatchEvent(
-      new CustomEvent<ApiSchemaMismatchDetail>(API_SCHEMA_MISMATCH_EVENT, {
-        detail,
-      }),
-    );
-  }
-
+  // The thrown ApiSchemaError is the report: React Query surfaces it through
+  // isError on every consumer. There is no separate event bus for it.
   throw new ApiSchemaError(path, parsed.error);
 }
 

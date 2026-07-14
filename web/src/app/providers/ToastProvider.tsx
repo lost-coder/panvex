@@ -9,6 +9,11 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  ApiError,
+  MUTATION_ERROR_EVENT,
+  type MutationErrorDetail,
+} from "@/shared/api/http";
 import { cn, type ToastVariant } from "@/ui";
 
 // Public API for app code. Consumers call useToast() and receive ToastAPI.
@@ -186,6 +191,7 @@ function StackedToast({
  * - Auto-dismiss: 5s default, 7s for errors. Overridable via opts.duration.
  */
 export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
+  const { t } = useTranslation("common");
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
   // Monotonic id generator — Date.now() collides inside the same tick when
   // multiple toasts are queued back-to-back (e.g. Promise.all of failures).
@@ -234,6 +240,28 @@ export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
     }),
     [push, dismiss],
   );
+
+  // Mutation failures reach the user here. notifyMutationError is the single
+  // onError funnel for React-Query mutations; without this listener a failed
+  // rename / restart / deregister was silent in production (the console.error
+  // inside notifyMutationError is compiled out of prod builds). Call sites
+  // that already render the error inline (the TOTP sheets) do not call
+  // notifyMutationError, so this never double-reports.
+  useEffect(() => {
+    const onMutationError = (event: Event) => {
+      const detail = (event as CustomEvent<MutationErrorDetail>).detail;
+      const { error } = detail;
+      const message =
+        error instanceof ApiError && error.message.trim() !== ""
+          ? error.message
+          : t("errorState.title");
+      api.error(message);
+    };
+    globalThis.addEventListener(MUTATION_ERROR_EVENT, onMutationError);
+    return () => {
+      globalThis.removeEventListener(MUTATION_ERROR_EVENT, onMutationError);
+    };
+  }, [api, t]);
 
   // Keyboard dismissal: Escape dismisses the most recent (bottom-most) toast
   // whenever any toast is visible. The listener is only attached while the

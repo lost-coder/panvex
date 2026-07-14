@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/presence"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
@@ -23,7 +24,7 @@ func TestSnapshotClockSkewDoesNotAffectLiveness(t *testing.T) {
 	defer server.Close()
 
 	skewed := now.Add(-10 * time.Minute)
-	err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: "agent-skew",
 		Snap: &gatewayrpc.Snapshot{
 			NodeName: "node-skew",
@@ -96,7 +97,7 @@ func TestSnapshotFutureClockKeepsRawDiagnostic(t *testing.T) {
 	defer server.Close()
 
 	future := now.Add(time.Hour)
-	err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: "agent-future",
 		Snap: &gatewayrpc.Snapshot{
 			NodeName: "node-future",

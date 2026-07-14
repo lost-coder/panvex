@@ -12,6 +12,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
@@ -93,9 +94,9 @@ func TestHTTPClientsCreateTracksDeploymentsAndStructuredJobPayload(t *testing.T)
 		t.Fatalf("len(created.user_ad_tag) = %d, want %d", len(created.UserADTag), 32)
 	}
 
-	enqueuedJobs := server.jobs.List()
+	enqueuedJobs := server.jobs.ListWithContext(context.Background())
 	if len(enqueuedJobs) != 1 {
-		t.Fatalf("len(server.jobs.List()) = %d, want %d", len(enqueuedJobs), 1)
+		t.Fatalf("len(jobs.List) = %d, want %d", len(enqueuedJobs), 1)
 	}
 	if enqueuedJobs[0].Action != jobs.ActionClientCreate {
 		t.Fatalf("jobs[0].Action = %q, want %q", enqueuedJobs[0].Action, jobs.ActionClientCreate)
@@ -202,9 +203,9 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatalf("PUT /api/clients/{id} status = %d, want %d", updateResponse.Code, http.StatusOK)
 	}
 
-	queuedJobs := server.jobs.List()
+	queuedJobs := server.jobs.ListWithContext(context.Background())
 	if len(queuedJobs) != 2 {
-		t.Fatalf("len(server.jobs.List()) after update = %d, want %d", len(queuedJobs), 2)
+		t.Fatalf("len(jobs.List) after update = %d, want %d", len(queuedJobs), 2)
 	}
 	if queuedJobs[1].Action != jobs.ActionClientUpdate {
 		t.Fatalf("jobs[1].Action = %q, want %q", queuedJobs[1].Action, jobs.ActionClientUpdate)
@@ -231,9 +232,9 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatal("rotated.secret = original secret, want changed secret")
 	}
 
-	queuedJobs = server.jobs.List()
+	queuedJobs = server.jobs.ListWithContext(context.Background())
 	if len(queuedJobs) != 3 {
-		t.Fatalf("len(server.jobs.List()) after rotate = %d, want %d", len(queuedJobs), 3)
+		t.Fatalf("len(jobs.List) after rotate = %d, want %d", len(queuedJobs), 3)
 	}
 	if queuedJobs[2].Action != jobs.ActionClientRotateSecret {
 		t.Fatalf("jobs[2].Action = %q, want %q", queuedJobs[2].Action, jobs.ActionClientRotateSecret)
@@ -244,18 +245,15 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 		t.Fatalf("DELETE /api/clients/{id} status = %d, want %d", deleteResponse.Code, http.StatusNoContent)
 	}
 
-	queuedJobs = server.jobs.List()
+	queuedJobs = server.jobs.ListWithContext(context.Background())
 	if len(queuedJobs) != 4 {
-		t.Fatalf("len(server.jobs.List()) after delete = %d, want %d", len(queuedJobs), 4)
+		t.Fatalf("len(jobs.List) after delete = %d, want %d", len(queuedJobs), 4)
 	}
 	if queuedJobs[3].Action != jobs.ActionClientDelete {
 		t.Fatalf("jobs[3].Action = %q, want %q", queuedJobs[3].Action, jobs.ActionClientDelete)
 	}
 
-	storedClient, err := store.GetClientByID(context.Background(), created.ID)
-	if err != nil {
-		t.Fatalf("GetClientByID() error = %v", err)
-	}
+	storedClient := findStoredClient(t, store, created.ID)
 	if storedClient.DeletedAt == nil {
 		t.Fatal("storedClient.DeletedAt = nil, want soft delete timestamp")
 	}
@@ -376,7 +374,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 		t.Fatalf("json.Unmarshal(create) error = %v", err)
 	}
 
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: "agent-000001",
 		Snap: &gatewayrpc.Snapshot{
 			AgentBootId:    "boot-1",
@@ -397,7 +395,7 @@ func TestHTTPClientsAggregateUsageAcrossAgentSnapshots(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("applyAgentSnapshot(agent-000001) error = %v", err)
 	}
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: "agent-000002",
 		Snap: &gatewayrpc.Snapshot{
 			AgentBootId:    "boot-1",
@@ -493,13 +491,13 @@ func TestHTTPClientsListingReflectsDeploymentAndUsage(t *testing.T) {
 		t.Fatalf("json.Unmarshal(create) error = %v", err)
 	}
 
-	enqueuedJobs := server.jobs.List()
+	enqueuedJobs := server.jobs.ListWithContext(context.Background())
 	if len(enqueuedJobs) != 1 {
-		t.Fatalf("len(server.jobs.List()) = %d, want %d", len(enqueuedJobs), 1)
+		t.Fatalf("len(jobs.List) = %d, want %d", len(enqueuedJobs), 1)
 	}
 	recordJobResultForTest(server, context.Background(), "agent-000001", enqueuedJobs[0].ID, true, "applied", `{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: "agent-000001",
 		Snap: &gatewayrpc.Snapshot{
 			AgentBootId:    "boot-1",
@@ -608,7 +606,7 @@ func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
 	}
 
 	// (1) Job-deployment write-path: record a successful client-create job.
-	createJobs := server.jobs.List()
+	createJobs := server.jobs.ListWithContext(context.Background())
 	if len(createJobs) != 1 {
 		t.Fatalf("len(create jobs) = %d, want 1", len(createJobs))
 	}
@@ -616,7 +614,7 @@ func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
 		`{"connection_links":["tg://proxy?server=node-a&secret=alice"]}`, now.Add(time.Minute))
 
 	// (2) Usage-snapshot write-path: apply a live usage tick.
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: "agent-000001",
 		Snap: &gatewayrpc.Snapshot{
 			AgentBootId:    "boot-1",
@@ -645,7 +643,7 @@ func TestClientsServiceMirrorConsistentAfterWritePaths(t *testing.T) {
 		t.Fatalf("POST reset-quota status = %d, want 200/202", resetResponse.Code)
 	}
 	var resetJobID string
-	for _, j := range server.jobs.List() {
+	for _, j := range server.jobs.ListWithContext(context.Background()) {
 		if j.Action == jobs.ActionClientResetQuota {
 			resetJobID = j.ID
 		}
@@ -770,9 +768,9 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 		t.Fatalf("createClient() error = %v", err)
 	}
 
-	jobList := server.jobs.List()
+	jobList := server.jobs.ListWithContext(context.Background())
 	if len(jobList) != 1 {
-		t.Fatalf("len(jobs.List()) = %d, want %d", len(jobList), 1)
+		t.Fatalf("len(jobs.List) = %d, want %d", len(jobList), 1)
 	}
 
 	store.putClientDeploymentErr = errors.New("put client deployment failed")
@@ -876,4 +874,22 @@ func TestSubscriptionURLForBuildsAndGuards(t *testing.T) {
 	if got := s.subscriptionURLFor(""); got != "" {
 		t.Fatalf("empty token: got %q, want empty", got)
 	}
+}
+
+// findStoredClient reads one client row back from the store by ID, including
+// soft-deleted rows (ListClients has no deleted_at filter). Replaces the
+// removed storage.GetClientByID, which had no production callers (R5).
+func findStoredClient(t *testing.T, store *sqlite.Store, id string) storage.ClientRecord {
+	t.Helper()
+	rows, err := store.ListClients(context.Background())
+	if err != nil {
+		t.Fatalf("ListClients() error = %v", err)
+	}
+	for _, row := range rows {
+		if row.ID == id {
+			return row
+		}
+	}
+	t.Fatalf("client %q not found in store", id)
+	return storage.ClientRecord{}
 }

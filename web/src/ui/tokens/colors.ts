@@ -22,8 +22,6 @@ export const fgColors = {
   faint: "#2a3040",
 } as const;
 
-export const accentColor = "#60a5fa";
-
 export type Status = "ok" | "warn" | "error";
 
 /** Pill tones: the three severities plus a calm neutral (PENDING/DISABLED). */

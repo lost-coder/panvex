@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
@@ -49,7 +50,7 @@ func TestServerServesRecentMetricSnapshotsFromStore(t *testing.T) {
 
 	totalSnapshots := testMaxInMemoryMetricSnapshots + 3
 	for index := 0; index < totalSnapshots; index++ {
-		if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+		if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 			AgentID: identity.AgentID,
 			Snap: &gatewayrpc.Snapshot{
 				NodeName:     "node-a",

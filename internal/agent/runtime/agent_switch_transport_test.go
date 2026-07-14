@@ -28,7 +28,7 @@ func TestHandleSwitchTransportModeJobPersistsState(t *testing.T) {
 		"listen_addr": ":8443",
 	})
 	job := &gatewayrpc.JobCommand{
-		Id:       "j1",
+		Id:          "j1",
 		Action:      "switch_transport_mode",
 		PayloadJson: string(payload),
 	}
@@ -61,7 +61,7 @@ func TestHandleSwitchTransportModeJobDialMode(t *testing.T) {
 		"panel_url": "https://panel.example.com",
 	})
 	job := &gatewayrpc.JobCommand{
-		Id:       "j2",
+		Id:          "j2",
 		Action:      "switch_transport_mode",
 		PayloadJson: string(payload),
 	}

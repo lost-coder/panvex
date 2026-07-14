@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -125,7 +126,7 @@ func (s *Server) handleClients() http.HandlerFunc {
 		}
 
 		// Q2.U-P-XX (M-1): one bulk snapshot of the clients.Service mirror
-		// instead of N×clientDetailSnapshot + N×aggregatedClientUsage. On a
+		// instead of N×clientDetailSnapshot + N×clients.AggregatedUsage. On a
 		// 500-client fleet that collapses ~1500 lock-acquire pairs into one.
 		listing := s.listClientsListingSnapshot()
 		uniqueIPCounts := s.bulkUniqueIPCountsForClients(r.Context(), listing.clients)
@@ -158,7 +159,7 @@ type clientListingSnapshot struct {
 	clients     []managedClient
 	assignments map[string][]managedClientAssignment
 	deployments map[string][]managedClientDeployment
-	usage       map[string]aggregatedClientUsage
+	usage       map[string]clients.AggregatedUsage
 }
 
 func (s *Server) handleCreateClient() http.HandlerFunc {

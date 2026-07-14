@@ -90,13 +90,13 @@ func writeSQLiteBackup(ctx context.Context, sourceDSN, outPath string) error {
 	}
 
 	metadata := backupMetadata{
-		FormatVersion:             1,
-		PanelVersion:              Version,
-		PanelCommit:               CommitSHA,
-		StorageDriver:             config.StorageDriverSQLite,
-		SchemaVersion:             schemaVersion,
-		EncryptionKeyFingerprint:  encryptionKeyFingerprint(),
-		CreatedAt:                 time.Now().UTC().Format(time.RFC3339),
+		FormatVersion:            1,
+		PanelVersion:             Version,
+		PanelCommit:              CommitSHA,
+		StorageDriver:            config.StorageDriverSQLite,
+		SchemaVersion:            schemaVersion,
+		EncryptionKeyFingerprint: encryptionKeyFingerprint(),
+		CreatedAt:                time.Now().UTC().Format(time.RFC3339),
 	}
 	metadataBytes, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {

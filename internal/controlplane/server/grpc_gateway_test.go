@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/metrics"
+	"github.com/lost-coder/panvex/internal/controlplane/sessions"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/grpc/codes"
@@ -42,7 +43,7 @@ func TestServerConnectRateLimitRejectsBurstReconnects(t *testing.T) {
 		LoginTimingFloor: -1,
 		Now:              func() time.Time { return currentTime },
 	})
-	server.grpcConnectRateLimiter = newFixedWindowRateLimiter(1, time.Minute)
+	server.grpcConnectRateLimiter = sessions.NewRateLimiter(1, time.Minute)
 
 	firstStream := newFakeGatewayConnectStream(authenticatedAgentContextForTest("agent-1"))
 	if err := server.Gateway().Connect(firstStream); err != nil {

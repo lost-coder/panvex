@@ -963,15 +963,6 @@ func (s *memoryStore) PutClient(_ context.Context, client storage.ClientRecord) 
 	return nil
 }
 
-func (s *memoryStore) GetClientByID(_ context.Context, clientID string) (storage.ClientRecord, error) {
-	client, ok := s.clients[clientID]
-	if !ok {
-		return storage.ClientRecord{}, storage.ErrNotFound
-	}
-
-	return client, nil
-}
-
 func (s *memoryStore) ListClients(_ context.Context) ([]storage.ClientRecord, error) {
 	result := make([]storage.ClientRecord, 0, len(s.clients))
 	for _, client := range s.clients {
@@ -986,15 +977,6 @@ func (s *memoryStore) PutClientAssignment(_ context.Context, assignment storage.
 	return nil
 }
 
-func (s *memoryStore) DeleteClientAssignments(_ context.Context, clientID string) error {
-	for id, assignment := range s.clientAssignments {
-		if assignment.ClientID == clientID {
-			delete(s.clientAssignments, id)
-		}
-	}
-
-	return nil
-}
 
 func (s *memoryStore) ListClientAssignments(_ context.Context, clientID string) ([]storage.ClientAssignmentRecord, error) {
 	result := make([]storage.ClientAssignmentRecord, 0)
@@ -1036,15 +1018,6 @@ func (s *memoryStore) PutJob(_ context.Context, job storage.JobRecord) error {
 	s.jobs[job.ID] = job
 	s.jobsByKey[job.IdempotencyKey] = job.ID
 	return nil
-}
-
-func (s *memoryStore) GetJobByIdempotencyKey(_ context.Context, idempotencyKey string) (storage.JobRecord, error) {
-	jobID, ok := s.jobsByKey[idempotencyKey]
-	if !ok {
-		return storage.JobRecord{}, storage.ErrNotFound
-	}
-
-	return s.jobs[jobID], nil
 }
 
 func (s *memoryStore) GetJob(_ context.Context, id string) (storage.JobRecord, error) {

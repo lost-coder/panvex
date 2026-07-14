@@ -29,7 +29,7 @@ func TestRoundtripEncryptedValue(t *testing.T) {
 		t.Fatalf("Encrypt() error = %v", err)
 	}
 	if !strings.HasPrefix(ciphertext, Prefix) {
-		t.Fatalf("Encrypt() = %q, want PVS1: prefix", ciphertext)
+		t.Fatalf("Encrypt() = %q, want %s prefix", ciphertext, Prefix)
 	}
 	if ciphertext == plaintext {
 		t.Fatal("Encrypt() returned plaintext unchanged")

@@ -1,13 +1,13 @@
 package jobs
 
 import (
+	"container/heap"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
-	"container/heap"
 	"sort"
 	"strconv"
 	"strings"
@@ -202,9 +202,9 @@ type Service struct {
 	// costs one empty slow pass which then recomputes — never stale-late.
 	nextExpiryAt time.Time
 	jobStore     Store
-	startupErr              error
-	now                     func() time.Time
-	metrics                 MetricsSink
+	startupErr   error
+	now          func() time.Time
+	metrics      MetricsSink
 	// supersedeKey maps a job to its supersede group: at enqueue time a new
 	// job whose key is non-empty terminates still-pending targets of older
 	// jobs with the SAME key (D4 — full-state payloads go stale). Nil means
@@ -296,13 +296,13 @@ type persistCandidate struct {
 // NewService constructs an in-memory job validation and storage service.
 func NewService() *Service {
 	return &Service{
-		jobs:                    make(map[string]Job),
-		agentJobs:               make(map[string]map[string]struct{}),
-		keys:                    make(map[string]string),
-		keyTerminalAt:           make(map[string]time.Time),
-		jobVersion:              make(map[string]uint64),
-		now:                     time.Now,
-		metrics:                 noopMetricsSink{},
+		jobs:          make(map[string]Job),
+		agentJobs:     make(map[string]map[string]struct{}),
+		keys:          make(map[string]string),
+		keyTerminalAt: make(map[string]time.Time),
+		jobVersion:    make(map[string]uint64),
+		now:           time.Now,
+		metrics:       noopMetricsSink{},
 	}
 }
 
@@ -312,14 +312,14 @@ func NewService() *Service {
 // boot aborts the restore instead of hanging on storage.
 func NewServiceWithStore(ctx context.Context, jobStore Store) *Service {
 	service := &Service{
-		jobs:                    make(map[string]Job),
-		agentJobs:               make(map[string]map[string]struct{}),
-		keys:                    make(map[string]string),
-		keyTerminalAt:           make(map[string]time.Time),
-		jobVersion:              make(map[string]uint64),
-		jobStore:                jobStore,
-		now:                     time.Now,
-		metrics:                 noopMetricsSink{},
+		jobs:          make(map[string]Job),
+		agentJobs:     make(map[string]map[string]struct{}),
+		keys:          make(map[string]string),
+		keyTerminalAt: make(map[string]time.Time),
+		jobVersion:    make(map[string]uint64),
+		jobStore:      jobStore,
+		now:           time.Now,
+		metrics:       noopMetricsSink{},
 	}
 	service.startupErr = service.restore(ctx)
 	return service
@@ -785,17 +785,7 @@ func (s *Service) applySupersededJob(jobID string, job Job, supersederID, supers
 
 // List returns a snapshot of the queued jobs known to the service.
 //
-// List intentionally does not take a context because some callers (notably
-// http_control_room) live outside this remediation cluster. The internal
-// persist path uses context.Background() — this is acceptable because
-// expiry-driven persists are housekeeping that must run regardless of any
-// individual request being cancelled. New callers that hold a request
-// context should prefer ListWithContext.
-func (s *Service) List() []Job {
-	return s.ListWithContext(context.Background())
-}
-
-// ListWithContext is the ctx-aware variant of List. The ctx is forwarded to
+// ListWithContext returns a snapshot of every job. The ctx is forwarded to
 // any expiry-driven persistence performed by this call.
 //
 // P-6: hot read path. We take RLock first and check whether any job is due
@@ -1000,7 +990,6 @@ func (s *Service) ListRecentWithContext(ctx context.Context, limit int) []Job {
 	s.mu.RUnlock()
 	return result
 }
-
 
 // PendingForAgent returns queued and stale-sent jobs for one agent in creation order.
 //
@@ -1547,7 +1536,6 @@ func buildJobWithTargets(record storage.JobRecord, targetRecords []storage.JobTa
 func (s *Service) installRestoredJob(job Job) {
 	s.jobs[job.ID] = job
 	s.syncJobTargetsIndexLocked(job)
-	s.reindexAcknowledgedTargets(job)
 	// A4 forward-fix: rows persisted before key auto-generation may carry
 	// an empty key; never let them re-poison the "" slot on restore.
 	if job.IdempotencyKey != "" {
@@ -1566,25 +1554,6 @@ func (s *Service) installRestoredJob(job Job) {
 	s.updateSeq++
 	s.jobVersion[job.ID] = s.updateSeq
 	s.noteJobExpiryLocked(job)
-}
-
-// reindexAcknowledgedTargets rebuilds the agentJobs entries for any target
-// in TargetStatusAcknowledged. P2-LOG-05 (L-14): at runtime, MarkAcknowledged
-// removes the target from agentJobs so PendingForAgent does not re-dispatch
-// while the agent still owns the command. On restore, however, we must treat
-// acknowledged-with-no-result as redeliverable: if both CP and agent
-// restarted between ack and result, the agent's runtime queue is empty and
-// the job would otherwise be stuck forever.
-func (s *Service) reindexAcknowledgedTargets(job Job) {
-	for _, target := range job.Targets {
-		if target.AgentID == "" || target.Status != TargetStatusAcknowledged {
-			continue
-		}
-		if s.agentJobs[target.AgentID] == nil {
-			s.agentJobs[target.AgentID] = make(map[string]struct{})
-		}
-		s.agentJobs[target.AgentID][job.ID] = struct{}{}
-	}
 }
 
 func (s *Service) persistJob(ctx context.Context, job Job) error {
@@ -1650,8 +1619,7 @@ func (s *Service) syncJobTargetsIndexLocked(job Job) {
 		// Acknowledged must stay indexed so PendingForAgent can re-dispatch
 		// it after the retryAfter window when the JobResult was lost between
 		// ack and result (backpressure / stream drop / agent crash). Without
-		// this the only recovery was a CP restart (reindexAcknowledgedTargets)
-		// or TTL expiry. targetIsPending gates the actual re-dispatch by
+		// this the only recovery was a CP restart or TTL expiry. targetIsPending gates the actual re-dispatch by
 		// retryAfter, and the agent's idempotency cache dedups the replay, so
 		// retaining acknowledged here does not cause a dispatch storm. Only
 		// terminal states (succeeded/failed/expired) drop out of the index.

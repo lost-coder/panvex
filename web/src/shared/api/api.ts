@@ -19,7 +19,6 @@
 export {
   ApiError,
   ApiSchemaError,
-  API_SCHEMA_MISMATCH_EVENT,
   FORBIDDEN_EVENT,
   SESSION_EXPIRED_EVENT,
   api,
@@ -27,7 +26,6 @@ export {
   configuredRootPath,
 } from "./http";
 export type {
-  ApiSchemaMismatchDetail,
   ForbiddenEventDetail,
 } from "./http";
 
@@ -55,8 +53,6 @@ export type {
 } from "./servers";
 export type {
   ControlRoomResponse,
-  DCHealthHistoryResponse,
-  DCHealthPoint,
   FleetResponse,
   MetricSnapshot,
   ServerLoadHistoryResponse,

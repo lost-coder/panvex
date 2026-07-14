@@ -20,18 +20,3 @@ export function useServerLoadHistory(agentID: string, from?: string, to?: string
   };
 }
 
-export function useDCHealthHistory(agentID: string, from?: string, to?: string) {
-  const refetchInterval = useEventAwareInterval(300_000, 60_000);
-
-  const query = useQuery({
-    queryKey: telemetryKeys.serverDCHistory(agentID, from, to),
-    queryFn: ({ signal }) => apiClient.dcHealthHistory(agentID, from, to, { signal }),
-    enabled: !!agentID,
-    refetchInterval,
-  });
-
-  return {
-    points: query.data?.points ?? [],
-    isLoading: query.isLoading,
-  };
-}

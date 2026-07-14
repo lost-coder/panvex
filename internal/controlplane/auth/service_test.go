@@ -395,32 +395,29 @@ func TestServiceGetSessionPrunesOtherExpiredSessions(t *testing.T) {
 	}
 }
 
-func TestServiceSnapshotAndLoadUsers(t *testing.T) {
+// TestServiceLoadUsers seeds a service from a static user list (the
+// Options.Users boot path) and checks the seeded credential authenticates.
+func TestServiceLoadUsers(t *testing.T) {
 	now := time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC)
 	service := NewService()
 
-	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
-		Username: "admin",
-		Password: "Admin1password",
-		Role:     RoleAdmin,
-	}, now)
+	hash, err := service.HashPassword("Admin1password")
 	if err != nil {
-		t.Fatalf("BootstrapUser() error = %v", err)
+		t.Fatalf("HashPassword() error = %v", err)
+	}
+	seeded := User{
+		ID:           "user-seed",
+		Username:     "admin",
+		PasswordHash: hash,
+		Role:         RoleAdmin,
+		CreatedAt:    now,
 	}
 
-	snapshot := service.SnapshotUsers()
-	if len(snapshot) != 1 {
-		t.Fatalf("len(SnapshotUsers()) = %d, want %d", len(snapshot), 1)
+	if err := service.LoadUsers(context.Background(), []User{seeded}); err != nil {
+		t.Fatalf("LoadUsers() error = %v", err)
 	}
 
-	restored := NewService()
-	restored.LoadUsers(snapshot)
-
-	if snapshot[0].TotpEnabled {
-		t.Fatal("SnapshotUsers()[0].TotpEnabled = true, want false")
-	}
-
-	session, err := restored.Authenticate(context.Background(), LoginInput{
+	session, err := service.Authenticate(context.Background(), LoginInput{
 		Username: "admin",
 		Password: "Admin1password",
 	}, now)
@@ -428,8 +425,8 @@ func TestServiceSnapshotAndLoadUsers(t *testing.T) {
 		t.Fatalf("Authenticate() error = %v", err)
 	}
 
-	if session.UserID != user.ID {
-		t.Fatalf("session.UserID = %q, want %q", session.UserID, user.ID)
+	if session.UserID != seeded.ID {
+		t.Fatalf("session.UserID = %q, want %q", session.UserID, seeded.ID)
 	}
 }
 

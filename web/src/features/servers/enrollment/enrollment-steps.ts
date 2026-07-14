@@ -18,24 +18,3 @@ export function stepLabelKey(step: string): string {
   return `step.${step}`;
 }
 
-/**
- * Known step ids, kept here so engineers grep'ing for "what steps does
- * the timeline render?" land on one canonical list. The set is not used
- * at render time — components rely on the defaultValue fallback above —
- * but tests and dev tooling import it.
- */
-export const KNOWN_ENROLLMENT_STEPS = [
-  "bootstrap_request_received",
-  "token_validated",
-  "csr_received",
-  "csr_validated",
-  "cert_signed",
-  "cert_returned",
-  "agent_persisted_cert",
-  "gateway_dialed",
-  "tls_handshake_ok",
-  "first_sync_ok",
-  "install_command_issued",
-  "outbound_listener_started",
-  "panel_dial_attempted",
-] as const;

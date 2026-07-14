@@ -31,7 +31,7 @@ func NewProducer(storage Storage) *Producer {
 	}
 }
 
-// SetClock injects a deterministic time source. Tests use this to
+// SetClock injects a deterministic time source. TEST SEAM — tests use this to
 // freeze NextAttemptAt / CreatedAt for round-trip equality checks.
 func (p *Producer) SetClock(clock func() time.Time) {
 	if clock != nil {
@@ -39,7 +39,7 @@ func (p *Producer) SetClock(clock func() time.Time) {
 	}
 }
 
-// SetIDFunc injects a deterministic ID generator. Tests use this
+// SetIDFunc injects a deterministic ID generator. TEST SEAM — tests use this
 // to assert exactly which row IDs landed in the outbox.
 func (p *Producer) SetIDFunc(idFunc func() string) {
 	if idFunc != nil {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
@@ -80,7 +81,7 @@ func TestApplyAgentSnapshotWithContextSucceedsRegardlessOfCallerContext(t *testi
 	cancel()
 
 	// Cancelled context should not prevent in-memory state update.
-	err = server.applyAgentSnapshot(ctx, agentSnapshot{
+	err = server.applyAgentSnapshot(ctx, gateway.AgentSnapshot{
 		AgentID: "agent-1",
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",

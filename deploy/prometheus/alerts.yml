@@ -51,7 +51,7 @@ groups:
       # Persistent flush failures are never healthy: they mean audit events /
       # telemetry cannot be persisted. Page on any sustained occurrence.
       - alert: PanvexBatchFlushPersistent
-        expr: increase(panvex_batch_flush_errors_total{error_type="persistent"}[5m]) > 0
+        expr: increase(panvex_batch_persist_errors_total{type="persistent"}[5m]) > 0
         for: 5m
         labels:
           severity: critical
@@ -59,7 +59,7 @@ groups:
         annotations:
           summary: "Persistent batch-writer flush failure"
           description: |
-            Batch buffer {{ $labels.buffer }} has been failing flushes with
+            Batch buffer {{ $labels.stream }} has been failing flushes with
             a persistent error class for 5+ minutes. Audit / telemetry data
             is being held in memory and at risk on graceful shutdown.
 

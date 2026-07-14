@@ -8,52 +8,11 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
-// The lockout tracker itself lives in controlplane/sessions (task
-// P3-ARCH-01c). This file keeps the old lowercase names around as type
-// aliases + package-local constants so that http_auth.go, metrics.go,
-// and http_auth_test.go keep compiling without a mass rename.
-
-const (
-	accountLockoutMaxAttempts = sessions.LockoutMaxAttempts
-	accountLockoutDuration    = sessions.LockoutDuration
-)
-
-type accountLockoutTracker = sessions.LockoutTracker
-
-func newAccountLockoutTracker() *accountLockoutTracker {
-	return sessions.NewLockoutTracker()
-}
-
-// S-6: separate, stricter counter for TOTP failures so that an attacker
-// who already has the password cannot brute-force the 6-digit code at
-// the password lockout's 5-attempts-per-15-min budget. The new tracker
-// trips at 3 attempts per 5 min and is in-memory only — survival across
-// a control-plane restart adds no value because the user must produce a
-// fresh code on retry anyway.
-const (
-	totpLockoutMaxAttempts = sessions.TOTPLockoutMaxAttempts
-	totpLockoutDuration    = sessions.TOTPLockoutDuration
-)
-
-type totpLockoutTracker = sessions.TOTPLockoutTracker
-
-func newTOTPLockoutTracker() *totpLockoutTracker {
-	return sessions.NewTOTPLockoutTracker()
-}
-
-// S-medium (Task 6): a third lockout tracker keyed by source IP closes
-// the targeted-DoS gap left by the username-keyed counter. An attacker
-// who enumerates usernames and triggers 5 failures against each can
-// otherwise lock every account in turn; counting failures per source
-// IP raises the cost of that attack without affecting legitimate
-// fat-fingering in normal usage. Threshold/window/duration constants
-// live in package sessions (IPLockoutMaxFailures etc.); they were
-// previously re-exported here but no callsite read the local aliases.
-type ipLockoutTracker = sessions.IPLockoutTracker
-
-func newIPLockoutTracker() *ipLockoutTracker {
-	return sessions.NewIPLockoutTracker()
-}
+// The lockout trackers themselves live in controlplane/sessions (task
+// P3-ARCH-01c); callers use sessions.LockoutTracker /
+// sessions.TOTPLockoutTracker / sessions.IPLockoutTracker directly. What
+// remains here is the one piece that genuinely belongs to the server
+// layer: the storage adapter below.
 
 // lockoutStoreAdapter bridges sessions.LockoutStore (defined locally in
 // the sessions package to keep it free of storage imports) and

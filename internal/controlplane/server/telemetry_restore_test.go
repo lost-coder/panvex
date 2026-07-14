@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
@@ -48,7 +49,7 @@ func TestRestoreStoredTelemetry_BulkRehydrationMatchesPerAgent(t *testing.T) {
 			Context:       "a",
 		})
 	}
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: agentA,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-a",
@@ -62,7 +63,7 @@ func TestRestoreStoredTelemetry_BulkRehydrationMatchesPerAgent(t *testing.T) {
 	}
 
 	agentB := enrollTelemetryAgent(t, server, fleetGroupID, "node-b", now)
-	if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+	if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 		AgentID: agentB,
 		Snap: &gatewayrpc.Snapshot{
 			NodeName:     "node-b",

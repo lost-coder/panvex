@@ -103,7 +103,7 @@ func ValidateStorageSecurity(storage StorageConfig) error {
 	if storage.Driver != StorageDriverPostgres {
 		return nil
 	}
-	prod := isProductionEnv()
+	prod := IsProductionEnv()
 	// A Unix-socket DSN never puts DB traffic on the network, so the
 	// sslmode=disable guard — which exists to stop plaintext exfiltration
 	// over a network channel — does not apply. TLS over a local socket is
@@ -128,14 +128,6 @@ func ValidateStorageSecurity(storage StorageConfig) error {
 		}
 	}
 	return nil
-}
-
-// isProductionEnv reports whether PANVEX_ENV selects the production
-// environment, case-insensitively. In production the insecure-DB escape
-// hatches (PANVEX_ALLOW_INSECURE_DB, PANVEX_ALLOW_EMPTY_DB_PASSWORD) are
-// ignored so a dev configuration cannot be started in prod (S4).
-func isProductionEnv() bool {
-	return IsProductionEnv()
 }
 
 // IsProductionEnv reports whether PANVEX_ENV selects the production

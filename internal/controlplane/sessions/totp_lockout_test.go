@@ -11,7 +11,7 @@ func TestTOTPLockoutNotLockedInitially(t *testing.T) {
 	tracker := NewTOTPLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
-	if tracker.IsLocked("alice", now) {
+	if tracker.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("IsLocked() = true for unknown user, want false")
 	}
 }
@@ -24,10 +24,10 @@ func TestTOTPLockoutAfterMaxAttempts(t *testing.T) {
 
 	// Three failures = max; tracker records lockedAt on the third one.
 	for i := 0; i < TOTPLockoutMaxAttempts; i++ {
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 
-	if !tracker.IsLocked("alice", now) {
+	if !tracker.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatalf("IsLocked() after %d failures = false, want true", TOTPLockoutMaxAttempts)
 	}
 }
@@ -38,10 +38,10 @@ func TestTOTPLockoutNotLockedBelowThreshold(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	for i := 0; i < TOTPLockoutMaxAttempts-1; i++ {
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 
-	if tracker.IsLocked("alice", now) {
+	if tracker.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("IsLocked() = true below threshold, want false")
 	}
 }
@@ -59,11 +59,11 @@ func TestTOTPLockoutExpiresAfterDuration(t *testing.T) {
 	})
 
 	for i := 0; i < TOTPLockoutMaxAttempts; i++ {
-		tracker.RecordFailure("alice", mockNow)
+		tracker.RecordFailureWithContext(context.Background(), "alice", mockNow)
 	}
 
 	afterLockout := mockNow.Add(TOTPLockoutDuration)
-	if tracker.IsLocked("alice", afterLockout) {
+	if tracker.IsLockedWithContext(context.Background(), "alice", afterLockout) {
 		t.Fatalf("IsLocked() after %s = true, want false", TOTPLockoutDuration)
 	}
 }
@@ -74,15 +74,15 @@ func TestTOTPLockoutRecordSuccessClearsFailures(t *testing.T) {
 	tracker := NewTOTPLockoutTracker()
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
-	tracker.RecordFailure("alice", now)
-	tracker.RecordFailure("alice", now)
-	tracker.RecordSuccess("alice")
+	tracker.RecordFailureWithContext(context.Background(), "alice", now)
+	tracker.RecordFailureWithContext(context.Background(), "alice", now)
+	tracker.RecordSuccessWithContext(context.Background(), "alice")
 
 	// After RecordSuccess, the counter is fully reset: another two
 	// failures must still leave the account unlocked.
-	tracker.RecordFailure("alice", now)
-	tracker.RecordFailure("alice", now)
-	if tracker.IsLocked("alice", now) {
+	tracker.RecordFailureWithContext(context.Background(), "alice", now)
+	tracker.RecordFailureWithContext(context.Background(), "alice", now)
+	if tracker.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("IsLocked() = true after RecordSuccess + 2 failures, want false")
 	}
 }
@@ -93,10 +93,10 @@ func TestTOTPLockoutIsPerUser(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	for i := 0; i < TOTPLockoutMaxAttempts; i++ {
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 
-	if tracker.IsLocked("bob", now) {
+	if tracker.IsLockedWithContext(context.Background(), "bob", now) {
 		t.Fatal("IsLocked(bob) = true, want false — TOTP lockout should be per-user")
 	}
 }
@@ -108,19 +108,19 @@ func TestTOTPLockoutCheckAndRecordFailure(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	for i := 0; i < TOTPLockoutMaxAttempts-1; i++ {
-		if tracker.CheckAndRecordFailure("alice", now) {
+		if tracker.CheckAndRecordFailureWithContext(context.Background(), "alice", now) {
 			t.Fatalf("CheckAndRecordFailure() = true on attempt %d, want false", i+1)
 		}
 	}
 
 	// Threshold-th call: still false because the account was not locked
 	// before this call, but the call itself trips the counter.
-	if locked := tracker.CheckAndRecordFailure("alice", now); locked {
+	if locked := tracker.CheckAndRecordFailureWithContext(context.Background(), "alice", now); locked {
 		t.Fatal("CheckAndRecordFailure() = true on triggering attempt, want false")
 	}
 
 	// All subsequent calls within the window must report locked.
-	if !tracker.CheckAndRecordFailure("alice", now) {
+	if !tracker.CheckAndRecordFailureWithContext(context.Background(), "alice", now) {
 		t.Fatal("CheckAndRecordFailure() = false on locked account, want true")
 	}
 }
@@ -132,11 +132,11 @@ func TestTOTPLockoutCheckAndRecordFailureResetsAfterExpiry(t *testing.T) {
 	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, time.UTC)
 
 	for i := 0; i < TOTPLockoutMaxAttempts; i++ {
-		tracker.CheckAndRecordFailure("alice", now)
+		tracker.CheckAndRecordFailureWithContext(context.Background(), "alice", now)
 	}
 
 	future := now.Add(TOTPLockoutDuration + time.Second)
-	if tracker.CheckAndRecordFailure("alice", future) {
+	if tracker.CheckAndRecordFailureWithContext(context.Background(), "alice", future) {
 		t.Fatal("CheckAndRecordFailure() after expiry = true, want false")
 	}
 }
@@ -150,7 +150,7 @@ func TestTOTPLockoutActiveCount(t *testing.T) {
 		t.Fatalf("ActiveCount() = %d, want 0", got)
 	}
 	for i := 0; i < TOTPLockoutMaxAttempts; i++ {
-		tracker.RecordFailure("alice", now)
+		tracker.RecordFailureWithContext(context.Background(), "alice", now)
 	}
 	if got := tracker.ActiveCount(now); got != 1 {
 		t.Fatalf("ActiveCount() = %d, want 1", got)
@@ -199,7 +199,7 @@ func TestTOTPLockoutIndependentFromPasswordLockout(t *testing.T) {
 	if !password.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("precondition: password tracker should be locked")
 	}
-	if totp.IsLocked("alice", now) {
+	if totp.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("TOTP tracker locked by password failures, want independent counters")
 	}
 
@@ -208,9 +208,9 @@ func TestTOTPLockoutIndependentFromPasswordLockout(t *testing.T) {
 	password2 := NewLockoutTracker()
 	totp2 := NewTOTPLockoutTracker()
 	for i := 0; i < TOTPLockoutMaxAttempts; i++ {
-		totp2.RecordFailure("alice", now)
+		totp2.RecordFailureWithContext(context.Background(), "alice", now)
 	}
-	if !totp2.IsLocked("alice", now) {
+	if !totp2.IsLockedWithContext(context.Background(), "alice", now) {
 		t.Fatal("precondition: totp tracker should be locked")
 	}
 	if password2.IsLockedWithContext(context.Background(), "alice", now) {

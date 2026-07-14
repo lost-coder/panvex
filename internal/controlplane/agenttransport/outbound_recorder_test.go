@@ -28,11 +28,10 @@ import (
 // outbound TLS-missing guard does not short-circuit ahead of the dial.
 func TestOutboundConnectAndServeRecordsDialFailure(t *testing.T) {
 	store := enrollmenttest.NewMemStore()
-	rec := enrollment.NewRecorder(store, time.Now)
+	rec := enrollment.NewRecorder(store, time.Now, nil, nil)
 
 	sup := &outboundSupervisor{
 		meta: NodeMeta{
-			NodeID:      "test-node",
 			AgentID:     "00000000-0000-0000-0000-000000000001",
 			DialAddress: "127.0.0.1:1",
 		},
@@ -40,7 +39,7 @@ func TestOutboundConnectAndServeRecordsDialFailure(t *testing.T) {
 		// rely on the connection itself failing rather than the TLS-missing
 		// guard.
 		tlsCfg: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test-only, no real handshake
-		handler: SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		handler: SessionHandler(func(_ context.Context, _ AgentSession) error {
 			t.Fatal("handler must not be invoked on dial failure")
 			return nil
 		}),
@@ -94,12 +93,11 @@ func TestOutboundConnectAndServeRecordsDialFailure(t *testing.T) {
 func TestOutboundConnectAndServeWithoutRecorderIsNoop(t *testing.T) {
 	sup := &outboundSupervisor{
 		meta: NodeMeta{
-			NodeID:      "test-node",
 			AgentID:     "agent-without-recorder",
 			DialAddress: "127.0.0.1:1",
 		},
 		tlsCfg: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test-only, no real handshake
-		handler: SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		handler: SessionHandler(func(_ context.Context, _ AgentSession) error {
 			t.Fatal("handler must not be invoked on dial failure")
 			return nil
 		}),

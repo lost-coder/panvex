@@ -131,7 +131,7 @@ func (s *Server) buildClientListRow(
 	scope FleetScopeAccess,
 	assignments []managedClientAssignment,
 	deployments []managedClientDeployment,
-	usage aggregatedClientUsage,
+	usage clients.AggregatedUsage,
 	uniqueIPCounts map[string]int,
 ) (clientListResponse, bool) {
 	if !s.clientInScope(scope, assignments) {

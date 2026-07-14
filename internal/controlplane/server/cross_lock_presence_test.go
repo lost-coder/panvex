@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -206,7 +207,7 @@ func TestPresenceConnectedAtPersistsAcrossSnapshots(t *testing.T) {
 	// rewrite connectedAt.
 	for idx := 1; idx <= 3; idx++ {
 		snapshotAt := streamOpenT1.Add(time.Duration(idx) * 5 * time.Second)
-		if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+		if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 			AgentID: agentID,
 			Snap: &gatewayrpc.Snapshot{
 				NodeName:     "node-xyz",

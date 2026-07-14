@@ -40,10 +40,10 @@ func CheckDownloadURL(raw string) error {
 	return updatehosts.PolicyFromEnv().CheckURL(raw)
 }
 
-// RestrictedRedirectPolicy returns a CheckRedirect function that enforces
+// restrictedRedirectPolicy returns a CheckRedirect function that enforces
 // CheckDownloadURL on every hop, so a rogue 302 cannot steer us off GitHub.
 // It also caps the redirect chain at 10 hops to mirror http.Client defaults.
-func RestrictedRedirectPolicy() func(req *http.Request, via []*http.Request) error {
+func restrictedRedirectPolicy() func(req *http.Request, via []*http.Request) error {
 	return func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return errors.New("stopped after 10 redirects")
@@ -58,6 +58,6 @@ func RestrictedRedirectPolicy() func(req *http.Request, via []*http.Request) err
 func SecureDownloadClient() *http.Client {
 	return &http.Client{
 		Timeout:       10 * time.Minute,
-		CheckRedirect: RestrictedRedirectPolicy(),
+		CheckRedirect: restrictedRedirectPolicy(),
 	}
 }

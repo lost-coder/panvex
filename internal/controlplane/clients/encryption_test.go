@@ -47,7 +47,7 @@ func TestSaveStateEncryptsClientSecretWhenVaultEnabled(t *testing.T) {
 		t.Fatal("SaveState() did not persist client record")
 	}
 	if !strings.HasPrefix(stored.Secret, secretvault.Prefix) {
-		t.Fatalf("Secret = %q, want PVS1: prefix when vault enabled", stored.Secret)
+		t.Fatalf("Secret = %q, want %s prefix when vault enabled", stored.Secret, secretvault.Prefix)
 	}
 	if strings.Contains(stored.Secret, plaintextSecret) {
 		t.Fatalf("Secret contains plaintext %q", stored.Secret)

@@ -420,7 +420,7 @@ func TestServiceMarkAcknowledgedTransitionsTargetState(t *testing.T) {
 	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(2*time.Second))
 	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, now.Add(3*time.Second))
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(list), 1)
 	}
@@ -454,7 +454,7 @@ func TestServiceMarkDeliveredDoesNotDowngradeAcknowledgedTarget(t *testing.T) {
 	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, now.Add(3*time.Second))
 	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(4*time.Second))
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(list), 1)
 	}
@@ -486,7 +486,7 @@ func TestServiceMarkAcknowledgedIgnoresQueuedTarget(t *testing.T) {
 
 	service.MarkAcknowledged(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(list), 1)
 	}
@@ -635,7 +635,7 @@ func TestServiceListProjectsExpiredQueuedJobsAsFailed(t *testing.T) {
 		t.Fatalf("Enqueue() error = %v", err)
 	}
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(list), 1)
 	}
@@ -678,7 +678,7 @@ func TestServiceRecordResultDoesNotOverrideExpiredTarget(t *testing.T) {
 
 	service.RecordResult(context.Background(), "agent-1", job.ID, true, "late success", "", now.Add(3*time.Minute))
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(list), 1)
 	}
@@ -734,7 +734,7 @@ func TestServiceUpdateTargetDoesNotExpireUnrelatedJobs(t *testing.T) {
 		t.Fatalf("stored expired target status = %q, want %q before List()", storedExpired.Targets[0].Status, TargetStatusQueued)
 	}
 
-	jobsSnapshot := service.List()
+	jobsSnapshot := service.ListWithContext(context.Background())
 	for _, listed := range jobsSnapshot {
 		if listed.ID != expiredJob.ID {
 			continue
@@ -792,7 +792,7 @@ func TestAcknowledgedJobsExpireAfterTTL(t *testing.T) {
 		t.Fatalf("PruneAcknowledgedTargets post-TTL = %d, want 1", expired)
 	}
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want 1", len(list))
 	}
@@ -864,7 +864,7 @@ func TestStartAcknowledgedExpiryWorker(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		list := service.List()
+		list := service.ListWithContext(context.Background())
 		if len(list) == 1 && list[0].Targets[0].Status == TargetStatusExpired {
 			break
 		}
@@ -1239,4 +1239,3 @@ func TestEnqueueDoesNotSupersedeNonClientActions(t *testing.T) {
 		t.Fatalf("runtime.reload target status = %s, want queued", got.Targets[0].Status)
 	}
 }
-

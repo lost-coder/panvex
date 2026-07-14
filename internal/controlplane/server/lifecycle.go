@@ -120,14 +120,14 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		now:                       now,
 		panelRuntime:              defaultPanelRuntime(options.PanelRuntime),
 		requestRestart:            options.RequestRestart,
-		loginRateLimiter:          newFixedWindowRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
-		agentBootstrapRateLimiter: newFixedWindowRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
-		grpcConnectRateLimiter:    newFixedWindowRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
-		sensitiveRateLimiter:      newFixedWindowRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
-		installScriptRateLimiter:  newFixedWindowRateLimiter(httpInstallScriptRateLimitPerWindow, defaultRateLimitWindow),
-		loginLockout:              newAccountLockoutTracker(),
-		totpLockout:               newTOTPLockoutTracker(),
-		ipLockout:                 newIPLockoutTracker(),
+		loginRateLimiter:          sessions.NewRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
+		agentBootstrapRateLimiter: sessions.NewRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
+		grpcConnectRateLimiter:    sessions.NewRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
+		sensitiveRateLimiter:      sessions.NewRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
+		installScriptRateLimiter:  sessions.NewRateLimiter(httpInstallScriptRateLimitPerWindow, defaultRateLimitWindow),
+		loginLockout:              sessions.NewLockoutTracker(),
+		totpLockout:               sessions.NewTOTPLockoutTracker(),
+		ipLockout:                 sessions.NewIPLockoutTracker(),
 		wsConnLimiter:             newWSConnLimiter(),
 		trustedProxyCIDRs:         options.TrustedProxyCIDRs,
 		encryptionKey:             options.EncryptionKey,
@@ -440,9 +440,9 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			s.enrollmentRec = enrollment.NewRecorder(
 				enrollment.NewSQLStore(dbsqlc.New(rawDB), rawDB),
 				s.now,
-			).
-				WithPublisher(enrollmentBusAdapter{bus: s.events}).
-				WithLogger(s.logger)
+				enrollmentBusAdapter{bus: s.events},
+				s.logger,
+			)
 		}
 	}
 
@@ -616,7 +616,9 @@ func New(options Options) (*Server, error) {
 	case options.Store != nil:
 		server.initStoreBackedSubsystems(options, vault)
 	case len(options.Users) > 0:
-		server.auth.LoadUsers(options.Users)
+		server.trySetStartupErr(func() error {
+			return server.auth.LoadUsers(server.serverCtx, options.Users)
+		})
 	}
 
 	// Rebuild the presence tracker with thresholds from the operational
@@ -741,6 +743,7 @@ func New(options Options) (*Server, error) {
 	// *Server implements gateway.Deps (see gateway_deps.go).
 	server.gateway = gateway.New(gateway.Config{
 		Deps:          server,
+		Sessions:      server.sessions,
 		Logger:        server.logger,
 		Store:         server.store,
 		Jobs:          server.jobs,

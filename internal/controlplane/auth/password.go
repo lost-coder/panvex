@@ -68,26 +68,16 @@ func validatePassword(password string, operatorMin int) error {
 
 // Hash format constants.
 //
-// Legacy (pre-C-1 fix): "argon2id$<b64-salt>$<b64-hash>" — 3 parts,
-// Argon2id with 3 iterations and 64 MiB memory.
-//
-// Current (v2): "argon2id$v=2$<b64-salt>$<b64-hash>" — 4 parts,
-// Argon2id with 4 iterations and 96 MiB memory.
-//
-// verifyPassword selects the parameter set from the hash structure and
-// invokes Argon2id ONCE per call — never falls through to a second
-// parameter set. This eliminates the timing oracle where a correct
-// password against a legacy hash took ~2x the CPU of a correct password
-// against a current hash (which let an attacker classify hash age and
-// focus brute-force attempts).
+// The only accepted format is v2: "argon2id$v=2$<b64-salt>$<b64-hash>" —
+// 4 parts, Argon2id with 4 iterations and 96 MiB memory. verifyPassword
+// invokes Argon2id ONCE per call, with a single parameter set, so there
+// is no timing oracle that would let an attacker classify hash age.
 const (
 	hashSchemeArgon2id = "argon2id"
 	hashVersionTagV2   = "v=2"
 
-	hashIterLegacy uint32 = 3
-	hashMemLegacy  uint32 = 64 * 1024
-	hashIterV2     uint32 = 4
-	hashMemV2      uint32 = 96 * 1024
+	hashIterV2 uint32 = 4
+	hashMemV2  uint32 = 96 * 1024
 
 	hashParallelism uint8  = 2
 	hashKeyLen      uint32 = 32
@@ -114,9 +104,8 @@ func hashPassword(password string) (string, error) {
 }
 
 // verifyPassword validates a plaintext password against an Argon2id
-// hash. Parameter selection is driven by the stored hash's structure,
-// not by trial: a 3-part hash is verified against legacy params, a
-// 4-part v=2 hash against current params, anything else is rejected.
+// hash in the v2 format (argon2id$v=2$salt$hash). Anything else —
+// including the pre-v2 3-part format, dropped in R5 — is rejected.
 // Exactly one Argon2id derivation runs per call (C-1, timing oracle).
 //
 // Malformed base64 is mapped to ErrInvalidCredentials rather than the
@@ -124,16 +113,10 @@ func hashPassword(password string) (string, error) {
 // information to callers / clients.
 func verifyPassword(hash, password string) error {
 	parts := strings.Split(hash, "$")
-	switch {
-	case len(parts) == 3 && parts[0] == hashSchemeArgon2id:
-		// Legacy: argon2id$salt$hash — 3 iters, 64 MiB.
-		return verifyArgon2(parts[1], parts[2], password, hashIterLegacy, hashMemLegacy)
-	case len(parts) == 4 && parts[0] == hashSchemeArgon2id && parts[1] == hashVersionTagV2:
-		// Current: argon2id$v=2$salt$hash — 4 iters, 96 MiB.
-		return verifyArgon2(parts[2], parts[3], password, hashIterV2, hashMemV2)
-	default:
+	if len(parts) != 4 || parts[0] != hashSchemeArgon2id || parts[1] != hashVersionTagV2 {
 		return ErrInvalidCredentials
 	}
+	return verifyArgon2(parts[2], parts[3], password, hashIterV2, hashMemV2)
 }
 
 // verifyArgon2 decodes the salt + expected hash, runs a single Argon2id

@@ -44,13 +44,9 @@ type Collectors struct {
 
 	AgentConnected prometheus.Gauge
 
-	BatchQueueDepth       *prometheus.GaugeVec
-	BatchFlushErrorsTotal *prometheus.CounterVec
-	BatchDroppedTotal     *prometheus.CounterVec
+	BatchQueueDepth   *prometheus.GaugeVec
+	BatchDroppedTotal *prometheus.CounterVec
 	// P2-REL-06: batch_writer retry + persistence error surfacing (H14).
-	// persist_errors_total mirrors flush_errors_total with the spec-mandated
-	// label names (stream/type instead of buffer/error_type). The older metric
-	// is kept in place so dashboards from P2-OBS-01 keep working.
 	BatchPersistErrorsTotal  *prometheus.CounterVec
 	BatchPersistRetriesTotal *prometheus.CounterVec
 	// P2-OBS-03: per-stream flush latency histogram (including retries).
@@ -166,7 +162,7 @@ var retentionPruneTables = []string{
 }
 
 // knownBatchBuffers enumerates every batch buffer tracked by
-// panvex_batch_queue_depth and panvex_batch_flush_errors_total. Adding a new
+// panvex_batch_queue_depth and panvex_batch_persist_errors_total. Adding a new
 // buffer requires adding its name here so the gauge series is pre-initialised
 // to zero at startup (makes PromQL alerts deterministic).
 var knownBatchBuffers = []string{
@@ -207,10 +203,6 @@ func NewCollectors() *Collectors {
 			Name: "panvex_batch_queue_depth",
 			Help: "Number of items queued in each batch writer buffer, waiting to be flushed to storage.",
 		}, []string{"buffer"}),
-		BatchFlushErrorsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "panvex_batch_flush_errors_total",
-			Help: "Total number of batch flush errors by buffer and error_type (transient|persistent).",
-		}, []string{"buffer", "error_type"}),
 		BatchDroppedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "panvex_batch_dropped_total",
 			Help: "Items evicted from a bounded batch-writer buffer under the drop-oldest overflow policy, by buffer. Sustained growth means the store cannot keep up with fleet inflow.",
@@ -346,7 +338,6 @@ func NewCollectors() *Collectors {
 		mc.HTTPRequestsTotal,
 		mc.AgentConnected,
 		mc.BatchQueueDepth,
-		mc.BatchFlushErrorsTotal,
 		mc.BatchDroppedTotal,
 		mc.BatchPersistErrorsTotal,
 		mc.BatchPersistRetriesTotal,
@@ -385,8 +376,6 @@ func NewCollectors() *Collectors {
 	// before the first Enqueue call happens.
 	for _, buf := range knownBatchBuffers {
 		mc.BatchQueueDepth.WithLabelValues(buf).Set(0)
-		mc.BatchFlushErrorsTotal.WithLabelValues(buf, "transient").Add(0)
-		mc.BatchFlushErrorsTotal.WithLabelValues(buf, "persistent").Add(0)
 		mc.BatchDroppedTotal.WithLabelValues(buf).Add(0)
 		mc.BatchPersistErrorsTotal.WithLabelValues(buf, "transient").Add(0)
 		mc.BatchPersistErrorsTotal.WithLabelValues(buf, "persistent").Add(0)
@@ -522,15 +511,12 @@ func (c *Collectors) AddPoolCounterDeltas(prev, curr sql.DBStats) {
 	}
 }
 
-// ObserveFlushError satisfies batchwriter.MetricsSink. It increments both the legacy
-// panvex_batch_flush_errors_total series and the spec-mandated
-// panvex_batch_persist_errors_total so operators can migrate dashboards
-// without losing history.
+// ObserveFlushError satisfies batchwriter.MetricsSink: it increments
+// panvex_batch_persist_errors_total for the failing stream.
 func (c *Collectors) ObserveFlushError(buffer, errorType string) {
 	if c == nil {
 		return
 	}
-	c.BatchFlushErrorsTotal.WithLabelValues(buffer, errorType).Inc()
 	c.BatchPersistErrorsTotal.WithLabelValues(buffer, errorType).Inc()
 }
 

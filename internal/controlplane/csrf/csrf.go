@@ -98,11 +98,11 @@ func TokenForSession(cookieValue string, secret []byte) string {
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// TokenMatches is constant-time: subtle.ConstantTimeCompare avoids
+// tokenMatches is constant-time: subtle.ConstantTimeCompare avoids
 // leaking the byte position of the first mismatching character via
 // timing. Returns false when either string is empty so the zero
 // header value never accidentally validates.
-func TokenMatches(supplied, expected string) bool {
+func tokenMatches(supplied, expected string) bool {
 	if supplied == "" || expected == "" {
 		return false
 	}
@@ -146,5 +146,5 @@ func (m *Manager) TokenForSession(cookieValue string) string {
 // on the secret, but having both methods on Manager lets call-sites
 // stay consistent.
 func (*Manager) TokenMatches(supplied, expected string) bool {
-	return TokenMatches(supplied, expected)
+	return tokenMatches(supplied, expected)
 }

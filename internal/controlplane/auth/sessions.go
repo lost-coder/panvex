@@ -306,7 +306,6 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 		delete(s.sessions, priorLookupID)
 	}
 
-	s.sequence++
 	cookieToken, sessionID, err := s.issueSessionIdentityLocked()
 	if err != nil {
 		return Session{}, err

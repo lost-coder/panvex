@@ -59,7 +59,6 @@ type runtimeFlags struct {
 	heartbeat             time.Duration
 	runtimePoll           time.Duration
 	runtimeUpload         time.Duration
-	runtimeSnapshot       time.Duration
 	usageSnapshot         time.Duration
 	ipPoll                time.Duration
 	ipUpload              time.Duration
@@ -88,7 +87,6 @@ func parseRuntimeFlags(args []string) (runtimeFlags, error) {
 	flags.DurationVar(&cfg.heartbeat, "heartbeat-interval", 15*time.Second, "Heartbeat interval")
 	flags.DurationVar(&cfg.runtimePoll, "runtime-poll-interval", 15*time.Second, "How often the agent polls Telemt for runtime data")
 	flags.DurationVar(&cfg.runtimeUpload, "runtime-upload-interval", time.Minute, "How often aggregated runtime snapshots are sent to the control-plane")
-	flags.DurationVar(&cfg.runtimeSnapshot, "snapshot-interval", 0, "Deprecated: use -runtime-poll-interval and -runtime-upload-interval")
 	flags.DurationVar(&cfg.usageSnapshot, "usage-interval", 2*time.Minute, "Client usage snapshot interval")
 	flags.DurationVar(&cfg.ipPoll, "ip-poll-interval", 15*time.Second, "Client IP polling interval")
 	flags.DurationVar(&cfg.ipUpload, "ip-upload-interval", time.Minute, "Client IP upload interval")
@@ -99,11 +97,6 @@ func parseRuntimeFlags(args []string) (runtimeFlags, error) {
 	flags.DurationVar(&cfg.transportProbation, "transport-probation", defaultTransportProbation, "How long a transport-mode switch may go without a panel session before the agent reverts to the previous mode (0 = default 10m)")
 	if err := flags.Parse(args); err != nil {
 		return runtimeFlags{}, err
-	}
-	// Backward compatibility: if deprecated --snapshot-interval is set, use it for both poll and upload.
-	if cfg.runtimeSnapshot > 0 {
-		cfg.runtimePoll = cfg.runtimeSnapshot
-		cfg.runtimeUpload = cfg.runtimeSnapshot
 	}
 	return cfg, nil
 }

@@ -138,7 +138,7 @@ func RunJSONValidationContract(t *testing.T, open OpenStore) {
 	// CreateIntegrationProvider accepts a vault-sealed config (H-6/bug1):
 	// fleet.Service.encryptProviderConfig seals integration_providers.config
 	// under the vault's "integration_config" domain whenever a secretvault
-	// is configured (SetVault), producing a "PVS1:"/"PVS2:"/"PVS3:" prefixed
+	// is configured (SetVault), producing a "PVS2:"/"PVS3:" prefixed
 	// ciphertext string instead of JSON. This is cross-backend parity, not
 	// SQLite-only behavior: integration_providers.config is TEXT with a
 	// permissive `json_valid(config) OR config LIKE 'PVS_:%'`-equivalent

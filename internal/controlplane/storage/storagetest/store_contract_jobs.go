@@ -123,16 +123,19 @@ func runJobsContract(t *testing.T, open OpenStore) {
 			t.Fatalf("PutJobTarget() error = %v", err)
 		}
 
-		storedJob, err := store.GetJobByIdempotencyKey(ctx, job.IdempotencyKey)
+		storedJob, err := store.GetJob(ctx, job.ID)
 		if err != nil {
-			t.Fatalf("GetJobByIdempotencyKey() error = %v", err)
+			t.Fatalf("GetJob() error = %v", err)
 		}
 
 		if storedJob.ID != job.ID {
-			t.Fatalf("GetJobByIdempotencyKey() ID = %q, want %q", storedJob.ID, job.ID)
+			t.Fatalf("GetJob() ID = %q, want %q", storedJob.ID, job.ID)
+		}
+		if storedJob.IdempotencyKey != job.IdempotencyKey {
+			t.Fatalf("GetJob() IdempotencyKey = %q, want %q", storedJob.IdempotencyKey, job.IdempotencyKey)
 		}
 		if storedJob.PayloadJSON != job.PayloadJSON {
-			t.Fatalf("GetJobByIdempotencyKey() PayloadJSON = %q, want %q", storedJob.PayloadJSON, job.PayloadJSON)
+			t.Fatalf("GetJob() PayloadJSON = %q, want %q", storedJob.PayloadJSON, job.PayloadJSON)
 		}
 
 		targets, err := store.ListJobTargets(ctx, job.ID)

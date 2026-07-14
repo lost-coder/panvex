@@ -75,10 +75,7 @@ func TestHandleRotateSubscriptionToken_RotatesToken(t *testing.T) {
 	}
 
 	// Capture initial token from the store so we can compare after rotation.
-	initial, err := store.GetClientByID(context.Background(), created.ID)
-	if err != nil {
-		t.Fatalf("GetClientByID: %v", err)
-	}
+	initial := findStoredClient(t, store, created.ID)
 	initialToken := initial.SubscriptionToken
 
 	// POST /api/clients/{id}/rotate-subscription.
@@ -100,10 +97,7 @@ func TestHandleRotateSubscriptionToken_RotatesToken(t *testing.T) {
 	}
 
 	// Reload from store and confirm token changed and is non-empty.
-	updated, err := store.GetClientByID(context.Background(), created.ID)
-	if err != nil {
-		t.Fatalf("GetClientByID after rotate: %v", err)
-	}
+	updated := findStoredClient(t, store, created.ID)
 	if updated.SubscriptionToken == "" {
 		t.Fatal("subscription token is empty after rotation")
 	}

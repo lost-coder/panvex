@@ -118,8 +118,7 @@ type Publisher interface {
 // Recorder records the per-attempt timeline of enrollment.
 //
 // A single Recorder is safe for concurrent use by multiple goroutines once
-// constructed: its fields are set only by NewRecorder and the WithPublisher /
-// WithLogger copy-returning options.
+// constructed: its fields are set only by NewRecorder and never mutated.
 //
 // Persistence failures inside Event are logged via slog and silently dropped
 // — timeline observability must never abort an in-flight enrollment. Ingest
@@ -132,20 +131,13 @@ type Recorder struct {
 	log   *slog.Logger
 }
 
-func NewRecorder(store Store, now func() time.Time) *Recorder {
-	return &Recorder{store: store, now: now, log: slog.Default()}
-}
-
-func (r *Recorder) WithPublisher(p Publisher) *Recorder {
-	cp := *r
-	cp.pub = p
-	return &cp
-}
-
-func (r *Recorder) WithLogger(lg *slog.Logger) *Recorder {
-	cp := *r
-	cp.log = lg
-	return &cp
+// NewRecorder builds a Recorder. pub may be nil (no event fan-out); a nil
+// log falls back to slog.Default().
+func NewRecorder(store Store, now func() time.Time, pub Publisher, log *slog.Logger) *Recorder {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &Recorder{store: store, now: now, pub: pub, log: log}
 }
 
 func (r *Recorder) Begin(ctx context.Context, mode Mode, tokenID, clientAddr string) (string, error) {
@@ -319,12 +311,6 @@ func (r *Recorder) Ingest(ctx context.Context, attemptID string, events []AgentR
 		}
 	}
 	return nil
-}
-
-// ListAttempts returns recent attempts matching the filter, most-recent
-// first. Used by the dashboard's enrollment-attempts list view.
-func (r *Recorder) ListAttempts(ctx context.Context, f ListFilter) ([]AttemptDTO, error) {
-	return r.store.ListAttempts(ctx, f)
 }
 
 // ListAttemptsPage fetches one page using filter + cursor and computes

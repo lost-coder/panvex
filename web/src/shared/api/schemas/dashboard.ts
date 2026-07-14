@@ -113,7 +113,7 @@ const telemetryAgentLoadSeriesSchema = z.object({
  * Aggregated telemetry payload for the dashboard: fleet totals + per-agent
  * attention rows + server cards + sparkline series + enriched recent
  * events. Matches the Go telemetryDashboardResponse exactly so an
- * unexpected field shape surfaces via API_SCHEMA_MISMATCH_EVENT instead
+ * unexpected field shape surfaces as an ApiSchemaError instead
  * of silently rendering as `undefined` in the dashboard.
  */
 export const dashboardSchema = z.object({

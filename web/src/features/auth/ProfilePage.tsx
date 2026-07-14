@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Palette, ShieldCheck } from "lucide-react";
 
-import { notifyMutationError } from "@/shared/api/http";
 import {
   Badge,
   Button,
@@ -49,12 +48,9 @@ export function ProfilePage({
       const data = await onStartTotpSetup();
       setSetupData(data);
       setSetupOpen(true);
-    } catch (err) {
+    } catch {
       // API errors are already surfaced by the container via `totpError`;
-      // log so unexpected failures (malformed response, render-time bug)
-      // still leave a trace in the console rather than silently closing
-      // the sheet.
-      notifyMutationError("auth", "totp.setup", err);
+      // keep the sheet closed and let the inline message do the reporting.
     }
   }
 
@@ -215,11 +211,9 @@ export function ProfilePage({
                   try {
                     await onEnableTotp(password, code);
                     setSetupOpen(false);
-                  } catch (err) {
-                    // API errors land in `totpError` and keep the sheet
-                    // open intentionally. Log so unexpected throws still
-                    // leave a trace.
-                    notifyMutationError("auth", "totp.enable", err);
+                  } catch {
+                    // API errors land in `totpError` and keep the sheet open
+                    // intentionally — the inline message is the report.
                   }
                 }}
                 onCancel={() => setSetupOpen(false)}
@@ -246,11 +240,9 @@ export function ProfilePage({
                   try {
                     await onDisableTotp(password, code);
                     setDisableOpen(false);
-                  } catch (err) {
-                    // API errors land in `totpError` and keep the sheet
-                    // open intentionally. Log so unexpected throws still
-                    // leave a trace.
-                    notifyMutationError("auth", "totp.disable", err);
+                  } catch {
+                    // API errors land in `totpError` and keep the sheet open
+                    // intentionally — the inline message is the report.
                   }
                 }}
                 onCancel={() => setDisableOpen(false)}

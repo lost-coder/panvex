@@ -161,10 +161,10 @@ func (s *outboundSupervisor) run(ctx context.Context) {
 			// but the default Info/Warn floor stays quiet.
 			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 				s.logger.Debug("agenttransport: outbound session ended (context cancelled)",
-					"node_id", s.meta.NodeID, "addr", s.meta.DialAddress)
+					"node_id", s.meta.AgentID, "addr", s.meta.DialAddress)
 			} else {
 				s.logger.Warn("agenttransport: outbound session ended",
-					"node_id", s.meta.NodeID, "addr", s.meta.DialAddress, "error", err)
+					"node_id", s.meta.AgentID, "addr", s.meta.DialAddress, "error", err)
 			}
 		}
 		// Reset backoff if the session lived long enough that any prior
@@ -223,7 +223,7 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 		id, err := s.rec.Begin(ctx, enrollment.ModeOutbound, "", s.meta.DialAddress)
 		if err != nil {
 			s.logger.Warn("agenttransport: enrollment Begin failed",
-				"node_id", s.meta.NodeID, "error", err)
+				"node_id", s.meta.AgentID, "error", err)
 		} else {
 			attemptID = id
 			// Tie the attempt to its agent row from the start so the UI
@@ -231,7 +231,7 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 			// later AttachAgent.
 			if attachErr := s.rec.AttachAgent(ctx, attemptID, s.meta.AgentID); attachErr != nil {
 				s.logger.Warn("agenttransport: enrollment AttachAgent failed",
-					"node_id", s.meta.NodeID, "attempt_id", attemptID, "error", attachErr)
+					"node_id", s.meta.AgentID, "attempt_id", attemptID, "error", attachErr)
 			}
 		}
 	}
@@ -260,21 +260,21 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 					map[string]any{"stage": "bootstrap_state_lookup"}) // failures are best-effort; primary err is what matters
 				completed = true
 			}
-			return fmt.Errorf("agenttransport: bootstrap state lookup (node_id=%s): %w", s.meta.NodeID, err)
+			return fmt.Errorf("agenttransport: bootstrap state lookup (node_id=%s): %w", s.meta.AgentID, err)
 		}
 		if state == "pending" {
 			s.logger.Info("agenttransport: bootstrap_state=pending; running enrollment",
-				"node_id", s.meta.NodeID, "addr", s.meta.DialAddress)
+				"node_id", s.meta.AgentID, "addr", s.meta.DialAddress)
 			if err := s.enrollFn(ctx, s.meta.DialAddress, s.meta.AgentID); err != nil {
 				if s.rec != nil && attemptID != "" {
 					_ = s.rec.Fail(ctx, attemptID, classifyDialError(err), err,
 						map[string]any{"stage": "enroll"}) // failures are best-effort; primary err is what matters
 					completed = true
 				}
-				return fmt.Errorf("agenttransport: enrollment (node_id=%s): %w", s.meta.NodeID, err)
+				return fmt.Errorf("agenttransport: enrollment (node_id=%s): %w", s.meta.AgentID, err)
 			}
 			s.logger.Info("agenttransport: enrollment completed; proceeding to mTLS dial",
-				"node_id", s.meta.NodeID)
+				"node_id", s.meta.AgentID)
 		}
 	}
 
@@ -284,7 +284,7 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 				map[string]any{"stage": "tls_config"}) // failures are best-effort; primary err is what matters
 			completed = true
 		}
-		return fmt.Errorf("%w (node_id=%s)", errOutboundTLSMissing, s.meta.NodeID)
+		return fmt.Errorf("%w (node_id=%s)", errOutboundTLSMissing, s.meta.AgentID)
 	}
 
 	// Clone the TLS config so we can install a per-dial VerifyConnection hook
@@ -392,13 +392,13 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 		s.rec.Event(ctx, attemptID, enrollment.StepFirstSyncOK, enrollment.LevelInfo, "first sync ok", nil)
 		if err := s.rec.Complete(ctx, attemptID); err != nil {
 			s.logger.Warn("agenttransport: enrollment Complete failed",
-				"node_id", s.meta.NodeID, "attempt_id", attemptID, "error", err)
+				"node_id", s.meta.AgentID, "attempt_id", attemptID, "error", err)
 		}
 		completed = true
 	}
 
 	sess := &ClientStreamSession{Stream: stream}
-	return s.handler(ctx, sess, s.meta)
+	return s.handler(ctx, sess)
 }
 
 // jitter returns a duration in [d/2, d] — full jitter dampens herd-style
@@ -509,7 +509,7 @@ func (t *outboundTransport) ensureSupervisor(_ context.Context, meta NodeMeta) {
 		t.mu.Unlock()
 		return
 	}
-	if existing, exists := t.supervisors[meta.NodeID]; exists && existing.dialAddress == meta.DialAddress {
+	if existing, exists := t.supervisors[meta.AgentID]; exists && existing.dialAddress == meta.DialAddress {
 		t.mu.Unlock()
 		return
 	}
@@ -526,14 +526,14 @@ func (t *outboundTransport) ensureSupervisor(_ context.Context, meta NodeMeta) {
 	// to have its cancel called exactly once.
 	var oldCancel context.CancelFunc
 	var hadOld bool
-	if existing, exists := t.supervisors[meta.NodeID]; exists {
+	if existing, exists := t.supervisors[meta.AgentID]; exists {
 		oldCancel = existing.cancel
 		hadOld = true
-		delete(t.supervisors, meta.NodeID)
+		delete(t.supervisors, meta.AgentID)
 	}
-	//nolint:gosec // G118: supervisor cancel is stored in supervisors[meta.NodeID].cancel and invoked by stopAll/removeSupervisor.
+	//nolint:gosec // G118: supervisor cancel is stored in supervisors[meta.AgentID].cancel and invoked by stopAll/removeSupervisor.
 	ctx, cancel := context.WithCancel(t.lifecycleCtx)
-	t.supervisors[meta.NodeID] = &outboundSupervisorEntry{cancel: cancel, dialAddress: meta.DialAddress}
+	t.supervisors[meta.AgentID] = &outboundSupervisorEntry{cancel: cancel, dialAddress: meta.DialAddress}
 	t.wg.Add(1)
 	fn := t.onSupervisorDelta
 	enrollFn := t.enrollFn

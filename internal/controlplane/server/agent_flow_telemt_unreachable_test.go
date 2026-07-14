@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"github.com/lost-coder/panvex/internal/security"
@@ -113,7 +114,7 @@ func TestTelemtUnreachableEndToEndSeverityLifecycle(t *testing.T) {
 	// --- helper: push a snapshot through the real inbound path ---
 	pushSnapshot := func(snap *gatewayrpc.RuntimeSnapshot, observedAt time.Time) {
 		t.Helper()
-		if err := server.applyAgentSnapshot(context.Background(), agentSnapshot{
+		if err := server.applyAgentSnapshot(context.Background(), gateway.AgentSnapshot{
 			AgentID: agentID,
 			Snap: &gatewayrpc.Snapshot{
 				NodeName:     "node-eu-1",

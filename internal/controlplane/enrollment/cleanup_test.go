@@ -19,7 +19,7 @@ import (
 // pins the recorder semantics on its own.
 func TestRecorderDeleteOlderThanRemovesAttempts(t *testing.T) {
 	store := enrollmenttest.NewMemStore()
-	rec := enrollment.NewRecorder(store, time.Now)
+	rec := enrollment.NewRecorder(store, time.Now, nil, nil)
 	ctx := context.Background()
 
 	// Old attempt: seed directly so we can back-date StartedAt past

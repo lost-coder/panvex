@@ -282,7 +282,7 @@ func TestProcessRegularAgentMessageRoutesAckToPriorityHandler(t *testing.T) {
 	if len(regularSnapshots) != 0 {
 		t.Fatalf("len(regularSnapshots) = %d, want %d", len(regularSnapshots), 0)
 	}
-	listedJobs := svc.List()
+	listedJobs := svc.ListWithContext(context.Background())
 	if len(listedJobs) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(listedJobs), 1)
 	}
@@ -310,7 +310,7 @@ func TestProcessPriorityAgentMessageRecordsAcknowledgement(t *testing.T) {
 		t.Fatalf("processPriorityAgentMessage() error = %v", err)
 	}
 
-	listedJobs := svc.List()
+	listedJobs := svc.ListWithContext(context.Background())
 	if len(listedJobs) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(listedJobs), 1)
 	}
@@ -340,7 +340,7 @@ func TestProcessPriorityAgentMessageRecordsResult(t *testing.T) {
 		t.Fatalf("processPriorityAgentMessage() error = %v", err)
 	}
 
-	listedJobs := svc.List()
+	listedJobs := svc.ListWithContext(context.Background())
 	if len(listedJobs) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(listedJobs), 1)
 	}
@@ -386,7 +386,7 @@ func TestProcessPriorityAgentMessageAsyncQueuesClientResultEffect(t *testing.T) 
 		t.Fatalf("effect.resultJSON = %q, want %q", effect.resultJSON, `{"error":"boom"}`)
 	}
 
-	listedJobs := svc.List()
+	listedJobs := svc.ListWithContext(context.Background())
 	if len(listedJobs) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(listedJobs), 1)
 	}
@@ -612,7 +612,7 @@ func TestDispatchReconnectRedeliveryAvoidsDuplicateRuntimeMutation(t *testing.T)
 		t.Fatalf("processPriorityAgentMessage(job_result) error = %v", err)
 	}
 
-	listedJobs := svc.List()
+	listedJobs := svc.ListWithContext(context.Background())
 	if len(listedJobs) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(listedJobs), 1)
 	}

@@ -93,16 +93,16 @@ func TestTokenForSession_DifferentSecret(t *testing.T) {
 }
 
 func TestTokenMatches_ConstantTime(t *testing.T) {
-	if TokenMatches("", "abc") {
+	if tokenMatches("", "abc") {
 		t.Fatal("empty supplied must not match")
 	}
-	if TokenMatches("abc", "") {
+	if tokenMatches("abc", "") {
 		t.Fatal("empty expected must not match")
 	}
-	if !TokenMatches("abc", "abc") {
+	if !tokenMatches("abc", "abc") {
 		t.Fatal("equal strings must match")
 	}
-	if TokenMatches("abc", "abd") {
+	if tokenMatches("abc", "abd") {
 		t.Fatal("differing strings must not match")
 	}
 }

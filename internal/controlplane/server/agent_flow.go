@@ -12,7 +12,6 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
 	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
-	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/security"
 	"go.opentelemetry.io/otel"
@@ -112,14 +111,6 @@ type agentEnrollmentResponse struct {
 	CAPEM          string
 	ExpiresAt      time.Time
 }
-
-// The agent-stream envelope (agentSnapshot) lives in the gateway package
-// (moved with the gRPC gateway extraction, P8.2d). This alias keeps the
-// server-internal call sites (agent_snapshot.go, agent_telemetry.go, tests)
-// compiling unchanged. P8.3 collapsed it into a thin envelope over
-// *gatewayrpc.Snapshot, so the former instanceSnapshot copy-type and its
-// alias are gone; instances are read from snapshot.Snap.Instances directly.
-type agentSnapshot = gateway.AgentSnapshot
 
 func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest, now time.Time) (agentEnrollmentResponse, error) {
 	// P3-OBS-01: agent enrollment is a low-volume, high-value path

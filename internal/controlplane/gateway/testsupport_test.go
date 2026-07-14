@@ -26,12 +26,8 @@ type stubDeps struct{}
 func (stubDeps) AuthorizeAgentConnect(context.Context, agenttransport.AgentSession) (string, string, error) {
 	return "", "", nil
 }
-func (stubDeps) ShouldTerminateForRevocation(context.Context, string, string) bool { return false }
-func (stubDeps) MarkTransportSwitchResolved(string)                                {}
-func (stubDeps) RegisterAgentSession(string, context.CancelFunc) (*agents.Session, func()) {
-	return nil, func() {}
-}
-func (stubDeps) NotifyAgentSession(string)                                           {}
+func (stubDeps) ShouldTerminateForRevocation(context.Context, string, string) bool   { return false }
+func (stubDeps) MarkTransportSwitchResolved(string)                                  {}
 func (stubDeps) ApplyAgentSnapshot(context.Context, AgentSnapshot) error             { return nil }
 func (stubDeps) AppendAudit(context.Context, string, string, string, map[string]any) {}
 func (stubDeps) RecordClientJobResult(context.Context, string, string, bool, string, string, time.Time) {
@@ -56,11 +52,12 @@ func newTestGateway(now func() time.Time) (*Gateway, *jobs.Service) {
 	svc := jobs.NewService()
 	svc.SetNow(now)
 	g := New(Config{
-		Deps:   stubDeps{},
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Jobs:   svc,
-		Obs:    metrics.NewCollectors(),
-		Now:    now,
+		Deps:     stubDeps{},
+		Sessions: agents.NewSessionManager(),
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Jobs:     svc,
+		Obs:      metrics.NewCollectors(),
+		Now:      now,
 	})
 	return g, svc
 }

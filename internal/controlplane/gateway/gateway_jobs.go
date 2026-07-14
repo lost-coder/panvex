@@ -40,7 +40,7 @@ func (g *Gateway) dispatchPendingJobs(ctx context.Context, sess agenttransport.A
 	}
 
 	if hasMore {
-		g.deps.NotifyAgentSession(agentID)
+		g.sessions.Notify(agentID)
 	}
 
 	return nil

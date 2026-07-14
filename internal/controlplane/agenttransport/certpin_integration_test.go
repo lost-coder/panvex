@@ -46,13 +46,13 @@ func TestOutboundSupervisor_PinMatch(t *testing.T) {
 	defer cancel()
 
 	var connectCount atomic.Int32
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCount.Add(1)
 		return nil // end session immediately
 	}
 
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n1", AgentID: "agent-match", DialAddress: stub.address},
+		NodeMeta{AgentID: "agent-match", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -85,7 +85,7 @@ func TestOutboundSupervisor_PinMismatch(t *testing.T) {
 	var connectCount atomic.Int32
 	var mismatchSeen atomic.Bool
 
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCount.Add(1)
 		return nil
 	}
@@ -94,7 +94,7 @@ func TestOutboundSupervisor_PinMismatch(t *testing.T) {
 	wrongPin := make([]byte, sha256.Size)
 
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n1", AgentID: "agent-mismatch", DialAddress: stub.address},
+		NodeMeta{AgentID: "agent-mismatch", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -136,14 +136,14 @@ func TestOutboundSupervisor_PinMissingFailsClosed(t *testing.T) {
 	defer cancel()
 
 	var connectCount atomic.Int32
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCount.Add(1)
 		return nil
 	}
 	var observed []string
 	var mu sync.Mutex
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n-nopin", AgentID: "agent-nopin", DialAddress: stub.address},
+		NodeMeta{AgentID: "agent-nopin", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -20,7 +21,7 @@ func TestApplyAgentSnapshotPartialPreservesLastKnown(t *testing.T) {
 	})
 
 	// Full snapshot establishes the baseline.
-	full := agentSnapshot{
+	full := gateway.AgentSnapshot{
 		AgentID: "agent-1",
 		Snap: &gatewayrpc.Snapshot{
 			NodeName: "node-a",
@@ -38,7 +39,7 @@ func TestApplyAgentSnapshotPartialPreservesLastKnown(t *testing.T) {
 	}
 
 	// Partial snapshot with blanked version / instances / uptime.
-	partial := agentSnapshot{
+	partial := gateway.AgentSnapshot{
 		AgentID: "agent-1",
 		Snap: &gatewayrpc.Snapshot{
 			Version:   "",

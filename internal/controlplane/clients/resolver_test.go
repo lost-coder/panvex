@@ -167,3 +167,43 @@ func TestServiceWrappers(t *testing.T) {
 		t.Fatalf("Service.AggregateUsage on nil returned non-zero")
 	}
 }
+
+// ResolveIDByName is the naive linear reference implementation of the
+// agent-scoped client-name lookup. Production uses the indexed
+// Service.MirrorResolveIDByName; this one stays in the test build as the
+// differential oracle the mirror index is checked against.
+//
+// It returns the managed-client ID that matches clientName on the given
+// agent, or "" when no match is found.
+//
+// A client matches when it is either directly assigned to agentID OR
+// assigned to a fleet group that agentID belongs to (agentFleetGroupID).
+// This mirrors the fleet-group fallback fix from P2-LOG-07 / M-C3:
+// without it, usage stats for clients attached via fleet-group
+// assignments were silently dropped.
+//
+// Inputs:
+//   - clients: snapshot keyed by client ID (DeletedAt clients pass through;
+//     callers that want to skip tombstones should prefilter).
+//   - assignmentsByClient: snapshot keyed by client ID.
+//   - agentID, agentFleetGroupID, clientName: lookup parameters.
+//
+// This is a pure function. See controlplane/server/clients_flow.go for
+// the lock-ordering discipline used to build consistent snapshots.
+func ResolveIDByName(
+	clients map[string]Client,
+	assignmentsByClient map[string][]Assignment,
+	agentID string,
+	agentFleetGroupID string,
+	clientName string,
+) string {
+	for clientID, client := range clients {
+		if client.Name != clientName {
+			continue
+		}
+		if assignmentMatchesAgent(assignmentsByClient[clientID], agentID, agentFleetGroupID) {
+			return clientID
+		}
+	}
+	return ""
+}

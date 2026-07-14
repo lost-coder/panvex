@@ -6,18 +6,10 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
+	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
-
-// runtimeLifecycleState is a thin back-compat wrapper over
-// controlplane/agents.RuntimeLifecycleState. Kept so the server package's
-// existing call sites and tests continue to compile; new code in the
-// server package should call agents.RuntimeLifecycleState directly.
-// See P3-ARCH-01a.
-func runtimeLifecycleState(snapshot *gatewayrpc.RuntimeSnapshot) string {
-	return agents.RuntimeLifecycleState(snapshot)
-}
 
 func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt time.Time) AgentRuntime {
 	dcs := make([]RuntimeDC, 0, len(snapshot.Dcs))
@@ -114,7 +106,7 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		StartupProgressPct:         snapshot.StartupProgressPct,
 		InitializationStatus:       snapshot.InitializationStatus,
 		Degraded:                   snapshot.Degraded,
-		LifecycleState:             runtimeLifecycleState(snapshot),
+		LifecycleState:             agents.RuntimeLifecycleState(snapshot),
 		InitializationStage:        snapshot.InitializationStage,
 		InitializationProgressPct:  snapshot.InitializationProgressPct,
 		TransportMode:              snapshot.TransportMode,
@@ -211,7 +203,7 @@ func connectionClassCountsFromSnapshot(rows []*gatewayrpc.ConnectionsClassCount)
 	return out
 }
 
-func serverLoadPointFromSnapshot(agent Agent, snapshot agentSnapshot) storage.ServerLoadPointRecord {
+func serverLoadPointFromSnapshot(agent Agent, snapshot gateway.AgentSnapshot) storage.ServerLoadPointRecord {
 	rt := snapshot.Snap.Runtime
 	record := storage.ServerLoadPointRecord{
 		AgentID:                agent.ID,
@@ -289,7 +281,7 @@ func serverLoadPointFromSnapshot(agent Agent, snapshot agentSnapshot) storage.Se
 	return record
 }
 
-func dcHealthPointsFromSnapshot(agent Agent, snapshot agentSnapshot) []storage.DCHealthPointRecord {
+func dcHealthPointsFromSnapshot(agent Agent, snapshot gateway.AgentSnapshot) []storage.DCHealthPointRecord {
 	rt := snapshot.Snap.Runtime
 	capturedAt := snapshot.ObservedAt.UTC()
 
@@ -334,7 +326,7 @@ func dcHealthPointsFromSnapshot(agent Agent, snapshot agentSnapshot) []storage.D
 
 // telemetryWriteUnitForRuntime assembles the telemetry payload for one agent
 // snapshot when runtime data is present. Returns the unit ready to enqueue.
-func telemetryWriteUnitForRuntime(agent Agent, snapshot agentSnapshot) batchwriter.TelemetryWriteUnit {
+func telemetryWriteUnitForRuntime(agent Agent, snapshot gateway.AgentSnapshot) batchwriter.TelemetryWriteUnit {
 	rec := runtimeCurrentRecordFromAgent(agent)
 	unit := batchwriter.TelemetryWriteUnit{
 		AgentID:   agent.ID,
@@ -401,7 +393,7 @@ func securityInventoryCarriedForward(sec *gatewayrpc.RuntimeSecurityInventorySna
 
 // enqueueRuntimeBatchWrites pushes runtime telemetry, server-load and DC
 // health points for one snapshot. No-op when the snapshot has no runtime.
-func (s *Server) enqueueRuntimeBatchWrites(agent Agent, snapshot agentSnapshot) {
+func (s *Server) enqueueRuntimeBatchWrites(agent Agent, snapshot gateway.AgentSnapshot) {
 	if snapshot.Snap.Runtime == nil {
 		return
 	}
@@ -414,7 +406,7 @@ func (s *Server) enqueueRuntimeBatchWrites(agent Agent, snapshot agentSnapshot) 
 
 // enqueueClientIPHistory pushes one ClientIPHistoryRecord per active IP in
 // the snapshot.
-func (s *Server) enqueueClientIPHistory(ctx context.Context, snapshot agentSnapshot) {
+func (s *Server) enqueueClientIPHistory(ctx context.Context, snapshot gateway.AgentSnapshot) {
 	if !snapshot.Snap.HasClientIps {
 		return
 	}
@@ -439,7 +431,7 @@ func (s *Server) enqueueClientIPHistory(ctx context.Context, snapshot agentSnaps
 
 // enqueueAgentSnapshotBatchWrites runs the asynchronous DB-write side of one
 // agent snapshot. No-op when the batch writer is disabled.
-func (s *Server) enqueueAgentSnapshotBatchWrites(ctx context.Context, agent Agent, instances []Instance, metric *MetricSnapshot, snapshot agentSnapshot) {
+func (s *Server) enqueueAgentSnapshotBatchWrites(ctx context.Context, agent Agent, instances []Instance, metric *MetricSnapshot, snapshot gateway.AgentSnapshot) {
 	if s.batchWriter == nil {
 		return
 	}

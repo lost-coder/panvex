@@ -71,12 +71,6 @@ func NewIPLockoutTracker() *IPLockoutTracker {
 	}
 }
 
-// IsLocked reports whether the source IP is currently in the post-budget
-// timeout. Use IsLockedWithContext from request handlers.
-func (t *IPLockoutTracker) IsLocked(ip string, now time.Time) bool {
-	return t.IsLockedWithContext(context.Background(), ip, now)
-}
-
 // IsLockedWithContext is the ctx-aware variant. ctx is accepted for API
 // symmetry with LockoutTracker; the in-memory tracker performs no I/O.
 func (t *IPLockoutTracker) IsLockedWithContext(_ context.Context, ip string, now time.Time) bool {
@@ -102,15 +96,9 @@ func (t *IPLockoutTracker) IsLockedWithContext(_ context.Context, ip string, now
 	return true
 }
 
-// RecordFailure logs a failure for the source IP at "now". If the
-// rolling-window count reaches the budget, the IP transitions to the
-// locked state for IPLockoutDuration. Use RecordFailureWithContext from
-// request handlers.
-func (t *IPLockoutTracker) RecordFailure(ip string, now time.Time) {
-	t.RecordFailureWithContext(context.Background(), ip, now)
-}
-
-// RecordFailureWithContext is the ctx-aware variant.
+// RecordFailureWithContext logs a failure for the source IP at "now". If the
+// rolling-window count reaches the budget, the IP transitions to the locked
+// state for IPLockoutDuration.
 func (t *IPLockoutTracker) RecordFailureWithContext(_ context.Context, ip string, now time.Time) {
 	if ip == "" {
 		return
@@ -148,13 +136,6 @@ func (t *IPLockoutTracker) RecordFailureWithContext(_ context.Context, ip string
 		entry.failures = nil
 	}
 	t.cleanupLocked(now)
-}
-
-// CheckAndRecordFailure atomically checks and records. Returns true if
-// the IP is already locked (failure is NOT recorded in that case). Use
-// CheckAndRecordFailureWithContext from request handlers.
-func (t *IPLockoutTracker) CheckAndRecordFailure(ip string, now time.Time) bool {
-	return t.CheckAndRecordFailureWithContext(context.Background(), ip, now)
 }
 
 // CheckAndRecordFailureWithContext is the ctx-aware variant.

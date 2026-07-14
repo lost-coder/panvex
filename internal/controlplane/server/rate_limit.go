@@ -3,7 +3,6 @@ package server
 import (
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/sessions"
 )
@@ -14,17 +13,11 @@ import (
 // auth context, s.now(), writeError) — the task deliberately keeps
 // transport glue in server/.
 
-type fixedWindowRateLimiter = sessions.RateLimiter
-
-func newFixedWindowRateLimiter(limit int, window time.Duration) *fixedWindowRateLimiter {
-	return sessions.NewRateLimiter(limit, window)
-}
-
 // withRateLimit wraps a handler with a per-key rate-limit gate.
 // `scope` labels rejections in the panvex_ratelimit_rejected_total
 // metric — must be one of rateLimitScopes (login, agent_bootstrap,
 // sensitive, grpc_connect) so dashboards/alerts pre-init zero series.
-func (s *Server) withRateLimit(limiter *fixedWindowRateLimiter, scope string, keyFn func(*http.Request) string) func(http.Handler) http.Handler {
+func (s *Server) withRateLimit(limiter *sessions.RateLimiter, scope string, keyFn func(*http.Request) string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if limiter == nil {

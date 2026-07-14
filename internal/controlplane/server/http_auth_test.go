@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/sessions"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
@@ -212,7 +213,7 @@ func TestLoginLockoutIntegration(t *testing.T) {
 	}
 
 	// Exhaust login attempts.
-	for i := 0; i < accountLockoutMaxAttempts+1; i++ {
+	for i := 0; i < sessions.LockoutMaxAttempts+1; i++ {
 		performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 			"username": "admin",
 			"password": "WrongPassword1",
@@ -265,7 +266,7 @@ func TestLoginTOTPLockoutIntegration(t *testing.T) {
 
 	// Submit TOTPLockoutMaxAttempts wrong codes against the right password.
 	// The counter should be on the TOTP tracker, not the password tracker.
-	for i := 0; i < totpLockoutMaxAttempts; i++ {
+	for i := 0; i < sessions.TOTPLockoutMaxAttempts; i++ {
 		resp := performJSONRequest(t, srv, http.MethodPost, "/api/auth/login", map[string]string{
 			"username":  "alice",
 			"password":  "Alice1password",

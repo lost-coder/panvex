@@ -5,8 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -55,7 +53,7 @@ func (s *Service) CreateUser(ctx context.Context, input BootstrapInput, now time
 
 	if _, err := s.loadUserByUsernameCtx(ctx, username); err == nil {
 		return User{}, ErrUserAlreadyExists
-	} else if !errors.Is(err, ErrInvalidCredentials) {
+	} else if !errors.Is(err, ErrUserNotFound) {
 		return User{}, err
 	}
 
@@ -152,7 +150,7 @@ func (s *Service) validateUsernameChange(ctx context.Context, user User, updated
 	if err == nil && existing.ID != user.ID {
 		return ErrUserAlreadyExists
 	}
-	if err != nil && !errors.Is(err, ErrInvalidCredentials) {
+	if err != nil && !errors.Is(err, ErrUserNotFound) {
 		return err
 	}
 	return nil
@@ -206,17 +204,14 @@ func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 		}
 	}
 
-	if s.userStore != nil {
-		if err := s.userStore.DeleteUser(ctx, userID); err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				return ErrUserNotFound
-			}
-			return err
+	if err := s.userStore.DeleteUser(ctx, user.ID); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return ErrUserNotFound
 		}
+		return err
 	}
 
 	s.mu.Lock()
-	s.deleteUserLocked(user)
 	delete(s.pendingTotpSetup, userID)
 	s.mu.Unlock()
 
@@ -229,107 +224,45 @@ func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 }
 
 func (s *Service) loadManagedUserByIDCtx(ctx context.Context, userID string) (User, error) {
-	if s.userStore != nil {
-		record, err := s.userStore.GetUserByID(ctx, userID)
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				return User{}, ErrUserNotFound
-			}
-			return User{}, err
+	record, err := s.userStore.GetUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return User{}, ErrUserNotFound
 		}
-		return s.userFromStoredRecord(record)
+		return User{}, err
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if user, ok := s.usersByID[userID]; ok {
-		return user, nil
-	}
-
-	return User{}, ErrUserNotFound
+	return s.userFromStoredRecord(record)
 }
 
 func (s *Service) persistManagedUserCtx(ctx context.Context, user User) error {
-	previousUsername := ""
-
-	s.mu.Lock()
-	if existing, ok := s.usersByID[user.ID]; ok {
-		previousUsername = existing.Username
+	record := userToRecord(user)
+	encrypted, err := s.encryptTotp(record.TotpSecret)
+	if err != nil {
+		return err
 	}
-	s.mu.Unlock()
-
-	if s.userStore != nil {
-		record := userToRecord(user)
-		encrypted, err := s.encryptTotp(record.TotpSecret)
-		if err != nil {
-			return err
+	record.TotpSecret = encrypted
+	if err := s.userStore.PutUser(ctx, record); err != nil {
+		if errors.Is(err, storage.ErrConflict) {
+			return ErrUserAlreadyExists
 		}
-		record.TotpSecret = encrypted
-		if err := s.userStore.PutUser(ctx, record); err != nil {
-			if errors.Is(err, storage.ErrConflict) {
-				return ErrUserAlreadyExists
-			}
-			return err
-		}
+		return err
 	}
-
-	s.mu.Lock()
-	s.putUserLocked(user, previousUsername)
-	s.mu.Unlock()
-
 	return nil
 }
 
 func (s *Service) countAdminsCtx(ctx context.Context) (int, error) {
-	if s.userStore != nil {
-		records, err := s.userStore.ListUsers(ctx)
-		if err != nil {
-			return 0, err
-		}
-
-		count := 0
-		for _, record := range records {
-			if Role(record.Role) == RoleAdmin {
-				count++
-			}
-		}
-		return count, nil
+	records, err := s.userStore.ListUsers(ctx)
+	if err != nil {
+		return 0, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	count := 0
-	for _, user := range s.users {
-		if user.Role == RoleAdmin {
+	for _, record := range records {
+		if Role(record.Role) == RoleAdmin {
 			count++
 		}
 	}
 	return count, nil
-}
-
-// putUserLocked installs (or updates) a user record in both indices.
-// Caller must hold s.mu for write. previousUsername (when non-empty)
-// removes the stale name->record entry left over from a username
-// rename so the username index does not double-up.
-func (s *Service) putUserLocked(user User, previousUsername string) {
-	if previousUsername != "" && previousUsername != user.Username {
-		delete(s.users, previousUsername)
-	}
-	s.users[user.Username] = user
-	if user.ID != "" {
-		s.usersByID[user.ID] = user
-	}
-}
-
-// deleteUserLocked removes a user from both indices. Caller must hold
-// s.mu for write.
-func (s *Service) deleteUserLocked(user User) {
-	delete(s.users, user.Username)
-	if user.ID != "" {
-		delete(s.usersByID, user.ID)
-	}
 }
 
 // BootstrapUser creates a local user with TOTP disabled by default.
@@ -343,50 +276,15 @@ func (s *Service) BootstrapUser(ctx context.Context, input BootstrapInput, now t
 		return User{}, "", err
 	}
 
-	if s.userStore == nil {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-
-		id, err := randomUserID()
-		if err != nil {
-			return User{}, "", err
-		}
-		s.sequence++
-		user := User{
-			ID:           id,
-			Username:     input.Username,
-			PasswordHash: hash,
-			Role:         input.Role,
-			TotpEnabled:  false,
-			TotpSecret:   "",
-			CreatedAt:    now.UTC(),
-		}
-		s.putUserLocked(user, "")
-
-		return user, "", nil
-	}
-
-	users, err := s.userStore.ListUsers(ctx)
-	if err != nil {
-		return User{}, "", err
-	}
-
 	// M-17: do not hold s.mu across the userStore.PutUser round-trip.
 	// The previous form blocked every other auth-flow caller for a full
-	// DB RTT. Now we (a) reserve the next sequence/ID under the lock,
-	// (b) drop the lock, (c) hit the store, (d) re-take the lock only
-	// to install the row. Failure paths re-take the lock briefly to
-	// roll the sequence back so concurrent bootstraps never re-use an
-	// allocated ID.
+	// DB RTT. IDs are random (randomUserID), so nothing needs reserving
+	// under the lock: we mint the ID, hit the store, and re-take the lock
+	// only to install the row.
 	id, err := randomUserID()
 	if err != nil {
 		return User{}, "", err
 	}
-
-	s.mu.Lock()
-	s.sequence = maxSequence(s.sequence, maxUserSequence(users))
-	s.sequence++
-	s.mu.Unlock()
 
 	user := User{
 		ID:           id,
@@ -401,40 +299,21 @@ func (s *Service) BootstrapUser(ctx context.Context, input BootstrapInput, now t
 	bootstrapRecord := userToRecord(user)
 	encrypted, encErr := s.encryptTotp(bootstrapRecord.TotpSecret)
 	if encErr != nil {
-		s.mu.Lock()
-		s.sequence--
-		s.mu.Unlock()
 		return User{}, "", encErr
 	}
 	bootstrapRecord.TotpSecret = encrypted
 
 	if err := s.userStore.PutUser(ctx, bootstrapRecord); err != nil {
-		s.mu.Lock()
-		s.sequence--
-		s.mu.Unlock()
 		return User{}, "", err
 	}
-
-	s.mu.Lock()
-	s.putUserLocked(user, "")
-	s.mu.Unlock()
 
 	return user, "", nil
 }
 
 // ListUsers returns every local account with sensitive fields (password hash,
-// TOTP secret) elided. It reads from the persistent user store when one is
-// wired (NewServiceWithStore), sorting by CreatedAt then ID for a stable
-// admin view; without a store it falls back to the in-memory snapshot.
+// TOTP secret) elided. Ordering (CreatedAt, then ID) comes from the store.
 // (Moved out of the server package by P8.2h — was server.listUsersWithContext.)
 func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
-	if s.userStore == nil {
-		users := s.SnapshotUsers()
-		sortUsers(users)
-		elideSensitive(users)
-		return users, nil
-	}
-
 	records, err := s.userStore.ListUsers(ctx)
 	if err != nil {
 		return nil, err
@@ -453,16 +332,6 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	return users, nil
 }
 
-// sortUsers orders users by CreatedAt then ID (stable admin view).
-func sortUsers(users []User) {
-	sort.Slice(users, func(left, right int) bool {
-		if users[left].CreatedAt.Equal(users[right].CreatedAt) {
-			return users[left].ID < users[right].ID
-		}
-		return users[left].CreatedAt.Before(users[right].CreatedAt)
-	})
-}
-
 // elideSensitive zeroes the password hash and TOTP secret on every user so
 // list/get responses never carry credential material.
 func elideSensitive(users []User) {
@@ -472,52 +341,34 @@ func elideSensitive(users []User) {
 	}
 }
 
-// SnapshotUsers returns a copy of the current local-account state.
-func (s *Service) SnapshotUsers() []User {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	result := make([]User, 0, len(s.users))
-	for _, user := range s.users {
-		result = append(result, user)
-	}
-
-	return result
-}
-
-// LoadUsers replaces the current local-account state with the provided users.
-func (s *Service) LoadUsers(users []User) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.users = make(map[string]User, len(users))
-	s.usersByID = make(map[string]User, len(users))
+// LoadUsers seeds the user store with the provided accounts. Used by the
+// control-plane when it is constructed with a static user list instead of a
+// persistent store, and by tests.
+func (s *Service) LoadUsers(ctx context.Context, users []User) error {
 	for _, user := range users {
-		s.putUserLocked(user, "")
+		record := userToRecord(user)
+		encrypted, err := s.encryptTotp(record.TotpSecret)
+		if err != nil {
+			return err
+		}
+		record.TotpSecret = encrypted
+		if err := s.userStore.PutUser(ctx, record); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // GetUserByID returns the user record that owns the provided identifier.
 func (s *Service) GetUserByID(ctx context.Context, userID string) (User, error) {
-	if s.userStore != nil {
-		record, err := s.userStore.GetUserByID(ctx, userID)
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				return User{}, ErrInvalidCredentials
-			}
-			return User{}, err
+	record, err := s.userStore.GetUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return User{}, ErrUserNotFound
 		}
-		return s.userFromStoredRecord(record)
+		return User{}, err
 	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if user, ok := s.usersByID[userID]; ok {
-		return user, nil
-	}
-
-	return User{}, ErrInvalidCredentials
+	return s.userFromStoredRecord(record)
 }
 
 func userToRecord(user User) storage.UserRecord {
@@ -544,51 +395,30 @@ func userFromRecord(record storage.UserRecord) User {
 	}
 }
 
+// loadUserByUsernameCtx returns the account owning username, or
+// ErrUserNotFound when no such account exists. Callers on the LOGIN path
+// (Authenticate) MUST map that to the anonymous ErrInvalidCredentials so the
+// response does not distinguish "no such user" from "wrong password" — see
+// the mapping in sessions.go.
 func (s *Service) loadUserByUsernameCtx(ctx context.Context, username string) (User, error) {
-	s.mu.RLock()
-	userStore := s.userStore
-	s.mu.RUnlock()
-
-	if userStore != nil {
-		record, err := userStore.GetUserByUsername(ctx, username)
-		if err != nil {
-			if errors.Is(err, storage.ErrNotFound) {
-				return User{}, ErrInvalidCredentials
-			}
-			return User{}, err
+	record, err := s.userStore.GetUserByUsername(ctx, username)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return User{}, ErrUserNotFound
 		}
-		return s.userFromStoredRecord(record)
+		return User{}, err
 	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	user, ok := s.users[username]
-	if !ok {
-		return User{}, ErrInvalidCredentials
-	}
-
-	return user, nil
+	return s.userFromStoredRecord(record)
 }
 
 func (s *Service) storeUserWithContext(ctx context.Context, user User) error {
-	if s.userStore != nil {
-		record := userToRecord(user)
-		encrypted, err := s.encryptTotp(record.TotpSecret)
-		if err != nil {
-			return err
-		}
-		record.TotpSecret = encrypted
-		if err := s.userStore.PutUser(ctx, record); err != nil {
-			return err
-		}
+	record := userToRecord(user)
+	encrypted, err := s.encryptTotp(record.TotpSecret)
+	if err != nil {
+		return err
 	}
-
-	s.mu.Lock()
-	s.putUserLocked(user, "")
-	s.mu.Unlock()
-
-	return nil
+	record.TotpSecret = encrypted
+	return s.userStore.PutUser(ctx, record)
 }
 
 // userFromStoredRecord wraps userFromRecord with TOTP decryption. Used
@@ -600,32 +430,6 @@ func (s *Service) userFromStoredRecord(record storage.UserRecord) (User, error) 
 	}
 	record.TotpSecret = plaintext
 	return userFromRecord(record), nil
-}
-
-func maxUserSequence(users []storage.UserRecord) uint64 {
-	var maxValue uint64
-	for _, user := range users {
-		if !strings.HasPrefix(user.ID, "user-") {
-			continue
-		}
-		value, err := strconv.ParseUint(strings.TrimPrefix(user.ID, "user-"), 10, 64)
-		if err != nil {
-			continue
-		}
-		if value > maxValue {
-			maxValue = value
-		}
-	}
-
-	return maxValue
-}
-
-func maxSequence(left, right uint64) uint64 {
-	if right > left {
-		return right
-	}
-
-	return left
 }
 
 func randomUserID() (string, error) {

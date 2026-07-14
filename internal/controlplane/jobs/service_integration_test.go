@@ -119,11 +119,11 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKeyAfterRestart(t *testing.T) 
 		t.Fatalf("Enqueue() duplicate after restart error = %v, want %v", err, jobs.ErrDuplicateIdempotencyKey)
 	}
 
-	if len(restored.List()) != 1 {
-		t.Fatalf("len(List()) = %d, want %d", len(restored.List()), 1)
+	if len(restored.ListWithContext(context.Background())) != 1 {
+		t.Fatalf("len(List()) = %d, want %d", len(restored.ListWithContext(context.Background())), 1)
 	}
-	if restored.List()[0].ID != job.ID {
-		t.Fatalf("restored.List()[0].ID = %q, want %q", restored.List()[0].ID, job.ID)
+	if restored.ListWithContext(context.Background())[0].ID != job.ID {
+		t.Fatalf("restored.ListWithContext(context.Background())[0].ID = %q, want %q", restored.ListWithContext(context.Background())[0].ID, job.ID)
 	}
 }
 
@@ -155,7 +155,7 @@ func TestServiceRecordResultPersistsTargetsAcrossRestart(t *testing.T) {
 
 	restored := jobs.NewServiceWithStore(context.Background(), store)
 	restored.SetNow(func() time.Time { return now.Add(20 * time.Second) })
-	list := restored.List()
+	list := restored.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(list), 1)
 	}
@@ -200,7 +200,7 @@ func TestServicePersistsStructuredClientPayloadAndResultAcrossRestart(t *testing
 
 	restored := jobs.NewServiceWithStore(context.Background(), store)
 	restored.SetNow(func() time.Time { return now.Add(20 * time.Second) })
-	list := restored.List()
+	list := restored.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(list), 1)
 	}
@@ -239,7 +239,7 @@ func TestServiceMarkDeliveredKeepsInMemoryStateWhenPersistenceFails(t *testing.T
 	store.putJobErr = errors.New("put job failed")
 	service.MarkDelivered(context.Background(), "agent-1", job.ID, now.Add(5*time.Second))
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(list), 1)
 	}
@@ -304,7 +304,7 @@ func TestServiceListPersistsExpiredQueuedJobsAcrossRestart(t *testing.T) {
 	}
 
 	first.SetNow(func() time.Time { return now.Add(2 * time.Minute) })
-	list := first.List()
+	list := first.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want %d", len(list), 1)
 	}
@@ -316,18 +316,18 @@ func TestServiceListPersistsExpiredQueuedJobsAcrossRestart(t *testing.T) {
 	}
 
 	restored := jobs.NewServiceWithStore(context.Background(), store)
-	restoredList := restored.List()
+	restoredList := restored.ListWithContext(context.Background())
 	if len(restoredList) != 1 {
-		t.Fatalf("len(restored.List()) = %d, want %d", len(restoredList), 1)
+		t.Fatalf("len(restored.ListWithContext(context.Background())) = %d, want %d", len(restoredList), 1)
 	}
 	if restoredList[0].ID != job.ID {
-		t.Fatalf("restored.List()[0].ID = %q, want %q", restoredList[0].ID, job.ID)
+		t.Fatalf("restored.ListWithContext(context.Background())[0].ID = %q, want %q", restoredList[0].ID, job.ID)
 	}
 	if restoredList[0].Status != jobs.StatusExpired {
-		t.Fatalf("restored.List()[0].Status = %q, want %q", restoredList[0].Status, jobs.StatusExpired)
+		t.Fatalf("restored.ListWithContext(context.Background())[0].Status = %q, want %q", restoredList[0].Status, jobs.StatusExpired)
 	}
 	if restoredList[0].Targets[0].Status != jobs.TargetStatusExpired {
-		t.Fatalf("restored.List()[0].Targets[0].Status = %q, want %q", restoredList[0].Targets[0].Status, jobs.TargetStatusExpired)
+		t.Fatalf("restored.ListWithContext(context.Background())[0].Targets[0].Status = %q, want %q", restoredList[0].Targets[0].Status, jobs.TargetStatusExpired)
 	}
 }
 
@@ -369,7 +369,7 @@ func TestServiceListAllowsConcurrentUpdateWhileExpirationPersistenceBlocks(t *te
 
 	listDone := make(chan []jobs.Job, 1)
 	go func() {
-		listDone <- service.List()
+		listDone <- service.ListWithContext(context.Background())
 	}()
 
 	select {
@@ -401,7 +401,7 @@ func TestServiceListAllowsConcurrentUpdateWhileExpirationPersistenceBlocks(t *te
 		t.Fatal("List() did not complete after persistence release")
 	}
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != 2 {
 		t.Fatalf("len(List()) after unblock = %d, want %d", len(list), 2)
 	}
@@ -460,7 +460,7 @@ func TestServiceMarkDeliveredAllowsConcurrentListWhilePersistenceBlocks(t *testi
 
 	listDone := make(chan []jobs.Job, 1)
 	go func() {
-		listDone <- service.List()
+		listDone <- service.ListWithContext(context.Background())
 	}()
 
 	select {
@@ -536,21 +536,21 @@ func TestServiceUpdateTargetPersistsLatestVersionAfterOutOfOrderWrites(t *testin
 	}
 
 	restored := jobs.NewServiceWithStore(context.Background(), sqliteStore)
-	restoredList := restored.List()
+	restoredList := restored.ListWithContext(context.Background())
 	if len(restoredList) != 1 {
-		t.Fatalf("len(restored.List()) = %d, want %d", len(restoredList), 1)
+		t.Fatalf("len(restored.ListWithContext(context.Background())) = %d, want %d", len(restoredList), 1)
 	}
 	if restoredList[0].Status != jobs.StatusFailed {
-		t.Fatalf("restored.List()[0].Status = %q, want %q", restoredList[0].Status, jobs.StatusFailed)
+		t.Fatalf("restored.ListWithContext(context.Background())[0].Status = %q, want %q", restoredList[0].Status, jobs.StatusFailed)
 	}
 	if len(restoredList[0].Targets) != 1 {
-		t.Fatalf("len(restored.List()[0].Targets) = %d, want %d", len(restoredList[0].Targets), 1)
+		t.Fatalf("len(restored.ListWithContext(context.Background())[0].Targets) = %d, want %d", len(restoredList[0].Targets), 1)
 	}
 	if restoredList[0].Targets[0].Status != jobs.TargetStatusFailed {
-		t.Fatalf("restored.List()[0].Targets[0].Status = %q, want %q", restoredList[0].Targets[0].Status, jobs.TargetStatusFailed)
+		t.Fatalf("restored.ListWithContext(context.Background())[0].Targets[0].Status = %q, want %q", restoredList[0].Targets[0].Status, jobs.TargetStatusFailed)
 	}
 	if restoredList[0].Targets[0].ResultText != "failed" {
-		t.Fatalf("restored.List()[0].Targets[0].ResultText = %q, want %q", restoredList[0].Targets[0].ResultText, "failed")
+		t.Fatalf("restored.ListWithContext(context.Background())[0].Targets[0].ResultText = %q, want %q", restoredList[0].Targets[0].ResultText, "failed")
 	}
 }
 
@@ -725,7 +725,7 @@ func TestEnqueueDuplicateKeyRejectedDuringOutOfLockWindow(t *testing.T) {
 		t.Fatalf("third Enqueue err = %v, want ErrDuplicateIdempotencyKey", err)
 	}
 
-	list := service.List()
+	list := service.ListWithContext(context.Background())
 	if len(list) != 1 {
 		t.Fatalf("len(List()) = %d, want 1 (exactly one winner)", len(list))
 	}
@@ -816,7 +816,7 @@ func TestEnqueuePersistFailureRollsBack(t *testing.T) {
 	}
 
 	// No job should be visible in the in-memory state.
-	if list := service.List(); len(list) != 0 {
+	if list := service.ListWithContext(context.Background()); len(list) != 0 {
 		t.Fatalf("len(List()) = %d, want 0 after rollback", len(list))
 	}
 	if depth := service.QueueDepth(); depth != 0 {

@@ -23,16 +23,17 @@ type transportQueries interface {
 
 // SessionHandler is the application-layer per-session handler. It runs the
 // agent protocol over the given session and returns when the session ends.
-type SessionHandler func(ctx context.Context, sess AgentSession, meta NodeMeta) error
+// The agent identity is rediscovered from the session's peer context, so
+// the handler takes no NodeMeta: that type is the transport layer's own
+// dial-time view of a node.
+type SessionHandler func(ctx context.Context, sess AgentSession) error
 
 // NodeMeta is the transport-layer view of an agent identity. Domain language
-// uses "node" (per spec); the DB table is `agents`. NodeID == AgentID for the
-// current single-agent-per-node schema; both fields are kept so the contract
-// can grow without breaking call sites. DialAddress is set for outbound nodes
-// and is the host:port the panel will dial.
+// uses "node" (per spec); the DB table is `agents`, and one node is one agent
+// row, so AgentID is the only identifier. DialAddress is set for outbound
+// nodes and is the host:port the panel will dial.
 type NodeMeta struct {
 	AgentID      string
-	NodeID       string
 	NodeName     string
 	FleetGroupID string
 	DialAddress  string
@@ -45,11 +46,10 @@ const (
 	TransportModeOutbound = "outbound"
 )
 
-// Manager owns the lifecycle of agent transports — both inbound (gRPC stream
-// initiated by the agent) and outbound (panel dials a listening agent).
-// The inbound field is a scaffold; the actual gRPC registration is done by
-// cmd/control-plane via the regular Server until a future migration moves
-// dispatch through Manager.
+// Manager owns the lifecycle of outbound agent transports (the panel dials a
+// listening agent). Inbound sessions — the gRPC stream the agent initiates —
+// are registered by cmd/control-plane on the regular Server and never pass
+// through Manager.
 //
 // Lock order: m.mu → outbound.mu. Never acquire m.mu while holding
 // outbound.mu, and never hold m.mu across a DB call or other blocking IO.
@@ -141,7 +141,6 @@ func (m *Manager) Start(ctx context.Context) error {
 		}
 		m.outbound.ensureSupervisor(ctx, NodeMeta{
 			AgentID:     row.ID,
-			NodeID:      row.ID,
 			DialAddress: row.DialAddress.String,
 		})
 	}
@@ -186,7 +185,6 @@ func (m *Manager) OnNodeChanged(ctx context.Context, nodeID string) {
 	}
 	meta := NodeMeta{
 		AgentID:     row.ID,
-		NodeID:      row.ID,
 		DialAddress: row.DialAddress.String,
 	}
 	switch row.TransportMode {

@@ -200,22 +200,3 @@ func (s *LiveStore) Remove(agentID string) {
 	delete(s.agents, agentID)
 	delete(s.instances, agentID)
 }
-
-// Has reports whether the agent is present in the live mirror. Provided for
-// store completeness and test assertions; it is NOT used on the hot path. In
-// particular it is not the snapshot resurrection guard — that lives in the
-// server and keys off revokedAgentIDs, not live presence.
-func (s *LiveStore) Has(agentID string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	_, ok := s.agents[agentID]
-	return ok
-}
-
-// Len reports the number of agents in the live mirror. Provided for store
-// completeness and test assertions; not used on the hot path.
-func (s *LiveStore) Len() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.agents)
-}

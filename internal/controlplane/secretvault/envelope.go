@@ -115,7 +115,7 @@ func dekCacheKey(domain string, version int) string {
 // NewWithEnvelope is the production constructor: same passphrase /
 // salt chain as NewWithSalt, but additionally loads (or initialises)
 // per-domain DEKs from the CPSecretReader. New writes land in PVS3
-// format; PVS1/PVS2 reads stay supported as before.
+// format; PVS2 reads stay supported as before.
 //
 // On first start with envelope mode, a DEK is minted per domain, its
 // wrapped form persisted, and the KEK fingerprint stamped so a future

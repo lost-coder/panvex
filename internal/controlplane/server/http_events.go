@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"net"
 	"net/http"
 	"os"
@@ -110,12 +109,9 @@ func (s *Server) handleEvents() http.HandlerFunc {
 					return
 				}
 
+				// eventbus.Publish pre-marshals every event, so Raw is
+				// always populated by the time it reaches a subscriber.
 				payload := event.Raw
-				if len(payload) == 0 {
-					// Fallback for backends that do not pre-marshal
-					// (test fakes wired via NewHubWithBackend).
-					payload = mustJSON(event)
-				}
 				writeCtx, cancelWrite := context.WithTimeout(ctx, wsWriteTimeout)
 				err := conn.Write(writeCtx, websocket.MessageText, payload)
 				cancelWrite()
@@ -179,13 +175,4 @@ func wsDevLoopbackEnabled() bool {
 	default:
 		return false
 	}
-}
-
-func mustJSON(payload any) []byte {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return []byte(`{"type":"server.error","data":{"error":"event encoding failed"}}`)
-	}
-
-	return data
 }

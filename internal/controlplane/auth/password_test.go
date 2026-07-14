@@ -92,8 +92,8 @@ func TestValidatePassword_StrongPasswordAccepted(t *testing.T) {
 }
 
 // legacyHash builds an Argon2id hash in the pre-v2 3-part format
-// (argon2id$salt$hash) with 3/64 MiB params, so we can exercise the
-// legacy verification path without depending on a version-pinned helper.
+// (argon2id$salt$hash) with 3/64 MiB params. The format is no longer
+// accepted; the helper exists so we can assert it is rejected.
 func legacyHash(t *testing.T, password string) string {
 	t.Helper()
 	salt := make([]byte, 16)
@@ -134,12 +134,14 @@ func TestVerifyPasswordAcceptsCurrentV2Hash(t *testing.T) {
 	}
 }
 
-func TestVerifyPasswordAcceptsLegacyHash(t *testing.T) {
+// R5: the pre-v2 3-part format is gone. Even the RIGHT password against
+// a legacy hash must be rejected — those rows are unreadable by design.
+func TestVerifyPasswordRejectsLegacyHash(t *testing.T) {
 	t.Parallel()
 	password := "correct-horse-battery"
 	legacy := legacyHash(t, password)
-	if err := verifyPassword(legacy, password); err != nil {
-		t.Fatalf("verify legacy hash: %v", err)
+	if err := verifyPassword(legacy, password); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials for legacy hash, got %v", err)
 	}
 }
 
@@ -150,14 +152,6 @@ func TestVerifyPasswordRejectsWrongPasswordOnCurrent(t *testing.T) {
 		t.Fatalf("hashPassword: %v", err)
 	}
 	if err := verifyPassword(hash, "wrong"); !errors.Is(err, ErrInvalidCredentials) {
-		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
-	}
-}
-
-func TestVerifyPasswordRejectsWrongPasswordOnLegacy(t *testing.T) {
-	t.Parallel()
-	legacy := legacyHash(t, "right")
-	if err := verifyPassword(legacy, "wrong"); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
 	}
 }

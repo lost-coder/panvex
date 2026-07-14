@@ -83,3 +83,11 @@ func TestRingBufferDrainResetsState(t *testing.T) {
 		t.Fatalf("post-drain push readout = %+v, want single id=99", got)
 	}
 }
+
+// DroppedCount returns the number of samples dropped due to capacity
+// overflow. Test-only: the agent never reports this counter anywhere.
+func (b *RuntimeRingBuffer) DroppedCount() uint64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.dropped
+}

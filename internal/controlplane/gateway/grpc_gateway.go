@@ -91,7 +91,7 @@ func (g *Gateway) runAgentSession(ctx context.Context, sess agenttransport.Agent
 	connectionCtx, cancelConnection := context.WithCancel(ctx)
 	defer cancelConnection()
 
-	session, unregisterSession := g.deps.RegisterAgentSession(agentID, cancelConnection)
+	session, unregisterSession := g.sessions.Register(agentID, cancelConnection)
 	defer unregisterSession()
 	// P2-LOG-12 / L-05: MarkConnected exactly once per stream open, here.
 	// applyAgentSnapshot now only calls Heartbeat so subsequent heartbeat
@@ -126,12 +126,9 @@ func (g *Gateway) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 }
 
 // RunAgentSession is the public SessionHandler entry point used by
-// agenttransport.Manager. It currently ignores meta — the agent identity
-// is rediscovered inside runAgentSession via the gRPC peer context — but
-// keeps the SessionHandler signature so future tasks can pass pre-resolved
-// metadata without touching this layer.
-func (g *Gateway) RunAgentSession(ctx context.Context, sess agenttransport.AgentSession, meta agenttransport.NodeMeta) error {
-	_ = meta
+// agenttransport.Manager. The agent identity is rediscovered inside
+// runAgentSession from the gRPC peer context.
+func (g *Gateway) RunAgentSession(ctx context.Context, sess agenttransport.AgentSession) error {
 	return g.runAgentSession(ctx, sess)
 }
 

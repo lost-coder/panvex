@@ -32,14 +32,14 @@ func TestOutboundSupervisorReconnectsAfterDisconnect(t *testing.T) {
 	defer cancel()
 
 	var connectCount atomic.Int32
-	handler := func(_ context.Context, sess AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, sess AgentSession) error {
 		connectCount.Add(1)
 		// End session immediately so supervisor reconnects.
 		return nil
 	}
 
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n1", AgentID: "agent-1", DialAddress: stub.address},
+		NodeMeta{AgentID: "agent-1", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.Default(),
@@ -83,14 +83,14 @@ func TestOutboundSupervisorEnrollsWhenPending(t *testing.T) {
 		enrollCalls.Add(1)
 		return nil
 	}
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCalls.Add(1)
 		// End session immediately; supervisor reconnects.
 		return nil
 	}
 
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n1", AgentID: "agent-1", DialAddress: stub.address},
+		NodeMeta{AgentID: "agent-1", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.Default(),
@@ -147,13 +147,13 @@ func TestOutboundSupervisorRetriesAfterEnrollFailure(t *testing.T) {
 		state.Store("active")
 		return nil
 	}
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCalls.Add(1)
 		return nil
 	}
 
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n1", AgentID: "agent-1", DialAddress: stub.address},
+		NodeMeta{AgentID: "agent-1", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.Default(),
@@ -198,13 +198,13 @@ func TestOutboundSupervisorSkipsEnrollWhenActive(t *testing.T) {
 		enrollCalls.Add(1)
 		return nil
 	}
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCalls.Add(1)
 		return nil
 	}
 
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n1", AgentID: "agent-1", DialAddress: stub.address},
+		NodeMeta{AgentID: "agent-1", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.Default(),
@@ -240,16 +240,16 @@ func TestOutboundTransportSupervisorGaugeDelta(t *testing.T) {
 	// Add two supervisors. Their goroutines will loop on connectAndServe
 	// and fail immediately (tlsCfg==nil → errOutboundTLSMissing), but that
 	// only affects the goroutines — the delta callback fires before they run.
-	ot.ensureSupervisor(t.Context(), NodeMeta{NodeID: "n1", AgentID: "a1", DialAddress: "127.0.0.1:1"})
-	ot.ensureSupervisor(t.Context(), NodeMeta{NodeID: "n2", AgentID: "a2", DialAddress: "127.0.0.1:2"})
+	ot.ensureSupervisor(t.Context(), NodeMeta{AgentID: "a1", DialAddress: "127.0.0.1:1"})
+	ot.ensureSupervisor(t.Context(), NodeMeta{AgentID: "a2", DialAddress: "127.0.0.1:2"})
 
 	if total != 2 {
 		t.Fatalf("after 2 ensureSupervisor: total=%d, want 2", total)
 	}
 
-	ot.removeSupervisor("n1")
+	ot.removeSupervisor("a1")
 	if total != 1 {
-		t.Fatalf("after removeSupervisor(n1): total=%d, want 1", total)
+		t.Fatalf("after removeSupervisor(a1): total=%d, want 1", total)
 	}
 
 	ot.stopAll()
@@ -283,7 +283,7 @@ func TestOutboundEnsureSupervisorConcurrentDialAddressChangeNoLeak(t *testing.T)
 	}
 
 	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test-only
-	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := SessionHandler(func(_ context.Context, _ AgentSession) error {
 		return errors.New("not used")
 	})
 	tr := newOutboundTransport(tlsCfg, handler, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -299,18 +299,18 @@ func TestOutboundEnsureSupervisorConcurrentDialAddressChangeNoLeak(t *testing.T)
 		// install the same node under different addresses.
 		go func(addr string) {
 			defer wg.Done()
-			tr.ensureSupervisor(t.Context(), NodeMeta{NodeID: "shared-node", AgentID: "agent-1", DialAddress: addr})
+			tr.ensureSupervisor(t.Context(), NodeMeta{AgentID: "agent-1", DialAddress: addr})
 		}(addr)
 		go func(addr string) {
 			defer wg.Done()
-			tr.ensureSupervisor(t.Context(), NodeMeta{NodeID: "shared-node", AgentID: "agent-1", DialAddress: addr + "-b"})
+			tr.ensureSupervisor(t.Context(), NodeMeta{AgentID: "agent-1", DialAddress: addr + "-b"})
 		}(addr)
 	}
 	wg.Wait()
 
 	// Exactly one entry must survive for the node.
-	if !tr.has("shared-node") {
-		t.Fatal("expected shared-node to have a surviving supervisor entry")
+	if !tr.has("agent-1") {
+		t.Fatal("expected agent-1 to have a surviving supervisor entry")
 	}
 
 	tr.stopAll()
@@ -354,7 +354,7 @@ func TestOutboundSupervisorUsesBackoffGetters(t *testing.T) {
 	defer cancel()
 
 	var connectCount atomic.Int32
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCount.Add(1)
 		return nil
 	}
@@ -365,7 +365,7 @@ func TestOutboundSupervisorUsesBackoffGetters(t *testing.T) {
 	const wantMax = 20 * time.Millisecond
 
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n1", AgentID: "agent-getter", DialAddress: stub.address},
+		NodeMeta{AgentID: "agent-getter", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.Default(),
@@ -390,7 +390,7 @@ func TestOutboundSupervisorUsesBackoffGetters(t *testing.T) {
 // minimal); we only assert lifecycle semantics, not session behaviour.
 func TestOutboundEnsureSupervisorCancelsViaParentCtx(t *testing.T) {
 	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test-only
-	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := SessionHandler(func(_ context.Context, _ AgentSession) error {
 		return errors.New("not used")
 	})
 	tr := newOutboundTransport(tlsCfg, handler, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -398,7 +398,7 @@ func TestOutboundEnsureSupervisorCancelsViaParentCtx(t *testing.T) {
 	parentCtx, cancelParent := context.WithCancel(context.Background())
 	tr.setLifecycleCtx(parentCtx)
 
-	tr.ensureSupervisor(t.Context(), NodeMeta{AgentID: "n1", NodeID: "n1", DialAddress: "127.0.0.1:1"})
+	tr.ensureSupervisor(t.Context(), NodeMeta{AgentID: "n1", DialAddress: "127.0.0.1:1"})
 	if !tr.has("n1") {
 		t.Fatal("supervisor not registered")
 	}
@@ -428,14 +428,14 @@ func TestOutboundEnsureSupervisorCancelsViaParentCtx(t *testing.T) {
 // mid-shutdown.
 func TestOutboundEnsureSupervisorAfterStopIsNoop(t *testing.T) {
 	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test-only
-	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := SessionHandler(func(_ context.Context, _ AgentSession) error {
 		return nil
 	})
 	tr := newOutboundTransport(tlsCfg, handler, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	tr.setLifecycleCtx(context.Background())
 
 	tr.stopAll()
-	tr.ensureSupervisor(t.Context(), NodeMeta{AgentID: "n1", NodeID: "n1", DialAddress: "127.0.0.1:1"})
+	tr.ensureSupervisor(t.Context(), NodeMeta{AgentID: "n1", DialAddress: "127.0.0.1:1"})
 	if tr.has("n1") {
 		t.Fatal("ensureSupervisor must not register entries after stopAll")
 	}
@@ -453,12 +453,12 @@ func TestOutboundDialVerifiesAgentServerName(t *testing.T) {
 	defer cancel()
 
 	var connectCount atomic.Int32
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCount.Add(1)
 		return nil
 	}
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n-san", AgentID: "agent-san", DialAddress: stub.address},
+		NodeMeta{AgentID: "agent-san", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -509,13 +509,13 @@ func TestOutboundConnectAndServeTimesOutAgainstBlackHole(t *testing.T) {
 	caCert, _ := mustGenerateCA(t)
 	tlsCfg := &tls.Config{RootCAs: rootPool(caCert)}
 
-	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := SessionHandler(func(_ context.Context, _ AgentSession) error {
 		t.Fatal("handler must not be invoked: Connect should never succeed against a black hole")
 		return nil
 	})
 
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n-blackhole", AgentID: "agent-blackhole", DialAddress: listener.Addr().String()},
+		NodeMeta{AgentID: "agent-blackhole", DialAddress: listener.Addr().String()},
 		tlsCfg,
 		handler,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -565,7 +565,7 @@ func TestOutboundConnectTimeoutDoesNotCancelLiveSession(t *testing.T) {
 	release := make(chan struct{})
 	var sawCancelDuringWait atomic.Bool
 
-	handler := SessionHandler(func(ctx context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := SessionHandler(func(ctx context.Context, _ AgentSession) error {
 		close(handlerEntered)
 		select {
 		case <-ctx.Done():
@@ -579,7 +579,7 @@ func TestOutboundConnectTimeoutDoesNotCancelLiveSession(t *testing.T) {
 	})
 
 	sup := newOutboundSupervisor(
-		NodeMeta{NodeID: "n-live", AgentID: "agent-live", DialAddress: stub.address},
+		NodeMeta{AgentID: "agent-live", DialAddress: stub.address},
 		stub.clientTLS,
 		handler,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
