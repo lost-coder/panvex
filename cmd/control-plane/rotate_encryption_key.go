@@ -23,7 +23,7 @@ import (
 // webhook_endpoints.secret_ciphertext) stay byte-identical — the only
 // thing that changes is the wrapped-DEK rows in cp_secrets.
 //
-// Safety: refuses to run if any data column still holds a PVS1/PVS2
+// Safety: refuses to run if any data column still holds a PVS2
 // ciphertext (those depend on the current passphrase directly; the
 // upgrade-vault migration converts them to PVS3 first; landed as a
 // follow-up).
@@ -36,7 +36,7 @@ func runRotateEncryptionKey(args []string) error {
 	storageDriver := flags.String(flagStorageDriver, "", helpStorageDriver)
 	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	allowLegacy := flags.Bool("allow-legacy-ciphertexts", false,
-		"WARNING: rotate even if PVS1/PVS2 ciphertexts remain. They will become unreadable after rotation. Used only by tests.")
+		"WARNING: rotate even if PVS2 ciphertexts remain. They will become unreadable after rotation. Used only by tests.")
 	flags.Usage = func() {
 		_, _ = fmt.Fprintf(flags.Output(), "Usage: panvex-control-plane rotate-encryption-key [flags]\n\n")
 		_, _ = fmt.Fprintf(flags.Output(), "Re-wraps the at-rest encryption envelope under a new passphrase.\n")
@@ -99,7 +99,7 @@ func runRotateEncryptionKey(args []string) error {
 		}
 		if legacy > 0 {
 			return fmt.Errorf(
-				"%d PVS1/PVS2 ciphertext(s) still present; rotation would invalidate them. "+
+				"%d PVS2 ciphertext(s) still present; rotation would invalidate them. "+
 					"Run `panvex-control-plane upgrade-vault` first (Wave 5.2 follow-up) "+
 					"or pass --allow-legacy-ciphertexts to override (DESTRUCTIVE)",
 				legacy,
@@ -148,7 +148,7 @@ func readPassphrase(reader *bufio.Reader, prompt string) (string, error) {
 }
 
 // countLegacyCiphertexts scans the data columns that hold encrypted
-// values and counts how many still carry the PVS1/PVS2 prefix. A
+// values and counts how many still carry the PVS2 prefix. A
 // non-zero result blocks rotation because those values depend on the
 // current passphrase directly.
 //
@@ -187,8 +187,8 @@ func countLegacyCiphertexts(ctx context.Context, store storage.Store) (int, erro
 		var n int
 		// #nosec G201 — table/column names are hard-coded above; no operator input reaches this format string.
 		q := fmt.Sprintf(
-			"SELECT COUNT(*) FROM %s WHERE %s LIKE 'PVS1:%%' OR %s LIKE 'PVS2:%%'",
-			t.name, t.column, t.column,
+			"SELECT COUNT(*) FROM %s WHERE %s LIKE 'PVS2:%%'",
+			t.name, t.column,
 		)
 		if err := sqlDB.QueryRowContext(ctx, q).Scan(&n); err != nil {
 			if isTableMissingError(err) {

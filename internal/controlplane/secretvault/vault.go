@@ -7,18 +7,14 @@
 //
 // Wire format: "PVSn:" || base64-raw(nonce || ciphertext). The domain
 // label is bound as AAD so a value encrypted under one domain cannot be
-// decrypted under another. Two prefixes coexist:
+// decrypted under another.
 //
-//   - PVS1: legacy values encrypted with the hard-coded HKDF salt
-//     ("panvex-secretvault-domain-v1"). Still decryptable so existing
-//     rows keep working without a forced re-encryption window.
-//   - PVS2: current format. The HKDF salt is per-install — generated at
-//     first start and persisted in cp_secrets. Two installations that
-//     share a master passphrase no longer derive identical per-domain
-//     keys, so a leaked DB snapshot cannot pre-compute keys for every
-//     other deployment.
-//
-// New encryptions always target PVS2; PVS1 is decrypt-only legacy.
+//   - PVS2: HKDF-derived per-domain key. The HKDF salt is per-install —
+//     generated at first start and persisted in cp_secrets — so two
+//     installations sharing a master passphrase do not derive identical
+//     per-domain keys.
+//   - PVS3: envelope format (per-domain DEK wrapped under a KEK); see
+//     envelope.go. Produced by Encrypt once DEKs are loaded.
 package secretvault
 
 import (
@@ -61,10 +57,6 @@ const (
 var AllDomains = []string{DomainClientSecret, DomainTOTP, DomainWebhookSecret, DomainIntegrationConfig}
 
 const (
-	// Prefix1 marks values encrypted under the legacy (hard-coded) HKDF
-	// salt. Kept for read compatibility only; new encryptions never
-	// produce this prefix.
-	Prefix1 = "PVS1:"
 	// Prefix2 marks values encrypted under the per-install HKDF salt.
 	// Current default for every Encrypt call.
 	Prefix2 = "PVS2:"
@@ -78,11 +70,6 @@ const (
 	// across restarts, so encrypted values remain decryptable.
 	masterSalt = "panvex-secretvault-master-v1"
 
-	// legacyHKDFSalt is the static HKDF salt baked into PVS1 builds. It
-	// stays compiled in so legacy ciphertexts keep decrypting; new
-	// builds derive a per-install salt and store it in cp_secrets.
-	legacyHKDFSalt = "panvex-secretvault-domain-v1"
-
 	argon2Time    = 3
 	argon2Memory  = 64 * 1024
 	argon2Threads = 2
@@ -94,8 +81,10 @@ const (
 	HKDFSaltBytes = 32
 )
 
-// ErrPassphraseRequired is returned by Encrypt when the vault was built
-// without a passphrase but a caller asked for an encrypted value.
+// ErrPassphraseRequired reports that an operation needing the master
+// passphrase (envelope DEK load / KEK rotation) ran on a vault built
+// without one. Encrypt itself never returns it: a passphrase-less vault
+// is a documented pass-through.
 var ErrPassphraseRequired = errors.New("secretvault: passphrase not configured")
 
 // ErrUnknownDomain is returned when Encrypt/Decrypt receive a domain
@@ -117,13 +106,9 @@ type Vault struct {
 	// keys holds the active per-domain keys derived under the
 	// per-install salt; used for both PVS2 encrypt and PVS2 decrypt.
 	keys map[string][]byte
-	// legacyKeys holds keys derived under the hard-coded legacyHKDFSalt
-	// so PVS1 ciphertexts remain decryptable.
-	legacyKeys map[string][]byte
 	// envelope, when non-nil, switches Encrypt to PVS3 (per-domain
 	// DEKs wrapped under the KEK; see envelope.go). Decrypt continues
-	// to handle PVS1/PVS2 via keys/legacyKeys and dispatches PVS3 to
-	// the envelope path.
+	// to handle PVS2 via keys and dispatches PVS3 to the envelope path.
 	envelope *envelope
 	// kek is the current key-encryption-key. Held in memory so
 	// RotateKEK can replace it atomically with the new derivation
@@ -131,16 +116,11 @@ type Vault struct {
 	kek []byte
 }
 
-
 // NewWithSalt constructs a vault from the operator passphrase using the
 // supplied per-install HKDF salt. The list of domains must be
 // exhaustive — passing an unknown domain to Encrypt or Decrypt later
 // returns ErrUnknownDomain. Empty passphrase yields a disabled vault
 // that passes values through.
-//
-// The salt is bound only to the active key set (the one used for
-// PVS2 encrypt/decrypt). Legacy PVS1 ciphertexts always decrypt under
-// the compiled-in legacyHKDFSalt regardless of the supplied value.
 func NewWithSalt(passphrase string, domains []string, salt []byte) (*Vault, error) {
 	if strings.TrimSpace(passphrase) == "" {
 		return &Vault{enabled: false}, nil
@@ -150,9 +130,8 @@ func NewWithSalt(passphrase string, domains []string, salt []byte) (*Vault, erro
 	}
 	masterKey := argon2.IDKey([]byte(passphrase), []byte(masterSalt), argon2Time, argon2Memory, argon2Threads, keyLen)
 	v := &Vault{
-		enabled:    true,
-		keys:       make(map[string][]byte, len(domains)),
-		legacyKeys: make(map[string][]byte, len(domains)),
+		enabled: true,
+		keys:    make(map[string][]byte, len(domains)),
 	}
 	for _, domain := range domains {
 		if strings.TrimSpace(domain) == "" {
@@ -166,12 +145,6 @@ func NewWithSalt(passphrase string, domains []string, salt []byte) (*Vault, erro
 			return nil, fmt.Errorf("secretvault: derive key for %q: %w", domain, err)
 		}
 		v.keys[domain] = key
-
-		legacyKey, err := deriveDomainKey(masterKey, []byte(legacyHKDFSalt), domain)
-		if err != nil {
-			return nil, fmt.Errorf("secretvault: derive legacy key for %q: %w", domain, err)
-		}
-		v.legacyKeys[domain] = legacyKey
 	}
 	return v, nil
 }
@@ -239,35 +212,29 @@ func (v *Vault) Encrypt(domain, plaintext string) (string, error) {
 }
 
 // Decrypt reverses Encrypt. Values without any vault prefix are
-// returned unchanged so legacy rows keep working until they're next
-// written. PVS3 routes through the envelope (per-domain DEK); PVS2
-// uses the per-install HKDF-derived key; PVS1 uses the legacy
-// hard-coded salt. A prefixed value with an unconfigured vault is an
-// error — the caller would otherwise see the raw ciphertext bytes.
+// returned unchanged so plaintext rows keep working until they're next
+// written. PVS3 routes through the envelope (per-domain DEK); PVS2 uses
+// the per-install HKDF-derived key. A prefixed value with an
+// unconfigured vault is an error — the caller would otherwise see the
+// raw ciphertext bytes.
 func (v *Vault) Decrypt(domain, value string) (string, error) {
 	switch {
 	case strings.HasPrefix(value, Prefix3):
 		return v.decryptEnvelope(domain, strings.TrimPrefix(value, Prefix3))
 	case strings.HasPrefix(value, Prefix2):
-		return v.decryptWithKey(domain, strings.TrimPrefix(value, Prefix2), false)
-	case strings.HasPrefix(value, Prefix1):
-		return v.decryptWithKey(domain, strings.TrimPrefix(value, Prefix1), true)
+		return v.decryptWithKey(domain, strings.TrimPrefix(value, Prefix2))
 	default:
 		return value, nil
 	}
 }
 
-// decryptWithKey performs the AES-GCM open under either the active or
-// the legacy domain key, selected by useLegacy.
-func (v *Vault) decryptWithKey(domain, body string, useLegacy bool) (string, error) {
+// decryptWithKey performs the AES-GCM open under the active per-domain
+// key (PVS2).
+func (v *Vault) decryptWithKey(domain, body string) (string, error) {
 	if v == nil || !v.enabled {
 		return "", errors.New("secretvault: encrypted value present but vault is disabled")
 	}
-	keys := v.keys
-	if useLegacy {
-		keys = v.legacyKeys
-	}
-	key, ok := keys[domain]
+	key, ok := v.keys[domain]
 	if !ok {
 		return "", fmt.Errorf("%w: %s", ErrUnknownDomain, domain)
 	}
@@ -297,9 +264,5 @@ func (v *Vault) decryptWithKey(domain, body string, useLegacy bool) (string, err
 // IsEncrypted reports whether the value carries any vault prefix. Used
 // by migration tooling to decide whether to re-encrypt a row.
 func IsEncrypted(value string) bool {
-	return strings.HasPrefix(value, Prefix1) ||
-		strings.HasPrefix(value, Prefix2) ||
-		strings.HasPrefix(value, Prefix3)
+	return strings.HasPrefix(value, Prefix2) || strings.HasPrefix(value, Prefix3)
 }
-
-

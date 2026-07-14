@@ -10,7 +10,7 @@ import (
 
 // CreateIntegrationProvider inserts a new provider row. config is opaque
 // TEXT, not JSONB: fleet.Service.encryptProviderConfig may seal the
-// caller-supplied JSON into a "PVS1:"/"PVS2:"/"PVS3:"-prefixed ciphertext
+// caller-supplied JSON into a "PVS2:"/"PVS3:"-prefixed ciphertext
 // string before it reaches this store (see
 // db/migrations/postgres/0052_integration_providers_config_text.sql for
 // why a jsonb column/cast cannot hold that). The table's CHECK constraint
