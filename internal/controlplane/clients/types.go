@@ -13,6 +13,11 @@ const (
 	DeploymentStatusQueued    = "queued"
 	DeploymentStatusSucceeded = "succeeded"
 	DeploymentStatusFailed    = "failed"
+	// DeploymentStatusAwaitingNode marks a deployment whose job expired before
+	// the node confirmed it — delivery is pending on the node coming back, and
+	// the reconciler will re-send. Distinct from "queued" (job in flight, node
+	// still has time to answer) purely for the operator's benefit.
+	DeploymentStatusAwaitingNode = "awaiting_node"
 )
 
 // Discovered-client status values.

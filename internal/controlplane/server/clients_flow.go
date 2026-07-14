@@ -595,6 +595,59 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 	}
 }
 
+// clientJobExpiredMessage is stamped on a deployment whose client job expired
+// before the node confirmed it. It is operator-facing (rendered as LastError).
+const clientJobExpiredMessage = "node did not confirm before the job expired; will retry on reconnect"
+
+// onClientJobsExpired flips the affected client deployments to awaiting_node so
+// the operator sees "waiting for the node", not an eternal "queued". It is the
+// jobs service's expiry hook (wired via jobs.SetExpiryHook in lifecycle.go),
+// invoked AFTER the sweep releases its lock, once per sweep with every
+// (job, agent) target that expired. This is presentation, not retry logic: the
+// reconciler (clientReconciler) still owns re-sending, and awaiting_node is the
+// same re-send class as queued in divergentDeploymentAction.
+//
+// This is a NEW functional channel from the jobs domain into the clients
+// domain, deliberately unlike the metrics-only SetJobFailureHook P5 removed.
+func (s *Server) onClientJobsExpired(expired []jobs.ExpiredTarget) {
+	if s.clientsSvc == nil {
+		return
+	}
+	ctx := s.Context()
+	now := s.now().UTC()
+	// Invalidate the client list once per affected client (matches the existing
+	// publishClientsUpdated callers, which pass a concrete client ID) rather
+	// than once with an empty ID — publishClientsUpdated takes `any` so "" is
+	// accepted, but no caller establishes it as a "refresh everything" sentinel.
+	affected := make(map[string]struct{})
+	for _, target := range expired {
+		if !isClientJobAction(target.Job.Action) {
+			continue
+		}
+		var payload clientJobPayload
+		if err := json.Unmarshal([]byte(target.Job.PayloadJSON), &payload); err != nil {
+			continue
+		}
+		deployment, ok := s.clientsSvc.MirrorDeployment(payload.ClientID, target.AgentID)
+		if !ok || deployment.Status == clientDeploymentStatusSucceeded {
+			// The node answered before the job expired — never clobber a success.
+			continue
+		}
+		deployment.Status = clients.DeploymentStatusAwaitingNode
+		deployment.LastError = clientJobExpiredMessage
+		deployment.UpdatedAt = now
+		if err := s.clientsSvc.PersistDeployment(ctx, deployment); err != nil {
+			s.logger.ErrorContext(ctx, "client deployment expiry persistence failed",
+				"client_id", payload.ClientID, "agent_id", target.AgentID, "error", err)
+			continue
+		}
+		affected[payload.ClientID] = struct{}{}
+	}
+	for clientID := range affected {
+		s.publishClientsUpdated(clientID)
+	}
+}
+
 // applyClientResetQuotaResult records the panel-side view of a completed
 // client.reset_quota job: on success it extracts last_reset_epoch_secs
 // from the agent's typed result envelope and stamps it onto the

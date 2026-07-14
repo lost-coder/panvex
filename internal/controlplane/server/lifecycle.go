@@ -174,6 +174,9 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 	// P8.1: клиентское правило supersession живёт в clients-слое; jobs.Service
 	// получает его инъекцией и сам домена клиентов не знает.
 	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
+	// R10b: surface expired client jobs as awaiting_node. Same injection style —
+	// jobs stays free of the clients/server domains.
+	s.jobs.SetExpiryHook(s.onClientJobsExpired)
 	return s
 }
 
@@ -230,6 +233,9 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	// before background workers start (satisfies SetSupersedeKeyFunc's boot
 	// contract).
 	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
+	// R10b: re-attach the expiry hook onto the freshly-constructed store-backed
+	// jobs service before background workers start (same boot contract).
+	s.jobs.SetExpiryHook(s.onClientJobsExpired)
 	s.auth = auth.NewServiceWithStore(store)
 	s.updatesSvc = updates.NewService(store)
 	// Wire the injected clock onto the freshly-constructed services BEFORE any

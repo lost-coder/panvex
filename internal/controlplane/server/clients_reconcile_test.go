@@ -168,6 +168,100 @@ func TestReconcileThrottlesRepeatedAttempts(t *testing.T) {
 	}
 }
 
+// TestExpiredClientJobSurfacesAsAwaitingNode is the R10b core (C5): a client
+// job that expires before the node confirms it must flip its deployment from
+// "queued" to "awaiting_node" — so the operator sees "waiting for the node",
+// not an eternal "queued" — while the reconciler still re-sends it, and a later
+// success returns it to "succeeded".
+func TestExpiredClientJobSurfacesAsAwaitingNode(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 9, 0, 0, 0, time.UTC)
+	currentTime := now
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return currentTime },
+		Store:            store,
+	})
+	defer server.Close()
+
+	groupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
+	})
+
+	client, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+		Name:          "alice",
+		FleetGroupIDs: []string{groupID},
+	}, now)
+	if err != nil {
+		t.Fatalf("createClient() error = %v", err)
+	}
+
+	// Fresh create job: the deployment is queued, not yet confirmed.
+	deployment := mirrorDeployment(server, string(client.ID), "agent-000001")
+	if deployment.Status != clients.DeploymentStatusQueued {
+		t.Fatalf("deployment.Status after createClient = %q, want %q", deployment.Status, clients.DeploymentStatusQueued)
+	}
+
+	// The node never answers and the create job's TTL elapses. The next sweep
+	// seals the job expired and fires the expiry hook, flipping the deployment.
+	currentTime = now.Add(clientJobTTL + time.Minute)
+	server.jobs.ListWithContext(context.Background())
+
+	deployment = mirrorDeployment(server, string(client.ID), "agent-000001")
+	if deployment.Status != clients.DeploymentStatusAwaitingNode {
+		t.Fatalf("deployment.Status after expiry = %q, want %q", deployment.Status, clients.DeploymentStatusAwaitingNode)
+	}
+	if deployment.LastError == "" {
+		t.Fatal("deployment.LastError is empty after expiry; want a 'node did not confirm' message")
+	}
+
+	// The reconciler treats awaiting_node as the same re-send class as queued.
+	if enqueued := server.reconcileClientDeployments(context.Background(), "agent-000001"); enqueued != 1 {
+		t.Fatalf("reconcile of an awaiting_node deployment enqueued %d jobs, want 1", enqueued)
+	}
+
+	// The node finally applies the re-sent create; the deployment converges.
+	resent := latestQueuedJob(t, server, jobs.ActionClientCreate)
+	server.recordClientJobResultWithContext(context.Background(), "agent-000001", resent.ID, true, "ok", "{}", currentTime)
+
+	deployment = mirrorDeployment(server, string(client.ID), "agent-000001")
+	if deployment.Status != clients.DeploymentStatusSucceeded {
+		t.Fatalf("deployment.Status after success = %q, want %q", deployment.Status, clients.DeploymentStatusSucceeded)
+	}
+	if deployment.LastError != "" {
+		t.Fatalf("deployment.LastError after success = %q, want empty", deployment.LastError)
+	}
+}
+
+// latestQueuedJob returns the most recently created still-queued job for an
+// action — the re-sent job after an expiry, distinct from the expired original.
+func latestQueuedJob(t *testing.T, server *Server, action jobs.Action) jobs.Job {
+	t.Helper()
+	var newest jobs.Job
+	found := false
+	for _, job := range server.jobs.ListWithContext(context.Background()) {
+		if job.Action != action || job.Status != jobs.StatusQueued {
+			continue
+		}
+		if !found || job.CreatedAt.After(newest.CreatedAt) {
+			newest = job
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no queued job with action %q", action)
+	}
+	return newest
+}
+
 func countJobsWithAction(t *testing.T, server *Server, action jobs.Action) int {
 	t.Helper()
 	count := 0

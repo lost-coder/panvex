@@ -223,7 +223,9 @@ func divergentDeploymentAction(deployment clients.Deployment) (jobs.Action, bool
 	switch deployment.Status {
 	case clients.DeploymentStatusSucceeded:
 		return "", false
-	case clients.DeploymentStatusQueued:
+	case clients.DeploymentStatusQueued, clients.DeploymentStatusAwaitingNode:
+		// awaiting_node is a queued job whose TTL lapsed unconfirmed — the same
+		// re-send class as queued: the node still owes us this operation.
 		return action, true
 	case clients.DeploymentStatusFailed:
 		if action == jobs.ActionClientDelete || action == jobs.ActionClientRotateSecret {
