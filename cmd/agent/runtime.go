@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/probation"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	"github.com/lost-coder/panvex/internal/agent/runtimeevents"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
@@ -94,7 +95,7 @@ func parseRuntimeFlags(args []string) (runtimeFlags, error) {
 	flags.StringVar(&cfg.logFormat, "log-format", os.Getenv("PANVEX_LOG_FORMAT"),
 		"Log output format (text or json). Env: PANVEX_LOG_FORMAT.")
 	flags.IntVar(&cfg.clientDataConcurrency, "client-data-concurrency", clientDataConcurrencyDefault(), "Max concurrent in-flight ClientDataRequest goroutines (env: PANVEX_AGENT_CLIENT_DATA_CONCURRENCY)")
-	flags.DurationVar(&cfg.transportProbation, "transport-probation", defaultTransportProbation, "How long a transport-mode switch may go without a panel session before the agent reverts to the previous mode (0 = default 10m)")
+	flags.DurationVar(&cfg.transportProbation, "transport-probation", probation.DefaultWindow, "How long a transport-mode switch may go without a panel session before the agent reverts to the previous mode (0 = default 10m)")
 	if err := flags.Parse(args); err != nil {
 		return runtimeFlags{}, err
 	}
@@ -346,7 +347,7 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 
 		// A2: probation expiry check. On revert, refresh the derived dial
 		// target the same way the transport-reload path above does.
-		if maybeRevertTransportSwitch(cfg.stateFile, credentialsState, cfg.transportProbation, time.Now()) {
+		if probation.MaybeRevert(cfg.stateFile, credentialsState, cfg.transportProbation, time.Now()) {
 			if credentialsState.GRPCEndpoint != "" {
 				cfg.gatewayAddr = credentialsState.GRPCEndpoint
 			}

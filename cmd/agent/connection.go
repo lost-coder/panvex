@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/probation"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	agentTransport "github.com/lost-coder/panvex/internal/agent/transport"
@@ -137,7 +138,7 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 	if credentialsState.PrevTransport != nil && credentialsState.TransportSwitchedAtUnix > 0 {
 		window := transportProbation
 		if window <= 0 {
-			window = defaultTransportProbation
+			window = probation.DefaultWindow
 		}
 		deadline := time.Unix(credentialsState.TransportSwitchedAtUnix, 0).Add(window)
 		var cancelProbation context.CancelFunc
@@ -152,7 +153,7 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 		// taint-analysis warning is a false positive.
 		//nolint:gosec // G706: structured logging, no format-string injection vector
 		slog.Info("connected to control-plane", "agent_id", agent.AgentID(), "gateway", gatewayAddr)
-		clearTransportProbation(stateFile, &credentialsState)
+		probation.Clear(stateFile, &credentialsState)
 
 		// Derive the connection context from the supervisor ctx so SIGTERM
 		// reaches every per-connection worker (outbound pump, inbound pump,
