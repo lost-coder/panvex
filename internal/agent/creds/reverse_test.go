@@ -1,4 +1,4 @@
-package main
+package creds
 
 import (
 	"context"
@@ -218,7 +218,7 @@ func panelEnrollStub(
 	// stream — so this final Recv returns io.EOF once the cert is consumed.
 	// Without it, conn.Close() can race the agent's stream.Recv(): the cert is
 	// dropped, the handler errors out, nothing reaches resultCh, and
-	// reverseBootstrap blocks until its 5-minute timeout. That race is the
+	// ReverseBootstrap blocks until its 5-minute timeout. That race is the
 	// flaky failure in TestReverseBootstrapEndToEnd.
 	if _, err := stream.Recv(); err != nil && !errors.Is(err, io.EOF) {
 		return err
@@ -247,7 +247,7 @@ func TestReverseBootstrapEndToEnd(t *testing.T) {
 
 	bootstrapErrCh := make(chan error, 1)
 	go func() {
-		bootstrapErrCh <- reverseBootstrap(reverseBootstrapConfig{
+		bootstrapErrCh <- ReverseBootstrap(ReverseBootstrapConfig{
 			StateFile:      stateFile,
 			BootstrapToken: "tok-abc",
 			AgentID:        "agent-001",
@@ -265,7 +265,7 @@ func TestReverseBootstrapEndToEnd(t *testing.T) {
 	require.NoError(t, stubErr, "panel stub error")
 
 	bootstrapErr := <-bootstrapErrCh
-	require.NoError(t, bootstrapErr, "reverseBootstrap error")
+	require.NoError(t, bootstrapErr, "ReverseBootstrap error")
 
 	// Verify state file.
 	raw, err := os.ReadFile(stateFile)
@@ -290,7 +290,7 @@ func TestReverseBootstrapRejectsWrongCAPin(t *testing.T) {
 
 	bootstrapErrCh := make(chan error, 1)
 	go func() {
-		bootstrapErrCh <- reverseBootstrap(reverseBootstrapConfig{
+		bootstrapErrCh <- ReverseBootstrap(ReverseBootstrapConfig{
 			StateFile:      stateFile,
 			BootstrapToken: "tok-abc",
 			AgentID:        "agent-002",
@@ -311,7 +311,7 @@ func TestReverseBootstrapRejectsWrongCAPin(t *testing.T) {
 	case err := <-bootstrapErrCh:
 		// May or may not return by now; if it did, it should not have written the file.
 		if err == nil {
-			t.Fatal("expected error but reverseBootstrap succeeded with wrong CA pin")
+			t.Fatal("expected error but ReverseBootstrap succeeded with wrong CA pin")
 		}
 		_, statErr := os.Stat(stateFile)
 		require.True(t, os.IsNotExist(statErr), "state file should not exist on failure")
@@ -336,7 +336,7 @@ func TestReverseBootstrapRejectsWrongPanelCN(t *testing.T) {
 
 	bootstrapErrCh := make(chan error, 1)
 	go func() {
-		bootstrapErrCh <- reverseBootstrap(reverseBootstrapConfig{
+		bootstrapErrCh <- ReverseBootstrap(ReverseBootstrapConfig{
 			StateFile:      stateFile,
 			BootstrapToken: "tok-abc",
 			AgentID:        "agent-003",
@@ -353,7 +353,7 @@ func TestReverseBootstrapRejectsWrongPanelCN(t *testing.T) {
 	select {
 	case err := <-bootstrapErrCh:
 		if err == nil {
-			t.Fatal("expected error but reverseBootstrap succeeded with wrong panel CN")
+			t.Fatal("expected error but ReverseBootstrap succeeded with wrong panel CN")
 		}
 		_, statErr := os.Stat(stateFile)
 		require.True(t, os.IsNotExist(statErr), "state file should not exist on failure")

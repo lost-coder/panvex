@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/creds"
 	"github.com/lost-coder/panvex/internal/agent/jobs"
 	"github.com/lost-coder/panvex/internal/agent/probation"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
@@ -304,7 +305,7 @@ func runConnection(supervisorCtx context.Context, p runConnectionParams) (agents
 			reporter.Disable()
 		}
 
-		credentialRefreshTimer := newRuntimeCredentialRefreshTimer(credentialsState, time.Now())
+		credentialRefreshTimer := creds.NewRefreshTimer(credentialsState, time.Now())
 		if credentialRefreshTimer != nil {
 			defer credentialRefreshTimer.Stop()
 		}
@@ -438,8 +439,8 @@ func runConnectionMainLoop(
 			cancelConnection()
 			return credentialsState, err
 		case <-timerChan(credentialRefreshTimer):
-			if !runtimeCredentialsNeedRefresh(credentialsState, time.Now()) {
-				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
+			if !creds.NeedsRefresh(credentialsState, time.Now()) {
+				creds.ResetRefreshTimer(credentialRefreshTimer, creds.RefreshDelay(credentialsState, time.Now()))
 				continue
 			}
 			// In-stream renewal: works for both dial and listen modes because
@@ -447,7 +448,7 @@ func runConnectionMainLoop(
 			// RenewCertificate RPC (dial-only) is now only used in the outer
 			// pre-connection path for dial-mode agents.
 			if criticalOutbound != nil {
-				updatedCredentials, err := renewCertificateInStream(connectionCtx, credentialsState, stateFile, criticalOutbound, renewalResponses)
+				updatedCredentials, err := creds.RenewInStream(connectionCtx, credentialsState, stateFile, criticalOutbound, renewalResponses)
 				if err != nil {
 					// A cancelled connection ctx (server-side close, supervisor
 					// shutdown) propagates as context.Canceled here. The
@@ -457,7 +458,7 @@ func runConnectionMainLoop(
 					} else {
 						slog.Error("in-stream certificate renewal failed", "error", err)
 					}
-					resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
+					creds.ResetRefreshTimer(credentialRefreshTimer, creds.RenewRetry)
 					continue
 				}
 				cancelConnection()
@@ -466,11 +467,11 @@ func runConnectionMainLoop(
 			// Fallback: dial-mode without a stream available (should not
 			// normally happen when criticalOutbound is wired).
 			if client == nil {
-				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
+				creds.ResetRefreshTimer(credentialRefreshTimer, creds.RefreshDelay(credentialsState, time.Now()))
 				continue
 			}
-			refreshCtx, cancelRefresh := context.WithTimeout(connectionCtx, certificateRefreshTimeout)
-			updatedCredentials, err := refreshRuntimeCredentialsIfNeeded(refreshCtx, stateFile, credentialsState, client, time.Now())
+			refreshCtx, cancelRefresh := context.WithTimeout(connectionCtx, creds.RefreshTimeout)
+			updatedCredentials, err := creds.RefreshIfNeeded(refreshCtx, stateFile, credentialsState, client, time.Now())
 			cancelRefresh()
 			if err != nil {
 				// Same demotion as the in-stream path: a cancelled
@@ -481,14 +482,14 @@ func runConnectionMainLoop(
 				} else {
 					slog.Error("certificate renewal failed", "error", err)
 				}
-				resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCertificateRenewRetry)
+				creds.ResetRefreshTimer(credentialRefreshTimer, creds.RenewRetry)
 				continue
 			}
 			if updatedCredentials != credentialsState {
 				cancelConnection()
 				return updatedCredentials, errRuntimeCredentialsRefreshed
 			}
-			resetRuntimeCredentialRefreshTimer(credentialRefreshTimer, runtimeCredentialRefreshDelay(credentialsState, time.Now()))
+			creds.ResetRefreshTimer(credentialRefreshTimer, creds.RefreshDelay(credentialsState, time.Now()))
 		}
 	}
 }

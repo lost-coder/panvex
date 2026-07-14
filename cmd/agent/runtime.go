@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/creds"
 	"github.com/lost-coder/panvex/internal/agent/jobs"
 	"github.com/lost-coder/panvex/internal/agent/probation"
 	"github.com/lost-coder/panvex/internal/agent/runtime"
@@ -148,7 +149,7 @@ func runRuntime(args []string) error {
 	runtimeEventsNotify = runtimeNotify
 	runtimeEventsCursor = new(atomic.Uint64)
 
-	credentialsState, err := loadRuntimeCredentials(cfg.stateFile)
+	credentialsState, err := creds.LoadCredentials(cfg.stateFile)
 	if err != nil {
 		return err
 	}
@@ -364,11 +365,11 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 		//     unary pre-connection RenewCertificate RPC is skipped.
 		//   - AFTER expiry: the cert is dead — no mTLS handshake can complete
 		//     (neither the panel's dial-in nor in-stream renewal). Use the HTTP
-		//     recovery flow (recoverListenCredentialsIfExpired) which works over
+		//     recovery flow (creds.RecoverListenIfExpired) which works over
 		//     plain HTTPS to PanelURL regardless of transport mode.
 		if credentialsState.TransportMode == "listen" {
-			refreshCtx, cancelRefresh := context.WithTimeout(supervisorCtx, certificateRefreshTimeout)
-			recovered, recErr := recoverListenCredentialsIfExpired(refreshCtx, cfg.stateFile, *credentialsState, nil, time.Now())
+			refreshCtx, cancelRefresh := context.WithTimeout(supervisorCtx, creds.RefreshTimeout)
+			recovered, recErr := creds.RecoverListenIfExpired(refreshCtx, cfg.stateFile, *credentialsState, nil, time.Now())
 			cancelRefresh()
 			if recErr != nil {
 				if supervisorCtx.Err() != nil {
@@ -391,8 +392,8 @@ func runRuntimeReconnectLoop(supervisorCtx context.Context, cfg *runtimeFlags, c
 		if credentialsState.TransportMode != "listen" {
 			// Derive the refresh ctx from supervisorCtx so SIGTERM during
 			// the renewal RPC also unblocks promptly.
-			refreshCtx, cancelRefresh := context.WithTimeout(supervisorCtx, certificateRefreshTimeout)
-			refreshed, err := renewRuntimeCredentialsIfNeeded(refreshCtx, cfg.stateFile, cfg.gatewayAddr, cfg.gatewayServerName, *credentialsState, time.Now())
+			refreshCtx, cancelRefresh := context.WithTimeout(supervisorCtx, creds.RefreshTimeout)
+			refreshed, err := creds.RenewIfNeeded(refreshCtx, cfg.stateFile, cfg.gatewayAddr, cfg.gatewayServerName, *credentialsState, time.Now())
 			cancelRefresh()
 			if err != nil {
 				if agentrevocation.IsAgentRevoked(err) {

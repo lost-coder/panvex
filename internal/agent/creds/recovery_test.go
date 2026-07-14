@@ -1,4 +1,4 @@
-package main
+package creds
 
 import (
 	"context"
@@ -92,9 +92,9 @@ func TestRecoverRuntimeCredentialsIfNeededRecoversAndPersistsExpiredState(t *tes
 	defer server.Close()
 
 	current.PanelURL = server.URL
-	updated, err := recoverRuntimeCredentialsIfNeeded(context.Background(), statePath, current, nil, now)
+	updated, err := recoverCredentials(context.Background(), statePath, current, nil, now)
 	if err != nil {
-		t.Fatalf("recoverRuntimeCredentialsIfNeeded() error = %v", err)
+		t.Fatalf("recoverCredentials() error = %v", err)
 	}
 	if updated.CertificatePEM != issuedCertPEM {
 		t.Fatalf("updated.CertificatePEM = %q, want issued cert", updated.CertificatePEM)
@@ -168,9 +168,9 @@ func TestRenewRuntimeCredentialsIfNeededUsesHTTPRecoveryWhenCertificateAlreadyEx
 		t.Fatalf("Save() error = %v", err)
 	}
 
-	updated, err := renewRuntimeCredentialsIfNeeded(context.Background(), statePath, "127.0.0.1:1", "panel.example.com", current, now)
+	updated, err := RenewIfNeeded(context.Background(), statePath, "127.0.0.1:1", "panel.example.com", current, now)
 	if err != nil {
-		t.Fatalf("renewRuntimeCredentialsIfNeeded() error = %v", err)
+		t.Fatalf("RenewIfNeeded() error = %v", err)
 	}
 	if updated.CertificatePEM != issuedCertPEM {
 		t.Fatalf("updated.CertificatePEM = %q, want issued cert", updated.CertificatePEM)
@@ -232,9 +232,9 @@ func TestRecoverListenCredentialsIfExpiredCallsRecovery(t *testing.T) {
 		defer server.Close()
 
 		current.PanelURL = server.URL
-		updated, err := recoverListenCredentialsIfExpired(context.Background(), statePath, current, nil, now)
+		updated, err := RecoverListenIfExpired(context.Background(), statePath, current, nil, now)
 		if err != nil {
-			t.Fatalf("recoverListenCredentialsIfExpired() error = %v", err)
+			t.Fatalf("RecoverListenIfExpired() error = %v", err)
 		}
 		if hits != 1 {
 			t.Fatalf("stub hit %d times, want 1", hits)
@@ -281,9 +281,9 @@ func TestRecoverListenCredentialsIfExpiredCallsRecovery(t *testing.T) {
 		defer server.Close()
 
 		current.PanelURL = server.URL
-		updated, err := recoverListenCredentialsIfExpired(context.Background(), statePath, current, nil, now)
+		updated, err := RecoverListenIfExpired(context.Background(), statePath, current, nil, now)
 		if err != nil {
-			t.Fatalf("recoverListenCredentialsIfExpired() error = %v", err)
+			t.Fatalf("RecoverListenIfExpired() error = %v", err)
 		}
 		if hits != 0 {
 			t.Fatalf("stub hit %d times, want 0", hits)

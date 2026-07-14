@@ -19,11 +19,8 @@ var (
 )
 
 const (
-	runtimeCertificateRenewWindow     = 24 * time.Hour
-	runtimeCertificateRenewRetry      = time.Minute
 	runtimeInitializationFastInterval = 3 * time.Second
 	gatewayStreamConnectTimeout       = 15 * time.Second
-	certificateRefreshTimeout         = 15 * time.Second
 	// selfUpdateRestartDelay is the window between handing the self-update
 	// JobResult to the worker and the systemd restart, sized to flush the
 	// result through criticalOutbound + the gRPC client buffer (cf. the
