@@ -17,10 +17,12 @@ func TestListUsersInMemorySortsAndElides(t *testing.T) {
 	svc := NewService()
 	early := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	late := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
-	svc.LoadUsers([]User{
+	if err := svc.LoadUsers(context.Background(), []User{
 		{ID: "u-late", Username: "b", Role: RoleAdmin, CreatedAt: late, PasswordHash: "hash2", TotpSecret: "sec2"},
 		{ID: "u-early", Username: "a", Role: RoleViewer, CreatedAt: early, PasswordHash: "hash1", TotpSecret: "sec1"},
-	})
+	}); err != nil {
+		t.Fatalf("LoadUsers: %v", err)
+	}
 
 	users, err := svc.ListUsers(context.Background())
 	if err != nil {

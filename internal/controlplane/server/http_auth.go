@@ -428,6 +428,9 @@ func (s *Server) handleTotpEnable() http.HandlerFunc {
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
 				writeError(w, http.StatusUnauthorized, err.Error())
+			case errors.Is(err, auth.ErrUserNotFound):
+				// The session outlived its user (deleted mid-request).
+				writeError(w, http.StatusUnauthorized, "unauthorized")
 			case errors.Is(err, auth.ErrTotpSetupNotFound):
 				writeError(w, http.StatusBadRequest, err.Error())
 			default:
@@ -463,6 +466,9 @@ func (s *Server) handleTotpDisable() http.HandlerFunc {
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials), errors.Is(err, auth.ErrTotpRequired), errors.Is(err, auth.ErrInvalidTotpCode):
 				writeError(w, http.StatusUnauthorized, err.Error())
+			case errors.Is(err, auth.ErrUserNotFound):
+				// The session outlived its user (deleted mid-request).
+				writeError(w, http.StatusUnauthorized, "unauthorized")
 			default:
 				s.logger.ErrorContext(r.Context(), "disable totp failed", "user_id", user.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, msgInternalError)

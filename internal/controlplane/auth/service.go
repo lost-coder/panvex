@@ -111,15 +111,9 @@ type Session struct {
 
 // Service provides local-account hashing, TOTP, and session issuance.
 type Service struct {
-	mu       sync.RWMutex
-	sequence uint64
-	// users is keyed by username for the login lookup path. usersByID is
-	// the matching reverse index keyed by user.ID so GetUserByID stays
-	// O(1) in the no-store fallback (M-16). Mutators use the
-	// putUserLocked / deleteUserLocked helpers to keep both maps in
-	// sync — never write to either map directly.
-	users             map[string]User
-	usersByID         map[string]User
+	mu sync.RWMutex
+	// sessions is keyed by the derived Session.ID (see sessionLookupKey),
+	// never by the raw cookie token.
 	sessions          map[string]Session
 	pendingTotpSetup  map[string]pendingTotpSetup
 	consumedTotp      map[totpUseKey]time.Time
@@ -215,11 +209,13 @@ func (s *Service) EffectivePasswordMinLength() int {
 	return effectivePolicy(s.passwordMinLength())
 }
 
-// NewService constructs an in-memory local-auth service.
+// NewService constructs a local-auth service backed by an in-memory user
+// store. Used by tests and as the pre-store placeholder in the control-plane
+// constructor; initStoreBackedSubsystems replaces it with NewServiceWithStore
+// as soon as the persistent store is available.
 func NewService() *Service {
 	return &Service{
-		users:            make(map[string]User),
-		usersByID:        make(map[string]User),
+		userStore:        newMemoryUserStore(),
 		sessions:         make(map[string]Session),
 		pendingTotpSetup: make(map[string]pendingTotpSetup),
 		consumedTotp:     make(map[totpUseKey]time.Time),
@@ -231,8 +227,6 @@ func NewService() *Service {
 // NewServiceWithStore constructs an auth service that persists users through the shared store.
 func NewServiceWithStore(userStore storage.UserStore) *Service {
 	return &Service{
-		users:            make(map[string]User),
-		usersByID:        make(map[string]User),
 		sessions:         make(map[string]Session),
 		pendingTotpSetup: make(map[string]pendingTotpSetup),
 		consumedTotp:     make(map[totpUseKey]time.Time),

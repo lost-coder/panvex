@@ -616,7 +616,9 @@ func New(options Options) (*Server, error) {
 	case options.Store != nil:
 		server.initStoreBackedSubsystems(options, vault)
 	case len(options.Users) > 0:
-		server.auth.LoadUsers(options.Users)
+		server.trySetStartupErr(func() error {
+			return server.auth.LoadUsers(server.serverCtx, options.Users)
+		})
 	}
 
 	// Rebuild the presence tracker with thresholds from the operational

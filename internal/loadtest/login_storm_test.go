@@ -129,7 +129,7 @@ func runLoginStorm(tb testing.TB, goodWorkers, badWorkers int) (good, bad *laten
 		go func(idx int) {
 			defer badWG.Done()
 			t0 := time.Now()
-			locked := tracker.CheckAndRecordFailure(loginStormUsername, time.Now())
+			locked := tracker.CheckAndRecordFailureWithContext(context.Background(), loginStormUsername, time.Now())
 			bad.Record(time.Since(t0))
 			if locked {
 				lockoutBlock.Add(1)

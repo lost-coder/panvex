@@ -289,7 +289,7 @@ func (s *Server) handleResetUserTotp() http.HandlerFunc {
 		}
 
 		if _, err := s.auth.ResetTotp(r.Context(), targetUserID); err != nil {
-			if errors.Is(err, auth.ErrInvalidCredentials) {
+			if errors.Is(err, auth.ErrUserNotFound) {
 				writeError(w, http.StatusNotFound, "user not found")
 				return
 			}
