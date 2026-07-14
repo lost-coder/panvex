@@ -64,10 +64,10 @@ func TestAuditFlushPermanentFailureSpoolsToDeadLetter(t *testing.T) {
 	}
 	defer f.Close()
 
-	var lines []deadLetteredAuditEvent
+	var lines []DeadLetteredAuditEvent
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
-		var dl deadLetteredAuditEvent
+		var dl DeadLetteredAuditEvent
 		if err := json.Unmarshal(sc.Bytes(), &dl); err != nil {
 			t.Fatalf("dead-letter line is not valid JSON: %v", err)
 		}
