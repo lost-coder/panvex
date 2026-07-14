@@ -75,9 +75,6 @@ type Deps interface {
 	ShouldTerminateForRevocation(ctx context.Context, agentID, presentedSerial string) bool
 	// MarkTransportSwitchResolved clears the A2 transport-switch marker.
 	MarkTransportSwitchResolved(agentID string)
-	// RegisterAgentSession / NotifyAgentSession proxy agents.SessionManager.
-	RegisterAgentSession(agentID string, cancelConn context.CancelFunc) (*agents.Session, func())
-	NotifyAgentSession(agentID string)
 	// ApplyAgentSnapshot applies a runtime snapshot against panel state.
 	ApplyAgentSnapshot(ctx context.Context, snap AgentSnapshot) error
 	// AppendAudit records one audit-trail entry (best-effort).
@@ -103,7 +100,11 @@ type Deps interface {
 // gateway needs. Writer may be nil when there is no persistent store; the
 // existing g.writer != nil guards handle that.
 type Config struct {
-	Deps          Deps
+	Deps Deps
+	// Sessions is the agent stream-session registry. The gateway owns
+	// every Register/Notify call on the agent stream, so it holds the
+	// manager directly instead of proxying through Deps.
+	Sessions      *agents.SessionManager
 	Logger        *slog.Logger
 	Store         storage.Store
 	Jobs          *jobs.Service
@@ -119,6 +120,7 @@ type Config struct {
 type Gateway struct {
 	gatewayrpc.UnimplementedAgentGatewayServer
 	deps          Deps
+	sessions      *agents.SessionManager
 	logger        *slog.Logger
 	store         storage.Store
 	jobs          *jobs.Service
@@ -134,6 +136,7 @@ type Gateway struct {
 func New(cfg Config) *Gateway {
 	return &Gateway{
 		deps:          cfg.Deps,
+		sessions:      cfg.Sessions,
 		logger:        cfg.Logger,
 		store:         cfg.Store,
 		jobs:          cfg.Jobs,

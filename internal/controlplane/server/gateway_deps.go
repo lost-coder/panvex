@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
-	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/gateway"
@@ -338,16 +337,6 @@ func (s *Server) HandleInStreamRenewalRequest(ctx context.Context, agentID strin
 }
 
 // --- thin wrappers over existing private server methods ---------------------
-
-// RegisterAgentSession installs a new gRPC stream session for agentID.
-func (s *Server) RegisterAgentSession(agentID string, cancelConn context.CancelFunc) (*agents.Session, func()) {
-	return s.registerAgentSession(agentID, cancelConn)
-}
-
-// NotifyAgentSession wakes the session currently attached to agentID.
-func (s *Server) NotifyAgentSession(agentID string) {
-	s.notifyAgentSession(agentID)
-}
 
 // ApplyAgentSnapshot applies an agent runtime snapshot against panel state.
 func (s *Server) ApplyAgentSnapshot(ctx context.Context, snap gateway.AgentSnapshot) error {

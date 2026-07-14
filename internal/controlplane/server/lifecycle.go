@@ -743,6 +743,7 @@ func New(options Options) (*Server, error) {
 	// *Server implements gateway.Deps (see gateway_deps.go).
 	server.gateway = gateway.New(gateway.Config{
 		Deps:          server,
+		Sessions:      server.sessions,
 		Logger:        server.logger,
 		Store:         server.store,
 		Jobs:          server.jobs,

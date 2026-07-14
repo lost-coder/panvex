@@ -91,7 +91,7 @@ func (g *Gateway) runAgentSession(ctx context.Context, sess agenttransport.Agent
 	connectionCtx, cancelConnection := context.WithCancel(ctx)
 	defer cancelConnection()
 
-	session, unregisterSession := g.deps.RegisterAgentSession(agentID, cancelConnection)
+	session, unregisterSession := g.sessions.Register(agentID, cancelConnection)
 	defer unregisterSession()
 	// P2-LOG-12 / L-05: MarkConnected exactly once per stream open, here.
 	// applyAgentSnapshot now only calls Heartbeat so subsequent heartbeat

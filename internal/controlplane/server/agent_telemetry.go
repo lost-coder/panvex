@@ -11,15 +11,6 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
-// runtimeLifecycleState is a thin back-compat wrapper over
-// controlplane/agents.RuntimeLifecycleState. Kept so the server package's
-// existing call sites and tests continue to compile; new code in the
-// server package should call agents.RuntimeLifecycleState directly.
-// See P3-ARCH-01a.
-func runtimeLifecycleState(snapshot *gatewayrpc.RuntimeSnapshot) string {
-	return agents.RuntimeLifecycleState(snapshot)
-}
-
 func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt time.Time) AgentRuntime {
 	dcs := make([]RuntimeDC, 0, len(snapshot.Dcs))
 	coverageSum := 0.0
@@ -115,7 +106,7 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		StartupProgressPct:         snapshot.StartupProgressPct,
 		InitializationStatus:       snapshot.InitializationStatus,
 		Degraded:                   snapshot.Degraded,
-		LifecycleState:             runtimeLifecycleState(snapshot),
+		LifecycleState:             agents.RuntimeLifecycleState(snapshot),
 		InitializationStage:        snapshot.InitializationStage,
 		InitializationProgressPct:  snapshot.InitializationProgressPct,
 		TransportMode:              snapshot.TransportMode,

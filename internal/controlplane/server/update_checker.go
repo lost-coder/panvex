@@ -14,31 +14,6 @@ import (
 // s.logger. Keeping it here is deliberate: the task is an
 // incremental split, not a full extraction.
 
-// GitHubRelease re-exported for handlers/tests that still reference the
-// short name through this package.
-type (
-	GitHubRelease = updates.GitHubRelease
-	GitHubAsset   = updates.GitHubReleaseAsset
-)
-
-// ParseReleaseTag delegates to updates.ParseReleaseTag.
-func ParseReleaseTag(tag string) (component, version string, ok bool) {
-	return updates.ParseReleaseTag(tag)
-}
-
-// CompareVersions delegates to updates.CompareVersions.
-func CompareVersions(a, b string) (int, error) { return updates.CompareVersions(a, b) }
-
-// FetchLatestVersions delegates to updates.FetchLatestVersions.
-func FetchLatestVersions(ctx context.Context, repo, token string) (panel, agent *GitHubRelease, err error) {
-	return updates.FetchLatestVersions(ctx, repo, token)
-}
-
-// ResolveAssetURLs delegates to updates.ResolveAssetURLs.
-func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, checksumURL string) {
-	return updates.ResolveAssetURLs(release, component)
-}
-
 // startUpdateCheckerWorker launches a background goroutine that periodically
 // polls GitHub for new releases and updates s.updateState.
 func (s *Server) startUpdateCheckerWorker(ctx context.Context) {
@@ -88,7 +63,7 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 	fetchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	panel, agent, err := FetchLatestVersions(fetchCtx, repo, token)
+	panel, agent, err := updates.FetchLatestVersions(fetchCtx, repo, token)
 	if err != nil {
 		s.logger.WarnContext(ctx, "update check failed", "error", err)
 		s.recordUpdateCheckError(ctx, err)
@@ -100,8 +75,8 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 	}
 
 	if panel != nil {
-		_, version, _ := ParseReleaseTag(panel.TagName)
-		binaryURL, checksumURL := ResolveAssetURLs(panel, "control-plane")
+		_, version, _ := updates.ParseReleaseTag(panel.TagName)
+		binaryURL, checksumURL := updates.ResolveAssetURLs(panel, "control-plane")
 		state.LatestPanelVersion = version
 		state.PanelDownloadURL = binaryURL
 		state.PanelChecksumURL = checksumURL
@@ -111,7 +86,7 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 	if agent != nil {
 		// The agent resolves its own per-arch asset URLs at update time, so
 		// the panel only needs the version + changelog here.
-		_, version, _ := ParseReleaseTag(agent.TagName)
+		_, version, _ := updates.ParseReleaseTag(agent.TagName)
 		state.LatestAgentVersion = version
 		state.AgentChangelog = agent.Body
 	}

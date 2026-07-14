@@ -451,8 +451,8 @@ func (s *Server) telemetrySummaryForAgent(agent Agent, presenceState presence.St
 
 func sortTelemetrySummaries(items []telemetryServerSummary) {
 	sort.Slice(items, func(left, right int) bool {
-		leftRank := telemetrySeverityRank(items[left].Severity)
-		rightRank := telemetrySeverityRank(items[right].Severity)
+		leftRank := controltelemetry.SeverityRank(items[left].Severity)
+		rightRank := controltelemetry.SeverityRank(items[right].Severity)
 		if leftRank != rightRank {
 			return leftRank > rightRank
 		}
@@ -461,8 +461,4 @@ func sortTelemetrySummaries(items []telemetryServerSummary) {
 		}
 		return items[left].Agent.NodeName < items[right].Agent.NodeName
 	})
-}
-
-func telemetrySeverityRank(value string) int {
-	return controltelemetry.SeverityRank(value)
 }

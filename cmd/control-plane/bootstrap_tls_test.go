@@ -102,8 +102,8 @@ func TestBootstrapVerifier_MatchingPin(t *testing.T) {
 // handshake — even though a bootstrap token might still be embedded in
 // the in-band exchange, that exchange is short-circuited at the TLS layer.
 func TestBootstrapVerifier_MismatchedPin(t *testing.T) {
-	der, _ := newSelfSignedRawDER(t)         // leaf the agent presents
-	_, otherPin := newSelfSignedRawDER(t)    // unrelated pin already stored
+	der, _ := newSelfSignedRawDER(t)      // leaf the agent presents
+	_, otherPin := newSelfSignedRawDER(t) // unrelated pin already stored
 	reader := &fakePinReader{pins: map[string][]byte{"agent-1": otherPin}}
 
 	cfg := newBootstrapTLSConfig(context.Background(), "agent-1", reader, tls.Certificate{})

@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/lost-coder/panvex/internal/controlplane/server"
+	"github.com/lost-coder/panvex/internal/controlplane/updates"
 )
 
 // errTokenFlagInsecure is returned when the operator passes -token without
@@ -103,8 +103,8 @@ func parseSelfUpdateFlags(args []string) (selfUpdateOptions, error) {
 // resolveSelfUpdateTarget fetches the latest release, picks the target version
 // (CLI flag wins over latest), and returns nil/false when there is nothing to do
 // (already at version / older without --force).
-func resolveSelfUpdateTarget(ctx context.Context, opts selfUpdateOptions) (panel *server.GitHubRelease, targetVersion, currentVersion string, proceed bool, err error) {
-	panel, _, err = server.FetchLatestVersions(ctx, opts.repo, opts.token)
+func resolveSelfUpdateTarget(ctx context.Context, opts selfUpdateOptions) (panel *updates.GitHubRelease, targetVersion, currentVersion string, proceed bool, err error) {
+	panel, _, err = updates.FetchLatestVersions(ctx, opts.repo, opts.token)
 	if err != nil {
 		return nil, "", "", false, fmt.Errorf("fetch latest versions: %w", err)
 	}
@@ -112,7 +112,7 @@ func resolveSelfUpdateTarget(ctx context.Context, opts selfUpdateOptions) (panel
 		return nil, "", "", false, errors.New("no control-plane release found")
 	}
 
-	_, latestVersion, ok := server.ParseReleaseTag(panel.TagName)
+	_, latestVersion, ok := updates.ParseReleaseTag(panel.TagName)
 	if !ok {
 		return nil, "", "", false, fmt.Errorf("failed to parse release tag %q", panel.TagName)
 	}
@@ -123,7 +123,7 @@ func resolveSelfUpdateTarget(ctx context.Context, opts selfUpdateOptions) (panel
 	}
 
 	currentVersion = strings.TrimPrefix(Version, "v")
-	cmp, cmpErr := server.CompareVersions(targetVersion, currentVersion)
+	cmp, cmpErr := updates.CompareVersions(targetVersion, currentVersion)
 	if cmpErr != nil {
 		return nil, "", "", false, fmt.Errorf("cannot compare versions: %w", cmpErr)
 	}
@@ -141,8 +141,8 @@ func resolveSelfUpdateTarget(ctx context.Context, opts selfUpdateOptions) (panel
 // downloadAndVerifySelfUpdateArchive downloads the archive + checksum for the
 // chosen release and verifies the checksum (mandatory) before returning the
 // local archive path. Caller is responsible for removing the path.
-func downloadAndVerifySelfUpdateArchive(ctx context.Context, panel *server.GitHubRelease, token string) (string, error) {
-	binaryURL, checksumURL := server.ResolveAssetURLs(panel, "control-plane")
+func downloadAndVerifySelfUpdateArchive(ctx context.Context, panel *updates.GitHubRelease, token string) (string, error) {
+	binaryURL, checksumURL := updates.ResolveAssetURLs(panel, "control-plane")
 	if binaryURL == "" {
 		return "", errors.New("no binary download URL found for the current platform")
 	}
@@ -150,13 +150,13 @@ func downloadAndVerifySelfUpdateArchive(ctx context.Context, panel *server.GitHu
 		return "", errors.New("release is missing a .sha256 asset; cannot verify integrity")
 	}
 
-	expectedChecksum, err := server.DownloadChecksum(ctx, checksumURL, token)
+	expectedChecksum, err := updates.DownloadChecksum(ctx, checksumURL, token)
 	if err != nil {
 		return "", fmt.Errorf("download checksum: %w", err)
 	}
 	fmt.Println("Checksum downloaded.")
 
-	archivePath, err := server.DownloadArchive(ctx, binaryURL, token)
+	archivePath, err := updates.DownloadArchive(ctx, binaryURL, token)
 	if err != nil {
 		return "", fmt.Errorf("download archive: %w", err)
 	}
@@ -173,7 +173,7 @@ func downloadAndVerifySelfUpdateArchive(ctx context.Context, panel *server.GitHu
 }
 
 func verifySelfUpdateArchive(archivePath, expectedChecksum string) error {
-	if err := server.VerifyChecksum(archivePath, expectedChecksum); err != nil {
+	if err := updates.VerifyChecksum(archivePath, expectedChecksum); err != nil {
 		return fmt.Errorf("verify checksum: %w", err)
 	}
 	fmt.Println("Checksum verified.")
@@ -201,7 +201,7 @@ func runSelfUpdate(args []string) error {
 	}
 	defer func() { _ = os.Remove(archivePath) }() //nolint:gosec // archivePath from os.CreateTemp, not user input
 
-	binaryPath, err := server.ExtractBinaryFromArchive(archivePath)
+	binaryPath, err := updates.ExtractBinaryFromArchive(archivePath)
 	if err != nil {
 		return fmt.Errorf("extract binary: %w", err)
 	}
@@ -213,7 +213,7 @@ func runSelfUpdate(args []string) error {
 		return fmt.Errorf("resolve current binary: %w", err)
 	}
 
-	if err := server.AtomicReplaceBinary(currentBinary, binaryPath); err != nil {
+	if err := updates.AtomicReplaceBinary(currentBinary, binaryPath); err != nil {
 		return fmt.Errorf("replace binary: %w", err)
 	}
 

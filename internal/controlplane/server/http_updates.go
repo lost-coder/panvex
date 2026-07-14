@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/updates"
 	"github.com/lost-coder/panvex/internal/updatehosts"
 )
 
@@ -320,7 +321,7 @@ func (s *Server) resolvePanelTargetVersion(w http.ResponseWriter, requested stri
 
 	// Strip "v" prefix for comparison since UpdateState stores bare semver.
 	currentVersion := strings.TrimPrefix(s.version, "v")
-	cmp, err := CompareVersions(targetVersion, currentVersion)
+	cmp, err := updates.CompareVersions(targetVersion, currentVersion)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid version: "+err.Error())
 		return "", false
@@ -343,12 +344,12 @@ func (s *Server) resolvePanelDownloadAssets(w http.ResponseWriter, r *http.Reque
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 
-		panel, _, err := FetchLatestVersions(ctx, settings.GitHubRepo, settings.GitHubToken)
+		panel, _, err := updates.FetchLatestVersions(ctx, settings.GitHubRepo, settings.GitHubToken)
 		if err != nil || panel == nil || panel.TagName != tag {
 			writeError(w, http.StatusBadGateway, "failed to resolve download URLs for target version")
 			return "", "", false
 		}
-		downloadURL, checksumURL = ResolveAssetURLs(panel, "control-plane")
+		downloadURL, checksumURL = updates.ResolveAssetURLs(panel, "control-plane")
 	}
 
 	if downloadURL == "" {
@@ -403,7 +404,7 @@ func (s *Server) fetchExpectedChecksum(ctx context.Context, checksumURL, token s
 		s.logger.ErrorContext(ctx, "panel update: release is missing a .sha256 asset; cannot verify integrity")
 		return "", false
 	}
-	checksum, err := DownloadChecksum(ctx, checksumURL, token)
+	checksum, err := updates.DownloadChecksum(ctx, checksumURL, token)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "panel update: download checksum failed", "error", err)
 		return "", false
@@ -416,7 +417,7 @@ func (s *Server) fetchExpectedChecksum(ctx context.Context, checksumURL, token s
 // on success; the caller is responsible for removing the file.
 func (s *Server) downloadAndVerifyPanelArchive(ctx context.Context, downloadURL, expectedChecksum, token string) (string, bool) {
 	updatehosts.WarnIfNonDefault(ctx, s.logger, "panel self-update", downloadURL)
-	archivePath, err := DownloadArchive(ctx, downloadURL, token)
+	archivePath, err := updates.DownloadArchive(ctx, downloadURL, token)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "panel update: download archive failed", "error", err)
 		return "", false
@@ -437,7 +438,7 @@ func (s *Server) verifyPanelArchive(ctx context.Context, archivePath, expectedCh
 		s.logger.ErrorContext(ctx, "panel update: missing checksum; refusing to install without integrity verification")
 		return false
 	}
-	if err := VerifyChecksum(archivePath, expectedChecksum); err != nil {
+	if err := updates.VerifyChecksum(archivePath, expectedChecksum); err != nil {
 		s.logger.ErrorContext(ctx, "panel update: checksum verification failed", "error", err)
 		return false
 	}
@@ -447,7 +448,7 @@ func (s *Server) verifyPanelArchive(ctx context.Context, archivePath, expectedCh
 // installPanelBinaryFromArchive extracts the binary from the verified archive
 // and atomically replaces the running executable.
 func (s *Server) installPanelBinaryFromArchive(ctx context.Context, archivePath string) bool {
-	binaryPath, err := ExtractBinaryFromArchive(archivePath)
+	binaryPath, err := updates.ExtractBinaryFromArchive(archivePath)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "panel update: extract binary failed", "error", err)
 		return false
@@ -463,7 +464,7 @@ func (s *Server) installPanelBinaryFromArchive(ctx context.Context, archivePath 
 		return false
 	}
 
-	if err := AtomicReplaceBinary(currentBinary, binaryPath); err != nil {
+	if err := updates.AtomicReplaceBinary(currentBinary, binaryPath); err != nil {
 		s.logger.ErrorContext(ctx, "panel update: atomic replace failed", "error", err)
 		return false
 	}
