@@ -15,21 +15,21 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
-// pinRecordingStore wraps a real Store and intercepts UpdateAgentCertPin
-// calls so the test can assert on the persisted pin. All other methods
-// delegate to the underlying real store so background workers (update
-// checker, batch writer, etc.) do not hit a nil-embed panic.
+// pinRecordingStore wraps a real Store and intercepts the credential rotation
+// so the test can assert on the persisted pin. All other methods delegate to
+// the underlying real store so background workers (update checker, batch
+// writer, etc.) do not hit a nil-embed panic.
 type pinRecordingStore struct {
 	storage.Store
 	pins map[string][]byte
 }
 
-func (s *pinRecordingStore) UpdateAgentCertPin(_ context.Context, agentID string, pin []byte) error {
-	s.pins[agentID] = append([]byte(nil), pin...)
+func (s *pinRecordingStore) RotateAgentCert(_ context.Context, agentID string, _ string, spki []byte, _ time.Time) error {
+	s.pins[agentID] = append([]byte(nil), spki...)
 	return nil
 }
 
-func TestPersistAgentCertPinStoresSPKIHash(t *testing.T) {
+func TestRotateAgentCredentialStoresSPKIHash(t *testing.T) {
 	now := time.Now()
 	srv := testServerWithSQLite(t, now)
 	store := &pinRecordingStore{Store: srv.store, pins: map[string][]byte{}}
@@ -51,7 +51,7 @@ func TestPersistAgentCertPinStoresSPKIHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue cert: %v", err)
 	}
-	srv.persistAgentCertPin(context.Background(), "agent-pin", issued.CertificatePEM)
+	srv.rotateAgentCredential(context.Background(), "agent-pin", issued.CertificatePEM)
 
 	block, _ := pem.Decode([]byte(issued.CertificatePEM))
 	cert, err := x509.ParseCertificate(block.Bytes)
@@ -61,7 +61,7 @@ func TestPersistAgentCertPinStoresSPKIHash(t *testing.T) {
 	want := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 	got, ok := store.pins["agent-pin"]
 	if !ok {
-		t.Fatal("UpdateAgentCertPin was not called")
+		t.Fatal("RotateAgentCert was not called")
 	}
 	if string(got) != string(want[:]) {
 		t.Fatal("persisted pin is not the SHA-256 of the cert SPKI")

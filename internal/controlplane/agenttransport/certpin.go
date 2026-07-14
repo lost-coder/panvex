@@ -26,11 +26,20 @@ var ErrCertPinMissing = errors.New("agent cert SPKI pin missing: re-enroll the a
 // handshake completes. Defined here (consumer side) so the agenttransport
 // package does not import the storage package directly.
 type CertPinReader interface {
-	// GetAgentCertPin returns the SHA-256 SPKI pin recorded at enroll time.
-	// Returns storage.ErrNotFound if no agent with the given ID exists or the
-	// pin has not yet been set. A missing or empty pin causes the caller to
-	// reject the dial (fail-closed) — see ErrCertPinMissing. (A1)
-	GetAgentCertPin(ctx context.Context, agentID string) ([]byte, error)
+	// AcceptedAgentCertPins returns every SHA-256 SPKI pin the panel currently
+	// accepts for the agent: the pin of the newest issued certificate, plus —
+	// while a rotation overlap window is open — the pin of the one it replaced
+	// (R11).
+	//
+	// Returns storage.ErrNotFound if no agent with the given ID exists. An
+	// empty result causes the caller to reject the dial (fail-closed) — see
+	// ErrCertPinMissing. (A1)
+	//
+	// The overlap is what keeps a listen-mode node reachable when a renewal
+	// exchange is interrupted: the panel has already recorded the new
+	// certificate, the agent still holds the old one, and without the overlap
+	// the dial verifier below would refuse the only credential the node has.
+	AcceptedAgentCertPins(ctx context.Context, agentID string) ([][]byte, error)
 }
 
 // CertPinVerifyObserver is called after each cert-pin verification attempt.
@@ -39,20 +48,22 @@ type CertPinReader interface {
 // panvex_agent_cert_pin_total. (S-02)
 type CertPinVerifyObserver func(result string)
 
-// verifyCertPin compares the SHA-256 of cert.RawSubjectPublicKeyInfo to
-// expectedPin in constant time. An empty expectedPin (len == 0) skips the
-// check — used for agents enrolled before S-02 deployment. A nil cert with
-// a non-empty pin is treated as a mismatch (fail-closed). (S-02)
-func verifyCertPin(cert *x509.Certificate, expectedPin []byte) error {
-	if len(expectedPin) == 0 {
-		return nil
-	}
+// verifyCertPin compares the SHA-256 of cert.RawSubjectPublicKeyInfo against
+// every accepted pin, in constant time per candidate. A nil cert is a mismatch
+// (fail-closed). The caller has already rejected an empty candidate set, so
+// reaching here with one is a mismatch too. (S-02)
+func verifyCertPin(cert *x509.Certificate, acceptedPins [][]byte) error {
 	if cert == nil {
 		return ErrCertPinMismatch
 	}
 	actual := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
-	if subtle.ConstantTimeCompare(actual[:], expectedPin) != 1 {
-		return ErrCertPinMismatch
+	for _, pin := range acceptedPins {
+		if len(pin) == 0 {
+			continue
+		}
+		if subtle.ConstantTimeCompare(actual[:], pin) == 1 {
+			return nil
+		}
 	}
-	return nil
+	return ErrCertPinMismatch
 }

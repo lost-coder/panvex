@@ -308,11 +308,11 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 					return err
 				}
 			}
-			pin, err := pinReader.GetAgentCertPin(ctx, agentID)
+			pins, err := pinReader.AcceptedAgentCertPins(ctx, agentID)
 			if err != nil && !errors.Is(err, storage.ErrNotFound) {
 				return fmt.Errorf("agenttransport: cert pin lookup (node_id=%s): %w", agentID, err)
 			}
-			if errors.Is(err, storage.ErrNotFound) || len(pin) == 0 {
+			if errors.Is(err, storage.ErrNotFound) || len(pins) == 0 {
 				// Fail-closed (A1): no TOFU on the steady-state dial path.
 				// The bootstrap exchange (EnrollDriver) is the only place
 				// first-contact trust is established, gated by the
@@ -326,7 +326,7 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 			if len(state.PeerCertificates) > 0 {
 				leaf = state.PeerCertificates[0]
 			}
-			if err := verifyCertPin(leaf, pin); err != nil {
+			if err := verifyCertPin(leaf, pins); err != nil {
 				if pinObserver != nil {
 					pinObserver("mismatch")
 				}

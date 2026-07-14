@@ -11,6 +11,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/controlplane/gateway"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -57,7 +58,7 @@ func (s *Server) AuthorizeAgentConnect(ctx context.Context, sess agenttransport.
 	// it — we'd rather break the new connect attempt than let a leaked
 	// cert resurrect a stream during a pool blip.
 	if s.store != nil {
-		expected, err := s.store.GetAgentCertSerial(ctx, agentID)
+		pins, err := s.store.GetAgentCertPins(ctx, agentID)
 		if err != nil {
 			// Still fail closed, but a client that walked away mid-handshake
 			// (context canceled/deadline) is expected connection churn, not a
@@ -75,10 +76,32 @@ func (s *Server) AuthorizeAgentConnect(ctx context.Context, sess agenttransport.
 			s.obs.ObserveAgentConnectRejected("serial_lookup_failed")
 			return "", "", status.Error(codes.Unavailable, "agent cert pin check unavailable")
 		}
-		if expected != "" && expected != presentedSerial {
+		switch s.classifyPresentedSerial(pins, presentedSerial) {
+		case certSerialCurrent:
+			// The agent proved it took delivery of the newest certificate, so
+			// the previous one stops being accepted (R11). Best-effort: a
+			// failure here only means the overlap closes on the next connect.
+			if pins.OverlapUntil != nil {
+				if closeErr := s.store.CloseAgentCertOverlap(ctx, agentID); closeErr != nil {
+					s.logger.WarnContext(ctx, "closing the agent cert overlap window failed",
+						"agent_id", agentID, "error", closeErr)
+				}
+			}
+		case certSerialPrevious:
+			// The renewal exchange did not complete — the agent still holds the
+			// certificate we replaced. Accepting it here is what keeps a
+			// listen-mode node reachable instead of stranding it until an
+			// operator issues a recovery grant. The agent's own renewal timer
+			// will ask again, and the window is bounded.
+			s.logger.InfoContext(ctx, "agent connected with the previous certificate; rotation overlap window is open",
+				"agent_id", agentID,
+				"current_serial", pins.Serial,
+				"presented_serial", presentedSerial,
+				"overlap_until", pins.OverlapUntil)
+		case certSerialUnknown:
 			s.logger.WarnContext(ctx, "agent cert serial mismatch — rejecting connect",
 				"agent_id", agentID,
-				"expected_serial", expected,
+				"expected_serial", pins.Serial,
 				"presented_serial", presentedSerial,
 				"alert", "agent_cert_serial_mismatch")
 			s.obs.ObserveAgentConnectRejected("serial_mismatch")
@@ -108,7 +131,7 @@ func (s *Server) ShouldTerminateForRevocation(ctx context.Context, agentID, pres
 	if s.store == nil {
 		return false
 	}
-	expected, err := s.store.GetAgentCertSerial(ctx, agentID)
+	pins, err := s.store.GetAgentCertPins(ctx, agentID)
 	if err != nil {
 		// Fail closed: a transient lookup failure must not silently
 		// strip the only defense against harvested-cert replay. Tearing
@@ -123,14 +146,14 @@ func (s *Server) ShouldTerminateForRevocation(ctx context.Context, agentID, pres
 			"agent_id", agentID, "error", err)
 		return true
 	}
-	if expected != "" && expected != presentedSerial {
+	if s.classifyPresentedSerial(pins, presentedSerial) == certSerialUnknown {
 		// Warn, not Info: this is the signal that tells an operator the node is
 		// UP and being refused, rather than simply down — the difference
 		// between "the box is off" and "an interrupted renewal left the two
 		// sides holding different certificates" (R11).
 		s.logger.WarnContext(ctx, "mid-stream cert serial mismatch, terminating agent stream",
 			"agent_id", agentID,
-			"expected_serial", expected,
+			"expected_serial", pins.Serial,
 			"presented_serial", presentedSerial,
 			"alert", "agent_cert_serial_mismatch",
 		)
@@ -138,6 +161,40 @@ func (s *Server) ShouldTerminateForRevocation(ctx context.Context, agentID, pres
 		return true
 	}
 	return false
+}
+
+// certSerialVerdict is what the panel makes of the certificate an agent
+// presented, given the credentials it currently accepts.
+type certSerialVerdict int
+
+const (
+	// certSerialCurrent — the newest issued certificate. Also the signal that
+	// closes an open rotation overlap window.
+	certSerialCurrent certSerialVerdict = iota
+	// certSerialPrevious — the certificate the newest one replaced, still
+	// accepted because the overlap window has not expired.
+	certSerialPrevious
+	// certSerialUnknown — anything else. Rejected, as before.
+	certSerialUnknown
+)
+
+// classifyPresentedSerial decides whether the panel accepts the serial an agent
+// presented. An unpinned agent (empty current serial) is accepted, which is the
+// pre-existing behaviour for agents enrolled before pinning shipped.
+//
+// The previous serial is only accepted while its window is open: the accepted
+// set is at most two credentials and is time-bounded, so this does not soften
+// fail-closed pinning — it removes the case where an interrupted renewal left
+// the only credential the agent HAS outside the accepted set (R11 / R-1).
+func (s *Server) classifyPresentedSerial(pins storage.AgentCertPins, presented string) certSerialVerdict {
+	if pins.Serial == "" || pins.Serial == presented {
+		return certSerialCurrent
+	}
+	if pins.PrevSerial != "" && pins.PrevSerial == presented &&
+		pins.OverlapUntil != nil && s.now().UTC().Before(*pins.OverlapUntil) {
+		return certSerialPrevious
+	}
+	return certSerialUnknown
 }
 
 // MarkTransportSwitchResolved clears the A2 "switched but never reconnected"
@@ -196,14 +253,10 @@ func (s *Server) RenewAgentCertificate(ctx context.Context, agentID string, requ
 		s.batchWriter.EnqueueAgent(agentToRecord(agent))
 	}
 	s.mu.Unlock()
-	// Q4.U-S-04: pin the new serial so the in-flight stream (and any
-	// reconnect that follows) only accept the freshly-issued cert.
-	if s.store != nil {
-		if err := s.store.UpdateAgentCertSerial(ctx, agentID, issued.Serial); err != nil {
-			s.logger.WarnContext(ctx, "persist renewed agent cert serial failed", "agent_id", agentID, "error", err)
-		}
-	}
-	s.persistAgentCertPin(ctx, agentID, issued.CertificatePEM)
+	// Q4.U-S-04 + R11: pin the new credential, keeping the previous one
+	// accepted until it expires so an interrupted exchange cannot strand the
+	// agent on a certificate we no longer know.
+	s.rotateAgentCredential(ctx, agentID, issued.CertificatePEM)
 
 	return &gatewayrpc.RenewCertificateResponse{
 		CertificatePem: issued.CertificatePEM,
@@ -332,16 +385,12 @@ func (s *Server) HandleInStreamRenewalRequest(ctx context.Context, agentID strin
 	}
 	s.mu.Unlock()
 
-	// Persist the new serial so future connects and revocation checks use it.
-	if s.store != nil && newSerial != "" {
-		if err := s.store.UpdateAgentCertSerial(ctx, agentID, newSerial); err != nil {
-			s.logger.WarnContext(ctx, "in-stream cert renewal: persist cert serial failed", "agent_id", agentID, "error", err)
-		}
-	}
-	// In-stream renewal rotates the agent key — must persist the new SPKI pin
-	// or the fail-closed dial verifier (Task 5 / A1) would block the agent
-	// after its first in-stream renewal.
-	s.persistAgentCertPin(ctx, agentID, certPEM)
+	// In-stream renewal rotates the agent key, so both the serial and the SPKI
+	// pin move. R11: the previous credential stays accepted until it expires —
+	// this exchange is exactly the one that strands a listen-mode node when it
+	// is interrupted, because the agent only learns of the new certificate when
+	// the RenewalResponse below reaches it.
+	s.rotateAgentCredential(ctx, agentID, certPEM)
 
 	sendErr := sess.Send(&gatewayrpc.ConnectServerMessage{
 		Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{

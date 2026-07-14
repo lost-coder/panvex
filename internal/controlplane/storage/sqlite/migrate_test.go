@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	// register the pure-Go SQLite driver under "sqlite" for database/sql
+	sqlitemigrations "github.com/lost-coder/panvex/db/migrations/sqlite"
 	_ "modernc.org/sqlite"
 )
 
@@ -29,15 +30,17 @@ func TestMigrateCreatesGooseVersionTable(t *testing.T) {
 		t.Fatalf("goose_db_version table not found: %v", err)
 	}
 
-	// Exactly one embedded migration after the P9 squash: 0001_init.sql.
-	// Pre-squash DBs carry versions 1..58, but this test always starts
-	// from an empty file, so the ledger must contain exactly version 1.
+	// A fresh DB applies every embedded migration: the squashed 0001_init plus
+	// whatever has been added since (P9 rules: new migrations are numbered
+	// >= 0059). Counting the files rather than hardcoding a number keeps this
+	// from breaking every time a migration lands.
+	want := countEmbeddedMigrations(t)
 	var count int
 	if err := db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM goose_db_version WHERE is_applied = 1 AND version_id > 0`).Scan(&count); err != nil {
 		t.Fatalf("count applied versions: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("expected exactly 1 applied goose version (0001_init), got %d", count)
+	if count != want {
+		t.Fatalf("applied goose versions = %d, want %d (one per embedded migration)", count, want)
 	}
 }
 
@@ -165,20 +168,25 @@ func TestSchemaUsesCanonicalJSONColumnNames(t *testing.T) {
 
 // TestMigrateSkipsSquashedBaselineOnPreSquashDB proves the upgrade path for
 // databases that predate the P9 squash. Such a DB already carries goose
-// versions 1..58 (the historical tree's first migration was numbered 0001),
-// so when goose sees the single squashed 0001_init it MUST recognise version
-// 1 as already applied and skip re-running it. If goose instead re-ran the
-// baseline it would clobber (or, on a live schema, error against) tables the
-// operator already has. We simulate the ledger without the real schema, so a
-// wrongful re-run is directly observable: 0001_init would materialise the
-// `users` table that our seeded DB deliberately lacks.
+// versions 1..58 (the historical tree's first migration was numbered 0001), so
+// when goose sees the single squashed 0001_init it MUST recognise version 1 as
+// already applied and skip re-running it. If goose instead re-ran the baseline
+// it would clobber tables the operator already has.
+//
+// The fixture is a real pre-squash DB: the product schema is materialised (by
+// executing 0001_init's statements directly, WITHOUT recording them in the
+// ledger, which is what a pre-squash DB looks like from goose's point of view)
+// and the ledger is seeded with 1..58. A wrongful re-run of 0001_init is then
+// directly observable — its CREATE TABLEs would collide with the existing ones
+// and Migrate would fail.
 func TestMigrateSkipsSquashedBaselineOnPreSquashDB(t *testing.T) {
 	db := openEmptySQLite(t)
 	ctx := t.Context()
 
+	applySquashedSchemaWithoutLedger(t, db)
+
 	// Recreate goose's own ledger schema, then seed it as a pre-squash DB:
-	// version 0 (goose's initial row) plus 1..58 all applied. No product
-	// tables exist — only the ledger.
+	// version 0 (goose's initial row) plus 1..58 all applied.
 	if _, err := db.ExecContext(ctx, `CREATE TABLE goose_db_version (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		version_id INTEGER NOT NULL,
@@ -196,26 +204,69 @@ func TestMigrateSkipsSquashedBaselineOnPreSquashDB(t *testing.T) {
 		}
 	}
 
+	// 0001_init must be skipped (a re-run would collide with the tables that
+	// already exist), while every post-squash migration must still apply.
 	if err := Migrate(db); err != nil {
 		t.Fatalf("Migrate() on pre-squash DB error = %v", err)
 	}
 
-	// 0001_init must have been skipped: its `users` table must NOT appear.
-	var name string
-	err := db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name='users'`).Scan(&name)
-	if err != sql.ErrNoRows {
-		t.Fatalf("expected 0001_init to be skipped (no users table), but got err=%v name=%q", err, name)
-	}
-
-	// The ledger must be untouched: still exactly the 58 seeded versions,
-	// with no duplicate row for version 1.
+	// The ledger keeps its 58 seeded versions and gains one row per
+	// post-squash migration — no duplicate row for version 1.
+	postSquash := countEmbeddedMigrations(t) - 1
 	var applied int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE is_applied = 1 AND version_id > 0`).Scan(&applied); err != nil {
 		t.Fatalf("count applied versions: %v", err)
 	}
-	if applied != 58 {
-		t.Fatalf("expected ledger to stay at 58 applied versions, got %d", applied)
+	if want := 58 + postSquash; applied != want {
+		t.Fatalf("applied versions = %d, want %d (58 pre-squash + %d post-squash)", applied, want, postSquash)
 	}
+	var version1Rows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE version_id = 1`).Scan(&version1Rows); err != nil {
+		t.Fatalf("count version-1 rows: %v", err)
+	}
+	if version1Rows != 1 {
+		t.Fatalf("version 1 has %d ledger rows, want 1 (the squashed baseline must not be re-applied)", version1Rows)
+	}
+}
+
+// applySquashedSchemaWithoutLedger materialises 0001_init's schema directly, so
+// the DB looks like one migrated by the historical tree: the tables are there,
+// but goose has no record of having created them under version 1.
+func applySquashedSchemaWithoutLedger(t *testing.T, db *sql.DB) {
+	t.Helper()
+	raw, err := sqlitemigrations.FS.ReadFile("0001_init.sql")
+	if err != nil {
+		t.Fatalf("read 0001_init.sql: %v", err)
+	}
+	body := string(raw)
+	if idx := strings.Index(body, "-- +goose Down"); idx >= 0 {
+		body = body[:idx]
+	}
+	for _, stmt := range strings.Split(body, ";") {
+		trimmed := strings.TrimSpace(stmt)
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		if _, err := db.ExecContext(t.Context(), trimmed); err != nil {
+			t.Fatalf("apply baseline statement: %v\n%s", err, trimmed)
+		}
+	}
+}
+
+// countEmbeddedMigrations returns how many .sql migrations ship in the binary.
+func countEmbeddedMigrations(t *testing.T) int {
+	t.Helper()
+	entries, err := sqlitemigrations.FS.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			count++
+		}
+	}
+	return count
 }
 
 // TestStatusSucceedsOnFreshDB confirms Status runs without error against a

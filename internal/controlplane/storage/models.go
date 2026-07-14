@@ -230,6 +230,21 @@ type ReassignCounts struct {
 }
 
 // AgentRecord stores one enrolled host agent snapshot.
+// AgentCertPins is the set of agent credentials the panel accepts at a given
+// moment: the current one, and — while a rotation overlap window is open — the
+// previous one. OverlapUntil is nil when no rotation is in flight.
+//
+// The pair is deliberately small and time-bounded: it exists so an interrupted
+// renewal cannot strand a node on a certificate the panel has already forgotten
+// (R11), not to soften the fail-closed pinning.
+type AgentCertPins struct {
+	Serial       string
+	SPKI         []byte
+	PrevSerial   string
+	PrevSPKI     []byte
+	OverlapUntil *time.Time
+}
+
 type AgentRecord struct {
 	ID            string
 	NodeName      string
