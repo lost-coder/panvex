@@ -121,6 +121,7 @@ type MetricsSink interface {
 // (unbounded, prior behaviour).
 type batchBuffer[T any] struct {
 	mu       sync.Mutex
+	stream   string // metrics/log label, e.g. "agents"
 	items    []T
 	start    int // logical head: items[start:] are live
 	maxSize  int // flush threshold (per-stream, streamBatchSizes)
@@ -136,14 +137,33 @@ type batchBuffer[T any] struct {
 	observeDrop func(n int)
 }
 
-func newBatchBuffer[T any](maxSize int, flush func(ctx context.Context, items []T)) *batchBuffer[T] {
+func newBatchBuffer[T any](stream string, maxSize int, flush func(ctx context.Context, items []T)) *batchBuffer[T] {
 	return &batchBuffer[T]{
+		stream:  stream,
 		items:   make([]T, 0, maxSize),
 		maxSize: maxSize,
 		flushFn: flush,
 		signal:  make(chan struct{}, 1),
 	}
 }
+
+// streamBuffer is the type-erased view of a batchBuffer[T]. The writer-wide
+// fan-outs (cap, queue-depth gauge, drop wiring, drain) iterate over these so
+// adding a stream means adding it to one slice, not to four hand-written
+// enumerations. The typed Enqueue* entry points keep their concrete types.
+type streamBuffer interface {
+	Stream() string
+	Len() int
+	Drain(ctx context.Context)
+	SetCap(int)
+	SetDropObserver(func(n int))
+}
+
+func (b *batchBuffer[T]) Stream() string { return b.stream }
+
+func (b *batchBuffer[T]) SetCap(capLimit int) { b.capLimit = capLimit }
+
+func (b *batchBuffer[T]) SetDropObserver(fn func(n int)) { b.observeDrop = fn }
 
 // Enqueue appends an item to the buffer. If the buffer is at capLimit the
 // OLDEST item is evicted (drop-oldest keeps the newest data — for
@@ -286,6 +306,12 @@ type Writer struct {
 	// to capture spooled records (or to force a dead-letter write failure).
 	writeDeadLetter func(item storage.AuditEventRecord) error
 
+	// regularBuffers / allBuffers are the type-erased fan-out views built in
+	// New. regularBuffers is drain-ordered and excludes fallback_state (owned
+	// by criticalFlushLoop); allBuffers adds it.
+	regularBuffers []streamBuffer
+	allBuffers     []streamBuffer
+
 	agents     *batchBuffer[storage.AgentRecord]
 	instances  *batchBuffer[storage.InstanceRecord]
 	metricsBuf *batchBuffer[storage.MetricSnapshotRecord]
@@ -374,15 +400,27 @@ func New(store storage.Store, metrics MetricsSink, now func() time.Time) *Writer
 	// w.writeDeadLetter to capture records without touching the filesystem.
 	w.writeDeadLetter = w.writeAuditDeadLetter
 
-	w.agents = newBatchBuffer(batchSizeFor("agents"), w.flushAgents)
-	w.instances = newBatchBuffer(batchSizeFor("instances"), w.flushInstances)
-	w.metricsBuf = newBatchBuffer(batchSizeFor("metrics"), w.flushMetrics)
-	w.serverLoad = newBatchBuffer(batchSizeFor("server_load"), w.flushServerLoad)
-	w.dcHealth = newBatchBuffer(batchSizeFor("dc_health"), w.flushDCHealth)
-	w.clientIPs = newBatchBuffer(batchSizeFor("client_ips"), w.flushClientIPs)
-	w.telemetry = newBatchBuffer(batchSizeFor("telemetry"), w.flushTelemetry)
-	w.auditEvents = newBatchBuffer(batchSizeFor("audit"), w.flushAuditEvents)
-	w.fallbackState = newBatchBuffer(batchSizeFor("fallback_state"), w.flushFallbackState)
+	// The six bulk streams differ only in their record type and Store call,
+	// so they share one flusher (bulkFlusher). telemetry / audit /
+	// fallback_state have their own semantics (multi-table unit, dead-letter
+	// spool, per-op routing) and keep bespoke flushers.
+	w.agents = newBatchBuffer("agents", batchSizeFor("agents"), bulkFlusher(w, "agents", store.PutAgentsBulk))
+	w.instances = newBatchBuffer("instances", batchSizeFor("instances"), bulkFlusher(w, "instances", store.PutInstancesBulk))
+	w.metricsBuf = newBatchBuffer("metrics", batchSizeFor("metrics"), bulkFlusher(w, "metrics", store.AppendMetricSnapshotsBulk))
+	w.serverLoad = newBatchBuffer("server_load", batchSizeFor("server_load"), bulkFlusher(w, "server_load", store.AppendServerLoadPointsBulk))
+	w.dcHealth = newBatchBuffer("dc_health", batchSizeFor("dc_health"), bulkFlusher(w, "dc_health", store.AppendDCHealthPointsBulk))
+	w.clientIPs = newBatchBuffer("client_ips", batchSizeFor("client_ips"), bulkFlusher(w, "client_ips", store.UpsertClientIPHistoryBulk))
+	w.telemetry = newBatchBuffer("telemetry", batchSizeFor("telemetry"), w.flushTelemetry)
+	w.auditEvents = newBatchBuffer("audit", batchSizeFor("audit"), w.flushAuditEvents)
+	w.fallbackState = newBatchBuffer("fallback_state", batchSizeFor("fallback_state"), w.flushFallbackState)
+
+	// regularBuffers is drain-ordered: audit last so the rows it references
+	// land first. fallback_state is drained by criticalFlushLoop, not here.
+	w.regularBuffers = []streamBuffer{
+		w.agents, w.instances, w.metricsBuf, w.serverLoad,
+		w.dcHealth, w.clientIPs, w.telemetry, w.auditEvents,
+	}
+	w.allBuffers = append(append([]streamBuffer{}, w.regularBuffers...), w.fallbackState)
 
 	w.SetBufferCap(defaultBatchBufferCap)
 	w.wireDropObservers()
@@ -398,15 +436,9 @@ const defaultBatchBufferCap = 10_000
 // called before Start(); the operational-settings store supplies the
 // value in lifecycle.go next to flushInterval.
 func (w *Writer) SetBufferCap(capLimit int) {
-	w.agents.capLimit = capLimit
-	w.instances.capLimit = capLimit
-	w.metricsBuf.capLimit = capLimit
-	w.serverLoad.capLimit = capLimit
-	w.dcHealth.capLimit = capLimit
-	w.clientIPs.capLimit = capLimit
-	w.telemetry.capLimit = capLimit
-	w.auditEvents.capLimit = capLimit
-	w.fallbackState.capLimit = capLimit
+	for _, buf := range w.allBuffers {
+		buf.SetCap(capLimit)
+	}
 }
 
 // SetFlushInterval overrides the background flush cadence. Must be called
@@ -443,15 +475,10 @@ func (w *Writer) Flush(ctx context.Context) { w.drainAll(ctx) }
 // safe by construction: put/delete ops are full per-agent overwrites, so
 // the newest op per agent supersedes any evicted older one.
 func (w *Writer) wireDropObservers() {
-	w.agents.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("agents", n) }
-	w.instances.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("instances", n) }
-	w.metricsBuf.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("metrics", n) }
-	w.serverLoad.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("server_load", n) }
-	w.dcHealth.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("dc_health", n) }
-	w.clientIPs.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("client_ips", n) }
-	w.telemetry.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("telemetry", n) }
-	w.auditEvents.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("audit", n) }
-	w.fallbackState.observeDrop = func(n int) { w.metrics.ObserveBufferDrop("fallback_state", n) }
+	for _, buf := range w.allBuffers {
+		stream := buf.Stream()
+		buf.SetDropObserver(func(n int) { w.metrics.ObserveBufferDrop(stream, n) })
+	}
 	w.auditEvents.onDropped = func(item storage.AuditEventRecord) {
 		if err := w.writeDeadLetter(item); err != nil {
 			slog.Error("audit overflow dead-letter write failed",
@@ -616,15 +643,9 @@ func (w *Writer) criticalFlushLoop(parentCtx context.Context) {
 // queue depth observed by Prometheus (post-drain the value would always be
 // zero and useless for alerting).
 func (w *Writer) observeQueueDepths() {
-	w.metrics.SetQueueDepth("agents", float64(w.agents.Len()))
-	w.metrics.SetQueueDepth("instances", float64(w.instances.Len()))
-	w.metrics.SetQueueDepth("metrics", float64(w.metricsBuf.Len()))
-	w.metrics.SetQueueDepth("server_load", float64(w.serverLoad.Len()))
-	w.metrics.SetQueueDepth("dc_health", float64(w.dcHealth.Len()))
-	w.metrics.SetQueueDepth("client_ips", float64(w.clientIPs.Len()))
-	w.metrics.SetQueueDepth("telemetry", float64(w.telemetry.Len()))
-	w.metrics.SetQueueDepth("audit", float64(w.auditEvents.Len()))
-	w.metrics.SetQueueDepth("fallback_state", float64(w.fallbackState.Len()))
+	for _, buf := range w.allBuffers {
+		w.metrics.SetQueueDepth(buf.Stream(), float64(buf.Len()))
+	}
 }
 
 // drainRegular drains every stream EXCEPT fallback_state, which is owned
@@ -632,19 +653,14 @@ func (w *Writer) observeQueueDepths() {
 // it references land first.
 func (w *Writer) drainRegular(ctx context.Context) {
 	w.observeQueueDepths()
-	w.agents.Drain(ctx)
-	w.instances.Drain(ctx)
-	w.metricsBuf.Drain(ctx)
-	w.serverLoad.Drain(ctx)
-	w.dcHealth.Drain(ctx)
-	w.clientIPs.Drain(ctx)
-	w.telemetry.Drain(ctx)
-	// Drain audit last so earlier streams (which may describe the same
-	// state transitions being audited) land in the store before the audit
-	// rows that reference them. Ordering is best-effort — the store does
-	// not enforce cross-table FKs for audit — but it keeps logs readable
-	// when operators correlate rows by timestamp.
-	w.auditEvents.Drain(ctx)
+	// regularBuffers is drain-ordered (audit last, see New): earlier streams
+	// may describe the same state transitions being audited, so they should
+	// land in the store before the audit rows that reference them. Ordering is
+	// best-effort — the store enforces no cross-table FK for audit — but it
+	// keeps logs readable when operators correlate rows by timestamp.
+	for _, buf := range w.regularBuffers {
+		buf.Drain(ctx)
+	}
 }
 
 // drainAll is the shutdown-path drain (StopWithTimeout): regular streams
@@ -917,6 +933,23 @@ func errorChain(err error) []string {
 	return out
 }
 
+// bulkFlusher builds the flush function for a stream whose whole batch goes
+// through one bulk Store call. The retry + classification + metrics machinery
+// in flushItem wraps the call, so a transient error retries the whole batch and
+// a persistent one drops it and records the outcome exactly once — one batch,
+// one outcome.
+func bulkFlusher[T any](w *Writer, stream string, bulk func(context.Context, []T) error) func(context.Context, []T) {
+	return func(ctx context.Context, items []T) {
+		if len(items) == 0 {
+			return
+		}
+		slog.Debug(logBatchFlush, "domain", stream, "count", len(items))
+		w.flushItem(stream, []any{"count", len(items)}, func() error {
+			return bulk(ctx, items)
+		})
+	}
+}
+
 // Flush functions — each persists all accumulated items through the Store's
 // bulk insert API in a single transaction (P3-PERF-01a / H13). The retry +
 // classification + metrics machinery from flushItem wraps the bulk call so a
@@ -929,66 +962,6 @@ func errorChain(err error) []string {
 // Store method, which on a 50-row batch produced 50 network round-trips and
 // dominated the PERF-05 baseline (~5.5ms/flush). Bulk INSERT collapses the
 // round-trips to O(chunks) where chunks = ceil(items / 500).
-
-func (w *Writer) flushAgents(ctx context.Context, items []storage.AgentRecord) {
-	if len(items) == 0 {
-		return
-	}
-	slog.Debug(logBatchFlush, "domain", "agents", "count", len(items))
-	w.flushItem("agents", []any{"count", len(items)}, func() error {
-		return w.store.PutAgentsBulk(ctx, items)
-	})
-}
-
-func (w *Writer) flushInstances(ctx context.Context, items []storage.InstanceRecord) {
-	if len(items) == 0 {
-		return
-	}
-	slog.Debug(logBatchFlush, "domain", "instances", "count", len(items))
-	w.flushItem("instances", []any{"count", len(items)}, func() error {
-		return w.store.PutInstancesBulk(ctx, items)
-	})
-}
-
-func (w *Writer) flushMetrics(ctx context.Context, items []storage.MetricSnapshotRecord) {
-	if len(items) == 0 {
-		return
-	}
-	slog.Debug(logBatchFlush, "domain", "metrics", "count", len(items))
-	w.flushItem("metrics", []any{"count", len(items)}, func() error {
-		return w.store.AppendMetricSnapshotsBulk(ctx, items)
-	})
-}
-
-func (w *Writer) flushServerLoad(ctx context.Context, items []storage.ServerLoadPointRecord) {
-	if len(items) == 0 {
-		return
-	}
-	slog.Debug(logBatchFlush, "domain", "server_load", "count", len(items))
-	w.flushItem("server_load", []any{"count", len(items)}, func() error {
-		return w.store.AppendServerLoadPointsBulk(ctx, items)
-	})
-}
-
-func (w *Writer) flushDCHealth(ctx context.Context, items []storage.DCHealthPointRecord) {
-	if len(items) == 0 {
-		return
-	}
-	slog.Debug(logBatchFlush, "domain", "dc_health", "count", len(items))
-	w.flushItem("dc_health", []any{"count", len(items)}, func() error {
-		return w.store.AppendDCHealthPointsBulk(ctx, items)
-	})
-}
-
-func (w *Writer) flushClientIPs(ctx context.Context, items []storage.ClientIPHistoryRecord) {
-	if len(items) == 0 {
-		return
-	}
-	slog.Debug(logBatchFlush, "domain", "client_ips", "count", len(items))
-	w.flushItem("client_ips", []any{"count", len(items)}, func() error {
-		return w.store.UpsertClientIPHistoryBulk(ctx, items)
-	})
-}
 
 // flushAuditEvents persists queued audit events as ONE multi-row insert
 // (P6-6.1b, finding #10) via AppendAuditEventsBulk, replacing the previous

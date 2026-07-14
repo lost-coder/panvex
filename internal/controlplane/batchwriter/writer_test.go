@@ -18,7 +18,7 @@ import (
 
 func TestBatchBufferDrainFlushesAccumulatedItems(t *testing.T) {
 	var flushed []int
-	buf := newBatchBuffer(10, func(_ context.Context, items []int) {
+	buf := newBatchBuffer("test", 10, func(_ context.Context, items []int) {
 		flushed = append(flushed, items...)
 	})
 
@@ -41,7 +41,7 @@ func TestBatchBufferDrainFlushesAccumulatedItems(t *testing.T) {
 // able to cancel buffered writes so they don't flush after the delete.
 func TestBatchBufferRemoveMatching(t *testing.T) {
 	var flushed []int
-	buf := newBatchBuffer(10, func(_ context.Context, items []int) {
+	buf := newBatchBuffer("test", 10, func(_ context.Context, items []int) {
 		flushed = append(flushed, items...)
 	})
 	buf.Enqueue(1)
@@ -65,7 +65,7 @@ func TestBatchBufferRemoveMatching(t *testing.T) {
 
 func TestBatchBufferDrainIsNoOpWhenEmpty(t *testing.T) {
 	called := false
-	buf := newBatchBuffer(10, func(_ context.Context, _ []int) {
+	buf := newBatchBuffer("test", 10, func(_ context.Context, _ []int) {
 		called = true
 	})
 
@@ -77,7 +77,7 @@ func TestBatchBufferDrainIsNoOpWhenEmpty(t *testing.T) {
 }
 
 func TestBatchBufferSignalFiringOnFull(t *testing.T) {
-	buf := newBatchBuffer(3, func(_ context.Context, _ []int) {})
+	buf := newBatchBuffer("test", 3, func(_ context.Context, _ []int) {})
 
 	buf.Enqueue(1)
 	buf.Enqueue(2)
@@ -95,7 +95,7 @@ func TestBatchBufferDrainResetsBuffer(t *testing.T) {
 	var mu sync.Mutex
 	var batches [][]int
 
-	buf := newBatchBuffer(10, func(_ context.Context, items []int) {
+	buf := newBatchBuffer("test", 10, func(_ context.Context, items []int) {
 		mu.Lock()
 		defer mu.Unlock()
 		cp := make([]int, len(items))
@@ -221,7 +221,7 @@ func TestBatchBufferTelemetryFlushesAt500(t *testing.T) {
 	if threshold != 500 {
 		t.Fatalf("telemetry threshold changed unexpectedly: %d", threshold)
 	}
-	buf := newBatchBuffer(threshold, func(_ context.Context, _ []int) {})
+	buf := newBatchBuffer("test", threshold, func(_ context.Context, _ []int) {})
 
 	for i := 0; i < threshold-1; i++ {
 		buf.Enqueue(i)
@@ -248,7 +248,7 @@ func TestBatchBufferAuditFlushesAt50(t *testing.T) {
 	if threshold != 50 {
 		t.Fatalf("audit threshold changed unexpectedly: %d", threshold)
 	}
-	buf := newBatchBuffer(threshold, func(_ context.Context, _ []int) {})
+	buf := newBatchBuffer("test", threshold, func(_ context.Context, _ []int) {})
 
 	for i := 0; i < threshold-1; i++ {
 		buf.Enqueue(i)
@@ -990,7 +990,7 @@ func TestFlushAuditEventsBulkSingleStoreCall(t *testing.T) {
 
 func TestBatchBufferCapDropsOldestKeepsNewest(t *testing.T) {
 	var droppedItems []int
-	b := newBatchBuffer[int](10, func(context.Context, []int) {})
+	b := newBatchBuffer[int]("test", 10, func(context.Context, []int) {})
 	b.capLimit = 5
 	b.onDropped = func(item int) { droppedItems = append(droppedItems, item) }
 
@@ -1021,7 +1021,7 @@ func TestBatchBufferCapDropsOldestKeepsNewest(t *testing.T) {
 }
 
 func TestBatchBufferCapZeroMeansUnbounded(t *testing.T) {
-	b := newBatchBuffer[int](10, func(context.Context, []int) {})
+	b := newBatchBuffer[int]("test", 10, func(context.Context, []int) {})
 	// capLimit по умолчанию 0 в самом buffer'е — граница задаётся writer'ом.
 	for i := 0; i < 25_000; i++ {
 		b.Enqueue(i)
@@ -1032,7 +1032,7 @@ func TestBatchBufferCapZeroMeansUnbounded(t *testing.T) {
 }
 
 func TestBatchBufferCompactionKeepsOrderUnderSustainedOverflow(t *testing.T) {
-	b := newBatchBuffer[int](10, func(context.Context, []int) {})
+	b := newBatchBuffer[int]("test", 10, func(context.Context, []int) {})
 	b.capLimit = 100
 	// 3 полных цикла компакции (start превышает capLimit многократно).
 	for i := 0; i < 500; i++ {
@@ -1131,4 +1131,19 @@ func TestAuditBufferOverflowSpoolsToDeadLetter(t *testing.T) {
 	if got := w.auditEvents.Len(); got != 3 {
 		t.Fatalf("audit buffer len = %d, want 3", got)
 	}
+}
+
+// The bulk streams share one flusher (bulkFlusher), so there is no
+// w.flushAgents method to call any more. These shims let the existing tests
+// keep driving one stream's flush directly.
+func (w *Writer) flushAgents(ctx context.Context, items []storage.AgentRecord) {
+	w.agents.flushFn(ctx, items)
+}
+
+func (w *Writer) flushMetrics(ctx context.Context, items []storage.MetricSnapshotRecord) {
+	w.metricsBuf.flushFn(ctx, items)
+}
+
+func (w *Writer) flushDCHealth(ctx context.Context, items []storage.DCHealthPointRecord) {
+	w.dcHealth.flushFn(ctx, items)
 }
