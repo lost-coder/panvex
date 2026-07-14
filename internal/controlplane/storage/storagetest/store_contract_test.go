@@ -30,6 +30,7 @@ type memoryStore struct {
 	userAppearance                 map[string]storage.UserAppearanceRecord
 	fleetGroups                    map[string]storage.FleetGroupRecord
 	agents                         map[string]storage.AgentRecord
+	certPins                       map[string]storage.AgentCertPins
 	instances                      map[string]storage.InstanceRecord
 	telemetryRuntimeCurrent        map[string]storage.TelemetryRuntimeCurrentRecord
 	telemetryRuntimeDCs            map[string][]storage.TelemetryRuntimeDCRecord
@@ -744,6 +745,50 @@ func (s *memoryStore) GetAgentCertPin(_ context.Context, agentID string) ([]byte
 		return nil, storage.ErrNotFound
 	}
 	return agent.CertSPKISHA256, nil
+}
+
+// certPins mirrors the overlap columns for the in-memory double. Kept in its
+// own map rather than on AgentRecord because the record is the fleet-facing
+// projection and the overlap is a credential-rotation detail.
+func (s *memoryStore) RotateAgentCert(_ context.Context, agentID string, serial string, spki []byte, overlapUntil time.Time) error {
+	agent, ok := s.agents[agentID]
+	if !ok {
+		return storage.ErrNotFound
+	}
+	pins := s.certPins[agentID]
+	if agent.CertSerial != "" || len(agent.CertSPKISHA256) > 0 {
+		until := overlapUntil.UTC()
+		pins.PrevSerial = agent.CertSerial
+		pins.PrevSPKI = agent.CertSPKISHA256
+		pins.OverlapUntil = &until
+	}
+	agent.CertSerial = serial
+	agent.CertSPKISHA256 = spki
+	s.agents[agentID] = agent
+	if s.certPins == nil {
+		s.certPins = map[string]storage.AgentCertPins{}
+	}
+	s.certPins[agentID] = pins
+	return nil
+}
+
+func (s *memoryStore) GetAgentCertPins(_ context.Context, agentID string) (storage.AgentCertPins, error) {
+	agent, ok := s.agents[agentID]
+	if !ok {
+		return storage.AgentCertPins{}, storage.ErrNotFound
+	}
+	pins := s.certPins[agentID]
+	pins.Serial = agent.CertSerial
+	pins.SPKI = agent.CertSPKISHA256
+	return pins, nil
+}
+
+func (s *memoryStore) CloseAgentCertOverlap(_ context.Context, agentID string) error {
+	if s.certPins == nil {
+		return nil
+	}
+	delete(s.certPins, agentID)
+	return nil
 }
 
 func (s *memoryStore) DeleteInstancesByAgent(_ context.Context, agentID string) error {

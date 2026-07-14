@@ -16,17 +16,23 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
-// fakePinReader is a map-backed CertPinReader for integration tests.
+// fakePinReader is a map-backed CertPinReader for integration tests. extraPins
+// carries the credential a rotation overlap window keeps accepted (R11).
 type fakePinReader struct {
-	pins map[string][]byte // agentID → pin (nil/missing means ErrNotFound)
+	pins  map[string][]byte // agentID → current pin (missing means ErrNotFound)
+	extra map[string][]byte // agentID → previous pin, accepted during an overlap
 }
 
-func (f *fakePinReader) GetAgentCertPin(_ context.Context, agentID string) ([]byte, error) {
+func (f *fakePinReader) AcceptedAgentCertPins(_ context.Context, agentID string) ([][]byte, error) {
 	pin, ok := f.pins[agentID]
 	if !ok {
 		return nil, storage.ErrNotFound
 	}
-	return pin, nil
+	accepted := [][]byte{pin}
+	if prev, ok := f.extra[agentID]; ok && len(prev) > 0 {
+		accepted = append(accepted, prev)
+	}
+	return accepted, nil
 }
 
 // TestOutboundSupervisor_PinMatch verifies that when the stored pin matches

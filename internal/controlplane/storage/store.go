@@ -162,6 +162,29 @@ type FleetStore interface {
 	// ID exists; returns empty bytes (no error) if the agent exists but
 	// is not yet pinned.
 	GetAgentCertPin(ctx context.Context, agentID string) ([]byte, error)
+	// RotateAgentCert records a freshly issued agent credential (serial +
+	// SPKI pin) and keeps the PREVIOUS one valid until overlapUntil.
+	//
+	// Issuance used to overwrite the pin outright, but the agent only learns
+	// about its new certificate when the renewal response reaches it. An
+	// interrupted exchange therefore left the panel expecting the new
+	// credential while the agent still held the old one — and the fail-closed
+	// verifier refused it. An inbound agent could ask for a new signature and
+	// self-heal; a listen-mode node could not, and stayed stranded until an
+	// operator issued a recovery grant (R11 / R-1).
+	//
+	// The overlap is bounded in time and in size: at most two credentials are
+	// accepted at once, and the first connection presenting the new one closes
+	// the window (CloseAgentCertOverlap). Outside that pair the verifier is
+	// fail-closed exactly as before.
+	RotateAgentCert(ctx context.Context, agentID string, serial string, spki []byte, overlapUntil time.Time) error
+	// GetAgentCertPins returns the credentials the panel accepts for the agent:
+	// the current one, plus the previous one while the overlap window is open.
+	GetAgentCertPins(ctx context.Context, agentID string) (AgentCertPins, error)
+	// CloseAgentCertOverlap drops the previous credential. Called the first
+	// time an agent connects presenting the CURRENT one — proof that it has
+	// taken delivery of the new certificate.
+	CloseAgentCertOverlap(ctx context.Context, agentID string) error
 	// UpdateAgentTransportMode changes the agent's transport_mode and
 	// dial_address. dialAddress is empty when switching to inbound mode.
 	// Returns ErrNotFound when the agent doesn't exist.

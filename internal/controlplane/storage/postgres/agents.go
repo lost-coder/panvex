@@ -261,3 +261,64 @@ func (s *Store) DeleteInstancesByAgent(ctx context.Context, agentID string) erro
 	`, agentID)
 	return err
 }
+
+// RotateAgentCert records a new credential and keeps the previous one valid
+// until overlapUntil. See storage.Store for why the overlap exists.
+//
+// The previous credential is only retained when there IS one: a first issuance
+// (enrollment) has nothing to fall back to, and an empty pin is what the
+// verifier already treats as fail-closed.
+func (s *Store) RotateAgentCert(ctx context.Context, agentID string, serial string, spki []byte, overlapUntil time.Time) error {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE agents SET
+			cert_serial_prev = CASE WHEN cert_serial = '' THEN '' ELSE cert_serial END,
+			cert_spki_sha256_prev = CASE WHEN length(cert_spki_sha256) = 0 THEN '\x'::bytea ELSE cert_spki_sha256 END,
+			cert_overlap_until = CASE WHEN cert_serial = '' AND length(cert_spki_sha256) = 0 THEN NULL ELSE $1 END,
+			cert_serial = $2,
+			cert_spki_sha256 = $3
+		WHERE id = $4
+	`, overlapUntil.UTC(), serial, spki, agentID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return storage.ErrNotFound
+	}
+	return nil
+}
+
+// GetAgentCertPins returns the credentials the panel accepts for the agent.
+func (s *Store) GetAgentCertPins(ctx context.Context, agentID string) (storage.AgentCertPins, error) {
+	var (
+		pins    storage.AgentCertPins
+		overlap sql.NullTime
+	)
+	err := s.db.QueryRowContext(ctx, `
+		SELECT cert_serial, cert_spki_sha256, cert_serial_prev, cert_spki_sha256_prev, cert_overlap_until
+		FROM agents WHERE id = $1
+	`, agentID).Scan(&pins.Serial, &pins.SPKI, &pins.PrevSerial, &pins.PrevSPKI, &overlap)
+	if errors.Is(err, sql.ErrNoRows) {
+		return storage.AgentCertPins{}, storage.ErrNotFound
+	}
+	if err != nil {
+		return storage.AgentCertPins{}, err
+	}
+	if overlap.Valid {
+		until := overlap.Time.UTC()
+		pins.OverlapUntil = &until
+	}
+	return pins, nil
+}
+
+// CloseAgentCertOverlap drops the previous credential.
+func (s *Store) CloseAgentCertOverlap(ctx context.Context, agentID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE agents SET cert_serial_prev = '', cert_spki_sha256_prev = '\x'::bytea, cert_overlap_until = NULL
+		WHERE id = $1
+	`, agentID)
+	return err
+}

@@ -458,33 +458,66 @@ func (a *certificateAuthority) SignCSR(csrPEM, agentID string, validFor time.Dur
 	return issued.CertificatePEM, issued.CAPEM, issued.ExpiresAt, nil
 }
 
-// persistAgentCertPin records the SHA-256 of the issued certificate's
-// SubjectPublicKeyInfo as the agent's SPKI pin. Called on EVERY issuance
-// path (HTTP enrollment, unary renewal, in-stream renewal, recovery) so the
-// outbound dial verifier can treat a missing pin as fail-closed (A1).
-// Best-effort: a failure is logged loudly but does not abort issuance — the
-// in-flight credential exchange must not be lost to a transient pin write
-// error; the next renewal retries.
-func (s *Server) persistAgentCertPin(ctx context.Context, agentID, certPEM string) {
+// certOverlapMax caps how long the previous agent credential stays accepted
+// after a rotation. The natural bound is the old certificate's own expiry —
+// accepting it until then is no weaker than not having rotated at all — but a
+// long-lived certificate would otherwise keep the window open for months, so it
+// is clamped here.
+const certOverlapMax = 7 * 24 * time.Hour
+
+// rotateAgentCredential records a freshly issued certificate as the agent's
+// current credential while keeping the PREVIOUS one accepted until it expires
+// (bounded by certOverlapMax).
+//
+// The overlap exists because issuance and delivery are not atomic: the panel
+// writes the new pin, then sends the certificate. If that exchange is
+// interrupted — panel restart, stream drop — the agent still holds the old
+// certificate, and a verifier that only knows the new one refuses it. An
+// inbound agent can ask for another signature and heal itself; a listen-mode
+// node cannot, and used to sit stranded until an operator issued a recovery
+// grant (R11 / R-1).
+//
+// Best-effort, like the pin write it replaces: a failure is logged loudly but
+// does not abort issuance — losing the in-flight credential exchange to a
+// transient DB error would be worse, and the next renewal retries.
+func (s *Server) rotateAgentCredential(ctx context.Context, agentID, certPEM string) {
 	if s.store == nil {
 		return
 	}
 	block, _ := pem.Decode([]byte(certPEM))
 	if block == nil {
-		s.logger.WarnContext(ctx, "persist agent cert pin: issued cert is not PEM", "agent_id", agentID)
+		s.logger.WarnContext(ctx, "rotate agent credential: issued cert is not PEM", "agent_id", agentID)
 		return
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		s.logger.WarnContext(ctx, "persist agent cert pin: parse issued cert failed", "agent_id", agentID, "error", err)
+		s.logger.WarnContext(ctx, "rotate agent credential: parse issued cert failed", "agent_id", agentID, "error", err)
 		return
 	}
 	pin := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
-	if err := s.store.UpdateAgentCertPin(ctx, agentID, pin[:]); err != nil {
+
+	if err := s.store.RotateAgentCert(ctx, agentID, cert.SerialNumber.Text(16), pin[:], s.certOverlapDeadline(agentID)); err != nil {
 		s.obs.ObserveAgentCertPinPersistFailure()
-		s.logger.WarnContext(ctx, "persist agent cert pin failed", "agent_id", agentID, "error", err,
+		s.logger.WarnContext(ctx, "rotate agent credential failed", "agent_id", agentID, "error", err,
 			"alert", "agent_cert_pin_persist_failed")
 	}
+}
+
+// certOverlapDeadline is when the credential being replaced stops being
+// accepted: its own expiry, clamped to certOverlapMax. An agent whose expiry we
+// do not know (not in the live store) gets the clamp.
+//
+// A generous deadline cannot resurrect a dead certificate: TLS refuses an
+// expired one at the handshake, long before the serial is looked at. This
+// deadline bounds the pin BOOKKEEPING, so a stale previous serial cannot linger
+// in the accepted set indefinitely.
+func (s *Server) certOverlapDeadline(agentID string) time.Time {
+	now := s.now().UTC()
+	deadline := now.Add(certOverlapMax)
+	if agent, ok := s.live.Get(agentID); ok && agent.CertExpiresAt != nil && agent.CertExpiresAt.Before(deadline) {
+		deadline = agent.CertExpiresAt.UTC()
+	}
+	return deadline
 }
 
 // serverCertNotAfter parses the leaf of the panel's gRPC serving
@@ -619,4 +652,28 @@ func (a *certificateAuthority) outboundTLSConfig() *tls.Config {
 func caFingerprint(cert *x509.Certificate) string {
 	sum := sha256.Sum256(cert.Raw)
 	return hex.EncodeToString(sum[:])
+}
+
+// certPinReader adapts the server to agenttransport.CertPinReader. It exists so
+// the outbound dial verifier sees the SAME accepted-credential set as the
+// inbound connect path: the current pin, plus the previous one while a rotation
+// overlap window is open (R11).
+type certPinReader struct {
+	server *Server
+}
+
+func (r certPinReader) AcceptedAgentCertPins(ctx context.Context, agentID string) ([][]byte, error) {
+	pins, err := r.server.store.GetAgentCertPins(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+
+	accepted := make([][]byte, 0, 2)
+	if len(pins.SPKI) > 0 {
+		accepted = append(accepted, pins.SPKI)
+	}
+	if len(pins.PrevSPKI) > 0 && pins.OverlapUntil != nil && r.server.now().UTC().Before(*pins.OverlapUntil) {
+		accepted = append(accepted, pins.PrevSPKI)
+	}
+	return accepted, nil
 }

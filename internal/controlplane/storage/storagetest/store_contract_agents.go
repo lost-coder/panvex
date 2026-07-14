@@ -247,6 +247,88 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	// The certificate-overlap window (R11): a rotation keeps the PREVIOUS
+	// credential valid until the agent proves it took delivery of the new one.
+	// Without it, an interrupted renewal stranded a listen-mode node on a
+	// certificate the panel no longer accepted.
+	t.Run("RotateAgentCert keeps the previous credential until the overlap closes", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        testFleetGroupID,
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.July, 14, 8, 20, 0, 0, time.UTC),
+		}
+		agent := storage.AgentRecord{
+			ID:           "agent-rotate-test",
+			NodeName:     "node-rotate",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			LastSeenAt:   time.Date(2026, time.July, 14, 8, 25, 0, 0, time.UTC),
+		}
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+
+		firstPin := bytes.Repeat([]byte{0x01}, 32)
+		secondPin := bytes.Repeat([]byte{0x02}, 32)
+		overlapUntil := time.Date(2026, time.July, 15, 8, 25, 0, 0, time.UTC)
+
+		// First issuance: nothing to fall back to, so no overlap is opened.
+		if err := store.RotateAgentCert(ctx, agent.ID, "serial-1", firstPin, overlapUntil); err != nil {
+			t.Fatalf("RotateAgentCert(first) error = %v", err)
+		}
+		pins, err := store.GetAgentCertPins(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("GetAgentCertPins() error = %v", err)
+		}
+		if pins.Serial != "serial-1" || !bytes.Equal(pins.SPKI, firstPin) {
+			t.Fatalf("after first issuance: serial=%q pin=%x, want serial-1 / %x", pins.Serial, pins.SPKI, firstPin)
+		}
+		if pins.PrevSerial != "" || len(pins.PrevSPKI) != 0 || pins.OverlapUntil != nil {
+			t.Fatalf("first issuance opened an overlap window: %+v", pins)
+		}
+
+		// Renewal: the previous credential stays accepted.
+		if err := store.RotateAgentCert(ctx, agent.ID, "serial-2", secondPin, overlapUntil); err != nil {
+			t.Fatalf("RotateAgentCert(renewal) error = %v", err)
+		}
+		pins, err = store.GetAgentCertPins(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("GetAgentCertPins() after renewal error = %v", err)
+		}
+		if pins.Serial != "serial-2" || !bytes.Equal(pins.SPKI, secondPin) {
+			t.Fatalf("after renewal: serial=%q pin=%x, want serial-2 / %x", pins.Serial, pins.SPKI, secondPin)
+		}
+		if pins.PrevSerial != "serial-1" || !bytes.Equal(pins.PrevSPKI, firstPin) {
+			t.Fatalf("renewal dropped the previous credential: prev serial=%q pin=%x", pins.PrevSerial, pins.PrevSPKI)
+		}
+		if pins.OverlapUntil == nil || !pins.OverlapUntil.Equal(overlapUntil) {
+			t.Fatalf("OverlapUntil = %v, want %v", pins.OverlapUntil, overlapUntil)
+		}
+
+		// The agent connects with the new credential: the window closes and the
+		// old one stops being accepted.
+		if err := store.CloseAgentCertOverlap(ctx, agent.ID); err != nil {
+			t.Fatalf("CloseAgentCertOverlap() error = %v", err)
+		}
+		pins, err = store.GetAgentCertPins(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("GetAgentCertPins() after close error = %v", err)
+		}
+		if pins.PrevSerial != "" || len(pins.PrevSPKI) != 0 || pins.OverlapUntil != nil {
+			t.Fatalf("overlap window still open after close: %+v", pins)
+		}
+		if pins.Serial != "serial-2" || !bytes.Equal(pins.SPKI, secondPin) {
+			t.Fatalf("closing the overlap disturbed the current credential: serial=%q pin=%x", pins.Serial, pins.SPKI)
+		}
+	})
+
 	// TestGetAgentCertPinUnknownAgent verifies the missing-agent error path.
 	t.Run("GetAgentCertPin unknown agent returns ErrNotFound", func(t *testing.T) {
 		store := open(t)

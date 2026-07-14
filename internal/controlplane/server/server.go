@@ -529,7 +529,7 @@ func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
 	if s.obs != nil {
 		obs = s.obs.ObserveAgentCertPin
 	}
-	m.SetCertPinReader(s.store, obs)
+	m.SetCertPinReader(certPinReader{server: s}, obs)
 	// Wire the enrollment timeline recorder into outbound supervisors so
 	// each panel-dials-agent cycle records its own attempt + steps + final
 	// status. s.enrollmentRec is nil for stores without a *sql.DB handle

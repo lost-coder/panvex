@@ -221,7 +221,10 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 	}
 
 	// Best-effort: persist the SPKI pin outside the tx (fail-closed prereq, A1).
-	s.persistAgentCertPin(ctx, agentID, issued.CertificatePEM)
+	// Enrollment is a FIRST issuance — there is no previous credential, so this
+	// opens no overlap window (RotateAgentCert keeps prev empty when the current
+	// serial and pin are both empty).
+	s.rotateAgentCredential(ctx, agentID, issued.CertificatePEM)
 
 	// Enrollment writes a fresh agent with no instances yet; ApplySnapshot
 	// with a nil instance set establishes the live-state baseline. No s.mu
