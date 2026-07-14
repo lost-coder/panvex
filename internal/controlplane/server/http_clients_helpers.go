@@ -111,10 +111,10 @@ func (s *Server) bulkUniqueIPCountsForClients(ctx context.Context, clients []man
 		clientIDs = append(clientIDs, string(c.ID))
 	}
 	uniqueIPCounts := map[string]int{}
-	if s.store == nil || len(clientIDs) == 0 {
+	if s.historySvc == nil || len(clientIDs) == 0 {
 		return uniqueIPCounts
 	}
-	counts, err := s.store.CountUniqueClientIPsForClients(ctx, clientIDs)
+	counts, err := s.historySvc.CountUniqueClientIPsForClients(ctx, clientIDs)
 	if err != nil {
 		s.logger.WarnContext(ctx, "bulk unique-ip count failed", "error", err)
 		return uniqueIPCounts
@@ -340,10 +340,10 @@ func (s *Server) applyBulkClientDelete(ctx context.Context, actorID string, scop
 // from storage and falls back to the in-memory snapshot when the store is
 // unavailable or returns zero (no rows).
 func (s *Server) resolveUniqueClientIPs(ctx context.Context, clientID string, fallback int) int {
-	if s.store == nil {
+	if s.historySvc == nil {
 		return fallback
 	}
-	count, err := s.store.CountUniqueClientIPs(ctx, clientID)
+	count, err := s.historySvc.CountUniqueClientIPs(ctx, clientID)
 	if err != nil || count <= 0 {
 		return fallback
 	}

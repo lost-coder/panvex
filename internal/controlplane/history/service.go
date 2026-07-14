@@ -20,6 +20,7 @@ type Repository interface {
 	ListDCHealthPoints(ctx context.Context, agentID string, from, to time.Time) ([]storage.DCHealthPointRecord, error)
 	AggregateClientIPHistory(ctx context.Context, clientID string, from, to time.Time, limit int) ([]storage.ClientIPAggregateRecord, error)
 	CountUniqueClientIPs(ctx context.Context, clientID string) (int, error)
+	CountUniqueClientIPsForClients(ctx context.Context, clientIDs []string) (map[string]int, error)
 }
 
 // Service is a passive read facade over the history repository.
@@ -50,6 +51,16 @@ func (s *Service) DCHealthPoints(ctx context.Context, agentID string, from, to t
 // CountUniqueClientIPs returns the authoritative distinct-IP total for a client.
 func (s *Service) CountUniqueClientIPs(ctx context.Context, clientID string) (int, error) {
 	return s.repo.CountUniqueClientIPs(ctx, clientID)
+}
+
+// CountUniqueClientIPsForClients is the bulk form used by the clients list: one
+// round-trip for the whole page instead of one per row. An empty input is a
+// no-op, not a query.
+func (s *Service) CountUniqueClientIPsForClients(ctx context.Context, clientIDs []string) (map[string]int, error) {
+	if len(clientIDs) == 0 {
+		return map[string]int{}, nil
+	}
+	return s.repo.CountUniqueClientIPsForClients(ctx, clientIDs)
 }
 
 // ClientIPs returns up to limit aggregated per-IP rows for the client in the

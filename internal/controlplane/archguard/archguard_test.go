@@ -55,7 +55,6 @@ var storeAccessAllowlist = map[string]bool{
 	"geoip_settings.go":          true,
 	"http_agent_transport.go":    true,
 	"http_agents.go":             true,
-	"http_clients_helpers.go":    true,
 	"http_config_apply.go":       true,
 	"http_enrollment.go":         true,
 	"http_fleet_groups.go":       true,
