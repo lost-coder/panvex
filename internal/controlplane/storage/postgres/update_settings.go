@@ -29,6 +29,14 @@ func (s *Store) GetUpdateState(ctx context.Context) (json.RawMessage, error) {
 	return s.getUpdateConfig(ctx, "state")
 }
 
+func (s *Store) PutPanelSelfUpdate(ctx context.Context, data json.RawMessage) error {
+	return s.putUpdateConfig(ctx, "self_update", data)
+}
+
+func (s *Store) GetPanelSelfUpdate(ctx context.Context) (json.RawMessage, error) {
+	return s.getUpdateConfig(ctx, "self_update")
+}
+
 func (s *Store) putUpdateConfig(ctx context.Context, key string, data json.RawMessage) error {
 	return dbsqlc.New(s.db).UpsertUpdateConfig(ctx, dbsqlc.UpsertUpdateConfigParams{
 		Key:   key,

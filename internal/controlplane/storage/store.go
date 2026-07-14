@@ -401,6 +401,11 @@ type UpdateConfigStore interface {
 	GetUpdateSettings(ctx context.Context) (json.RawMessage, error)
 	PutUpdateState(ctx context.Context, state json.RawMessage) error
 	GetUpdateState(ctx context.Context) (json.RawMessage, error)
+	// PutPanelSelfUpdate and GetPanelSelfUpdate persist the panel
+	// self-update phase (updates.SelfUpdateState) under its own
+	// update_config key, independent of the settings/state keys above.
+	PutPanelSelfUpdate(ctx context.Context, raw json.RawMessage) error
+	GetPanelSelfUpdate(ctx context.Context) (json.RawMessage, error)
 	PutGeoIPSettings(ctx context.Context, settings json.RawMessage) error
 	GetGeoIPSettings(ctx context.Context) (json.RawMessage, error)
 	PutGeoIPState(ctx context.Context, state json.RawMessage) error

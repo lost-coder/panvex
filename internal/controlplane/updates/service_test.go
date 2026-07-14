@@ -6,10 +6,11 @@ import (
 	"testing"
 )
 
-// memStore is an in-memory SettingsStore: two independent nil-able blobs.
+// memStore is an in-memory SettingsStore: three independent nil-able blobs.
 type memStore struct {
-	settings json.RawMessage
-	state    json.RawMessage
+	settings   json.RawMessage
+	state      json.RawMessage
+	selfUpdate json.RawMessage
 }
 
 func (m *memStore) GetUpdateSettings(context.Context) (json.RawMessage, error) {
@@ -22,6 +23,13 @@ func (m *memStore) PutUpdateSettings(_ context.Context, b json.RawMessage) error
 func (m *memStore) GetUpdateState(context.Context) (json.RawMessage, error) { return m.state, nil }
 func (m *memStore) PutUpdateState(_ context.Context, b json.RawMessage) error {
 	m.state = b
+	return nil
+}
+func (m *memStore) GetPanelSelfUpdate(context.Context) (json.RawMessage, error) {
+	return m.selfUpdate, nil
+}
+func (m *memStore) PutPanelSelfUpdate(_ context.Context, b json.RawMessage) error {
+	m.selfUpdate = b
 	return nil
 }
 

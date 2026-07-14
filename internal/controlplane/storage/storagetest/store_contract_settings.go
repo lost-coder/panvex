@@ -164,6 +164,49 @@ func runSettingsContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	t.Run("panel self update round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+
+		empty, err := store.GetPanelSelfUpdate(ctx)
+		if err != nil {
+			t.Fatalf("GetPanelSelfUpdate() error = %v", err)
+		}
+		if empty != nil {
+			t.Fatalf("GetPanelSelfUpdate() on empty store = %s, want nil", empty)
+		}
+
+		settings := json.RawMessage(`{"auto_update":true,"channel":"stable"}`)
+		if err := store.PutUpdateSettings(ctx, settings); err != nil {
+			t.Fatalf("PutUpdateSettings() error = %v", err)
+		}
+
+		selfUpdate := json.RawMessage(`{"phase":"restart_pending","from_version":"1.2.3","to_version":"1.3.0"}`)
+		if err := store.PutPanelSelfUpdate(ctx, selfUpdate); err != nil {
+			t.Fatalf("PutPanelSelfUpdate() error = %v", err)
+		}
+
+		gotSelfUpdate, err := store.GetPanelSelfUpdate(ctx)
+		if err != nil {
+			t.Fatalf("GetPanelSelfUpdate() error = %v", err)
+		}
+		if string(gotSelfUpdate) != string(selfUpdate) {
+			t.Fatalf("GetPanelSelfUpdate() = %s, want %s", gotSelfUpdate, selfUpdate)
+		}
+
+		// Writing the self-update key must not disturb the independent
+		// settings key.
+		gotSettingsAfter, err := store.GetUpdateSettings(ctx)
+		if err != nil {
+			t.Fatalf("GetUpdateSettings() error = %v", err)
+		}
+		if string(gotSettingsAfter) != string(settings) {
+			t.Fatalf("GetUpdateSettings() after self-update write = %s, want %s", gotSettingsAfter, settings)
+		}
+	})
+
 	runGeoIPSettingsContract(t, open)
 }
 
