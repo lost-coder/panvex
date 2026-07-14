@@ -71,9 +71,10 @@ type updateSettingsResponse struct {
 // (updateSettingsResponseSchema). GET and PUT intentionally differ — GET reads
 // the full state, PUT echoes just the saved settings.
 type updateSettingsGetResponse struct {
-	Settings       updateSettingsPayload `json:"settings"`
-	State          UpdateState           `json:"state"`
-	CurrentVersion string                `json:"current_version"`
+	Settings       updateSettingsPayload   `json:"settings"`
+	State          UpdateState             `json:"state"`
+	CurrentVersion string                  `json:"current_version"`
+	SelfUpdate     updates.SelfUpdateState `json:"self_update"`
 }
 
 // updateSettingsPayloadFrom maps stored settings to the wire payload, masking
@@ -153,8 +154,27 @@ func (s *Server) handleGetUpdateSettings() http.HandlerFunc {
 			Settings:       updateSettingsPayloadFrom(settings),
 			State:          state,
 			CurrentVersion: s.version,
+			SelfUpdate:     s.loadSelfUpdateForResponse(r.Context()),
 		})
 	}
+}
+
+// loadSelfUpdateForResponse fetches the persisted self-update phase for the GET
+// /settings/updates response so the dashboard reads the update lifecycle from
+// the server (surviving a page reload), not just from an ephemeral React
+// mutation flag (R11b Task 3). A missing store or a load error yields the zero
+// value (SelfUpdateIdle) — the phase is a UX/observability signal, so a read
+// glitch must not fail the whole settings fetch.
+func (s *Server) loadSelfUpdateForResponse(ctx context.Context) updates.SelfUpdateState {
+	if s.updatesSvc == nil {
+		return updates.SelfUpdateState{}
+	}
+	st, err := s.updatesSvc.LoadSelfUpdate(ctx)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "load self-update state for settings response failed", "error", err)
+		return updates.SelfUpdateState{}
+	}
+	return st
 }
 
 func (s *Server) handlePutUpdateSettings() http.HandlerFunc {

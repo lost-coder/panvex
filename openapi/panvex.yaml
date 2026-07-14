@@ -1193,6 +1193,33 @@ components:
             Grant lifetime in seconds. Zero or omitted yields the
             server's default TTL (15m, capped at 1h).
 
+    SelfUpdateState:
+      type: object
+      description: |
+        Server-side lifecycle of the current or most-recent panel
+        self-update run, persisted across restarts. `phase` is the
+        source of truth for whether an update is in progress: the empty
+        string means idle (no run started, or nothing to show).
+        `completed` and `failed` are terminal; on `failed`, `message`
+        carries the operator-readable reason. The dashboard reads this so
+        an in-flight update survives a page reload and always resolves to
+        a terminal outcome.
+      required: [phase]
+      properties:
+        phase:
+          type: string
+          enum: ["", downloading, installing, restart_pending, completed, failed]
+        from_version:
+          type: string
+        to_version:
+          type: string
+        message:
+          type: string
+        updated_at:
+          type: integer
+          format: int64
+          description: Unix seconds of the last phase transition.
+
   responses:
     BadRequest:
       description: Validation error.

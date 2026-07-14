@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/controlplane/updates"
 )
 
 // TestHandleGetUpdateSettingsReturnsNestedSettings pins the wire shape of
@@ -69,5 +70,50 @@ func TestHandleGetUpdateSettingsReturnsNestedSettings(t *testing.T) {
 	}
 	if settings.CheckIntervalHours != 6 || settings.GitHubRepo != "lost-coder/panvex" || settings.AgentDownloadSource != "github" {
 		t.Fatalf("nested settings = %+v, want seeded values", settings)
+	}
+}
+
+// TestHandleGetUpdateSettingsCarriesSelfUpdatePhase pins the R11b Task 3
+// contract: GET /settings/updates surfaces the persisted self-update lifecycle
+// under "self_update", populated from updates.Service.LoadSelfUpdate, so the
+// dashboard reads an in-flight/terminal phase from the server (surviving a page
+// reload) instead of only from an ephemeral React mutation flag.
+func TestHandleGetUpdateSettingsCarriesSelfUpdatePhase(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{LoginTimingFloor: -1, Store: store})
+	defer server.Close()
+
+	want := updates.SelfUpdateState{
+		Phase:       updates.SelfUpdateDownloading,
+		FromVersion: "1.0.0",
+		ToVersion:   "1.1.0",
+		Message:     "",
+		UpdatedAt:   1_700_000_000,
+	}
+	if err := server.updatesSvc.SaveSelfUpdate(context.Background(), want); err != nil {
+		t.Fatalf("SaveSelfUpdate() error = %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/settings/updates", nil)
+	server.handleGetUpdateSettings().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var body struct {
+		SelfUpdate updates.SelfUpdateState `json:"self_update"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if body.SelfUpdate != want {
+		t.Fatalf("self_update = %+v, want %+v; body=%s", body.SelfUpdate, want, rec.Body.String())
 	}
 }
