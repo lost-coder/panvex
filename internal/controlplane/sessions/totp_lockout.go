@@ -97,12 +97,6 @@ func (t *TOTPLockoutTracker) AttemptLock(username string) func() {
 	return t.shards[shard].Unlock
 }
 
-// IsLocked reports whether the TOTP second factor is currently locked
-// for the given username. Use IsLockedWithContext from request handlers.
-func (t *TOTPLockoutTracker) IsLocked(username string, now time.Time) bool {
-	return t.IsLockedWithContext(context.Background(), username, now)
-}
-
 // IsLockedWithContext is the ctx-aware variant of IsLocked. Context is
 // accepted for API symmetry with LockoutTracker; the in-memory tracker
 // performs no I/O.
@@ -124,13 +118,8 @@ func (t *TOTPLockoutTracker) IsLockedWithContext(_ context.Context, username str
 	return true
 }
 
-// RecordFailure increments the failure counter for a username on a
-// wrong TOTP code. Use RecordFailureWithContext from request handlers.
-func (t *TOTPLockoutTracker) RecordFailure(username string, now time.Time) {
-	t.RecordFailureWithContext(context.Background(), username, now)
-}
-
-// RecordFailureWithContext is the ctx-aware variant of RecordFailure.
+// RecordFailureWithContext increments the failure counter for a username on a
+// wrong TOTP code.
 func (t *TOTPLockoutTracker) RecordFailureWithContext(_ context.Context, username string, now time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -144,14 +133,6 @@ func (t *TOTPLockoutTracker) RecordFailureWithContext(_ context.Context, usernam
 	t.cleanupLocked(now)
 }
 
-
-// CheckAndRecordFailure atomically checks lockout and records a failure.
-// Returns true if the account is locked (failure is NOT recorded when
-// already locked). Use CheckAndRecordFailureWithContext from request
-// handlers.
-func (t *TOTPLockoutTracker) CheckAndRecordFailure(username string, now time.Time) bool {
-	return t.CheckAndRecordFailureWithContext(context.Background(), username, now)
-}
 
 // CheckAndRecordFailureWithContext is the ctx-aware variant of
 // CheckAndRecordFailure.
