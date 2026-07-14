@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/batchwriter"
+	"github.com/lost-coder/panvex/internal/controlplane/updates"
 	"github.com/lost-coder/panvex/internal/seqid"
 )
 
@@ -154,6 +155,58 @@ func (s *Server) restoreFallbackState(ctx context.Context) error {
 		entered[r.AgentID] = r.EnteredAt.UTC()
 	}
 	s.fallback.Restore(entered)
+	return nil
+}
+
+// finalizeSelfUpdateState resolves a self-update that a restart (or crash)
+// interrupted. Terminal phases (and the idle/never-run zero value) pass
+// through untouched; a non-terminal phase (downloading/installing/
+// restart_pending survived the process going away) is decided by comparing
+// the now-running version against the recorded target: if the running
+// version is already at or past the target, the update evidently completed
+// (the restart itself is the proof); otherwise the panel came back up on the
+// old binary and the update needs to be retried.
+//
+// Never returns a real startup-blocking error: a load/save error here is
+// logged and swallowed, not propagated, because a stale/unreadable
+// self-update phase must never keep the panel from booting (R11b Task 2,
+// constraint from the plan). The error return exists only so future callers
+// (and tests) can observe "did I fail to persist" without a boolean-blind
+// signature; boot itself always continues.
+func (s *Server) finalizeSelfUpdateState(ctx context.Context) error {
+	if s.updatesSvc == nil {
+		return nil
+	}
+	st, err := s.updatesSvc.LoadSelfUpdate(ctx)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "finalize self-update state: load failed", "error", err)
+		return nil
+	}
+	if st.Phase == updates.SelfUpdateIdle || st.Phase.Terminal() {
+		return nil
+	}
+
+	cmp, cmpErr := updates.CompareVersions(s.version, st.ToVersion)
+	switch {
+	case cmpErr != nil:
+		// Running version or recorded target is not a parseable semver (e.g.
+		// a "dev" build). Fail closed: we cannot prove the update completed,
+		// so surface it as failed rather than silently claiming success.
+		s.logger.WarnContext(ctx, "finalize self-update state: version compare failed",
+			"error", cmpErr, "running_version", s.version, "to_version", st.ToVersion)
+		st.Phase = updates.SelfUpdateFailed
+		st.Message = "panel restarted but could not confirm the installed version; run the update again"
+	case cmp >= 0:
+		st.Phase, st.Message = updates.SelfUpdateCompleted, ""
+	default:
+		st.Phase = updates.SelfUpdateFailed
+		st.Message = "panel restarted on the old binary before the update finished; run the update again"
+	}
+	st.UpdatedAt = s.now().UTC().Unix()
+
+	if err := s.updatesSvc.SaveSelfUpdate(ctx, st); err != nil {
+		s.logger.ErrorContext(ctx, "finalize self-update state: save failed", "error", err)
+	}
 	return nil
 }
 

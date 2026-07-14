@@ -198,8 +198,8 @@ func assertExtraTableCounts(t *testing.T, summary Summary) {
 			t.Errorf("summary.%s = %d, want 1", c.name, c.got)
 		}
 	}
-	if summary.UpdateConfig != 2 {
-		t.Errorf("summary.UpdateConfig = %d, want 2 (settings + geoip_state)", summary.UpdateConfig)
+	if summary.UpdateConfig != 3 {
+		t.Errorf("summary.UpdateConfig = %d, want 3 (settings + geoip_state + self_update)", summary.UpdateConfig)
 	}
 }
 
@@ -264,6 +264,14 @@ func assertExtraTableRoundTrip(t *testing.T, target storage.MigrationStore) {
 	}
 	if string(settings) != `{"channel":"stable"}` {
 		t.Errorf("update settings = %q, want copied JSON", settings)
+	}
+
+	selfUpdate, err := target.GetPanelSelfUpdate(ctx)
+	if err != nil {
+		t.Fatalf("target.GetPanelSelfUpdate() error = %v", err)
+	}
+	if string(selfUpdate) != `{"phase":"restart_pending","to_version":"1.2.3"}` {
+		t.Errorf("panel self-update = %q, want copied JSON", selfUpdate)
 	}
 
 	// Raw-copy tables: assert ciphertext copied verbatim.
@@ -580,6 +588,9 @@ func populateExtraTables(t *testing.T, store storage.MigrationStore, fleetGroupI
 	}
 	if err := store.PutGeoIPState(ctx, []byte(`{"db":"loaded"}`)); err != nil {
 		t.Fatalf("PutGeoIPState() error = %v", err)
+	}
+	if err := store.PutPanelSelfUpdate(ctx, []byte(`{"phase":"restart_pending","to_version":"1.2.3"}`)); err != nil {
+		t.Fatalf("PutPanelSelfUpdate() error = %v", err)
 	}
 
 	populateRawTables(t, store, now)

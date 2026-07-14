@@ -282,7 +282,19 @@ type Server struct {
 	// Nil exactly when no store is wired; the self-update orchestration and
 	// the periodic check worker stay in server. See internal/controlplane/updates.
 	updatesSvc *updates.Service
-	retention  RetentionSettings
+	// selfUpdateChecksumFetcher / selfUpdateArchiveDownloader /
+	// selfUpdateInstaller are performPanelUpdate's checksum-fetch /
+	// download+verify / install seams. nil in production (the zero value),
+	// in which case performPanelUpdate falls back to the real
+	// fetchExpectedChecksum / downloadAndVerifyPanelArchive /
+	// installPanelBinaryFromArchive methods. Tests set these fields directly
+	// (same package, same "override the field" pattern already used by
+	// requestRestart) so a self-update test never makes a real network call
+	// or replaces the running test binary.
+	selfUpdateChecksumFetcher   func(ctx context.Context, checksumURL, token string) (string, bool)
+	selfUpdateArchiveDownloader func(ctx context.Context, downloadURL, expectedChecksum, token string) (string, bool)
+	selfUpdateInstaller         func(ctx context.Context, archivePath string) bool
+	retention                   RetentionSettings
 	// retentionDisabledWarned tracks which retention series (by table name)
 	// have already had their "retention disabled, table will grow unbounded"
 	// warning logged, so a steady-state disabled setting does not spam the

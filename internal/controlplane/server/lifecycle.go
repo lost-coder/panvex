@@ -367,6 +367,14 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	// auth.DefaultPasswordMinLength (S-01). Do not move this call above the restore.
 	s.auth.SetPasswordPolicy(s.panelSettings.PasswordMinLength)
 	s.trySetStartupErr(s.restoreUpdateSettings)
+	// finalizeSelfUpdateState resolves a self-update phase left non-terminal
+	// by a restart or crash. Deliberately NOT run through trySetStartupErr:
+	// it always returns nil (a load/save glitch is logged internally, never
+	// propagated) and must never gate boot on the outcome of the previous
+	// self-update run (R11b Task 2).
+	if err := s.finalizeSelfUpdateState(s.serverCtx); err != nil {
+		s.logger.ErrorContext(s.serverCtx, "finalize self-update state failed", "error", err)
+	}
 	s.trySetStartupErr(s.restoreRetentionSettings)
 	// Restore persisted geoip settings + state and reload the manager
 	// from disk if the configured .mmdb paths exist. Failures are

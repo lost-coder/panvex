@@ -271,6 +271,10 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 			return
 		}
 
+		if !s.rejectConcurrentSelfUpdate(w, r) {
+			return
+		}
+
 		s.settingsMu.RLock()
 		settings := s.updateSettings
 		state := s.updateState
@@ -285,6 +289,12 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 		if !ok {
 			return
 		}
+
+		// Persisted BEFORE the 202 response (not inside performPanelUpdate's
+		// goroutine) so the dashboard's very first post-request refetch
+		// already observes the server-side phase instead of racing the
+		// background goroutine (R11b Task 2).
+		s.setSelfUpdatePhase(r.Context(), updates.SelfUpdateDownloading, s.version, targetVersion, "")
 
 		writeJSON(w, http.StatusAccepted, panelUpdateResponse{
 			Status: "updating",
@@ -307,6 +317,57 @@ func (s *Server) handlePanelUpdate() http.HandlerFunc {
 			s.performPanelUpdate(session.UserID, targetVersion, downloadURL, checksumURL, settings.GitHubToken)
 		}()
 	}
+}
+
+// setSelfUpdatePhase persists the current phase of the running (or just-
+// finished) panel self-update so a restart/crash mid-update, or the very
+// first dashboard refetch after POST /settings/panel/update, observes an
+// accurate, terminal-eventually state (R11b Task 2). A persistence failure
+// is logged, never fatal or propagated to the caller — the phase is a
+// best-effort UX/observability signal, not part of the update's correctness.
+func (s *Server) setSelfUpdatePhase(ctx context.Context, phase updates.SelfUpdatePhase, from, to, message string) {
+	if s.updatesSvc == nil {
+		return
+	}
+	st := updates.SelfUpdateState{
+		Phase:       phase,
+		FromVersion: from,
+		ToVersion:   to,
+		Message:     message,
+		UpdatedAt:   s.now().UTC().Unix(),
+	}
+	if err := s.updatesSvc.SaveSelfUpdate(ctx, st); err != nil {
+		s.logger.ErrorContext(ctx, "self-update phase persistence failed",
+			"phase", string(phase), "error", err)
+	}
+	// No dedicated updates.changed WS event type exists yet (Task 3 adds the
+	// UI/OpenAPI surface); introducing one here would be scope creep ahead
+	// of that wiring. The dashboard picks up the new phase via its existing
+	// event-aware poll instead — see the R11b Task 2 report for the decision.
+}
+
+// rejectConcurrentSelfUpdate guards against a double self-update start: if a
+// previous run's persisted phase is present and not terminal (i.e. still
+// downloading/installing/restart_pending), a second POST would race the
+// first — download into the same temp area, install over an already-staged
+// binary, or double-request a restart. Writes 409 and returns false when a
+// run is already active; true (including "no store wired" / "load failed",
+// which fail open rather than blocking a legitimate retry on a read glitch)
+// otherwise.
+func (s *Server) rejectConcurrentSelfUpdate(w http.ResponseWriter, r *http.Request) bool {
+	if s.updatesSvc == nil {
+		return true
+	}
+	st, err := s.updatesSvc.LoadSelfUpdate(r.Context())
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "load self-update state failed", "error", err)
+		return true
+	}
+	if st.Phase != updates.SelfUpdateIdle && !st.Phase.Terminal() {
+		writeError(w, http.StatusConflict, "self-update already in progress")
+		return false
+	}
+	return true
 }
 
 func (s *Server) resolvePanelTargetVersion(w http.ResponseWriter, requested string, state UpdateState) (string, bool) {
@@ -360,17 +421,25 @@ func (s *Server) resolvePanelDownloadAssets(w http.ResponseWriter, r *http.Reque
 }
 
 // performPanelUpdate downloads, verifies the SHA-256 checksum (mandatory), and
-// installs a new panel binary, then requests a service restart.
+// installs a new panel binary, then requests a service restart. The
+// "downloading" phase is already persisted synchronously by the caller
+// (handlePanelUpdate, before the 202 response) — this method only carries the
+// transitions past that point: installing -> restart_pending -> (optionally)
+// failed on any error, so a restart or crash mid-update leaves an accurate,
+// terminal-eventually phase for finalizeSelfUpdateState to resolve at boot.
 func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksumURL, token string) {
 	ctx := s.Context()
+	fromVersion := s.version
 
-	expectedChecksum, ok := s.fetchExpectedChecksum(ctx, checksumURL, token)
+	expectedChecksum, ok := s.fetchChecksumSeam(ctx, checksumURL, token)
 	if !ok {
+		s.setSelfUpdatePhase(ctx, updates.SelfUpdateFailed, fromVersion, targetVersion, "checksum fetch failed")
 		return
 	}
 
-	archivePath, ok := s.downloadAndVerifyPanelArchive(ctx, downloadURL, expectedChecksum, token)
+	archivePath, ok := s.downloadArchiveSeam(ctx, downloadURL, expectedChecksum, token)
 	if !ok {
+		s.setSelfUpdatePhase(ctx, updates.SelfUpdateFailed, fromVersion, targetVersion, "download or verification failed")
 		return
 	}
 	// G703 false positive: archivePath is the temp file we just created
@@ -378,22 +447,56 @@ func (s *Server) performPanelUpdate(actorID, targetVersion, downloadURL, checksu
 	// caller-supplied path.
 	defer func() { _ = os.Remove(archivePath) }() //nolint:gosec
 
-	if !s.installPanelBinaryFromArchive(ctx, archivePath) {
+	s.setSelfUpdatePhase(ctx, updates.SelfUpdateInstalling, fromVersion, targetVersion, "")
+
+	if !s.installBinarySeam(ctx, archivePath) {
+		s.setSelfUpdatePhase(ctx, updates.SelfUpdateFailed, fromVersion, targetVersion, "binary install failed")
 		return
 	}
 
 	s.appendAuditWithContext(ctx, actorID, "panel.update.applied", "panel", map[string]any{
-		"from_version": s.version,
+		"from_version": fromVersion,
 		"to_version":   targetVersion,
 	})
 
-	s.logger.InfoContext(ctx, "panel binary updated, requesting restart", "from", s.version, "to", targetVersion)
+	s.logger.InfoContext(ctx, "panel binary updated, requesting restart", "from", fromVersion, "to", targetVersion)
+
+	s.setSelfUpdatePhase(ctx, updates.SelfUpdateRestartPending, fromVersion, targetVersion,
+		"binary staged; waiting for supervisor restart")
 
 	if s.requestRestart != nil {
 		if err := s.requestRestart(); err != nil {
 			s.logger.ErrorContext(ctx, "panel update: restart request failed", "error", err)
+			s.setSelfUpdatePhase(ctx, updates.SelfUpdateFailed, fromVersion, targetVersion,
+				"binary staged, but restart could not be requested; restart the panel manually to finish the update")
 		}
 	}
+}
+
+// fetchChecksumSeam / downloadArchiveSeam / installBinarySeam indirect through
+// the selfUpdate*/Fetcher/Downloader/Installer test seams when set, falling
+// back to the real fetchExpectedChecksum / downloadAndVerifyPanelArchive /
+// installPanelBinaryFromArchive methods otherwise (nil in production). See
+// the seam fields' doc comment on the Server struct for why they exist.
+func (s *Server) fetchChecksumSeam(ctx context.Context, checksumURL, token string) (string, bool) {
+	if s.selfUpdateChecksumFetcher != nil {
+		return s.selfUpdateChecksumFetcher(ctx, checksumURL, token)
+	}
+	return s.fetchExpectedChecksum(ctx, checksumURL, token)
+}
+
+func (s *Server) downloadArchiveSeam(ctx context.Context, downloadURL, expectedChecksum, token string) (string, bool) {
+	if s.selfUpdateArchiveDownloader != nil {
+		return s.selfUpdateArchiveDownloader(ctx, downloadURL, expectedChecksum, token)
+	}
+	return s.downloadAndVerifyPanelArchive(ctx, downloadURL, expectedChecksum, token)
+}
+
+func (s *Server) installBinarySeam(ctx context.Context, archivePath string) bool {
+	if s.selfUpdateInstaller != nil {
+		return s.selfUpdateInstaller(ctx, archivePath)
+	}
+	return s.installPanelBinaryFromArchive(ctx, archivePath)
 }
 
 // fetchExpectedChecksum fetches the published SHA-256 checksum. The checksum is
