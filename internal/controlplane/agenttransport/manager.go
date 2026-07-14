@@ -23,7 +23,10 @@ type transportQueries interface {
 
 // SessionHandler is the application-layer per-session handler. It runs the
 // agent protocol over the given session and returns when the session ends.
-type SessionHandler func(ctx context.Context, sess AgentSession, meta NodeMeta) error
+// The agent identity is rediscovered from the session's peer context, so
+// the handler takes no NodeMeta: that type is the transport layer's own
+// dial-time view of a node.
+type SessionHandler func(ctx context.Context, sess AgentSession) error
 
 // NodeMeta is the transport-layer view of an agent identity. Domain language
 // uses "node" (per spec); the DB table is `agents`. NodeID == AgentID for the

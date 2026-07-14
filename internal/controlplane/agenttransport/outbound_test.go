@@ -32,7 +32,7 @@ func TestOutboundSupervisorReconnectsAfterDisconnect(t *testing.T) {
 	defer cancel()
 
 	var connectCount atomic.Int32
-	handler := func(_ context.Context, sess AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, sess AgentSession) error {
 		connectCount.Add(1)
 		// End session immediately so supervisor reconnects.
 		return nil
@@ -83,7 +83,7 @@ func TestOutboundSupervisorEnrollsWhenPending(t *testing.T) {
 		enrollCalls.Add(1)
 		return nil
 	}
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCalls.Add(1)
 		// End session immediately; supervisor reconnects.
 		return nil
@@ -147,7 +147,7 @@ func TestOutboundSupervisorRetriesAfterEnrollFailure(t *testing.T) {
 		state.Store("active")
 		return nil
 	}
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCalls.Add(1)
 		return nil
 	}
@@ -198,7 +198,7 @@ func TestOutboundSupervisorSkipsEnrollWhenActive(t *testing.T) {
 		enrollCalls.Add(1)
 		return nil
 	}
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCalls.Add(1)
 		return nil
 	}
@@ -283,7 +283,7 @@ func TestOutboundEnsureSupervisorConcurrentDialAddressChangeNoLeak(t *testing.T)
 	}
 
 	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test-only
-	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := SessionHandler(func(_ context.Context, _ AgentSession) error {
 		return errors.New("not used")
 	})
 	tr := newOutboundTransport(tlsCfg, handler, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -354,7 +354,7 @@ func TestOutboundSupervisorUsesBackoffGetters(t *testing.T) {
 	defer cancel()
 
 	var connectCount atomic.Int32
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCount.Add(1)
 		return nil
 	}
@@ -390,7 +390,7 @@ func TestOutboundSupervisorUsesBackoffGetters(t *testing.T) {
 // minimal); we only assert lifecycle semantics, not session behaviour.
 func TestOutboundEnsureSupervisorCancelsViaParentCtx(t *testing.T) {
 	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test-only
-	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := SessionHandler(func(_ context.Context, _ AgentSession) error {
 		return errors.New("not used")
 	})
 	tr := newOutboundTransport(tlsCfg, handler, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -428,7 +428,7 @@ func TestOutboundEnsureSupervisorCancelsViaParentCtx(t *testing.T) {
 // mid-shutdown.
 func TestOutboundEnsureSupervisorAfterStopIsNoop(t *testing.T) {
 	tlsCfg := &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test-only
-	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := SessionHandler(func(_ context.Context, _ AgentSession) error {
 		return nil
 	})
 	tr := newOutboundTransport(tlsCfg, handler, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -453,7 +453,7 @@ func TestOutboundDialVerifiesAgentServerName(t *testing.T) {
 	defer cancel()
 
 	var connectCount atomic.Int32
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCount.Add(1)
 		return nil
 	}
@@ -509,7 +509,7 @@ func TestOutboundConnectAndServeTimesOutAgainstBlackHole(t *testing.T) {
 	caCert, _ := mustGenerateCA(t)
 	tlsCfg := &tls.Config{RootCAs: rootPool(caCert)}
 
-	handler := SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := SessionHandler(func(_ context.Context, _ AgentSession) error {
 		t.Fatal("handler must not be invoked: Connect should never succeed against a black hole")
 		return nil
 	})
@@ -565,7 +565,7 @@ func TestOutboundConnectTimeoutDoesNotCancelLiveSession(t *testing.T) {
 	release := make(chan struct{})
 	var sawCancelDuringWait atomic.Bool
 
-	handler := SessionHandler(func(ctx context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := SessionHandler(func(ctx context.Context, _ AgentSession) error {
 		close(handlerEntered)
 		select {
 		case <-ctx.Done():

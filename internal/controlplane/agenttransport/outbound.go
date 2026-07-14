@@ -398,7 +398,7 @@ func (s *outboundSupervisor) connectAndServe(ctx context.Context) error {
 	}
 
 	sess := &ClientStreamSession{Stream: stream}
-	return s.handler(ctx, sess, s.meta)
+	return s.handler(ctx, sess)
 }
 
 // jitter returns a duration in [d/2, d] — full jitter dampens herd-style

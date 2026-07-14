@@ -314,8 +314,19 @@ type Writer struct {
 type fallbackStateOp struct {
 	agentID   string
 	enteredAt time.Time
-	op        string // "put" or "delete"
+	op        FallbackOpKind
 }
+
+// FallbackOpKind enumerates the two mutations the fallback_state buffer
+// can carry.
+type FallbackOpKind string
+
+const (
+	// FallbackOpPut records entered_at when an agent enters fallback.
+	FallbackOpPut FallbackOpKind = "put"
+	// FallbackOpDelete clears the row when fallback ends.
+	FallbackOpDelete FallbackOpKind = "delete"
+)
 
 // TelemetryWriteUnit groups all per-agent telemetry writes for a single
 // snapshot so they can be flushed together.
@@ -405,7 +416,7 @@ func (w *Writer) SetFlushInterval(d time.Duration) { w.flushInterval = d }
 // Enqueue* are the typed entry points other packages use to append records to
 // each stream buffer. They replace direct access to the (now unexported)
 // buffer fields, keeping the buffer wiring internal to this package.
-func (w *Writer) EnqueueAgent(rec storage.AgentRecord)                { w.agents.Enqueue(rec) }
+func (w *Writer) EnqueueAgent(rec storage.AgentRecord) { w.agents.Enqueue(rec) }
 
 // RemovePendingAgent cancels any buffered agent upsert(s) for agentID so a
 // deregister cannot be undone by a stale in-flight EnqueueAgent flushing after
@@ -1076,23 +1087,27 @@ func (w *Writer) flushFallbackState(ctx context.Context, items []fallbackStateOp
 	for _, item := range items {
 		item := item
 		switch item.op {
-		case "put":
+		case FallbackOpPut:
 			w.flushItem("fallback_state", []any{
 				"agent_id", item.agentID,
-				"op", "put",
+				"op", string(FallbackOpPut),
 			}, func() error {
 				return w.store.PutAgentFallbackState(ctx, storage.AgentFallbackStateRecord{
 					AgentID:   item.agentID,
 					EnteredAt: item.enteredAt,
 				})
 			})
-		case "delete":
+		case FallbackOpDelete:
 			w.flushItem("fallback_state", []any{
 				"agent_id", item.agentID,
-				"op", "delete",
+				"op", string(FallbackOpDelete),
 			}, func() error {
 				return w.store.DeleteAgentFallbackState(ctx, item.agentID)
 			})
+		default:
+			// Unreachable: the two Enqueue* entry points are the only
+			// producers and both set a valid kind.
+			panic(fmt.Sprintf("batchwriter: unknown fallback op kind %q", item.op))
 		}
 	}
 }
@@ -1101,27 +1116,31 @@ func (w *Writer) flushFallbackState(ctx context.Context, items []fallbackStateOp
 // agent and entered-at timestamp. Lock-free; safe to call under the server
 // state mutex.
 func (w *Writer) EnqueueFallbackPut(agentID string, enteredAt time.Time) {
-	w.fallbackState.Enqueue(fallbackStateOp{agentID: agentID, enteredAt: enteredAt, op: "put"})
+	w.fallbackState.Enqueue(fallbackStateOp{agentID: agentID, enteredAt: enteredAt, op: FallbackOpPut})
 }
 
 // EnqueueFallbackDelete queues a delete against agent_fallback_state for the
 // given agent. Lock-free; safe to call under the server state mutex.
 func (w *Writer) EnqueueFallbackDelete(agentID string) {
-	w.fallbackState.Enqueue(fallbackStateOp{agentID: agentID, op: "delete"})
+	w.fallbackState.Enqueue(fallbackStateOp{agentID: agentID, op: FallbackOpDelete})
 }
 
 // FallbackOp is an exported view of one queued fallback-state operation.
 type FallbackOp struct {
 	AgentID   string
 	EnteredAt time.Time
-	Op        string // "put" or "delete"
+	Op        FallbackOpKind
 }
 
 // DrainPendingFallbackOps atomically removes and returns every fallback op
 // currently queued in the fallback_state buffer WITHOUT flushing it to the
-// store. It exists so callers in other packages (notably the server's
-// fallback-transition tests) can assert the put/delete an agent-state
-// transition enqueues, without reaching into this package's buffer internals.
+// store.
+//
+// TEST SEAM. Nothing in production calls this: it exists so the server's
+// fallback-transition tests (in another package, so they cannot reach the
+// buffer internals) can assert which put/delete an agent-state transition
+// enqueued. Keep it out of production paths — draining without a flush
+// silently discards durable state.
 func (w *Writer) DrainPendingFallbackOps() []FallbackOp {
 	b := w.fallbackState
 	b.mu.Lock()

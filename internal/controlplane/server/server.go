@@ -499,8 +499,8 @@ func (s *Server) Gateway() *gateway.Gateway { return s.gateway }
 // RunAgentSession is the SessionHandler entry point invoked by
 // agenttransport.Manager for outbound (panel-dialed) sessions. It delegates
 // to the gateway, which runs the direction-agnostic agent protocol.
-func (s *Server) RunAgentSession(ctx context.Context, sess agenttransport.AgentSession, meta agenttransport.NodeMeta) error {
-	return s.gateway.RunAgentSession(ctx, sess, meta)
+func (s *Server) RunAgentSession(ctx context.Context, sess agenttransport.AgentSession) error {
+	return s.gateway.RunAgentSession(ctx, sess)
 }
 
 // SetAgentTransportManager wires the agenttransport.Manager so the

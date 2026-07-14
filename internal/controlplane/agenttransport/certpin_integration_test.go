@@ -46,7 +46,7 @@ func TestOutboundSupervisor_PinMatch(t *testing.T) {
 	defer cancel()
 
 	var connectCount atomic.Int32
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCount.Add(1)
 		return nil // end session immediately
 	}
@@ -85,7 +85,7 @@ func TestOutboundSupervisor_PinMismatch(t *testing.T) {
 	var connectCount atomic.Int32
 	var mismatchSeen atomic.Bool
 
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCount.Add(1)
 		return nil
 	}
@@ -136,7 +136,7 @@ func TestOutboundSupervisor_PinMissingFailsClosed(t *testing.T) {
 	defer cancel()
 
 	var connectCount atomic.Int32
-	handler := func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+	handler := func(_ context.Context, _ AgentSession) error {
 		connectCount.Add(1)
 		return nil
 	}

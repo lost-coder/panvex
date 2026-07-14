@@ -53,40 +53,6 @@ func marshalEnvelope(evt Event) []byte {
 	return data
 }
 
-// Hub is the process-local pub/sub fan-out every server-side caller uses.
-// Single-instance by design (the panel does not scale horizontally), so it
-// holds the concrete in-memory backend directly (P5, audit #19).
-type Hub struct {
-	backend *memoryBackend
-}
-
-// NewHub returns a Hub backed by the in-process memoryBackend. This matches
-// the behaviour of the former server.newEventHub() prior to P3-ARCH-01e.
-func NewHub() *Hub {
-	return &Hub{backend: newMemoryBackend()}
-}
-
-// Publish broadcasts one event to every current subscriber. The fan-out is
-// intentionally fire-and-forget and carries no request context — the
-// backend's internal slog debug-gate uses context.Background() by design.
-// (Before P5 collapsed the Backend interface, that call was hidden from
-// contextcheck behind the interface boundary.)
-//
-//nolint:contextcheck // reason: pub/sub fan-out is ctx-free by design; the WS layer owns request ctx
-func (h *Hub) Publish(evt Event) { h.backend.Publish(evt) }
-
-// Subscribe registers a new consumer. The returned channel receives every
-// event published after Subscribe returns. The cancel func unsubscribes and
-// closes the channel; callers MUST invoke cancel (typically via defer) to
-// avoid leaking the subscriber slot.
-func (h *Hub) Subscribe() (<-chan Event, func()) { return h.backend.Subscribe() }
-
-// SubscriberCount exposes the live subscriber count for metrics.
-func (h *Hub) SubscriberCount() int { return h.backend.SubscriberCount() }
-
-// SetDropHook installs the drop counter callback. See Backend.SetDropHook.
-func (h *Hub) SetDropHook(fn func()) { h.backend.SetDropHook(fn) }
-
 // memorySubscriberBuffer is the per-subscriber channel buffer depth. Events
 // beyond this watermark are dropped for that subscriber; other subscribers
 // are unaffected. Matches the pre-extraction constant (64).
@@ -117,12 +83,15 @@ type subState struct {
 	closed bool
 }
 
-// memoryBackend is the default in-process pub/sub implementation. It uses
-// a copy-on-write atomic.Pointer snapshot so Publish reads the subscriber
-// list lock-free. Subscribe / Unsubscribe serialise on `mu` and replace
-// the snapshot pointer; this trades a per-mutation O(N) copy for a
-// completely lock-free, allocation-free hot publish path (P-5).
-type memoryBackend struct {
+// Hub is the process-local pub/sub fan-out every server-side caller uses.
+// Single-instance by design (the panel does not scale horizontally), so
+// there is no backend abstraction: this IS the in-memory implementation.
+//
+// It uses a copy-on-write atomic.Pointer snapshot so Publish reads the
+// subscriber list lock-free. Subscribe / cancel serialise on `mu` and
+// replace the snapshot pointer; this trades a per-mutation O(N) copy for
+// a completely lock-free, allocation-free hot publish path (P-5).
+type Hub struct {
 	subs atomic.Pointer[[]subscriber] // immutable snapshot, never mutated in place
 
 	// pubSeq is the hub-global publish sequence counter (D6c). Incremented
@@ -142,15 +111,16 @@ type memoryBackend struct {
 	onDrop atomic.Pointer[func()]
 }
 
-func newMemoryBackend() *memoryBackend {
-	b := &memoryBackend{}
+// NewHub returns an empty Hub ready for Publish/Subscribe.
+func NewHub() *Hub {
+	h := &Hub{}
 	empty := make([]subscriber, 0)
-	b.subs.Store(&empty)
-	return b
+	h.subs.Store(&empty)
+	return h
 }
 
 // SubscriberCount returns the current number of active subscribers.
-func (h *memoryBackend) SubscriberCount() int {
+func (h *Hub) SubscriberCount() int {
 	snap := h.subs.Load()
 	if snap == nil {
 		return 0
@@ -164,7 +134,7 @@ func (h *memoryBackend) SubscriberCount() int {
 // Contract: the hook MUST be non-blocking. It runs outside any hub lock so
 // re-entry into the hub is allowed, but keep it cheap — Publish calls it
 // for every slow subscriber.
-func (h *memoryBackend) SetDropHook(fn func()) {
+func (h *Hub) SetDropHook(fn func()) {
 	if fn == nil {
 		h.onDrop.Store(nil)
 		return
@@ -175,7 +145,7 @@ func (h *memoryBackend) SetDropHook(fn func()) {
 // Subscribe returns a receive-only channel and a cancel func. Safe for
 // concurrent use. Replaces the subscriber snapshot using copy-on-write so
 // the publish hot path stays lock-free.
-func (h *memoryBackend) Subscribe() (<-chan Event, func()) {
+func (h *Hub) Subscribe() (<-chan Event, func()) {
 	h.mu.Lock()
 
 	h.sequence++
@@ -238,7 +208,18 @@ func (h *memoryBackend) Subscribe() (<-chan Event, func()) {
 // D6c: Seq is assigned here, once, before fan-out. Dropped events still
 // consume a sequence number so gaps in the delivered stream signal the
 // dashboard that a resync is required.
-func (h *memoryBackend) Publish(evt Event) {
+//
+// Ordering contract: Seq is unique and monotonic, but under CONCURRENT
+// Publish calls a subscriber may observe seq numbers out of order — the
+// counter is bumped before fan-out, so a publisher that claimed a lower
+// number can lose the race to the send. Consumers must treat Seq as a
+// gap detector, not as a total order.
+//
+// The fan-out is fire-and-forget and carries no request context by
+// design; the WS layer owns the request ctx.
+//
+//nolint:contextcheck // reason: pub/sub fan-out is ctx-free by design; the WS layer owns request ctx
+func (h *Hub) Publish(evt Event) {
 	evt.Seq = h.pubSeq.Add(1)
 	evt.Raw = marshalEnvelope(evt)
 	snap := h.subs.Load()

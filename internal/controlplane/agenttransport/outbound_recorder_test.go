@@ -40,7 +40,7 @@ func TestOutboundConnectAndServeRecordsDialFailure(t *testing.T) {
 		// rely on the connection itself failing rather than the TLS-missing
 		// guard.
 		tlsCfg: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test-only, no real handshake
-		handler: SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		handler: SessionHandler(func(_ context.Context, _ AgentSession) error {
 			t.Fatal("handler must not be invoked on dial failure")
 			return nil
 		}),
@@ -99,7 +99,7 @@ func TestOutboundConnectAndServeWithoutRecorderIsNoop(t *testing.T) {
 			DialAddress: "127.0.0.1:1",
 		},
 		tlsCfg: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test-only, no real handshake
-		handler: SessionHandler(func(_ context.Context, _ AgentSession, _ NodeMeta) error {
+		handler: SessionHandler(func(_ context.Context, _ AgentSession) error {
 			t.Fatal("handler must not be invoked on dial failure")
 			return nil
 		}),

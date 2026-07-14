@@ -70,7 +70,7 @@ func TestApplyFallbackStateTransitionNoneToFallbackStampsAndEnqueues(t *testing.
 	if len(ops) != 1 {
 		t.Fatalf("pending fallback ops = %d, want 1", len(ops))
 	}
-	if ops[0].Op != "put" {
+	if ops[0].Op != batchwriter.FallbackOpPut {
 		t.Fatalf("op = %q, want %q", ops[0].Op, "put")
 	}
 	if ops[0].AgentID != agentID {
@@ -134,7 +134,7 @@ func TestApplyFallbackStateTransitionFallbackToMEClearsAndEnqueuesDelete(t *test
 	if len(ops) != 1 {
 		t.Fatalf("pending fallback ops after fallback->ME = %d, want 1", len(ops))
 	}
-	if ops[0].Op != "delete" || ops[0].AgentID != agentID {
+	if ops[0].Op != batchwriter.FallbackOpDelete || ops[0].AgentID != agentID {
 		t.Fatalf("op = %+v, want {op:delete, agentID:%s}", ops[0], agentID)
 	}
 }
@@ -163,7 +163,7 @@ func TestApplyFallbackStateTransitionFallbackToDirectClearsAndEnqueuesDelete(t *
 	if len(ops) != 1 {
 		t.Fatalf("pending fallback ops after fallback->direct = %d, want 1", len(ops))
 	}
-	if ops[0].Op != "delete" {
+	if ops[0].Op != batchwriter.FallbackOpDelete {
 		t.Fatalf("op = %+v, want delete", ops[0])
 	}
 }
