@@ -11,6 +11,7 @@ import {
   Legend,
 } from "recharts";
 import { SectionHeader } from "@/ui/layout/SectionHeader";
+import { formatAxisDate, formatAxisTime } from "@/ui/lib/format";
 import {
   AccessibleChart,
   type AccessibleChartSeries,
@@ -49,16 +50,6 @@ const TIME_RANGES = ["1h", "6h", "24h", "7d"];
 
 const TAB_KEYS: MetricsTab[] = ["system", "connections", "network", "traffic"];
 
-function formatTime(value: string) {
-  const d = new Date(value);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDate(value: string) {
-  const d = new Date(value);
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
 function ChartContainer({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className={chartContainerClass}>
@@ -76,7 +67,7 @@ function SystemChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
         <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
         <XAxis
           dataKey="t"
-          tickFormatter={formatTime}
+          tickFormatter={formatAxisTime}
           tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }}
         />
         <YAxis
@@ -92,7 +83,7 @@ function SystemChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
             borderRadius: 6,
             color: "var(--color-fg-muted)",
           }}
-          labelFormatter={(label) => formatDate(String(label))}
+          labelFormatter={(label) => formatAxisDate(String(label))}
           formatter={(value, name) => [`${Number(value).toFixed(1)}%`, name]}
         />
         <Legend />
@@ -138,7 +129,7 @@ function ConnectionsChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
         <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
         <XAxis
           dataKey="t"
-          tickFormatter={formatTime}
+          tickFormatter={formatAxisTime}
           tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }}
         />
         <YAxis tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }} className="text-fg-muted" />
@@ -149,7 +140,7 @@ function ConnectionsChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
             borderRadius: 6,
             color: "var(--color-fg-muted)",
           }}
-          labelFormatter={(label) => formatDate(String(label))}
+          labelFormatter={(label) => formatAxisDate(String(label))}
         />
         <Legend />
         <Area
@@ -184,7 +175,7 @@ function NetworkChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
         <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
         <XAxis
           dataKey="t"
-          tickFormatter={formatTime}
+          tickFormatter={formatAxisTime}
           tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }}
         />
         <YAxis
@@ -200,7 +191,7 @@ function NetworkChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
             borderRadius: 6,
             color: "var(--color-fg-muted)",
           }}
-          labelFormatter={(label) => formatDate(String(label))}
+          labelFormatter={(label) => formatAxisDate(String(label))}
           formatter={(value, name) => [`${Number(value).toFixed(1)}%`, name]}
         />
         <Legend />
@@ -226,7 +217,7 @@ function TrafficChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
         <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
         <XAxis
           dataKey="t"
-          tickFormatter={formatTime}
+          tickFormatter={formatAxisTime}
           tick={{ fontSize: 11, fill: "var(--color-fg-muted)" }}
         />
         <YAxis
@@ -241,7 +232,7 @@ function TrafficChart({ points }: Readonly<{ points: MetricsPoint[] }>) {
             borderRadius: 6,
             color: "var(--color-fg-muted)",
           }}
-          labelFormatter={(label) => formatDate(String(label))}
+          labelFormatter={(label) => formatAxisDate(String(label))}
           formatter={(value, name) => [`${Number(value).toFixed(2)} Mbps`, name]}
         />
         <Legend />
@@ -430,7 +421,7 @@ export default function MetricsChartSectionInner({
             title={t(`metrics.tabs.${tab}`)}
             labelKey="t"
             labelHeader={t("metrics.timeColumn")}
-            formatLabel={(value) => formatTime(String(value))}
+            formatLabel={(value) => formatAxisTime(String(value))}
             unit={TAB_UNIT[tab]}
             series={TAB_SERIES[tab]}
             data={points}

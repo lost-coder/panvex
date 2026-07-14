@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { cn } from "@/ui/lib/cn";
 import type { ViewMode } from "@/shared/api/types-pages/pages";
 
@@ -8,6 +9,7 @@ export interface ViewModeToggleProps {
 }
 
 export function ViewModeToggle({ mode, onChange, className }: Readonly<ViewModeToggleProps>) {
+  const { t } = useTranslation("common");
   return (
     <div className={cn("flex rounded-xs border border-border overflow-hidden", className)}>
       <button
@@ -17,7 +19,7 @@ export function ViewModeToggle({ mode, onChange, className }: Readonly<ViewModeT
           mode === "cards" ? "bg-accent text-white" : "bg-bg-card text-fg-muted hover:text-fg",
         )}
         onClick={() => onChange("cards")}
-        aria-label="Card view"
+        aria-label={t("table.cardView")}
       >
         <svg
           width="14"
@@ -40,7 +42,7 @@ export function ViewModeToggle({ mode, onChange, className }: Readonly<ViewModeT
           mode === "list" ? "bg-accent text-white" : "bg-bg-card text-fg-muted hover:text-fg",
         )}
         onClick={() => onChange("list")}
-        aria-label="List view"
+        aria-label={t("table.listView")}
       >
         <svg
           width="14"

@@ -118,7 +118,7 @@ export function TableView({
                   <div
                     key={f.key}
                     role="tablist"
-                    aria-label={f.placeholder ?? "Filter"}
+                    aria-label={f.placeholder ?? tc("table.filter")}
                     className="inline-flex items-center gap-0.5 p-0.5 rounded-xs border border-border-hi bg-bg overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   >
                     {f.options.map((o) => {
@@ -160,7 +160,7 @@ export function TableView({
                     value={f.value}
                     onChange={f.onChange}
                     options={f.options}
-                    placeholder={f.placeholder ?? "All"}
+                    placeholder={f.placeholder ?? tc("table.all")}
                   />
                 ),
               )}
@@ -180,14 +180,14 @@ export function TableView({
                       "bg-bg-card text-fg-muted hover:text-fg transition-colors",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
                     )}
-                    aria-label="Toggle columns"
+                    aria-label={tc("table.toggleColumns")}
                   >
                     <Columns3 className="size-4" />
                   </button>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-52 p-3">
                   <p className="text-xs font-medium text-fg-muted uppercase tracking-wider mb-2">
-                    Columns
+                    {tc("table.columns")}
                   </p>
                   <div className="flex flex-col gap-1.5">
                     {columns.available.map((col) => {

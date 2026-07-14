@@ -7,8 +7,12 @@
     "pending": "PENDING"
   },
   "empty": "No data",
-  "toast": { "close": "Dismiss notification" },
-  "typeToConfirm": { "prompt": "To confirm, type" },
+  "toast": {
+    "close": "Dismiss notification"
+  },
+  "typeToConfirm": {
+    "prompt": "To confirm, type"
+  },
   "sortBy": "Sort by",
   "sortNone": "Default order",
   "sortAscending": "Sort ascending",
@@ -19,8 +23,13 @@
     "hoursAgo": "{{count}}h ago",
     "daysAgo": "{{count}}d ago"
   },
-  "search": { "placeholder": "Search…" },
-  "errorState": { "title": "Something went wrong", "retry": "Retry" },
+  "search": {
+    "placeholder": "Search…"
+  },
+  "errorState": {
+    "title": "Something went wrong",
+    "retry": "Retry"
+  },
   "reason": {
     "offline": "Agent offline",
     "telemtUnreachable": "Telemt API unreachable since",
@@ -46,6 +55,19 @@
     "leave": "Discard and leave",
     "stay": "Stay"
   },
-  "copy": { "copy": "Copy", "copied": "Copied" },
-  "bulkBar": { "clear": "Clear selection" }
+  "copy": {
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "bulkBar": {
+    "clear": "Clear selection"
+  },
+  "table": {
+    "filter": "Filter",
+    "all": "All",
+    "toggleColumns": "Toggle columns",
+    "columns": "Columns",
+    "cardView": "Card view",
+    "listView": "List view"
+  }
 }

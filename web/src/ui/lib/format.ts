@@ -64,6 +64,20 @@ export function formatTime(epochSecs: number): string {
   return new Date(epochSecs * 1000).toLocaleTimeString(activeLocale());
 }
 
+/**
+ * Chart-axis labels for a time series keyed by RFC3339/ISO timestamps.
+ * Terse by necessity — an axis tick has room for "14:05", not for a full
+ * locale datetime. Unlike the ad-hoc versions these replaced, they honour the
+ * app locale instead of the browser default.
+ */
+export function formatAxisTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(activeLocale(), { hour: "2-digit", minute: "2-digit" });
+}
+
+export function formatAxisDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(activeLocale(), { month: "short", day: "numeric" });
+}
+
 /** Format byte quota: 0 = "Unlimited", otherwise human-readable */
 export function formatQuota(bytes: number): string {
   if (bytes === 0) return "Unlimited";

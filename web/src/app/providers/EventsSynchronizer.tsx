@@ -178,10 +178,12 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
       const sweepClientDetails = pendingClientDetailSweep;
       pendingKeys.clear();
       pendingClientDetailSweep = false;
-      for (const key of keys) {
-        // Q-10: copy readonly key into a fresh mutable array for TanStack.
-        await queryClient.invalidateQueries({ queryKey: [...key] });
-      }
+      // Q-10: copy each readonly key into a fresh mutable array for TanStack.
+      // Fire them together: the invalidations are independent, and awaiting
+      // them one after another made a burst of events serialise refetches.
+      await Promise.all(
+        keys.map((key) => queryClient.invalidateQueries({ queryKey: [...key] })),
+      );
       if (sweepClientDetails) {
         // "clients" sweep also refreshes per-client detail queries
         // (["client", id]) so the detail view updates in-flight.

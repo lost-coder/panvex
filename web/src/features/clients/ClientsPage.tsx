@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { Users } from "lucide-react";
 
 import { DiscoveredClientsBanner } from "@/features/clients/DiscoveredClientsBanner";
-import { ClientsCreateSheet } from "@/features/clients/components/ClientsCreateSheet";
+import { ClientMutationSheet } from "@/features/clients/components/ClientMutationSheet";
 import {
   buildClientsBulkActions,
   buildClientsStatusFilter,
@@ -278,7 +278,8 @@ export function ClientsPage({
       </div>
 
       {onCreate && (
-        <ClientsCreateSheet
+        <ClientMutationSheet
+          mode="create"
           open={createOpen}
           data={createData}
           onChange={setCreateData}
