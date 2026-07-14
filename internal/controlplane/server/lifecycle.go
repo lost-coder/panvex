@@ -105,13 +105,14 @@ func initSecrets(bootCtx context.Context, options Options) (func() time.Time, *c
 // — no I/O, no error paths.
 func newServerFromOptions(options Options, now func() time.Time, csrfManager *csrf.Manager, vault *secretvault.Vault) *Server {
 	s := &Server{
-		auth:          auth.NewService(),
-		store:         options.Store,
-		uiFiles:       options.UIFiles,
-		jobs:          jobs.NewService(),
-		presence:      presence.NewTracker(30*time.Second, 90*time.Second),
-		events:        eventbus.NewHub(),
-		agentsUpdated: newAgentsUpdatedCoalescer(),
+		auth:            auth.NewService(),
+		store:           options.Store,
+		uiFiles:         options.UIFiles,
+		jobs:            jobs.NewService(),
+		presence:        presence.NewTracker(30*time.Second, 90*time.Second),
+		events:          eventbus.NewHub(),
+		agentsUpdated:   newAgentsUpdatedCoalescer(),
+		clientReconcile: newClientReconciler(),
 		// Runtime Events Phase 3: 500-event ring buffer per agent for
 		// slog records shipped over the Connect bidi-stream. Always
 		// constructed (independent of Store wiring) so the message
@@ -496,6 +497,14 @@ func (s *Server) startBackgroundWorkers() {
 	// startup poll naturally resumes any batch left running by a prior
 	// process (panel restart resilience).
 	s.startConfigApplyBatchWorker(rollupCtx, configApplyPollInterval)
+
+	// R10: converge client state onto nodes that missed a job. The immediate
+	// first pass inside the worker is the boot trigger — it picks up
+	// deployments left queued by a panel that died between persisting client
+	// state and enqueueing its job, plus every job that expired while the panel
+	// was down.
+	s.rollupWg.Add(1)
+	s.startClientReconcileWorker(rollupCtx, clientReconcileInterval, &s.rollupWg)
 
 	// R7: reclaim expired sessions + consumed TOTP codes on a ticker. This
 	// sweep used to run under the auth write lock on EVERY GetSession — i.e.

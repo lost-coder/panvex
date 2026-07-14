@@ -75,6 +75,11 @@ type Deps interface {
 	ShouldTerminateForRevocation(ctx context.Context, agentID, presentedSerial string) bool
 	// MarkTransportSwitchResolved clears the A2 transport-switch marker.
 	MarkTransportSwitchResolved(agentID string)
+	// OnAgentConnected fires once per accepted stream, after the session is
+	// registered. The panel uses it to reconcile whatever the node missed
+	// while it was away (R10). Must not block: implementations hand the work
+	// to a goroutine.
+	OnAgentConnected(agentID string)
 	// ApplyAgentSnapshot applies a runtime snapshot against panel state.
 	ApplyAgentSnapshot(ctx context.Context, snap AgentSnapshot) error
 	// AppendAudit records one audit-trail entry (best-effort).
