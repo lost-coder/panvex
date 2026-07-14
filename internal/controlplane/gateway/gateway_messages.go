@@ -9,66 +9,23 @@ import (
 	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
 	"github.com/lost-coder/panvex/internal/controlplane/runtimeevents"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // enqueueInboundAgentMessage routes a freshly-received agent message into
-// either the priority or the regular inbound queue. Priority messages
-// (job_result / job_acknowledgement) block until the queue accepts them.
-// Regular messages follow drop-oldest semantics: try once, drain one stale
-// slot, try again. If a concurrent reader races with the drain the final
-// send may still find the channel full — in that rare case we bump
-// dropCounter (when non-nil) so operators get visibility into the silent
-// drop (D-2). The counter is intentionally label-less; see metrics.go for
-// the cardinality rationale.
+// either the priority or the regular inbound queue. The queues' own policies
+// carry the semantics: priority (job_result / job_acknowledgement) blocks so
+// a result is never lost, regular is drop-oldest so the freshest snapshot
+// wins under backpressure.
 func enqueueInboundAgentMessage(
 	connectionCtx context.Context,
-	priorityInbound chan<- *gatewayrpc.ConnectClientMessage,
-	regularInbound chan *gatewayrpc.ConnectClientMessage,
+	priorityInbound *boundedQueue[*gatewayrpc.ConnectClientMessage],
+	regularInbound *boundedQueue[*gatewayrpc.ConnectClientMessage],
 	message *gatewayrpc.ConnectClientMessage,
-	dropCounter prometheus.Counter,
 ) bool {
-	if connectionCtx.Err() != nil {
-		return false
-	}
-
 	if isPriorityAgentMessage(message) {
-		select {
-		case <-connectionCtx.Done():
-			return false
-		case priorityInbound <- message:
-			return true
-		}
+		return priorityInbound.enqueue(connectionCtx, message)
 	}
-
-	select {
-	case <-connectionCtx.Done():
-		return false
-	case regularInbound <- message:
-		return true
-	default:
-	}
-
-	// Drop one stale non-critical update to keep room for the most recent snapshot/heartbeat.
-	select {
-	case <-regularInbound:
-	default:
-	}
-
-	select {
-	case <-connectionCtx.Done():
-		return false
-	case regularInbound <- message:
-		return true
-	default:
-	}
-
-	// Backpressure — drop-oldest semantics failed because a concurrent reader
-	// raced with the drain. Record the drop so operators can see it.
-	if dropCounter != nil {
-		dropCounter.Inc()
-	}
-	return true
+	return regularInbound.enqueue(connectionCtx, message)
 }
 
 func isPriorityAgentMessage(message *gatewayrpc.ConnectClientMessage) bool {
@@ -79,7 +36,7 @@ func (g *Gateway) processRegularAgentMessage(
 	connectionCtx context.Context,
 	agentID string,
 	sess agenttransport.AgentSession,
-	regularSnapshots chan AgentSnapshot,
+	regularSnapshots *boundedQueue[AgentSnapshot],
 	message *gatewayrpc.ConnectClientMessage,
 ) error {
 	if hb := message.GetHeartbeat(); hb != nil {
@@ -93,7 +50,7 @@ func (g *Gateway) processRegularAgentMessage(
 			"agent_id", agentID,
 			"observed_at_unix", hb.ObservedAtUnix,
 		)
-		enqueueRegularSnapshot(connectionCtx, regularSnapshots, AgentSnapshot{
+		regularSnapshots.enqueue(connectionCtx, AgentSnapshot{
 			AgentID: agentID,
 			Snap: &gatewayrpc.Snapshot{
 				NodeName:       hb.NodeName,
@@ -108,7 +65,7 @@ func (g *Gateway) processRegularAgentMessage(
 				Partial: true,
 			},
 			ObservedAt: time.Unix(hb.ObservedAtUnix, 0).UTC(),
-		}, g.snapshotDropCounter(), g.logger)
+		})
 		return nil
 	}
 
@@ -219,8 +176,8 @@ func (g *Gateway) processPriorityAgentMessage(ctx context.Context, agentID strin
 
 func (g *Gateway) processPriorityAgentMessageAsync(
 	connectionCtx context.Context,
-	priorityResultEffects chan<- jobResultEffect,
-	priorityAuditEffects chan<- auditEffect,
+	priorityResultEffects *boundedQueue[jobResultEffect],
+	priorityAuditEffects *boundedQueue[auditEffect],
 	agentID string,
 	message *gatewayrpc.ConnectClientMessage,
 ) error {
@@ -240,7 +197,7 @@ func (g *Gateway) processPriorityAgentMessageAsync(
 			jr.ResultJson,
 			observedAt,
 		)
-		if !enqueuePriorityResultEffect(connectionCtx, priorityResultEffects, jobResultEffect{
+		if !priorityResultEffects.enqueue(connectionCtx, jobResultEffect{
 			agentID:    agentID,
 			jobID:      jr.JobId,
 			success:    jr.Success,
@@ -254,7 +211,7 @@ func (g *Gateway) processPriorityAgentMessageAsync(
 			"success": jr.Success,
 			"message": jr.Message,
 		}
-		if !enqueuePriorityAuditEffect(connectionCtx, priorityAuditEffects, auditEffect{
+		if !priorityAuditEffects.enqueue(connectionCtx, auditEffect{
 			actorID:  agentID,
 			action:   auditJobsResult,
 			targetID: jr.JobId,
@@ -271,7 +228,7 @@ func (g *Gateway) processPriorityAgentMessageAsync(
 			ack.JobId,
 			observedAt,
 		)
-		if !enqueuePriorityAuditEffect(connectionCtx, priorityAuditEffects, auditEffect{
+		if !priorityAuditEffects.enqueue(connectionCtx, auditEffect{
 			actorID:  agentID,
 			action:   auditJobsAcknowledged,
 			targetID: ack.JobId,

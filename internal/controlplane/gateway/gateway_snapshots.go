@@ -13,7 +13,7 @@ import (
 // it for the regular processor goroutine. The wire message is carried as-is
 // (AgentSnapshot is an envelope, not a projection); the proto→domain mapping
 // happens once, in applyAgentSnapshot's helpers (P8.3, audit #23).
-func (g *Gateway) handleSnapshotMessage(connectionCtx context.Context, agentID string, regularSnapshots chan AgentSnapshot, snap *gatewayrpc.Snapshot) {
+func (g *Gateway) handleSnapshotMessage(connectionCtx context.Context, agentID string, regularSnapshots *boundedQueue[AgentSnapshot], snap *gatewayrpc.Snapshot) {
 	g.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "snapshot")
 	observedAt := time.Unix(snap.ObservedAtUnix, 0).UTC()
 
@@ -26,13 +26,13 @@ func (g *Gateway) handleSnapshotMessage(connectionCtx context.Context, agentID s
 		g.logger.InfoContext(connectionCtx, "client ip snapshot received", "agent_id", agentID, "total", len(snap.ClientIps), "resolved", ipResolved, "skipped", ipSkipped)
 	}
 
-	enqueueRegularSnapshot(connectionCtx, regularSnapshots, AgentSnapshot{
+	regularSnapshots.enqueue(connectionCtx, AgentSnapshot{
 		AgentID:    agentID,
 		Snap:       snap,
 		ObservedAt: observedAt,
 		Clients:    reports,
 		ClientIPs:  clientIPs,
-	}, g.snapshotDropCounter(), g.logger)
+	})
 }
 
 // snapshotDropCounter returns the observability counter for dropped regular

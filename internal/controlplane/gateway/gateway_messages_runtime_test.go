@@ -64,7 +64,7 @@ func TestHandleRuntimeEventsBatchPopulatesBufferAndPublishes(t *testing.T) {
 		},
 	}
 
-	regularSnapshots := make(chan AgentSnapshot, 1)
+	regularSnapshots := newBoundedQueue[AgentSnapshot](1, policyDropOldest)
 	if err := g.processRegularAgentMessage(context.Background(), "agent-x", nil, regularSnapshots, msg); err != nil {
 		t.Fatalf("processRegularAgentMessage() error = %v", err)
 	}
@@ -128,12 +128,12 @@ func TestHeartbeatSnapshotIsPartial(t *testing.T) {
 			},
 		},
 	}
-	regularSnapshots := make(chan AgentSnapshot, 1)
+	regularSnapshots := newBoundedQueue[AgentSnapshot](1, policyDropOldest)
 	if err := g.processRegularAgentMessage(context.Background(), "agent-x", nil, regularSnapshots, msg); err != nil {
 		t.Fatalf("processRegularAgentMessage() error = %v", err)
 	}
 	select {
-	case snap := <-regularSnapshots:
+	case snap := <-regularSnapshots.ch:
 		if snap.Snap == nil {
 			t.Fatal("heartbeat produced a nil Snap")
 		}
