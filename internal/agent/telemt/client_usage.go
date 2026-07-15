@@ -9,11 +9,15 @@ import (
 	"time"
 )
 
-// pathUsersQuota is the Telemt 3.4.12+ endpoint that lists per-user
+// pathUsersQuota is the Telemt 3.4.12+ stats endpoint that lists per-user
 // data_quota_bytes / used_bytes / last_reset_epoch_secs for every user
-// with a quota configured. Older Telemt builds return 404 here; callers
-// MUST treat 404 as "no quota data available" rather than a hard error.
-const pathUsersQuota = "/v1/users/quota"
+// with a quota configured (telemt api/mod.rs: GET /v1/stats/users/quota).
+// NOT /v1/users/quota — that spelling falls into the /v1/users/{name}
+// catch-all as a lookup for a user literally named "quota" and 404s on
+// every Telemt version (contract audit F1). Older Telemt builds return
+// 404 on the real route too; callers MUST treat 404 as "no quota data
+// available" rather than a hard error.
+const pathUsersQuota = "/v1/stats/users/quota"
 
 // fetchUserQuotaInfo reads the per-user quota view from Telemt and
 // returns one UserQuotaInfo entry per user with data_quota_bytes > 0.
