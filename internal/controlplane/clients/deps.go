@@ -36,6 +36,12 @@ type Deps interface {
 	// invokes without a caller-supplied context — the persistence + publish
 	// it performs must run on the server lifecycle context, not a request one.
 	Context() context.Context
+	// AppendAudit records an audit event through the server's audit trail.
+	// The discovery-reconcile flow (discoveryflow.go) uses it to surface
+	// clients.discovered / clients.discovery_orphan events. Implemented by
+	// *server.Server (server/gateway_deps.go), which forwards to
+	// appendAuditWithContext (the event's own timestamp comes from s.now()).
+	AppendAudit(ctx context.Context, actorID, action, subject string, details map[string]any)
 }
 
 // JobQueue is the jobs.Service subset the orchestration uses.

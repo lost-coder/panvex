@@ -72,7 +72,7 @@ func TestAdoptDiscoveredNameConflictDifferentSecret(t *testing.T) {
 	})
 
 	// Single-adopt → errClientNameTaken.
-	if _, err := server.adoptDiscoveredClient(ctx, discoveredID, "operator-1", now); !errors.Is(err, errClientNameTaken) {
+	if _, err := server.clientsSvc.AdoptDiscovered(ctx, discoveredID, "operator-1", now); !errors.Is(err, errClientNameTaken) {
 		t.Fatalf("adoptDiscoveredClient error = %v, want errClientNameTaken", err)
 	}
 	// The discovered record must remain pending (not flipped to adopted).
@@ -92,7 +92,7 @@ func TestAdoptDiscoveredNameConflictDifferentSecret(t *testing.T) {
 
 	// Bulk-adopt surfaces the same conflict as a per-item error, not a panic
 	// or a batch abort.
-	results := server.bulkAdoptDiscoveredClients(ctx, []string{discoveredID}, "operator-1", now)
+	results := server.clientsSvc.BulkAdoptDiscovered(ctx, []string{discoveredID}, "operator-1", now)
 	if len(results) != 1 {
 		t.Fatalf("bulkAdopt results = %d, want 1", len(results))
 	}
@@ -173,7 +173,7 @@ func TestAdoptDiscoveredNameSecretMatchStillMerges(t *testing.T) {
 		updatedAt:    now,
 	})
 
-	adopted, err := server.adoptDiscoveredClient(ctx, discoveredID, "operator-1", now)
+	adopted, err := server.clientsSvc.AdoptDiscovered(ctx, discoveredID, "operator-1", now)
 	if err != nil {
 		t.Fatalf("adoptDiscoveredClient (merge) error = %v, want nil", err)
 	}

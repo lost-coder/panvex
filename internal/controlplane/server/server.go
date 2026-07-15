@@ -201,14 +201,6 @@ type Server struct {
 	// scope checks, time-range parsing, raw-vs-hourly resolution, and geoip
 	// enrichment. See internal/controlplane/history.
 	historySvc *history.Service
-	// adoptMu serializes adopt/merge-adopt of discovered clients. It closes
-	// the TOCTOU window between reading a discovered record's status,
-	// checking it, creating/updating the managed client, and marking the
-	// discovered record as adopted (P2-LOG-03 / P2-LOG-04; audit findings
-	// L-11, L-12). A single global mutex is acceptable because adopt is
-	// operator-initiated and contention is low. Full Store.Transact wiring
-	// is deferred to P2-ARCH-01.
-	adoptMu sync.Mutex
 	// agentSeq removed (P1-SEC-05): agent IDs are now UUIDv7 so a process
 	// restart cannot re-issue a previously-used ID. Other entity sequences
 	// (session/audit/metric/client) are still monotonic because they do not
@@ -266,15 +258,6 @@ type Server struct {
 	// drifting agent that reconnects in a tight loop cannot flood the queue.
 	// Value is the time of the last drift-triggered re-enqueue.
 	transportDriftReenqueuedAt map[string]time.Time
-	// discoveredOrphanSeen dedupes the clients.discovery_orphan audit event
-	// (R10b Task 3): a discovered record carrying a panel-assigned client_id
-	// that does not resolve to a live managed client (deleted, rotated away,
-	// or unknown) is a real anomaly, but reconcileDiscoveredClients runs on
-	// every telemetry tick, so without this set the same finding would be
-	// audited over and over. Keyed by agentID+"|"+panelID. In-memory only:
-	// the set is small and lives for the process lifetime; a restart simply
-	// re-audits once, which is acceptable.
-	discoveredOrphanSeen map[string]struct{}
 	// live is the single owner of agent live-state (full Agent value:
 	// identity + runtime telemetry) and per-agent Telemt instances, with
 	// replace/prune semantics and deep-copy isolation (A2/A1). It replaces

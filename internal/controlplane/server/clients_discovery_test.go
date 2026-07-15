@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -114,7 +115,7 @@ func TestUpsertDiscoveredClientDedupes(t *testing.T) {
 	}
 
 	// First observation -> one new pending_review row.
-	server.upsertDiscoveredClient(ctx, agentID, record, now)
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
 
 	// Simulate a later FULL_SNAPSHOT with refreshed traffic counters.
 	record2 := &gatewayrpc.ClientDetailRecord{
@@ -126,10 +127,10 @@ func TestUpsertDiscoveredClientDedupes(t *testing.T) {
 		ConnectionLinks:    record.ConnectionLinks,
 	}
 	later := now.Add(5 * time.Minute)
-	server.upsertDiscoveredClient(ctx, agentID, record2, later)
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record2}, false, later)
 
 	// And a third time — mimics another agent reconnect.
-	server.upsertDiscoveredClient(ctx, agentID, record2, later.Add(time.Minute))
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record2}, false, later.Add(time.Minute))
 
 	got, err := server.listDiscoveredClients(ctx)
 	if err != nil {
@@ -192,7 +193,7 @@ func TestReconcilePrunesStaleDiscoveredOnFullSnapshot(t *testing.T) {
 	bob := &gatewayrpc.ClientDetailRecord{ClientName: "ext-bob", Secret: "22222222222222222222222222222222"}
 
 	// First full snapshot: both unmanaged users present → two pending records.
-	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{alice, bob}, false, now)
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{alice, bob}, false, now)
 	got, err := server.listDiscoveredClients(ctx)
 	if err != nil {
 		t.Fatalf("listDiscoveredClients() error = %v", err)
@@ -202,7 +203,7 @@ func TestReconcilePrunesStaleDiscoveredOnFullSnapshot(t *testing.T) {
 	}
 
 	// Second full snapshot: only alice remains on the node → bob is pruned.
-	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{alice}, false, now.Add(time.Minute))
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{alice}, false, now.Add(time.Minute))
 	got2, err := server.listDiscoveredClients(ctx)
 	if err != nil {
 		t.Fatalf("listDiscoveredClients() error = %v", err)
@@ -247,7 +248,7 @@ func TestUpsertDiscoveredClientPreservesIgnoredStatus(t *testing.T) {
 		ClientName: "external-bob",
 		Secret:     "2222222222222222bbbbbbbbbbbbbbbb",
 	}
-	server.upsertDiscoveredClient(ctx, agentID, record, now)
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
 
 	existing, err := server.listDiscoveredClients(ctx)
 	if err != nil {
@@ -264,7 +265,7 @@ func TestUpsertDiscoveredClientPreservesIgnoredStatus(t *testing.T) {
 
 	// Another reconcile pass arrives with the same (agent, name). The upsert
 	// must NOT flip the status back to pending_review.
-	server.upsertDiscoveredClient(ctx, agentID, record, now.Add(time.Minute))
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now.Add(time.Minute))
 
 	got, err := server.listDiscoveredClients(ctx)
 	if err != nil {
@@ -341,14 +342,14 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			client, err := server.adoptDiscoveredClient(ctx, discoveredID, "operator-1", now)
+			client, err := server.clientsSvc.AdoptDiscovered(ctx, discoveredID, "operator-1", now)
 			mu.Lock()
 			defer mu.Unlock()
 			switch {
 			case err == nil:
 				successes++
 				createdIDs = append(createdIDs, string(client.ID))
-			case errors.Is(err, ErrAlreadyAdopted):
+			case errors.Is(err, clients.ErrAlreadyAdopted):
 				alreadyAdopted++
 			default:
 				otherErrs = append(otherErrs, err)
@@ -488,12 +489,12 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		<-start
-		_, errs[0] = server.adoptDiscoveredClient(ctx, discoveredA, "operator-1", now)
+		_, errs[0] = server.clientsSvc.AdoptDiscovered(ctx, discoveredA, "operator-1", now)
 	}()
 	go func() {
 		defer wg.Done()
 		<-start
-		_, errs[1] = server.adoptDiscoveredClient(ctx, discoveredB, "operator-1", now)
+		_, errs[1] = server.clientsSvc.AdoptDiscovered(ctx, discoveredB, "operator-1", now)
 	}()
 	close(start)
 	wg.Wait()
@@ -503,7 +504,7 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 		switch {
 		case err == nil:
 			okCount++
-		case errors.Is(err, ErrAlreadyAdopted):
+		case errors.Is(err, clients.ErrAlreadyAdopted):
 			alreadyCount++
 		default:
 			t.Fatalf("merge-adopt #%d: unexpected error = %v", i, err)
@@ -588,14 +589,14 @@ func TestReconcileSkipsPruneWhenTelemtUnreachable(t *testing.T) {
 	defer s.Close()
 
 	// Seed one pending discovered record for the agent.
-	s.upsertDiscoveredClient(ctx, agentID, &gatewayrpc.ClientDetailRecord{
+	s.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{{
 		ClientName: "alice",
 		Secret:     "00112233445566778899aabbccddeeff",
-	}, s.now())
+	}}, false, s.now())
 
 	// An unreachable response carries no records. Assert the record SURVIVES
 	// (no prune) and the new flag arg is accepted.
-	s.reconcileDiscoveredClients(ctx, agentID, nil, true, s.now())
+	s.clientsSvc.ReconcileDiscovered(ctx, agentID, nil, true, s.now())
 
 	got, err := s.listDiscoveredClients(ctx)
 	if err != nil {
@@ -834,7 +835,7 @@ func TestAdoptDiscoveredClientGeneratesSubscriptionToken(t *testing.T) {
 		updatedAt:       now,
 	})
 
-	client, err := server.adoptDiscoveredClient(ctx, discoveredID, "operator-1", now)
+	client, err := server.clientsSvc.AdoptDiscovered(ctx, discoveredID, "operator-1", now)
 	if err != nil {
 		t.Fatalf("adoptDiscoveredClient() error = %v", err)
 	}
@@ -905,7 +906,7 @@ func TestReconcileSurfacesOrphanedPanelClientID(t *testing.T) {
 	}
 
 	// First tick: orphan record → audited once, no discovered_client row.
-	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
 
 	got, err := server.listDiscoveredClients(ctx)
 	if err != nil {
@@ -948,7 +949,7 @@ func TestReconcileSurfacesOrphanedPanelClientID(t *testing.T) {
 
 	// Second, identical tick: same (agent, client_id) pair must NOT
 	// duplicate the audit event.
-	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now.Add(time.Minute))
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now.Add(time.Minute))
 	server.batchWriter.Flush(ctx)
 	events2, err := server.auditFirstPage(ctx)
 	if err != nil {
@@ -1020,7 +1021,7 @@ func TestReconcileSkipsLiveManagedPanelClientID(t *testing.T) {
 		ClientId:   string(liveClient.ID),
 	}
 
-	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
 
 	got, err := server.listDiscoveredClients(ctx)
 	if err != nil {
@@ -1100,7 +1101,7 @@ func TestReconcileSurfacesTombstonedPanelClientID(t *testing.T) {
 		ClientId:   string(deletedClient.ID),
 	}
 
-	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
 
 	got, err := server.listDiscoveredClients(ctx)
 	if err != nil {

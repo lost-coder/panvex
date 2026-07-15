@@ -143,7 +143,6 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		transportSwitchPendingAt:   map[string]time.Time{},
 		transportDriftAt:           map[string]time.Time{},
 		transportDriftReenqueuedAt: map[string]time.Time{},
-		discoveredOrphanSeen:       make(map[string]struct{}),
 		retentionDisabledWarned:    make(map[string]bool),
 		// live (A2/A1): single owner of agent live-state + instances. The
 		// clone funcs deep-copy every reference-type field of Agent/Instance

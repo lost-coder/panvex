@@ -512,7 +512,7 @@ func (s *Server) RecordClientJobResult(ctx context.Context, agentID, jobID strin
 
 // ReconcileDiscoveredClients reconciles a full client-list response.
 func (s *Server) ReconcileDiscoveredClients(ctx context.Context, agentID string, records []*gatewayrpc.ClientDetailRecord, telemtUnreachable bool, observedAt time.Time) {
-	s.reconcileDiscoveredClients(ctx, agentID, records, telemtUnreachable, observedAt)
+	s.clientsSvc.ReconcileDiscovered(ctx, agentID, records, telemtUnreachable, observedAt)
 }
 
 // ResolveClientIDByName resolves a client_id from an agent-scoped name.

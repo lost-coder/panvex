@@ -88,6 +88,17 @@ type Service struct {
 	// reconcile worker and job-result path share this single instance.
 	reconcile *reconciler
 
+	// discoveredOrphanSeen dedupes the clients.discovery_orphan audit event
+	// (R10b Task 3): a discovered record carrying a panel-assigned client_id
+	// that does not resolve to a live managed client (deleted, rotated away,
+	// or unknown) is a real anomaly, but ReconcileDiscovered runs on every
+	// telemetry tick, so without this set the same finding would be audited
+	// over and over. Keyed by agentID+"|"+panelID. Guarded by s.mu for the
+	// check-and-set only (recordDiscoveredOrphan releases s.mu before the
+	// audit write). In-memory only: the set is small and lives for the
+	// process lifetime; a restart simply re-audits once, which is acceptable.
+	discoveredOrphanSeen map[string]struct{}
+
 	mirrorClients     map[ClientID]Client
 	mirrorAssignments map[ClientID][]Assignment
 	mirrorDeployments map[ClientID]map[string]Deployment // outer=ClientID, inner=AgentID
@@ -111,6 +122,14 @@ type Service struct {
 	// layer in R8.1.)
 	saveLocksMu sync.Mutex
 	saveLocks   map[ClientID]*sync.Mutex
+
+	// adoptMu serialises the whole discovery-adopt read-check-create-mark
+	// sequence (P2-LOG-03 / L-11) so two concurrent adopts of the same
+	// discovered record cannot both pass the status check and each create a
+	// managed client. It also covers mergeAdoptIntoExistingClient (P2-LOG-04
+	// / L-12). Held by AdoptDiscovered / BulkAdoptDiscovered around
+	// adoptDiscoveredClientLocked.
+	adoptMu sync.Mutex
 }
 
 // ServiceConfig carries the dependencies for NewService: a
@@ -159,6 +178,8 @@ func NewService(cfg ServiceConfig) *Service {
 		logger:   logger,
 
 		reconcile: newReconciler(),
+
+		discoveredOrphanSeen: make(map[string]struct{}),
 
 		mirrorClients:     make(map[ClientID]Client),
 		mirrorAssignments: make(map[ClientID][]Assignment),
