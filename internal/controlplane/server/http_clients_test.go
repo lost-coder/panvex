@@ -831,7 +831,7 @@ func TestRecordClientJobResultPublishesClientsUpdated(t *testing.T) {
 	createJob := latestQueuedJob(t, server, jobs.ActionClientCreate)
 
 	// Subscribe only after setup so the create's own publish (from
-	// replaceClientStateWithContext) doesn't pollute the assertions below.
+	// clients.Service's saveStateAndPublish) doesn't pollute the assertions below.
 	ch, cancel := server.events.Subscribe()
 	defer cancel()
 

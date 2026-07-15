@@ -429,8 +429,10 @@ func (s *Service) DeleteFlow(ctx context.Context, clientID, actorID string, obse
 }
 
 // saveStateAndPublish persists the client state (Repository when wired,
-// in-memory mirror otherwise) and publishes a clients.updated event.
-// The server-side counterpart is replaceClientStateWithContext.
+// in-memory mirror otherwise) and publishes a clients.updated event. This is
+// the single owner of client-state writes; the server package's tests drive
+// it through the exported SaveState + PublishClientsUpdated pair (R8a Task
+// 11 removed the server-side replaceClientStateWithContext duplicate).
 func (s *Service) saveStateAndPublish(ctx context.Context, client Client, assignments []Assignment, deployments []Deployment) error {
 	if s.HasRepo() {
 		// NewService path: SaveState atomically writes to the Repository and

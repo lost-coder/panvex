@@ -44,12 +44,12 @@ type ServiceUoW interface {
 // provides the read/write surface that the control-plane HTTP and gRPC
 // handlers consume.
 //
-// Stateful mutation orchestration (create/update/rotate/delete/adopt)
-// still lives on controlplane/server.Server for now — those flows also
-// interact with the jobs service, event bus, audit log, and cert
-// authority. The remaining P3-ARCH-01b follow-ups will migrate those
-// methods onto Service once the jobs + events dependencies are
-// constructor-injected.
+// Stateful mutation orchestration (create/update/rotate/delete/adopt),
+// job dispatch, the job-result path, the R10 reconciler, and discovery/
+// adoption all live HERE (R8a). The flows that also need the jobs service,
+// event bus, audit log and agent topology reach them through the injected
+// Deps + JobQueue seams (see deps.go), so the package never imports
+// controlplane/server.
 //
 // # Lock discipline
 //

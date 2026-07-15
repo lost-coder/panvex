@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
@@ -48,16 +49,17 @@ func TestAdoptDiscoveredNameConflictDifferentSecret(t *testing.T) {
 
 	// A living managed client "external-eve" with secret S1.
 	existing := managedClient{
-		ID:        server.nextClientID(),
+		ID:        clients.ClientID(server.clientsSvc.NextClientID()),
 		Name:      "external-eve",
 		Secret:    "5555555555555555eeeeeeeeeeeeeeee",
 		Enabled:   true,
 		CreatedAt: now.Add(-time.Hour),
 		UpdatedAt: now.Add(-time.Hour),
 	}
-	if err := server.replaceClientStateWithContext(ctx, existing, nil, nil); err != nil {
-		t.Fatalf("replaceClientStateWithContext: %v", err)
+	if err := server.clientsSvc.SaveState(ctx, existing, nil, nil); err != nil {
+		t.Fatalf("SaveState: %v", err)
 	}
+	server.PublishClientsUpdated(existing.ID)
 
 	// A discovered record with the SAME name but a DIFFERENT secret S2.
 	discoveredID := "discovered-conflict-1"
@@ -144,22 +146,23 @@ func TestAdoptDiscoveredNameSecretMatchStillMerges(t *testing.T) {
 	clientSecret := "7777777777777777aaaaaaaaaaaaaaaa"
 	// Living managed client already deployed on agentA.
 	existing := managedClient{
-		ID:        server.nextClientID(),
+		ID:        clients.ClientID(server.clientsSvc.NextClientID()),
 		Name:      clientName,
 		Secret:    clientSecret,
 		Enabled:   true,
 		CreatedAt: now.Add(-time.Hour),
 		UpdatedAt: now.Add(-time.Hour),
 	}
-	if err := server.replaceClientStateWithContext(ctx, existing, []managedClientAssignment{{
+	if err := server.clientsSvc.SaveState(ctx, existing, []managedClientAssignment{{
 		ID:         "assign-existing",
 		ClientID:   existing.ID,
 		TargetType: clientAssignmentTargetAgent,
 		AgentID:    agentA,
 		CreatedAt:  now.Add(-time.Hour),
 	}}, nil); err != nil {
-		t.Fatalf("replaceClientStateWithContext: %v", err)
+		t.Fatalf("SaveState: %v", err)
 	}
+	server.PublishClientsUpdated(existing.ID)
 
 	// Discovered on agentB with matching name+secret → must merge.
 	discoveredID := "discovered-merge-frank"

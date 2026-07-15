@@ -445,7 +445,7 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 	clientName := "external-dave"
 	clientSecret := "4444444444444444dddddddddddddddd"
 	existing := managedClient{
-		ID:        server.nextClientID(),
+		ID:        clients.ClientID(server.clientsSvc.NextClientID()),
 		Name:      clientName,
 		Secret:    clientSecret,
 		Enabled:   true,
@@ -454,9 +454,10 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 	}
 	// Zero existing assignments/deployments — the merges should each add
 	// one and both must be present at the end.
-	if err := server.replaceClientStateWithContext(ctx, existing, nil, nil); err != nil {
-		t.Fatalf("replaceClientStateWithContext() error = %v", err)
+	if err := server.clientsSvc.SaveState(ctx, existing, nil, nil); err != nil {
+		t.Fatalf("SaveState() error = %v", err)
 	}
+	server.PublishClientsUpdated(existing.ID)
 
 	// Two discovered records on two different agents, same name+secret.
 	discoveredA := "discovered-merge-A"
@@ -1004,16 +1005,17 @@ func TestReconcileSkipsLiveManagedPanelClientID(t *testing.T) {
 	// doesn't already skip it as "managed by name/secret" — we want the
 	// client_id branch specifically to be exercised).
 	liveClient := managedClient{
-		ID:        server.nextClientID(),
+		ID:        clients.ClientID(server.clientsSvc.NextClientID()),
 		Name:      "internal-user-live",
 		Secret:    "1010101010101010101010101010101a",
 		Enabled:   true,
 		CreatedAt: now.Add(-time.Hour),
 		UpdatedAt: now.Add(-time.Hour),
 	}
-	if err := server.replaceClientStateWithContext(ctx, liveClient, nil, nil); err != nil {
-		t.Fatalf("replaceClientStateWithContext() error = %v", err)
+	if err := server.clientsSvc.SaveState(ctx, liveClient, nil, nil); err != nil {
+		t.Fatalf("SaveState() error = %v", err)
 	}
+	server.PublishClientsUpdated(liveClient.ID)
 
 	record := &gatewayrpc.ClientDetailRecord{
 		ClientName: "reported-under-different-name",
@@ -1076,16 +1078,17 @@ func TestReconcileSurfacesTombstonedPanelClientID(t *testing.T) {
 	defer server.Close()
 
 	deletedClient := managedClient{
-		ID:        server.nextClientID(),
+		ID:        clients.ClientID(server.clientsSvc.NextClientID()),
 		Name:      "internal-user-deleted",
 		Secret:    "3030303030303030303030303030303c",
 		Enabled:   true,
 		CreatedAt: now.Add(-time.Hour),
 		UpdatedAt: now.Add(-time.Hour),
 	}
-	if err := server.replaceClientStateWithContext(ctx, deletedClient, nil, nil); err != nil {
-		t.Fatalf("replaceClientStateWithContext() error = %v", err)
+	if err := server.clientsSvc.SaveState(ctx, deletedClient, nil, nil); err != nil {
+		t.Fatalf("SaveState() error = %v", err)
 	}
+	server.PublishClientsUpdated(deletedClient.ID)
 	// Delete the managed client through the real service path: this
 	// soft-deletes the row in storage AND evicts it from the in-memory
 	// mirror (verified: clients.Service.Delete/deleteMirrorClientLocked

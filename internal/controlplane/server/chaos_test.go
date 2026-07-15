@@ -37,7 +37,7 @@ import (
 //
 // Simulates the DB dropping mid-"transaction" by injecting a persistence
 // error on the client-assignment write (the second storage call inside
-// replaceClientStateWithContext, after PutClient + DeleteClientAssignments).
+// clients.Service's SaveState, after PutClient + DeleteClientAssignments).
 // The server has no formal Transact wrapper yet (see adoptMu comment in
 // server.go — "Full Store.Transact wiring is deferred to P2-ARCH-01"), so
 // the invariant we enforce here is the one the codebase already relies on:
@@ -118,7 +118,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 
 	// Invariant 1: no orphaned managedClient record in the in-memory map.
 	// persistClientState writes PutClient successfully, then bails out on
-	// PutClientAssignment — replaceClientStateWithContext must NOT commit
+	// PutClientAssignment — clients.Service's SaveState must NOT commit
 	// the in-memory map (the roll-forward contract: commit only after the
 	// full persist sequence succeeds).
 	mirror := server.clientsSvc.MirrorSnapshot()
@@ -136,7 +136,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 		t.Fatalf("in-memory deployments after failed transact = %d, want 0 (orphan record)", inMemoryDeployments)
 	}
 
-	// Invariant 2: no job was enqueued. replaceClientStateWithContext sits
+	// Invariant 2: no job was enqueued. clients.Service's SaveState sits
 	// BEFORE clientsSvc.EnqueueClientJob; a persist failure must
 	// short-circuit the whole sequence so agents are never commanded to
 	// create a client the CP does not know about.

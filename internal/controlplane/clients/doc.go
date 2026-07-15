@@ -17,11 +17,12 @@
 //     exposes only the pure helpers as methods so callers that want to
 //     depend on an interface already can.
 //
-// Orchestration (state mutation, job dispatch, HTTP handlers, discovery
-// reconcile) still lives in controlplane/server for now; the remaining
-// P3-ARCH-01b work (deferred) will migrate the stateful methods in once
-// the in-memory stores on controlplane/server.Server are extracted to
-// their own package.
+// Orchestration — state mutation, job dispatch, the job-result path, the
+// R10 reconciler, and discovery/adoption — lives here (R8a). It reaches
+// the hosting process (agent topology, event bus, audit log, job queue)
+// through the injected Deps + JobQueue seams in deps.go, so the package
+// stays a leaf. Only the HTTP presentation/viewmodel layer remains in
+// controlplane/server.
 //
 // The package has no knowledge of controlplane/server internals and
 // must not import from it — it is intentionally a leaf dependency so
