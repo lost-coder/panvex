@@ -365,6 +365,10 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			Vault:          vault,
 			Now:            s.now,
 		})
+		// R8a Task 2: re-wire deps onto the rebuilt Service — the
+		// no-repo Service constructed in newServerFromOptions got its deps
+		// via SetDeps in New(), but this replacement Service is fresh.
+		s.clientsSvc.SetDeps(s, s.jobs, s.logger)
 		s.discoveredRepo = discoveredRepoV2
 		s.uow = uowImpl
 		return nil
@@ -629,6 +633,12 @@ func New(options Options) (*Server, error) {
 	if server.logger == nil {
 		server.logger = slog.Default()
 	}
+	// R8a Task 2: clientsSvc is constructed above (in newServerFromOptions)
+	// before *Server exists, so it cannot be passed as clients.Deps via
+	// ServiceConfig. Wire it now that server + server.jobs + server.logger
+	// are all available. initStoreBackedSubsystems rebuilds clientsSvc with
+	// a Repository/UoW below and re-wires deps on that rebuilt Service too.
+	server.clientsSvc.SetDeps(server, server.jobs, server.logger)
 	// Build the geoip Manager up front (logger only) so handlers can
 	// safely call into it before restoreGeoIPSettings runs. The Manager
 	// owns no files until Reload — which is invoked later from

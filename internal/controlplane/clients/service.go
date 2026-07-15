@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -73,6 +74,15 @@ type Service struct {
 	discoveredRepo discovered.Repository
 	uow            ServiceUoW
 
+	// deps, jobQueue, logger: the server-provided orchestration
+	// dependencies (P8.2-style gateway.Deps pattern). Populated either at
+	// construction (ServiceConfig) or via SetDeps once the hosting
+	// *server.Server exists (see SetDeps doc). Still unused by any
+	// orchestration logic — Tasks 3-4 migrate that logic onto Service.
+	deps     Deps
+	jobQueue JobQueue
+	logger   *slog.Logger
+
 	mirrorClients     map[ClientID]Client
 	mirrorAssignments map[ClientID][]Assignment
 	mirrorDeployments map[ClientID]map[string]Deployment // outer=ClientID, inner=AgentID
@@ -100,22 +110,36 @@ type Service struct {
 
 // ServiceConfig carries the dependencies for NewService: a
 // clients.Repository, a discovered.Repository, a UoW, and the vault.
+//
+// Deps/JobQueue/Logger are the orchestration-side dependencies (P8.2-style
+// gateway.Deps pattern): the hosting *server.Server implements Deps and
+// supplies its jobs.Service as JobQueue. Both construction sites in
+// server/lifecycle.go build the Service before the *Server value is fully
+// wired, so these three fields are commonly left zero here and populated
+// afterwards via Service.SetDeps once the server exists.
 type ServiceConfig struct {
 	Repo           Repository
 	DiscoveredRepo discovered.Repository
 	UoW            ServiceUoW
 	Vault          *secretvault.Vault
 	Now            func() time.Time
+	Deps           Deps
+	JobQueue       JobQueue
+	Logger         *slog.Logger
 }
 
 // NewService constructs a Service with the full dependency set: a
 // clients.Repository, a discovered.Repository, and a UoW. The in-memory
 // mirror maps are pre-allocated; call Service.Restore to populate them
-// from the Repository.
+// from the Repository. A nil Logger defaults to slog.Default().
 func NewService(cfg ServiceConfig) *Service {
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
+	}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
 	}
 	return &Service{
 		now:   now,
@@ -125,12 +149,32 @@ func NewService(cfg ServiceConfig) *Service {
 		discoveredRepo: cfg.DiscoveredRepo,
 		uow:            cfg.UoW,
 
+		deps:     cfg.Deps,
+		jobQueue: cfg.JobQueue,
+		logger:   logger,
+
 		mirrorClients:     make(map[ClientID]Client),
 		mirrorAssignments: make(map[ClientID][]Assignment),
 		mirrorDeployments: make(map[ClientID]map[string]Deployment),
 		mirrorUsage:       make(map[ClientID]map[string]MirrorUsageEntry),
 		mirrorNamesIndex:  make(map[string]map[ClientID]struct{}),
 		saveLocks:         make(map[ClientID]*sync.Mutex),
+	}
+}
+
+// SetDeps wires (or rewires) the orchestration dependencies onto an
+// already-constructed Service. Both server/lifecycle.go construction sites
+// build the Service before the *server.Server value they'd pass as Deps
+// exists (or, for the second site, before it's convenient to thread through
+// ServiceConfig), so SetDeps lets the caller attach deps once the server is
+// available. A nil logger leaves the existing logger untouched (so a
+// zero-value l does not clobber a Logger set via ServiceConfig or an
+// earlier SetDeps call); the constructor-installed default is never nil.
+func (s *Service) SetDeps(deps Deps, q JobQueue, l *slog.Logger) {
+	s.deps = deps
+	s.jobQueue = q
+	if l != nil {
+		s.logger = l
 	}
 }
 

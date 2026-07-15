@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 )
@@ -58,6 +59,54 @@ func TestServiceSetNow(t *testing.T) {
 	svc.SetNow(nil)
 	if got := svc.now(); !got.Equal(fixed) {
 		t.Fatalf("SetNow(nil): got %v want %v (clock must be unchanged)", got, fixed)
+	}
+}
+
+func TestNewServiceDefaultsLoggerWhenNil(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(ServiceConfig{})
+	if svc.logger == nil {
+		t.Fatal("NewService: logger must default to a non-nil slog.Default() when Logger is unset")
+	}
+
+	custom := slog.Default()
+	svc2 := NewService(ServiceConfig{Logger: custom})
+	if svc2.logger != custom {
+		t.Fatal("NewService: an explicit Logger must be used as-is")
+	}
+}
+
+func TestServiceSetDeps(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(ServiceConfig{})
+	if svc.deps != nil {
+		t.Fatal("NewService: deps must be nil until SetDeps is called")
+	}
+	if svc.jobQueue != nil {
+		t.Fatal("NewService: jobQueue must be nil until SetDeps is called")
+	}
+
+	deps := &fakeDeps{ttl: 5 * time.Minute}
+	jq := &fakeJobQueue{}
+	logger := slog.Default()
+
+	svc.SetDeps(deps, jq, logger)
+	if svc.deps != Deps(deps) {
+		t.Fatal("SetDeps: deps field not populated")
+	}
+	if svc.jobQueue != JobQueue(jq) {
+		t.Fatal("SetDeps: jobQueue field not populated")
+	}
+	if svc.logger != logger {
+		t.Fatal("SetDeps: logger field not populated")
+	}
+
+	// A nil logger passed to SetDeps must not clobber the existing one.
+	svc.SetDeps(deps, jq, nil)
+	if svc.logger != logger {
+		t.Fatal("SetDeps(nil logger): existing logger must be left untouched")
 	}
 }
 
