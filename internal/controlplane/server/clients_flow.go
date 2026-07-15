@@ -34,6 +34,7 @@ import (
 var (
 	errClientNameRequired    = errors.New("client name is required")
 	errClientNameInvalid     = errors.New("client name must match [A-Za-z0-9_.-] and be 1..64 chars")
+	errClientNameTaken       = errors.New("client name is already in use")
 	errClientUserADTag       = errors.New("user_ad_tag must contain exactly 32 hex characters")
 	errClientExpiration      = errors.New("expiration_rfc3339 must be a valid RFC3339 timestamp")
 	errClientTargetsRequired = errors.New("client must target at least one agent")
@@ -118,6 +119,12 @@ func (s *Server) createClient(ctx context.Context, actorID string, input clientM
 	}
 	if !clientNameRegex.MatchString(name) {
 		return managedClient{}, nil, nil, errClientNameInvalid
+	}
+	// Client names are the Telemt username: two managed clients sharing one
+	// collapse into a single Telemt user on any common node. Enforce global
+	// uniqueness among living clients (excludeID = "" on create).
+	if s.clientsSvc.NameTaken(name, "") {
+		return managedClient{}, nil, nil, errClientNameTaken
 	}
 
 	userADTag, err := resolveUserADTagForMutation(input, "")
@@ -204,6 +211,12 @@ func (s *Server) updateClient(ctx context.Context, clientID, actorID string, inp
 	previousName, err := applyClientMutationFields(&currentClient, input, observedAt)
 	if err != nil {
 		return managedClient{}, nil, nil, err
+	}
+	// Enforce global name uniqueness among living clients. excludeID is this
+	// client's own ID so renaming a client to its current name (or any no-op
+	// save) is allowed; a clash with a DIFFERENT living client is rejected.
+	if s.clientsSvc.NameTaken(currentClient.Name, clients.ClientID(clientID)) {
+		return managedClient{}, nil, nil, errClientNameTaken
 	}
 
 	assignments := s.buildClientAssignments(clients.ClientID(clientID), input, observedAt)

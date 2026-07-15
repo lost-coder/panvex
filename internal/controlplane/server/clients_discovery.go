@@ -397,6 +397,15 @@ func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID st
 		s.logger.InfoContext(ctx, "adopting discovered client into existing managed client", "discovered_id", id, "client_id", existing.ID, "client_name", record.ClientName, "agent_id", record.AgentID, "siblings", len(siblings))
 		return s.mergeAdoptIntoExistingClient(ctx, existing, record, siblings, actorID, id, observedAt)
 	}
+	// The merge branch above already claimed any living client whose name AND
+	// secret match. If a living client still carries this name here, it is a
+	// DIFFERENT secret — adopting as a new managed client would create a
+	// duplicate name (a single collapsed Telemt user on any common node), so
+	// reject it as a name conflict. This runs BEFORE buildAdoptedClientState /
+	// persistAdoptedClient so no brand-new client is ever written.
+	if s.clientsSvc.NameTaken(record.ClientName, "") {
+		return managedClient{}, errClientNameTaken
+	}
 	s.logger.InfoContext(ctx, "adopting discovered client as new managed client", "discovered_id", id, "client_name", record.ClientName, "agent_id", record.AgentID, "traffic_bytes", record.TotalOctets, "active_ips", record.ActiveUniqueIPs, "siblings", len(siblings))
 
 	client, assignments, deployments, err := s.buildAdoptedClientState(record, siblings, secret, expirationRFC3339, observedAt)
