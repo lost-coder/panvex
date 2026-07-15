@@ -75,7 +75,10 @@ describe("ClientDetailPage", () => {
 
   it("renders the Redeploy action when at least one deployment is not yet succeeded", () => {
     const onRedeploy = vi.fn();
-    for (const status of ["failed", "queued"] as const) {
+    // R10b Task 2: "awaiting_node" (job expired before an offline node
+    // confirmed it) must roll up the same as "failed"/"queued" — still
+    // pending, redeploy affordance shown — not silently treated as done.
+    for (const status of ["failed", "queued", "awaiting_node"] as const) {
       const { unmount } = renderWithClient(
         <ClientDetailPage
           {...makeProps({

@@ -38,6 +38,29 @@ function makeDeployment(
   };
 }
 
+describe("DeployLinksCard status badge", () => {
+  // R10b Task 2: a deployment whose job expired before an offline node
+  // confirmed it comes back as "awaiting_node" (reconciler will re-send
+  // on reconnect). That's a wait state, not a failure — the badge must
+  // read as a distinct warning tone, not the neutral/default tone the
+  // raw-status fallback would otherwise produce, and not the error tone
+  // reserved for "failed".
+  it("renders a warning-toned 'awaiting node' badge for an awaiting_node deployment", () => {
+    render(
+      <DeployLinksCard
+        deployments={[makeDeployment({ status: "awaiting_node" })]}
+      />,
+    );
+
+    const badge = screen.getByText("awaiting node");
+    expect(badge.className).toContain("text-status-warn");
+    expect(badge.className).not.toContain("text-status-error");
+    expect(badge.className).not.toContain("bg-fg-faint");
+    // The raw backend status string must not leak into the UI verbatim.
+    expect(screen.queryByText("awaiting_node")).toBeNull();
+  });
+});
+
 describe("DeployLinksCard QuotaCell", () => {
   it("renders a quota progress bar + used/quota label + relative reset when quota and history are set", () => {
     // Anchor the relative-time label by using a recent epoch — exact

@@ -24,11 +24,24 @@ export const roleVariant: Record<string, BadgeVariant> = {
   viewer: "default",
 };
 
-/** Deploy / health status → badge variant */
+/**
+ * Deploy / health status → badge variant.
+ *
+ * NOTE: the real per-deployment status vocabulary emitted by the backend
+ * (`internal/controlplane/clients/types.go`) is `queued` / `succeeded` /
+ * `failed` / `awaiting_node` — none of which match the `ok`/`pending`/
+ * `error` keys below, so `deployVariant("succeeded")` etc. all fall
+ * through to the `"default"` tone today. `awaiting_node` is the one
+ * status that needs a distinct warning tone (R10b Task 2: a client
+ * deployment whose job expired before an offline node confirmed it —
+ * the reconciler will re-send on reconnect, so it reads as "waiting",
+ * not "failed").
+ */
 const _deployVariant: Record<string, BadgeVariant> = {
   ok: "ok",
   pending: "warn",
   error: "error",
+  awaiting_node: "warn",
 };
 export function deployVariant(status: string): BadgeVariant {
   return _deployVariant[status] ?? "default";

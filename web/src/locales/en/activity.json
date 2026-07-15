@@ -36,6 +36,7 @@
     "queued": "queued",
     "succeeded": "succeeded",
     "partial": "partial",
+    "expired": "expired",
     "failed": "failed"
   },
   "auditWindow": {
