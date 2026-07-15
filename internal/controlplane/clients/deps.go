@@ -31,6 +31,11 @@ type Deps interface {
 	// ClientJobTTL resolves the live client-job TTL (operator settings,
 	// fallback to the compiled-in default).
 	ClientJobTTL() time.Duration
+	// Context returns the hosting process's lifecycle root context. Used by
+	// the job-expiry hook (OnClientJobsExpired), which the jobs service
+	// invokes without a caller-supplied context — the persistence + publish
+	// it performs must run on the server lifecycle context, not a request one.
+	Context() context.Context
 }
 
 // JobQueue is the jobs.Service subset the orchestration uses.

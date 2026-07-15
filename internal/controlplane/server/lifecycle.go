@@ -112,7 +112,6 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		presence:        presence.NewTracker(30*time.Second, 90*time.Second),
 		events:          eventbus.NewHub(),
 		agentsUpdated:   newAgentsUpdatedCoalescer(),
-		clientReconcile: newClientReconciler(),
 		// Runtime Events Phase 3: 500-event ring buffer per agent for
 		// slog records shipped over the Connect bidi-stream. Always
 		// constructed (independent of Store wiring) so the message
@@ -178,8 +177,11 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 	// получает его инъекцией и сам домена клиентов не знает.
 	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
 	// R10b: surface expired client jobs as awaiting_node. Same injection style —
-	// jobs stays free of the clients/server domains.
-	s.jobs.SetExpiryHook(s.onClientJobsExpired)
+	// jobs stays free of the clients/server domains. The hook resolves
+	// s.clientsSvc at call time (via the closure) so it always targets the
+	// current Service instance — initStoreBackedSubsystems rebuilds clientsSvc
+	// after this point, and the expired-job flip must land on the live one.
+	s.jobs.SetExpiryHook(func(expired []jobs.ExpiredTarget) { s.clientsSvc.OnClientJobsExpired(expired) })
 	return s
 }
 
@@ -237,8 +239,10 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	// contract).
 	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
 	// R10b: re-attach the expiry hook onto the freshly-constructed store-backed
-	// jobs service before background workers start (same boot contract).
-	s.jobs.SetExpiryHook(s.onClientJobsExpired)
+	// jobs service before background workers start (same boot contract). The
+	// closure resolves s.clientsSvc at call time so it targets the store-backed
+	// Service this method installs below (line ~361), not the no-repo one.
+	s.jobs.SetExpiryHook(func(expired []jobs.ExpiredTarget) { s.clientsSvc.OnClientJobsExpired(expired) })
 	s.auth = auth.NewServiceWithStore(store)
 	s.updatesSvc = updates.NewService(store)
 	// Wire the injected clock onto the freshly-constructed services BEFORE any
@@ -530,7 +534,7 @@ func (s *Server) startBackgroundWorkers() {
 	// the worker's built-in default.
 	if s.intervals.ClientReconcile >= 0 {
 		s.rollupWg.Add(1)
-		s.startClientReconcileWorker(rollupCtx, s.intervals.ClientReconcile, &s.rollupWg)
+		s.clientsSvc.StartReconcileWorker(rollupCtx, s.intervals.ClientReconcile, &s.rollupWg)
 	}
 
 	// R7: reclaim expired sessions + consumed TOTP codes on a ticker. This

@@ -6,7 +6,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -188,25 +188,18 @@ func TestApplyClientResetQuotaResultRecordsTimestamp(t *testing.T) {
 		UpdatedAt:        now.Add(-time.Hour),
 	}})
 
-	payload, err := json.Marshal(clients.ClientResetQuotaJobPayload{ClientID: clientID, Name: "alice"})
+	// Drive the reset-quota result through the public RecordJobResult entry
+	// point (which routes reset_quota to applyClientResetQuotaResult on the
+	// clients service). The job must exist in the queue for the lookup to
+	// resolve, so enqueue a real reset_quota job first.
+	resultJSON := fmt.Sprintf(`{"used_bytes":0,"last_reset_epoch_secs":%d}`, resetUnix)
+	resetJob, err := server.clientsSvc.EnqueueClientResetQuotaJob(ctx, "user-000001",
+		clients.Client{ID: clients.ClientID(clientID), Name: "alice"}, []string{agentID}, now)
 	if err != nil {
-		t.Fatalf("json.Marshal payload: %v", err)
-	}
-	resultJSON, err := json.Marshal(clientResetQuotaJobResultPayload{
-		UsedBytes:          0,
-		LastResetEpochSecs: resetUnix,
-	})
-	if err != nil {
-		t.Fatalf("json.Marshal result: %v", err)
-	}
-	job := jobs.Job{
-		ID:             "job-reset-1",
-		Action:         jobs.ActionClientResetQuota,
-		TargetAgentIDs: []string{agentID},
-		PayloadJSON:    string(payload),
+		t.Fatalf("EnqueueClientResetQuotaJob: %v", err)
 	}
 
-	server.applyClientResetQuotaResult(ctx, agentID, job, true, string(resultJSON), now)
+	server.clientsSvc.RecordJobResult(ctx, agentID, resetJob.ID, true, "", resultJSON, now)
 
 	got := mirrorDeployment(server, clientID, agentID)
 	if got.LastResetEpochSecs != resetUnix {
@@ -278,16 +271,14 @@ func TestApplyClientResetQuotaResultFailureLeavesDeploymentUntouched(t *testing.
 		UpdatedAt:          now,
 	}})
 
-	payload, _ := json.Marshal(clients.ClientResetQuotaJobPayload{ClientID: clientID, Name: "alice"})
 	failureResult := `{"used_bytes":0,"last_reset_epoch_secs":0,"unsupported_telemt":true}`
-	job := jobs.Job{
-		ID:             "job-reset-failed",
-		Action:         jobs.ActionClientResetQuota,
-		TargetAgentIDs: []string{agentID},
-		PayloadJSON:    string(payload),
+	resetJob, err := server.clientsSvc.EnqueueClientResetQuotaJob(context.Background(), "user-000001",
+		clients.Client{ID: clients.ClientID(clientID), Name: "alice"}, []string{agentID}, now)
+	if err != nil {
+		t.Fatalf("EnqueueClientResetQuotaJob: %v", err)
 	}
 
-	server.applyClientResetQuotaResult(context.Background(), agentID, job, false, failureResult, now)
+	server.clientsSvc.RecordJobResult(context.Background(), agentID, resetJob.ID, false, "", failureResult, now)
 
 	got := mirrorDeployment(server, clientID, agentID)
 	if got.LastResetEpochSecs != prevPanelTS {
