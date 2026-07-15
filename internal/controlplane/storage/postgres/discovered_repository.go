@@ -80,7 +80,7 @@ func (r *discoveredRepository) ListByAgent(ctx context.Context, agentID string) 
 SELECT id, agent_id, client_name, secret, status,
        total_octets, current_connections, active_unique_ips,
        connection_links, max_tcp_conns, max_unique_ips,
-       data_quota_bytes, expiration,
+       data_quota_bytes, expiration, user_ad_tag, enabled,
        discovered_at, updated_at
 FROM discovered_clients
 WHERE agent_id = $1
@@ -108,6 +108,7 @@ ORDER BY discovered_at DESC, id ASC`
 			&dc.TotalOctets, &dc.CurrentConnections, &dc.ActiveUniqueIPs,
 			&connectionJSON, &dc.MaxTCPConns, &dc.MaxUniqueIPs,
 			&dc.DataQuotaBytes, &dc.Expiration,
+			&dc.UserADTag, &dc.Enabled,
 			&discoveredAt, &updatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("discoveredRepository.ListByAgent scan: %w", err)
@@ -190,6 +191,8 @@ func pgGetRowToDiscoveredClient(row dbsqlc.GetDiscoveredClientRow) discovered.Di
 		MaxUniqueIPs:       int(row.MaxUniqueIps),          //nolint:gosec
 		DataQuotaBytes:     row.DataQuotaBytes,
 		Expiration:         row.Expiration,
+		UserADTag:          row.UserAdTag,
+		Enabled:            row.Enabled,
 		FirstSeen:          row.DiscoveredAt.UTC(),
 		UpdatedAt:          row.UpdatedAt.UTC(),
 	}
@@ -213,6 +216,8 @@ func pgGetByAgentAndNameRowToDiscoveredClient(row dbsqlc.GetDiscoveredClientByAg
 		MaxUniqueIPs:       int(row.MaxUniqueIps),          //nolint:gosec
 		DataQuotaBytes:     row.DataQuotaBytes,
 		Expiration:         row.Expiration,
+		UserADTag:          row.UserAdTag,
+		Enabled:            row.Enabled,
 		FirstSeen:          row.DiscoveredAt.UTC(),
 		UpdatedAt:          row.UpdatedAt.UTC(),
 	}
@@ -236,6 +241,8 @@ func pgListRowToDiscoveredClient(row dbsqlc.ListDiscoveredClientsRow) discovered
 		MaxUniqueIPs:       int(row.MaxUniqueIps),          //nolint:gosec
 		DataQuotaBytes:     row.DataQuotaBytes,
 		Expiration:         row.Expiration,
+		UserADTag:          row.UserAdTag,
+		Enabled:            row.Enabled,
 		FirstSeen:          row.DiscoveredAt.UTC(),
 		UpdatedAt:          row.UpdatedAt.UTC(),
 	}
@@ -259,6 +266,8 @@ func discoveredClientToUpsertParams(dc discovered.DiscoveredClient) dbsqlc.Upser
 		MaxUniqueIps:       int32(dc.MaxUniqueIPs),       //nolint:gosec
 		DataQuotaBytes:     dc.DataQuotaBytes,
 		Expiration:         dc.Expiration,
+		UserAdTag:          dc.UserADTag,
+		Enabled:            dc.Enabled,
 		DiscoveredAt:       dc.FirstSeen.UTC(),
 		UpdatedAt:          dc.UpdatedAt.UTC(),
 	}

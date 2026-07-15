@@ -28,6 +28,7 @@ const getDiscoveredClient = `-- name: GetDiscoveredClient :one
 SELECT id, agent_id, client_name, secret, status, total_octets,
        current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
+       user_ad_tag, enabled,
        discovered_at, updated_at
 FROM discovered_clients
 WHERE id = $1
@@ -47,6 +48,8 @@ type GetDiscoveredClientRow struct {
 	MaxUniqueIps       int32
 	DataQuotaBytes     int64
 	Expiration         string
+	UserAdTag          string
+	Enabled            bool
 	DiscoveredAt       time.Time
 	UpdatedAt          time.Time
 }
@@ -70,6 +73,8 @@ func (q *Queries) GetDiscoveredClient(ctx context.Context, id string) (GetDiscov
 		&i.MaxUniqueIps,
 		&i.DataQuotaBytes,
 		&i.Expiration,
+		&i.UserAdTag,
+		&i.Enabled,
 		&i.DiscoveredAt,
 		&i.UpdatedAt,
 	)
@@ -80,6 +85,7 @@ const getDiscoveredClientByAgentAndName = `-- name: GetDiscoveredClientByAgentAn
 SELECT id, agent_id, client_name, secret, status, total_octets,
        current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
+       user_ad_tag, enabled,
        discovered_at, updated_at
 FROM discovered_clients
 WHERE agent_id = $1 AND client_name = $2
@@ -104,6 +110,8 @@ type GetDiscoveredClientByAgentAndNameRow struct {
 	MaxUniqueIps       int32
 	DataQuotaBytes     int64
 	Expiration         string
+	UserAdTag          string
+	Enabled            bool
 	DiscoveredAt       time.Time
 	UpdatedAt          time.Time
 }
@@ -125,6 +133,8 @@ func (q *Queries) GetDiscoveredClientByAgentAndName(ctx context.Context, arg Get
 		&i.MaxUniqueIps,
 		&i.DataQuotaBytes,
 		&i.Expiration,
+		&i.UserAdTag,
+		&i.Enabled,
 		&i.DiscoveredAt,
 		&i.UpdatedAt,
 	)
@@ -135,6 +145,7 @@ const listDiscoveredClients = `-- name: ListDiscoveredClients :many
 SELECT id, agent_id, client_name, secret, status, total_octets,
        current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
+       user_ad_tag, enabled,
        discovered_at, updated_at
 FROM discovered_clients
 ORDER BY discovered_at DESC, id ASC
@@ -154,6 +165,8 @@ type ListDiscoveredClientsRow struct {
 	MaxUniqueIps       int32
 	DataQuotaBytes     int64
 	Expiration         string
+	UserAdTag          string
+	Enabled            bool
 	DiscoveredAt       time.Time
 	UpdatedAt          time.Time
 }
@@ -181,6 +194,8 @@ func (q *Queries) ListDiscoveredClients(ctx context.Context) ([]ListDiscoveredCl
 			&i.MaxUniqueIps,
 			&i.DataQuotaBytes,
 			&i.Expiration,
+			&i.UserAdTag,
+			&i.Enabled,
 			&i.DiscoveredAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -221,8 +236,9 @@ INSERT INTO discovered_clients (id, agent_id, client_name, secret, status,
                                 active_unique_ips, connection_links,
                                 max_tcp_conns, max_unique_ips,
                                 data_quota_bytes, expiration,
+                                user_ad_tag, enabled,
                                 discovered_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 ON CONFLICT (id) DO UPDATE
 SET secret              = EXCLUDED.secret,
     status              = EXCLUDED.status,
@@ -234,6 +250,8 @@ SET secret              = EXCLUDED.secret,
     max_unique_ips      = EXCLUDED.max_unique_ips,
     data_quota_bytes    = EXCLUDED.data_quota_bytes,
     expiration          = EXCLUDED.expiration,
+    user_ad_tag         = EXCLUDED.user_ad_tag,
+    enabled             = EXCLUDED.enabled,
     discovered_at       = EXCLUDED.discovered_at,
     updated_at          = EXCLUDED.updated_at
 `
@@ -252,6 +270,8 @@ type UpsertDiscoveredClientParams struct {
 	MaxUniqueIps       int32
 	DataQuotaBytes     int64
 	Expiration         string
+	UserAdTag          string
+	Enabled            bool
 	DiscoveredAt       time.Time
 	UpdatedAt          time.Time
 }
@@ -271,6 +291,8 @@ func (q *Queries) UpsertDiscoveredClient(ctx context.Context, arg UpsertDiscover
 		arg.MaxUniqueIps,
 		arg.DataQuotaBytes,
 		arg.Expiration,
+		arg.UserAdTag,
+		arg.Enabled,
 		arg.DiscoveredAt,
 		arg.UpdatedAt,
 	)

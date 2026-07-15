@@ -40,7 +40,7 @@ const discoveredClientSelectCols = `
 	id, agent_id, client_name, secret, status,
 	total_octets, current_connections, active_unique_ips,
 	connection_links, max_tcp_conns, max_unique_ips,
-	data_quota_bytes, expiration,
+	data_quota_bytes, expiration, user_ad_tag, enabled,
 	discovered_at_unix, updated_at_unix`
 
 func (r *discoveredRepository) Get(ctx context.Context, id discovered.DiscoveredID) (discovered.DiscoveredClient, error) {
@@ -108,10 +108,10 @@ func (r *discoveredRepository) Save(ctx context.Context, dc discovered.Discovere
 			id, agent_id, client_name, secret, status,
 			total_octets, current_connections, active_unique_ips,
 			connection_links, max_tcp_conns, max_unique_ips,
-			data_quota_bytes, expiration,
+			data_quota_bytes, expiration, user_ad_tag, enabled,
 			discovered_at_unix, updated_at_unix
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			status              = excluded.status,
 			secret              = excluded.secret,
@@ -123,6 +123,8 @@ func (r *discoveredRepository) Save(ctx context.Context, dc discovered.Discovere
 			max_unique_ips      = excluded.max_unique_ips,
 			data_quota_bytes    = excluded.data_quota_bytes,
 			expiration          = excluded.expiration,
+			user_ad_tag         = excluded.user_ad_tag,
+			enabled             = excluded.enabled,
 			discovered_at_unix  = excluded.discovered_at_unix,
 			updated_at_unix     = excluded.updated_at_unix
 	`,
@@ -134,6 +136,7 @@ func (r *discoveredRepository) Save(ctx context.Context, dc discovered.Discovere
 		int64(dc.MaxTCPConns),  //nolint:gosec
 		int64(dc.MaxUniqueIPs), //nolint:gosec
 		dc.DataQuotaBytes, dc.Expiration,
+		dc.UserADTag, dc.Enabled,
 		toUnix(dc.FirstSeen), toUnix(dc.UpdatedAt),
 	)
 	if err != nil {
@@ -218,6 +221,7 @@ func scanDiscoveredClient(s discoveredClientScanner) (discovered.DiscoveredClien
 		&dc.TotalOctets, &dc.CurrentConnections, &dc.ActiveUniqueIPs,
 		&connectionJSON, &dc.MaxTCPConns, &dc.MaxUniqueIPs,
 		&dc.DataQuotaBytes, &dc.Expiration,
+		&dc.UserADTag, &dc.Enabled,
 		&firstSeenUnix, &updatedAtUnix,
 	); err != nil {
 		return discovered.DiscoveredClient{}, err

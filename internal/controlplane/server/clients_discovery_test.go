@@ -854,6 +854,73 @@ func TestAdoptDiscoveredClientGeneratesSubscriptionToken(t *testing.T) {
 	}
 }
 
+// TestDiscoveryAdoptCarriesUserAdTagAndEnabled guards wire-audit I4: the
+// agent already reports user_ad_tag and enabled on every discovered client,
+// but the panel used to drop both — the discovered row lost them, and adopt
+// hardcoded Enabled=true with an empty UserADTag. The first post-adopt edit
+// then PATCHed user_ad_tag:null (JSON-merge-patch Remove) to the node and
+// wiped the tag. The reported values must flow discovery → store → adopt.
+func TestDiscoveryAdoptCarriesUserAdTagAndEnabled(t *testing.T) {
+	now := time.Date(2026, time.July, 16, 12, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
+	agentID := "agent-adtag-1"
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     "node-A",
+		FleetGroupID: fleetGroupID,
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	record := &gatewayrpc.ClientDetailRecord{
+		ClientName:      "external-tagged",
+		Secret:          "5555555555555555eeeeeeeeeeeeeeee",
+		UserAdTag:       "adtag-panel-77",
+		Enabled:         false,
+		ConnectionLinks: []string{"tg://proxy?..."},
+	}
+	server.clientsSvc.ReconcileDiscovered(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
+
+	discoveredList, err := server.listDiscoveredClients(ctx)
+	if err != nil {
+		t.Fatalf("listDiscoveredClients() error = %v", err)
+	}
+	if len(discoveredList) != 1 {
+		t.Fatalf("len(listDiscoveredClients()) = %d, want 1", len(discoveredList))
+	}
+	discoveredID := discoveredList[0].ID
+
+	// Restart-shaped reload: adopt reads the discovered record back from the
+	// store, so the fields must have survived persistence, not just memory.
+	client, err := server.clientsSvc.AdoptDiscovered(ctx, discoveredID, "operator-1", now)
+	if err != nil {
+		t.Fatalf("AdoptDiscovered() error = %v", err)
+	}
+	if client.UserADTag != "adtag-panel-77" {
+		t.Fatalf("adopted client UserADTag = %q, want %q — first post-adopt edit would wipe the node's ad-tag", client.UserADTag, "adtag-panel-77")
+	}
+	if client.Enabled {
+		t.Fatal("adopted client Enabled = true, want false (node reports the client disabled)")
+	}
+}
+
 // countAuditActions returns how many events in got have the given action.
 func countAuditActions(events []AuditEvent, action string) int {
 	n := 0

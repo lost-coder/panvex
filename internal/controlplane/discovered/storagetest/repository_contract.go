@@ -20,6 +20,7 @@ type OpenRepo func(t *testing.T) discovered.Repository
 func RunContract(t *testing.T, open OpenRepo) {
 	t.Helper()
 	t.Run("SaveLoadRoundTrip", func(t *testing.T) { runSaveLoadRoundTrip(t, open(t)) })
+	t.Run("AdTagEnabledRoundTrip", func(t *testing.T) { runAdTagEnabledRoundTrip(t, open(t)) })
 	t.Run("ListEmpty", func(t *testing.T) { runListEmpty(t, open(t)) })
 	t.Run("GetNotFound", func(t *testing.T) { runGetNotFound(t, open(t)) })
 	t.Run("GetByAgentAndName", func(t *testing.T) { runGetByAgentAndName(t, open(t)) })
@@ -59,6 +60,92 @@ func runSaveLoadRoundTrip(t *testing.T, repo discovered.Repository) {
 	if got.TotalOctets != dc.TotalOctets {
 		t.Fatalf("TotalOctets: got %d, want %d", got.TotalOctets, dc.TotalOctets)
 	}
+}
+
+// runAdTagEnabledRoundTrip guards wire-audit I4: the agent reports
+// user_ad_tag + enabled for every discovered client; the store must
+// round-trip both (including a restart-shaped reload via every read path)
+// or the adopt flow reconstructs the managed client with a wiped ad-tag
+// and enabled=true regardless of the node's real state.
+func runAdTagEnabledRoundTrip(t *testing.T, repo discovered.Repository) {
+	ctx := context.Background()
+	now := time.Unix(1700000000, 0).UTC()
+	tagged := discovered.DiscoveredClient{
+		ID:         discovered.DiscoveredID("d-adtag-1"),
+		AgentID:    "a-1",
+		ClientName: "tagged-disabled",
+		Status:     discovered.StatusPending,
+		UserADTag:  "ad-tag-77",
+		Enabled:    false,
+		FirstSeen:  now,
+		UpdatedAt:  now,
+	}
+	if err := repo.Save(ctx, tagged); err != nil {
+		t.Fatalf("Save tagged: %v", err)
+	}
+	enabled := discovered.DiscoveredClient{
+		ID:         discovered.DiscoveredID("d-adtag-2"),
+		AgentID:    "a-1",
+		ClientName: "untagged-enabled",
+		Status:     discovered.StatusPending,
+		UserADTag:  "",
+		Enabled:    true,
+		FirstSeen:  now,
+		UpdatedAt:  now.Add(time.Second),
+	}
+	if err := repo.Save(ctx, enabled); err != nil {
+		t.Fatalf("Save enabled: %v", err)
+	}
+
+	assertFields := func(via string, got discovered.DiscoveredClient, wantTag string, wantEnabled bool) {
+		t.Helper()
+		if got.UserADTag != wantTag {
+			t.Fatalf("%s: UserADTag = %q, want %q (ad-tag wiped)", via, got.UserADTag, wantTag)
+		}
+		if got.Enabled != wantEnabled {
+			t.Fatalf("%s: Enabled = %v, want %v", via, got.Enabled, wantEnabled)
+		}
+	}
+
+	got, err := repo.Get(ctx, tagged.ID)
+	if err != nil {
+		t.Fatalf("Get tagged: %v", err)
+	}
+	assertFields("Get", got, "ad-tag-77", false)
+
+	got, err = repo.Get(ctx, enabled.ID)
+	if err != nil {
+		t.Fatalf("Get enabled: %v", err)
+	}
+	assertFields("Get", got, "", true)
+
+	got, err = repo.GetByAgentAndName(ctx, "a-1", "tagged-disabled")
+	if err != nil {
+		t.Fatalf("GetByAgentAndName: %v", err)
+	}
+	assertFields("GetByAgentAndName", got, "ad-tag-77", false)
+
+	byID := map[discovered.DiscoveredID]discovered.DiscoveredClient{}
+	list, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, item := range list {
+		byID[item.ID] = item
+	}
+	assertFields("List", byID[tagged.ID], "ad-tag-77", false)
+	assertFields("List", byID[enabled.ID], "", true)
+
+	byAgent, err := repo.ListByAgent(ctx, "a-1")
+	if err != nil {
+		t.Fatalf("ListByAgent: %v", err)
+	}
+	byID = map[discovered.DiscoveredID]discovered.DiscoveredClient{}
+	for _, item := range byAgent {
+		byID[item.ID] = item
+	}
+	assertFields("ListByAgent", byID[tagged.ID], "ad-tag-77", false)
+	assertFields("ListByAgent", byID[enabled.ID], "", true)
 }
 
 func runListEmpty(t *testing.T, repo discovered.Repository) {

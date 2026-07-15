@@ -5,6 +5,7 @@
 SELECT id, agent_id, client_name, secret, status, total_octets,
        current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
+       user_ad_tag, enabled,
        discovered_at, updated_at
 FROM discovered_clients
 WHERE id = $1;
@@ -13,6 +14,7 @@ WHERE id = $1;
 SELECT id, agent_id, client_name, secret, status, total_octets,
        current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
+       user_ad_tag, enabled,
        discovered_at, updated_at
 FROM discovered_clients
 WHERE agent_id = $1 AND client_name = $2;
@@ -21,6 +23,7 @@ WHERE agent_id = $1 AND client_name = $2;
 SELECT id, agent_id, client_name, secret, status, total_octets,
        current_connections, active_unique_ips, connection_links,
        max_tcp_conns, max_unique_ips, data_quota_bytes, expiration,
+       user_ad_tag, enabled,
        discovered_at, updated_at
 FROM discovered_clients
 ORDER BY discovered_at DESC, id ASC;
@@ -32,8 +35,9 @@ INSERT INTO discovered_clients (id, agent_id, client_name, secret, status,
                                 active_unique_ips, connection_links,
                                 max_tcp_conns, max_unique_ips,
                                 data_quota_bytes, expiration,
+                                user_ad_tag, enabled,
                                 discovered_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 ON CONFLICT (id) DO UPDATE
 SET secret              = EXCLUDED.secret,
     status              = EXCLUDED.status,
@@ -45,6 +49,8 @@ SET secret              = EXCLUDED.secret,
     max_unique_ips      = EXCLUDED.max_unique_ips,
     data_quota_bytes    = EXCLUDED.data_quota_bytes,
     expiration          = EXCLUDED.expiration,
+    user_ad_tag         = EXCLUDED.user_ad_tag,
+    enabled             = EXCLUDED.enabled,
     discovered_at       = EXCLUDED.discovered_at,
     updated_at          = EXCLUDED.updated_at;
 
