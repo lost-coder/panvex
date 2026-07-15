@@ -244,18 +244,16 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 		links = body.User.Links
 	}
 
-	// IN-M1: Telemt answers 202 ACCEPTED when the user was persisted to disk
-	// but is not yet in the live runtime (in_runtime=false; see telemt
-	// api/mod.rs — CREATED/OK imply in_runtime, ACCEPTED implies a pending
-	// reload). Auto-reload so the client is actually serving before we
-	// report success; otherwise the panel marks the deployment succeeded
-	// while the node has not activated the client. A reload failure means
-	// the client is genuinely not active, so surface it as an apply error.
-	if response.StatusCode == http.StatusAccepted {
-		if err := c.ExecuteRuntimeReload(ctx); err != nil {
-			return ClientApplyResult{}, fmt.Errorf("apply client: runtime reload after 202 ACCEPTED failed: %w", err)
-		}
-	}
+	// IN-M1 (corrected): Telemt answers 202 ACCEPTED when the user was
+	// persisted to disk but the runtime snapshot has not caught up yet.
+	// Telemt activates the change ITSELF: an inotify watcher on the config
+	// file applies it within ~50ms (telemt src/config/hot_reload.rs). There
+	// is NO HTTP reload endpoint — Telemt's only "reload" is a CLI
+	// subcommand that sends SIGHUP to the process. The original IN-M1 fix
+	// invented a POST /v1/runtime/reload call, which 404'd and turned every
+	// pre-inotify 202 into a spurious deployment failure. 202 already
+	// carries the connection links exactly like 201, so it is plain success:
+	// no extra handling needed here.
 
 	return ClientApplyResult{
 		ConnectionLinks: collectConnectionLinks(links.TLS, links.Secure, links.Classic),
