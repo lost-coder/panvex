@@ -814,6 +814,26 @@ func New(options Options) (*Server, error) {
 			"update host allow-list DISABLED via PANVEX_UPDATE_ALLOWED_HOSTS=* — self-update accepts any https host (GeoIP SSRF guard is unaffected)")
 	}
 
+	// R8a Task 2 follow-up (wiring-trap fix): re-assert the clientsSvc wiring
+	// one last time, unconditionally, right before New() returns a usable
+	// *Server. initStoreBackedSubsystems's clientsSvc rebuild + SetDeps call
+	// (above) lives inside a trySetStartupErr closure, so it is SKIPPED
+	// whenever an earlier boot step (RestoreSessions, lockout Restore,
+	// seedUsers, restoreStoredState, ...) already recorded a startupErr —
+	// but s.jobs is reassigned to the store-backed instance unconditionally
+	// a few lines above that same closure. Left alone, that combination
+	// leaves clientsSvc's jobQueue pointing at the abandoned
+	// newServerFromOptions jobs.Service while everything else uses the
+	// store-backed one. SetDeps is idempotent and cheap, so calling it again
+	// here with whatever clientsSvc/jobs/logger New() ends up with — no
+	// matter which construction/early-exit branches ran — makes the final
+	// wiring correct regardless of startupErr, instead of relying on
+	// serve.go's StartupError() check running before anyone can observe the
+	// stale wiring. Kept in addition to (not instead of) the two earlier
+	// SetDeps calls: those still matter for any code that inspects
+	// clientsSvc between their call site and this one.
+	server.clientsSvc.SetDeps(server, server.jobs, server.logger)
+
 	return server, nil
 }
 

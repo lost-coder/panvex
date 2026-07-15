@@ -178,6 +178,17 @@ func (s *Service) SetDeps(deps Deps, q JobQueue, l *slog.Logger) {
 	}
 }
 
+// CurrentJobQueue returns the JobQueue currently wired via SetDeps (or
+// ServiceConfig.JobQueue). It exists purely so callers outside this package
+// (server/lifecycle_test.go) can assert the SetDeps wiring invariant — that
+// whichever clientsSvc a *server.Server ends up with after New() has its
+// jobQueue pointed at the same jobs.Service instance as s.jobs — without
+// exporting jobQueue for production use. Not used by any orchestration
+// logic; do not call this outside tests.
+func (s *Service) CurrentJobQueue() JobQueue {
+	return s.jobQueue
+}
+
 // clientSaveLock returns the per-client save mutex, creating it on first use.
 // See the saveLocks field doc for the ordering contract (R4 §1.6).
 func (s *Service) clientSaveLock(id ClientID) *sync.Mutex {
