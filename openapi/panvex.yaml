@@ -554,6 +554,14 @@ components:
             panel has not accepted a session from/to it since the switch
             ("switched but never reconnected"). Cleared on the next accepted
             agent stream.
+        transport_drift:
+          type: boolean
+          description: |
+            True when the direction of the last accepted stream disagreed with
+            dial_transport_mode — the agent is still dialing IN while the DB
+            says outbound, or vice versa (R-4). The panel re-enqueues the
+            switch job to converge; cleared once a session connects in the
+            direction the DB expects.
         bootstrap_state:
           type: string
           description: |

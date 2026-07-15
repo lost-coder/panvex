@@ -202,7 +202,7 @@ export const agentCertificateRecoverySchema = z.object({
  * Single agent DTO — the list response from GET /api/agents is an array
  * of this shape.
  *
- * Not parsed on purpose (UI doesn't read them yet, defensive-minimal):
+ * Not parsed on purpose (UI doesn't read it yet, defensive-minimal):
  * `transport_reconnect_pending` (optional in the spec).
  */
 export const agentSchema = z.object({
@@ -220,6 +220,10 @@ export const agentSchema = z.object({
   // node as pending/expired instead of offline.
   bootstrap_state: z.string().optional(),
   dial_transport_mode: z.string().optional(),
+  // R-4 (R10b Task 4): live connection direction disagreed with
+  // dial_transport_mode → a stuck transport switch. Optional (omitempty on
+  // the wire); the server detail view renders a warning badge for it.
+  transport_drift: z.boolean().optional(),
   runtime: agentRuntimeSchema,
   last_seen_at: timestamp,
 }) satisfies z.ZodType<Gen["Agent"]>;

@@ -86,6 +86,13 @@ export interface ServerDetailPageProps {
     telemtUnreachable: boolean;
     /** Unix timestamp (seconds) when telemt became unreachable; 0 when unknown. */
     telemtUnreachableSinceUnix: number;
+    /**
+     * true when the live connection direction disagrees with the persisted
+     * transport_mode (R-4): the agent is still dialing IN while the DB says
+     * outbound, or vice versa. The panel re-enqueues the switch job to
+     * converge; the badge tells the operator a switch is stuck mid-flight.
+     */
+    transportDrift: boolean;
   };
   onBack?: (() => void) | undefined;
   onReload?: (() => void) | undefined;

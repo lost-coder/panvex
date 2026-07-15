@@ -67,6 +67,7 @@ function makeProps(): ServerDetailPageProps {
       fallbackEnteredAtUnix: null,
       telemtUnreachable: false,
       telemtUnreachableSinceUnix: 0,
+      transportDrift: false,
     },
   };
 }

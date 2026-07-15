@@ -76,6 +76,14 @@ export function ServerHero({
               {t("detail.modeUnknown")}
             </span>
           )}
+          {server.transportDrift && (
+            <span
+              title={t("detail.transportDriftTitle")}
+              className="font-mono text-micro text-status-warn px-2 py-0.5 rounded-xs border border-status-warn/30 bg-status-warn/15"
+            >
+              {t("detail.transportDrift")}
+            </span>
+          )}
           {relativeTime && <RelativeTimeBadge label={relativeTime} stale={relativeTimeStale} />}
           <ServerActionsDropdown
             onReload={onReload}

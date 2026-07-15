@@ -12,6 +12,7 @@ type ServerProps = ServerDetailPageProps["server"];
 export interface MockDirectServerOverrides {
   fallback?: boolean;
   fallbackDurationSeconds?: number;
+  transportDrift?: boolean;
 }
 
 export function mockDirectServer(overrides: MockDirectServerOverrides = {}): ServerProps {
@@ -120,5 +121,6 @@ export function mockDirectServer(overrides: MockDirectServerOverrides = {}): Ser
     fallbackEnteredAtUnix,
     telemtUnreachable: false,
     telemtUnreachableSinceUnix: 0,
+    transportDrift: overrides.transportDrift === true,
   };
 }
