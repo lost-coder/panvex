@@ -86,6 +86,16 @@ func (c *Client) ResetUserQuota(ctx context.Context, username string) (ResetUser
 
 	switch response.StatusCode {
 	case http.StatusNotFound:
+		// Two distinct 404s share the "not_found" error code (audit F5):
+		// the route handler's "User not found" (user absent from the node
+		// — rename/delete raced the job) vs the dispatcher's "Route not
+		// found" (Telemt < 3.4.6, endpoint absent). Only the latter means
+		// the feature is unsupported; conflating them told operators
+		// "Telemt too old" for a merely-missing user.
+		apiErr := decodeAPIError(response.Body, "reset user quota failed with status 404")
+		if strings.Contains(apiErr.Error(), "User not found") {
+			return ResetUserQuotaResult{}, fmt.Errorf("reset user quota: %w", ErrClientNotFound)
+		}
 		return ResetUserQuotaResult{}, ErrResetQuotaUnsupported
 	case http.StatusForbidden:
 		return ResetUserQuotaResult{}, ErrResetQuotaReadOnly
