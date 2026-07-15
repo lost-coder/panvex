@@ -102,7 +102,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 	})
 	server.mu.Unlock()
 
-	input := clientMutationInput{
+	input := clients.MutationInput{
 		Name:      "alice",
 		Secret:    "0123456789abcdef0123456789abcdef",
 		UserADTag: "0123456789abcdef0123456789abcdef",
@@ -111,7 +111,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 
 	jobsBefore := len(server.jobs.ListWithContext(context.Background()))
 
-	_, _, _, createErr := server.createClient(ctx, "user-1", input, now)
+	_, _, _, createErr := server.clientsSvc.Create(ctx, "user-1", input, now)
 	if !errors.Is(createErr, chaosErr) {
 		t.Fatalf("createClient() error = %v, want chaos injection error", createErr)
 	}
@@ -137,9 +137,9 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 	}
 
 	// Invariant 2: no job was enqueued. replaceClientStateWithContext sits
-	// BEFORE enqueueClientJob; a persist failure must short-circuit the
-	// whole sequence so agents are never commanded to create a client the
-	// CP does not know about.
+	// BEFORE clientsSvc.EnqueueClientJob; a persist failure must
+	// short-circuit the whole sequence so agents are never commanded to
+	// create a client the CP does not know about.
 	if jobsAfter := len(server.jobs.ListWithContext(context.Background())); jobsAfter != jobsBefore {
 		t.Fatalf("jobs enqueued after failed transact = %d, want %d (no side-effect)", jobsAfter-jobsBefore, 0)
 	}

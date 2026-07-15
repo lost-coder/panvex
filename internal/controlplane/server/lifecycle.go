@@ -365,6 +365,10 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 			Vault:          vault,
 			Now:            s.now,
 		})
+		// R8a Task 2: re-wire deps onto the rebuilt Service — the
+		// no-repo Service constructed in newServerFromOptions got its deps
+		// via SetDeps in New(), but this replacement Service is fresh.
+		s.clientsSvc.SetDeps(s, s.jobs, s.logger)
 		s.discoveredRepo = discoveredRepoV2
 		s.uow = uowImpl
 		return nil
@@ -629,6 +633,12 @@ func New(options Options) (*Server, error) {
 	if server.logger == nil {
 		server.logger = slog.Default()
 	}
+	// R8a Task 2: clientsSvc is constructed above (in newServerFromOptions)
+	// before *Server exists, so it cannot be passed as clients.Deps via
+	// ServiceConfig. Wire it now that server + server.jobs + server.logger
+	// are all available. initStoreBackedSubsystems rebuilds clientsSvc with
+	// a Repository/UoW below and re-wires deps on that rebuilt Service too.
+	server.clientsSvc.SetDeps(server, server.jobs, server.logger)
 	// Build the geoip Manager up front (logger only) so handlers can
 	// safely call into it before restoreGeoIPSettings runs. The Manager
 	// owns no files until Reload — which is invoked later from
@@ -803,6 +813,26 @@ func New(options Options) (*Server, error) {
 		server.logger.WarnContext(bootCtx,
 			"update host allow-list DISABLED via PANVEX_UPDATE_ALLOWED_HOSTS=* — self-update accepts any https host (GeoIP SSRF guard is unaffected)")
 	}
+
+	// R8a Task 2 follow-up (wiring-trap fix): re-assert the clientsSvc wiring
+	// one last time, unconditionally, right before New() returns a usable
+	// *Server. initStoreBackedSubsystems's clientsSvc rebuild + SetDeps call
+	// (above) lives inside a trySetStartupErr closure, so it is SKIPPED
+	// whenever an earlier boot step (RestoreSessions, lockout Restore,
+	// seedUsers, restoreStoredState, ...) already recorded a startupErr —
+	// but s.jobs is reassigned to the store-backed instance unconditionally
+	// a few lines above that same closure. Left alone, that combination
+	// leaves clientsSvc's jobQueue pointing at the abandoned
+	// newServerFromOptions jobs.Service while everything else uses the
+	// store-backed one. SetDeps is idempotent and cheap, so calling it again
+	// here with whatever clientsSvc/jobs/logger New() ends up with — no
+	// matter which construction/early-exit branches ran — makes the final
+	// wiring correct regardless of startupErr, instead of relying on
+	// serve.go's StartupError() check running before anyone can observe the
+	// stale wiring. Kept in addition to (not instead of) the two earlier
+	// SetDeps calls: those still matter for any code that inspects
+	// clientsSvc between their call site and this one.
+	server.clientsSvc.SetDeps(server, server.jobs, server.logger)
 
 	return server, nil
 }

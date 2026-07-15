@@ -4,15 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
-	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
 // Lock ordering invariant for the Server struct (P2-LOG-11 / M-C11 / L-08):
@@ -31,22 +28,19 @@ import (
 // resolveClientTargetAgentIDs and resolveClientIDByName below for the
 // snapshot pattern.
 
+// Client-mutation error sentinels are aliases to the clients-package
+// sentinels so existing errors.Is checks (handleClientMutationError) keep
+// matching after the mutation flows moved onto clients.Service, which
+// returns the clients.Err* values directly.
 var (
-	errClientNameRequired    = errors.New("client name is required")
-	errClientNameInvalid     = errors.New("client name must match [A-Za-z0-9_.-] and be 1..64 chars")
-	errClientNameTaken       = errors.New("client name is already in use")
-	errClientUserADTag       = errors.New("user_ad_tag must contain exactly 32 hex characters")
-	errClientExpiration      = errors.New("expiration_rfc3339 must be a valid RFC3339 timestamp")
-	errClientTargetsRequired = errors.New("client must target at least one agent")
-	errClientLimitNegative   = errors.New("max_tcp_conns, max_unique_ips and data_quota_bytes must be >= 0")
+	errClientNameRequired    = clients.ErrNameRequired
+	errClientNameInvalid     = clients.ErrNameInvalid
+	errClientNameTaken       = clients.ErrNameTaken
+	errClientUserADTag       = clients.ErrUserADTag
+	errClientExpiration      = clients.ErrExpiration
+	errClientTargetsRequired = clients.ErrTargetsRequired
+	errClientLimitNegative   = clients.ErrLimitNegative
 )
-
-// clientNameRegex mirrors Telemt's username constraint
-// (telemt-server: username must match [A-Za-z0-9_.-] and be 1..64 chars).
-// The panel rejects mismatches up-front so an operator never ends up
-// with a control-plane row whose rollout job is guaranteed to fail on
-// every agent.
-var clientNameRegex = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
 // clientJobTTL is the compiled-in default TTL for client-mutation jobs.
 // The live value is resolved via s.effectiveClientJobTTL() so operator
@@ -63,39 +57,6 @@ func (s *Server) effectiveClientJobTTL() time.Duration {
 	return clientJobTTL
 }
 
-type clientMutationInput struct {
-	Name      string
-	Secret    string
-	Enabled   *bool
-	UserADTag string
-	// UserADTagAuto is a tri-state flag:
-	//   * nil                 → legacy behaviour (empty tag auto-gens
-	//                            on create / keeps current on update)
-	//   * ptr-to-true         → same as legacy; accepted for explicitness
-	//   * ptr-to-false        → use UserADTag literally; empty stores empty
-	// Callers parse the HTTP `user_ad_tag_auto` field into this pointer.
-	UserADTagAuto     *bool
-	MaxTCPConns       int
-	MaxUniqueIPs      int
-	DataQuotaBytes    int64
-	ExpirationRFC3339 string
-	FleetGroupIDs     []string
-	AgentIDs          []string
-}
-
-type clientJobPayload struct {
-	ClientID          string `json:"client_id"`
-	PreviousName      string `json:"previous_name,omitempty"`
-	Name              string `json:"name"`
-	Secret            string `json:"secret"`
-	UserADTag         string `json:"user_ad_tag"`
-	Enabled           bool   `json:"enabled"`
-	MaxTCPConns       int    `json:"max_tcp_conns"`
-	MaxUniqueIPs      int    `json:"max_unique_ips"`
-	DataQuotaBytes    int64  `json:"data_quota_bytes"`
-	ExpirationRFC3339 string `json:"expiration_rfc3339"`
-}
-
 type clientJobResultPayload struct {
 	ConnectionLinks []string `json:"connection_links"`
 }
@@ -108,381 +69,6 @@ type clientJobResultPayload struct {
 type clientResetQuotaJobResultPayload struct {
 	UsedBytes          uint64 `json:"used_bytes"`
 	LastResetEpochSecs uint64 `json:"last_reset_epoch_secs"`
-}
-
-func (s *Server) createClient(ctx context.Context, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
-	observedAt = observedAt.UTC()
-
-	name := strings.TrimSpace(input.Name)
-	if name == "" {
-		return managedClient{}, nil, nil, errClientNameRequired
-	}
-	if !clientNameRegex.MatchString(name) {
-		return managedClient{}, nil, nil, errClientNameInvalid
-	}
-	// Client names are the Telemt username: two managed clients sharing one
-	// collapse into a single Telemt user on any common node. Enforce global
-	// uniqueness among living clients (excludeID = "" on create).
-	if s.clientsSvc.NameTaken(name, "") {
-		return managedClient{}, nil, nil, errClientNameTaken
-	}
-
-	userADTag, err := resolveUserADTagForMutation(input, "")
-	if err != nil {
-		return managedClient{}, nil, nil, err
-	}
-
-	secret := strings.TrimSpace(input.Secret)
-	if secret != "" {
-		if !isValidHexSecret(secret) {
-			return managedClient{}, nil, nil, fmt.Errorf("invalid secret format: must be 32 hex characters")
-		}
-	} else {
-		secret, err = randomHexString(16)
-		if err != nil {
-			return managedClient{}, nil, nil, err
-		}
-	}
-
-	subscriptionToken, err := clients.GenerateSubscriptionToken()
-	if err != nil {
-		return managedClient{}, nil, nil, fmt.Errorf("generate subscription token: %w", err)
-	}
-
-	expirationRFC3339, err := normalizedExpiration(input.ExpirationRFC3339)
-	if err != nil {
-		return managedClient{}, nil, nil, err
-	}
-
-	if err := validateClientLimits(input.MaxTCPConns, input.MaxUniqueIPs, input.DataQuotaBytes); err != nil {
-		return managedClient{}, nil, nil, err
-	}
-
-	enabled := true
-	if input.Enabled != nil {
-		enabled = *input.Enabled
-	}
-
-	client := managedClient{
-		ID:                s.nextClientID(),
-		Name:              name,
-		Secret:            secret,
-		UserADTag:         userADTag,
-		Enabled:           enabled,
-		MaxTCPConns:       input.MaxTCPConns,
-		MaxUniqueIPs:      input.MaxUniqueIPs,
-		DataQuotaBytes:    input.DataQuotaBytes,
-		ExpirationRFC3339: expirationRFC3339,
-		SubscriptionToken: subscriptionToken,
-		CreatedAt:         observedAt,
-		UpdatedAt:         observedAt,
-	}
-
-	assignments := s.buildClientAssignments(client.ID, input, observedAt)
-	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
-	if len(targetAgentIDs) == 0 {
-		return managedClient{}, nil, nil, errClientTargetsRequired
-	}
-
-	deployments := buildClientDeployments(nil, client.ID, targetAgentIDs, string(jobs.ActionClientCreate), observedAt)
-	// Persist client state before enqueuing the job so a failure in
-	// persistence does not leave a dispatched job referencing unknown state.
-	if err := s.replaceClientStateWithContext(ctx, client, assignments, deployments); err != nil {
-		return managedClient{}, nil, nil, err
-	}
-	if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientCreate, client, "", targetAgentIDs, observedAt); err != nil {
-		return managedClient{}, nil, nil, err
-	}
-
-	return client, assignments, deployments, nil
-}
-
-func (s *Server) updateClient(ctx context.Context, clientID, actorID string, input clientMutationInput, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
-	observedAt = observedAt.UTC()
-
-	currentClient, _, currentDeployments, err := s.clientDetailSnapshot(clientID)
-	if err != nil {
-		return managedClient{}, nil, nil, err
-	}
-	if currentClient.DeletedAt != nil {
-		return managedClient{}, nil, nil, storage.ErrNotFound
-	}
-
-	previousName, err := applyClientMutationFields(&currentClient, input, observedAt)
-	if err != nil {
-		return managedClient{}, nil, nil, err
-	}
-	// Enforce global name uniqueness among living clients. excludeID is this
-	// client's own ID so renaming a client to its current name (or any no-op
-	// save) is allowed; a clash with a DIFFERENT living client is rejected.
-	if s.clientsSvc.NameTaken(currentClient.Name, clients.ClientID(clientID)) {
-		return managedClient{}, nil, nil, errClientNameTaken
-	}
-
-	assignments := s.buildClientAssignments(clients.ClientID(clientID), input, observedAt)
-	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
-	deployments := buildClientDeployments(currentDeployments, clients.ClientID(clientID), targetAgentIDs, string(jobs.ActionClientUpdate), observedAt)
-
-	// Persist client state before enqueuing jobs so a failure in
-	// persistence does not leave dispatched jobs referencing stale state.
-	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
-		return managedClient{}, nil, nil, err
-	}
-
-	if err := s.dispatchClientUpdateJobs(ctx, actorID, currentClient, previousName, currentDeployments, targetAgentIDs, observedAt); err != nil {
-		return managedClient{}, nil, nil, err
-	}
-
-	return currentClient, assignments, deployments, nil
-}
-
-// applyClientMutationFields validates the mutation input and merges it
-// into currentClient in-place. Returns the pre-mutation Name (used for
-// rename detection in the apply flow) or any validation error.
-// validateClientLimits rejects negative numeric limits before they are
-// persisted and pushed to Telemt. Zero means "no limit" (a deliberate
-// clear); negative values are nonsensical and were previously accepted
-// verbatim into the DB and rollout payload.
-func validateClientLimits(maxTCPConns, maxUniqueIPs int, dataQuotaBytes int64) error {
-	if maxTCPConns < 0 || maxUniqueIPs < 0 || dataQuotaBytes < 0 {
-		return errClientLimitNegative
-	}
-	return nil
-}
-
-func applyClientMutationFields(currentClient *managedClient, input clientMutationInput, observedAt time.Time) (string, error) {
-	name := strings.TrimSpace(input.Name)
-	if name == "" {
-		return "", errClientNameRequired
-	}
-	if !clientNameRegex.MatchString(name) {
-		return "", errClientNameInvalid
-	}
-
-	userADTag, err := resolveUserADTagForMutation(input, currentClient.UserADTag)
-	if err != nil {
-		return "", err
-	}
-
-	expirationRFC3339, err := normalizedExpiration(input.ExpirationRFC3339)
-	if err != nil {
-		return "", err
-	}
-
-	if err := validateClientLimits(input.MaxTCPConns, input.MaxUniqueIPs, input.DataQuotaBytes); err != nil {
-		return "", err
-	}
-
-	enabled := currentClient.Enabled
-	if input.Enabled != nil {
-		enabled = *input.Enabled
-	}
-
-	previousName := currentClient.Name
-	currentClient.Name = name
-	currentClient.UserADTag = userADTag
-	currentClient.Enabled = enabled
-	currentClient.MaxTCPConns = input.MaxTCPConns
-	currentClient.MaxUniqueIPs = input.MaxUniqueIPs
-	currentClient.DataQuotaBytes = input.DataQuotaBytes
-	currentClient.ExpirationRFC3339 = expirationRFC3339
-	currentClient.UpdatedAt = observedAt
-	return previousName, nil
-}
-
-// redeployClientWithContext re-queues the create job for every target
-// agent on the client. Used to recover a client whose initial rollout
-// partially or fully failed — the panel still has the record, but one
-// or more Telemt nodes rejected the apply (bad ad tag, network blip,
-// etc.). Re-running the flow with the current stored state is the
-// operator-facing equivalent of "retry deployment".
-func (s *Server) redeployClientWithContext(ctx context.Context, clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
-	observedAt = observedAt.UTC()
-
-	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
-	if err != nil {
-		return managedClient{}, nil, nil, err
-	}
-	if currentClient.DeletedAt != nil {
-		return managedClient{}, nil, nil, storage.ErrNotFound
-	}
-
-	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
-	if len(targetAgentIDs) == 0 {
-		// No targets at all — nothing to redeploy. Return current state
-		// so the caller surfaces "no-op" gracefully rather than looking
-		// like a silent success.
-		return currentClient, assignments, deployments, nil
-	}
-
-	deployments = buildClientDeployments(deployments, clients.ClientID(clientID), targetAgentIDs, string(jobs.ActionClientCreate), observedAt)
-	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
-		return managedClient{}, nil, nil, err
-	}
-	if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientCreate, currentClient, "", targetAgentIDs, observedAt); err != nil {
-		return managedClient{}, nil, nil, err
-	}
-	return currentClient, assignments, deployments, nil
-}
-
-func (s *Server) rotateClientSecret(ctx context.Context, clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
-	observedAt = observedAt.UTC()
-
-	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
-	if err != nil {
-		return managedClient{}, nil, nil, err
-	}
-	if currentClient.DeletedAt != nil {
-		return managedClient{}, nil, nil, storage.ErrNotFound
-	}
-
-	secret, err := randomHexString(16)
-	if err != nil {
-		return managedClient{}, nil, nil, err
-	}
-	currentClient.Secret = secret
-	currentClient.UpdatedAt = observedAt
-
-	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
-	deployments = buildClientDeployments(deployments, clients.ClientID(clientID), targetAgentIDs, string(jobs.ActionClientRotateSecret), observedAt)
-	// Persist the new secret before enqueuing the rotation job so a
-	// persistence failure does not leave a dispatched job with a secret
-	// the control-plane never recorded.
-	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
-		return managedClient{}, nil, nil, err
-	}
-	if len(targetAgentIDs) > 0 {
-		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientRotateSecret, currentClient, "", targetAgentIDs, observedAt); err != nil {
-			return managedClient{}, nil, nil, err
-		}
-	}
-
-	return currentClient, assignments, deployments, nil
-}
-
-// rotateSubscriptionToken assigns a fresh subscription token to the client and
-// persists the change. The old token becomes invalid immediately — any
-// in-flight /sub/<old-token> requests will see ErrNotFound after this returns.
-//
-// Unlike rotateClientSecret no agent job is enqueued: the subscription token
-// is a panel-side handle used only for the /sub page; agents never receive it.
-// Mirrors the same load→mutate→persist shape as rotateClientSecret.
-func (s *Server) rotateSubscriptionToken(ctx context.Context, clientID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, error) {
-	observedAt = observedAt.UTC()
-
-	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
-	if err != nil {
-		return managedClient{}, nil, nil, err
-	}
-	if currentClient.DeletedAt != nil {
-		return managedClient{}, nil, nil, storage.ErrNotFound
-	}
-
-	newToken, err := clients.GenerateSubscriptionToken()
-	if err != nil {
-		return managedClient{}, nil, nil, fmt.Errorf("generate subscription token: %w", err)
-	}
-	currentClient.SubscriptionToken = newToken
-	currentClient.UpdatedAt = observedAt
-
-	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
-		return managedClient{}, nil, nil, err
-	}
-
-	return currentClient, assignments, deployments, nil
-}
-
-// resetClientQuota enqueues a client.reset_quota job for one or more
-// agents hosting the given client. When targetAgentID is empty, the
-// job fans out to every currently-assigned agent; otherwise it targets
-// only the one specified agent — caller must have validated that the
-// agent currently hosts the client.
-//
-// Unlike rotate-secret / update / delete this is a counter-reset, not
-// a config mutation, so the panel does NOT persist a new client state
-// before enqueuing. A failed job (e.g. Telemt unreachable) does not
-// leave the panel in an inconsistent state — the operator just sees
-// the failure in the Jobs view and can re-trigger.
-func (s *Server) resetClientQuota(ctx context.Context, clientID, targetAgentID, actorID string, observedAt time.Time) (managedClient, []managedClientAssignment, []managedClientDeployment, jobs.Job, error) {
-	observedAt = observedAt.UTC()
-
-	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
-	if err != nil {
-		return managedClient{}, nil, nil, jobs.Job{}, err
-	}
-	if currentClient.DeletedAt != nil {
-		return managedClient{}, nil, nil, jobs.Job{}, storage.ErrNotFound
-	}
-
-	deploymentAgents := deploymentAgentIDs(deployments)
-	var targetAgentIDs []string
-	if targetAgentID == "" {
-		targetAgentIDs = deploymentAgents
-	} else {
-		// Validate that the requested agent is currently a deployment
-		// target for this client — operators can't reset on agents the
-		// client was never deployed to.
-		matched := false
-		for _, agentID := range deploymentAgents {
-			if agentID == targetAgentID {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return managedClient{}, nil, nil, jobs.Job{}, storage.ErrNotFound
-		}
-		targetAgentIDs = []string{targetAgentID}
-	}
-
-	if len(targetAgentIDs) == 0 {
-		// Nothing to do — no deployments. Return an empty Job so the
-		// caller can render "no agents to reset" without erroring.
-		return currentClient, assignments, deployments, jobs.Job{}, nil
-	}
-
-	job, err := s.enqueueClientResetQuotaJob(ctx, actorID, currentClient, targetAgentIDs, observedAt)
-	if err != nil {
-		return managedClient{}, nil, nil, jobs.Job{}, err
-	}
-	return currentClient, assignments, deployments, job, nil
-}
-
-func (s *Server) deleteClient(ctx context.Context, clientID, actorID string, observedAt time.Time) error {
-	observedAt = observedAt.UTC()
-
-	currentClient, assignments, deployments, err := s.clientDetailSnapshot(clientID)
-	if err != nil {
-		return err
-	}
-	if currentClient.DeletedAt != nil {
-		return storage.ErrNotFound
-	}
-
-	currentClient.Enabled = false
-	currentClient.UpdatedAt = observedAt
-	currentClient.DeletedAt = &observedAt
-
-	targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
-	if len(targetAgentIDs) == 0 {
-		targetAgentIDs = deploymentAgentIDs(deployments)
-	}
-	deployments = buildClientDeployments(deployments, clients.ClientID(clientID), targetAgentIDs, string(jobs.ActionClientDelete), observedAt)
-
-	// Persist the tombstone before dispatching the delete job so a persistence
-	// failure does not leave the agent with a removed client while the DB
-	// record still shows DeletedAt=nil (ghost state, see P2-LOG-01 / M-C1).
-	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
-		return err
-	}
-
-	if len(targetAgentIDs) > 0 {
-		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, "", targetAgentIDs, observedAt); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (s *Server) replaceClientStateWithContext(ctx context.Context, client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) error {
@@ -510,30 +96,6 @@ func (s *Server) replaceClientStateWithContext(ctx context.Context, client manag
 // re-write with the same (plaintext-secret) values.
 func (s *Server) replaceClientStateInMemory(client managedClient, assignments []managedClientAssignment, deployments []managedClientDeployment) {
 	s.clientsSvc.MirrorReplaceInMemory(client, assignments, deployments)
-}
-
-func (s *Server) buildClientAssignments(clientID clients.ClientID, input clientMutationInput, observedAt time.Time) []managedClientAssignment {
-	assignments := make([]managedClientAssignment, 0, len(input.FleetGroupIDs)+len(input.AgentIDs))
-	for _, fleetGroupID := range normalizedIDs(input.FleetGroupIDs) {
-		assignments = append(assignments, managedClientAssignment{
-			ID:           s.nextClientAssignmentID(),
-			ClientID:     clientID,
-			TargetType:   clientAssignmentTargetFleetGroup,
-			FleetGroupID: clients.FleetGroupID(fleetGroupID),
-			CreatedAt:    observedAt,
-		})
-	}
-	for _, agentID := range normalizedIDs(input.AgentIDs) {
-		assignments = append(assignments, managedClientAssignment{
-			ID:         s.nextClientAssignmentID(),
-			ClientID:   clientID,
-			TargetType: clientAssignmentTargetAgent,
-			AgentID:    agentID,
-			CreatedAt:  observedAt,
-		})
-	}
-
-	return assignments
 }
 
 // resolveClientTargetAgentIDs snapshots the current agent topology under
@@ -584,7 +146,7 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 		return
 	}
 
-	var payload clientJobPayload
+	var payload clients.ClientJobPayload
 	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
 		return
 	}
@@ -646,7 +208,7 @@ func (s *Server) onClientJobsExpired(expired []jobs.ExpiredTarget) {
 		if !isClientJobAction(target.Job.Action) {
 			continue
 		}
-		var payload clientJobPayload
+		var payload clients.ClientJobPayload
 		if err := json.Unmarshal([]byte(target.Job.PayloadJSON), &payload); err != nil {
 			continue
 		}
@@ -683,7 +245,7 @@ func (s *Server) applyClientResetQuotaResult(ctx context.Context, agentID string
 		return
 	}
 
-	var payload clientResetQuotaJobPayload
+	var payload clients.ClientResetQuotaJobPayload
 	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
 		return
 	}
@@ -869,11 +431,6 @@ func buildClientDeployments(current []managedClientDeployment, clientID clients.
 	return clients.BuildDeployments(current, clientID, targetAgentIDs, desiredOperation, string(jobs.ActionClientDelete), observedAt)
 }
 
-// removedClientTargetAgentIDs delegates to clients.RemovedTargetAgentIDs.
-func removedClientTargetAgentIDs(current []managedClientDeployment, next []string) []string {
-	return clients.RemovedTargetAgentIDs(current, next)
-}
-
 // deploymentAgentIDs delegates to clients.DeploymentAgentIDs.
 func deploymentAgentIDs(deployments []managedClientDeployment) []string {
 	return clients.DeploymentAgentIDs(deployments)
@@ -882,36 +439,6 @@ func deploymentAgentIDs(deployments []managedClientDeployment) []string {
 // normalizedIDs delegates to clients.NormalizedIDs.
 func normalizedIDs(values []string) []string {
 	return clients.NormalizedIDs(values)
-}
-
-// resolvedUserADTag delegates to clients.ResolveUserADTag, translating
-// the sentinel error into the server-package sentinel so existing
-// errors.Is call sites still match.
-func resolvedUserADTag(value, fallback string) (string, error) {
-	tag, err := clients.ResolveUserADTag(value, fallback)
-	if errors.Is(err, clients.ErrUserADTag) {
-		return "", errClientUserADTag
-	}
-	return tag, err
-}
-
-// resolveUserADTagForMutation honours the tri-state
-// clientMutationInput.UserADTagAuto flag:
-//   - nil or *true  → legacy auto-gen / fallback behaviour.
-//   - *false        → operator explicitly opted out of auto-gen;
-//     empty stored as empty, non-empty must be valid hex.
-//
-// All branches feed into the same server sentinel so downstream
-// errors.Is checks keep working.
-func resolveUserADTagForMutation(input clientMutationInput, fallback string) (string, error) {
-	if input.UserADTagAuto != nil && !*input.UserADTagAuto {
-		tag, err := clients.ResolveUserADTagExplicit(input.UserADTag)
-		if errors.Is(err, clients.ErrUserADTag) {
-			return "", errClientUserADTag
-		}
-		return tag, err
-	}
-	return resolvedUserADTag(input.UserADTag, fallback)
 }
 
 // normalizedExpiration delegates to clients.NormalizeExpiration.

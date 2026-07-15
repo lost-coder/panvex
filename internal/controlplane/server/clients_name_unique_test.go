@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
@@ -49,14 +50,14 @@ func TestCreateClientRejectsDuplicateName(t *testing.T) {
 	server, groupID := newNameUniqueTestServer(t, now)
 	ctx := context.Background()
 
-	if _, _, _, err := server.createClient(ctx, "user-1", clientMutationInput{
+	if _, _, _, err := server.clientsSvc.Create(ctx, "user-1", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now); err != nil {
 		t.Fatalf("first createClient(alice): %v", err)
 	}
 
-	_, _, _, err := server.createClient(ctx, "user-1", clientMutationInput{
+	_, _, _, err := server.clientsSvc.Create(ctx, "user-1", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now)
@@ -73,14 +74,14 @@ func TestUpdateClientNameUniqueness(t *testing.T) {
 	server, groupID := newNameUniqueTestServer(t, now)
 	ctx := context.Background()
 
-	alice, _, _, err := server.createClient(ctx, "user-1", clientMutationInput{
+	alice, _, _, err := server.clientsSvc.Create(ctx, "user-1", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now)
 	if err != nil {
 		t.Fatalf("createClient(alice): %v", err)
 	}
-	bob, _, _, err := server.createClient(ctx, "user-1", clientMutationInput{
+	bob, _, _, err := server.clientsSvc.Create(ctx, "user-1", clients.MutationInput{
 		Name:          "bob",
 		FleetGroupIDs: []string{groupID},
 	}, now)
@@ -89,7 +90,7 @@ func TestUpdateClientNameUniqueness(t *testing.T) {
 	}
 
 	// Rename bob -> alice: conflict.
-	if _, _, _, err := server.updateClient(ctx, string(bob.ID), "user-1", clientMutationInput{
+	if _, _, _, err := server.clientsSvc.Update(ctx, string(bob.ID), "user-1", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now); !errors.Is(err, errClientNameTaken) {
@@ -97,7 +98,7 @@ func TestUpdateClientNameUniqueness(t *testing.T) {
 	}
 
 	// Rename alice -> alice (its own current name): allowed.
-	if _, _, _, err := server.updateClient(ctx, string(alice.ID), "user-1", clientMutationInput{
+	if _, _, _, err := server.clientsSvc.Update(ctx, string(alice.ID), "user-1", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now); err != nil {
@@ -105,7 +106,7 @@ func TestUpdateClientNameUniqueness(t *testing.T) {
 	}
 
 	// Rename bob -> bob-2 (free): allowed.
-	if _, _, _, err := server.updateClient(ctx, string(bob.ID), "user-1", clientMutationInput{
+	if _, _, _, err := server.clientsSvc.Update(ctx, string(bob.ID), "user-1", clients.MutationInput{
 		Name:          "bob-2",
 		FleetGroupIDs: []string{groupID},
 	}, now); err != nil {
@@ -120,19 +121,19 @@ func TestCreateClientReusesTombstonedName(t *testing.T) {
 	server, groupID := newNameUniqueTestServer(t, now)
 	ctx := context.Background()
 
-	alice, _, _, err := server.createClient(ctx, "user-1", clientMutationInput{
+	alice, _, _, err := server.clientsSvc.Create(ctx, "user-1", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now)
 	if err != nil {
 		t.Fatalf("createClient(alice): %v", err)
 	}
-	if err := server.deleteClient(ctx, string(alice.ID), "user-1", now); err != nil {
+	if err := server.clientsSvc.DeleteFlow(ctx, string(alice.ID), "user-1", now); err != nil {
 		t.Fatalf("deleteClient(alice): %v", err)
 	}
 
 	// The name is now free — a fresh create must succeed.
-	if _, _, _, err := server.createClient(ctx, "user-1", clientMutationInput{
+	if _, _, _, err := server.clientsSvc.Create(ctx, "user-1", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now); err != nil {

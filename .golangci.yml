@@ -202,11 +202,12 @@ linters:
         text: "G115"
         path: "internal/controlplane/storage/sqlite/bulk.go"
 
-      # G117 — JSON tag matches secret pattern. clients_flow returns
-      # the rotated client secret in the API response on purpose.
+      # G117 — JSON tag matches secret pattern. ClientJobPayload carries
+      # the client secret to the agent on purpose (wire contract); moved
+      # from server/clients_flow.go to clients/jobsdispatch.go (R8a Task 3).
       - linters: [gosec]
         text: "G117"
-        path: "internal/controlplane/server/clients_flow.go"
+        path: "internal/controlplane/clients/jobsdispatch.go"
 
       # G301 — directory permissions. Operator-controlled config
       # directories (state/data/sqlite parent) need 0755 so the
@@ -314,13 +315,6 @@ linters:
       - linters: [gosec]
         text: "G115"
         path: "_test\\.go$"
-
-      # G117 — Marshaled struct field "Secret". clients_jobs.go is the
-      # canonical job payload carrying the rotated client secret to
-      # the agent; the JSON tag is intentional.
-      - linters: [gosec]
-        text: "G117"
-        path: "internal/controlplane/server/clients_jobs.go"
 
       # G118 — context.CancelFunc not called. outbound.go stores the
       # supervisor cancel in supervisors[meta.NodeID].cancel and

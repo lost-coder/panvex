@@ -44,5 +44,5 @@ func (s *Server) handleClientRotation(
 }
 
 func (s *Server) handleRotateSubscriptionToken() http.HandlerFunc {
-	return s.handleClientRotation(s.rotateSubscriptionToken, "client subscription token rotated", "clients.rotate_subscription", false)
+	return s.handleClientRotation(s.clientsSvc.RotateSubscriptionToken, "client subscription token rotated", "clients.rotate_subscription", false)
 }

@@ -27,9 +27,9 @@ type clientMutationRequest struct {
 }
 
 // toMutationInput converts a client mutation request into the input record
-// expected by createClient / updateClient.
-func (r clientMutationRequest) toMutationInput() clientMutationInput {
-	return clientMutationInput{
+// expected by clients.Service.Create / Update.
+func (r clientMutationRequest) toMutationInput() clients.MutationInput {
+	return clients.MutationInput{
 		Name:              r.Name,
 		Enabled:           r.Enabled,
 		UserADTag:         r.UserADTag,
@@ -179,7 +179,7 @@ func (s *Server) handleCreateClient() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, err := s.createClient(r.Context(), session.UserID, request.toMutationInput(), s.now())
+		client, assignments, deployments, err := s.clientsSvc.Create(r.Context(), session.UserID, request.toMutationInput(), s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}
@@ -259,7 +259,7 @@ func (s *Server) handleUpdateClient() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, err := s.updateClient(r.Context(), clientID, session.UserID, request.toMutationInput(), s.now())
+		client, assignments, deployments, err := s.clientsSvc.Update(r.Context(), clientID, session.UserID, request.toMutationInput(), s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}
@@ -292,7 +292,7 @@ func (s *Server) handleDeleteClient() http.HandlerFunc {
 			return
 		}
 
-		if err := s.deleteClient(r.Context(), clientID, session.UserID, s.now()); err != nil {
+		if err := s.clientsSvc.DeleteFlow(r.Context(), clientID, session.UserID, s.now()); err != nil {
 			handleClientMutationError(w, err)
 			return
 		}
@@ -395,7 +395,7 @@ func (s *Server) handleBulkClientAction() http.HandlerFunc {
 }
 
 func (s *Server) handleRotateClientSecret() http.HandlerFunc {
-	return s.handleClientRotation(s.rotateClientSecret, "client secret rotated", "clients.rotate_secret", true)
+	return s.handleClientRotation(s.clientsSvc.RotateSecret, "client secret rotated", "clients.rotate_secret", true)
 }
 
 // handleRedeployClient re-queues the client.create rollout job for
@@ -420,7 +420,7 @@ func (s *Server) handleRedeployClient() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, err := s.redeployClientWithContext(r.Context(), clientID, session.UserID, s.now())
+		client, assignments, deployments, err := s.clientsSvc.Redeploy(r.Context(), clientID, session.UserID, s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}
@@ -466,7 +466,7 @@ func (s *Server) handleResetClientQuota() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, job, err := s.resetClientQuota(r.Context(), clientID, "", session.UserID, s.now())
+		client, assignments, deployments, job, err := s.clientsSvc.ResetQuota(r.Context(), clientID, "", session.UserID, s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}
@@ -509,7 +509,7 @@ func (s *Server) handleResetClientQuotaOnAgent() http.HandlerFunc {
 			return
 		}
 
-		client, assignments, deployments, job, err := s.resetClientQuota(r.Context(), clientID, agentID, session.UserID, s.now())
+		client, assignments, deployments, job, err := s.clientsSvc.ResetQuota(r.Context(), clientID, agentID, session.UserID, s.now())
 		if !handleClientMutationError(w, err) {
 			return
 		}
