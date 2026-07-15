@@ -88,6 +88,17 @@ type Service struct {
 	// reconcile worker and job-result path share this single instance.
 	reconcile *reconciler
 
+	// discoveredOrphanSeen dedupes the clients.discovery_orphan audit event
+	// (R10b Task 3): a discovered record carrying a panel-assigned client_id
+	// that does not resolve to a live managed client (deleted, rotated away,
+	// or unknown) is a real anomaly, but ReconcileDiscovered runs on every
+	// telemetry tick, so without this set the same finding would be audited
+	// over and over. Keyed by agentID+"|"+panelID. Guarded by s.mu for the
+	// check-and-set only (recordDiscoveredOrphan releases s.mu before the
+	// audit write). In-memory only: the set is small and lives for the
+	// process lifetime; a restart simply re-audits once, which is acceptable.
+	discoveredOrphanSeen map[string]struct{}
+
 	mirrorClients     map[ClientID]Client
 	mirrorAssignments map[ClientID][]Assignment
 	mirrorDeployments map[ClientID]map[string]Deployment // outer=ClientID, inner=AgentID
@@ -159,6 +170,8 @@ func NewService(cfg ServiceConfig) *Service {
 		logger:   logger,
 
 		reconcile: newReconciler(),
+
+		discoveredOrphanSeen: make(map[string]struct{}),
 
 		mirrorClients:     make(map[ClientID]Client),
 		mirrorAssignments: make(map[ClientID][]Assignment),

@@ -21,6 +21,15 @@ type fakeDeps struct {
 	notified       [][]string
 	publishedJobs  []jobs.Job
 	updatedClients []ClientID
+	audits         []auditCall
+}
+
+// auditCall records a single fakeDeps.AppendAudit invocation.
+type auditCall struct {
+	actorID string
+	action  string
+	subject string
+	details map[string]any
 }
 
 func (f *fakeDeps) Topology() AgentTopology {
@@ -60,6 +69,10 @@ func (f *fakeDeps) ClientJobTTL() time.Duration {
 
 func (f *fakeDeps) Context() context.Context {
 	return context.Background()
+}
+
+func (f *fakeDeps) AppendAudit(_ context.Context, actorID, action, subject string, details map[string]any) {
+	f.audits = append(f.audits, auditCall{actorID: actorID, action: action, subject: subject, details: details})
 }
 
 var _ Deps = (*fakeDeps)(nil)
