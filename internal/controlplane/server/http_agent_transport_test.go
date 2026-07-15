@@ -268,6 +268,50 @@ func TestUpdateAgentTransportModeHappyPath(t *testing.T) {
 	}
 }
 
+// TestUpdateAgentTransportModeSyncsLiveStore is the regression guard for the
+// R10b Task 4 sub-fix: handleUpdateAgentTransportMode must update s.live (not
+// just the DB row) when an operator switches transport mode, so
+// OnAgentSessionEstablished can detect drift within THIS process on the very
+// next session — the primary R-4 scenario (operator switches while the agent
+// keeps dialing in the old direction) never requires a panel restart to
+// become visible. The 4 OnAgentSessionEstablished tests above seed the live
+// agent directly and never exercise the switch handler, so they would stay
+// green even if the live-store sync below were deleted; this test closes
+// that gap by asserting on s.live.Get after the HTTP switch.
+func TestUpdateAgentTransportModeSyncsLiveStore(t *testing.T) {
+	srv, cookies := setupTransportModeServer(t)
+
+	// Start from an explicit inbound live state (setupTransportModeServer's
+	// default leaves DialTransportMode empty), so a stale live store after the
+	// switch is unambiguous rather than accidentally matching "outbound".
+	srv.seedLiveAgentKeyed("agent-tm-1", Agent{
+		ID:                "agent-tm-1",
+		NodeName:          "transport-test-node",
+		DialTransportMode: "inbound",
+	})
+
+	resp := performJSONRequest(t, srv, http.MethodPut, "/api/agents/agent-tm-1/transport-mode",
+		map[string]string{
+			"transport_mode": "outbound",
+			"dial_address":   "vps.example.com:8443",
+		}, cookies)
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("PUT /agents/agent-tm-1/transport-mode status = %d, want %d (body=%s)",
+			resp.Code, http.StatusNoContent, resp.Body.String())
+	}
+
+	agent, ok := srv.liveAgentGet("agent-tm-1")
+	if !ok {
+		t.Fatal("agent-tm-1 missing from live store after switch")
+	}
+	if agent.DialTransportMode != "outbound" {
+		t.Fatalf("live DialTransportMode = %q, want outbound (live store not synced on switch — DB may be updated but s.live is stale)", agent.DialTransportMode)
+	}
+	if agent.DialAddress != "vps.example.com:8443" {
+		t.Fatalf("live DialAddress = %q, want vps.example.com:8443", agent.DialAddress)
+	}
+}
+
 // TestUpdateAgentTransportModeRespectsExplicitListenAddress verifies the
 // operator can override the auto-derived bind spec, and that the override is
 // what flows into the job payload (not the public dial_address).

@@ -245,6 +245,13 @@ func (s *Server) OnAgentSessionEstablished(agentID string, direction gateway.Tra
 
 	ctx := s.Context()
 	if !drift {
+		// Clearing transportDriftReenqueuedAt here, not just transportDriftAt,
+		// means the re-enqueue throttle is scoped to one continuous drift
+		// episode: agree -> drift -> agree -> drift within a single TTL window
+		// resets it and allows an immediate re-enqueue on the second drift.
+		// That is intentional, not a bug — it is bounded by how often this
+		// agent can actually reconnect, not a global "at most one job per TTL"
+		// guarantee across the agent's whole lifetime.
 		s.mu.Lock()
 		delete(s.transportDriftAt, agentID)
 		delete(s.transportDriftReenqueuedAt, agentID)
