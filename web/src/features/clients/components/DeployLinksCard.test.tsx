@@ -59,6 +59,29 @@ describe("DeployLinksCard status badge", () => {
     // The raw backend status string must not leak into the UI verbatim.
     expect(screen.queryByText("awaiting_node")).toBeNull();
   });
+
+  // Tone-map follow-up: succeeded/failed/awaiting_node must render as a
+  // coherent escalation (green/red/amber) rather than all collapsing to
+  // the same neutral "default" tone — a genuinely failed deployment must
+  // not look identical to a succeeded one right next to the amber
+  // awaiting_node badge.
+  it("renders an ok-toned (green) badge for a succeeded deployment", () => {
+    render(<DeployLinksCard deployments={[makeDeployment({ status: "succeeded" })]} />);
+    const badge = screen.getByText("succeeded");
+    expect(badge.className).toContain("text-status-ok");
+    expect(badge.className).not.toContain("text-status-error");
+  });
+
+  it("renders an error-toned (red) badge for a failed deployment", () => {
+    render(
+      <DeployLinksCard
+        deployments={[makeDeployment({ status: "failed", lastError: "telemt rejected" })]}
+      />,
+    );
+    const badge = screen.getByText("failed");
+    expect(badge.className).toContain("text-status-error");
+    expect(badge.className).not.toContain("text-status-ok");
+  });
 });
 
 describe("DeployLinksCard QuotaCell", () => {

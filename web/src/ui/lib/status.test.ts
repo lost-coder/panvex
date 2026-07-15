@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { coverageStatus, coverageColor } from "./status";
+import { coverageStatus, coverageColor, deployVariant } from "./status";
+
+describe("deployVariant", () => {
+  // R10b Task 2 follow-up: the per-deployment status vocabulary is
+  // queued/succeeded/failed/awaiting_node. The badge row must read as a
+  // coherent escalation — succeeded is green, failed is red, awaiting_node
+  // is amber (waiting on an offline node), and queued (a normal in-flight
+  // job) stays neutral, distinct from awaiting_node's attention state.
+  it("maps succeeded to the ok (green) tone", () => {
+    expect(deployVariant("succeeded")).toBe("ok");
+  });
+
+  it("maps failed to the error (red) tone", () => {
+    expect(deployVariant("failed")).toBe("error");
+  });
+
+  it("maps awaiting_node to the warn (amber) tone", () => {
+    expect(deployVariant("awaiting_node")).toBe("warn");
+  });
+
+  it("leaves queued on the neutral default tone", () => {
+    expect(deployVariant("queued")).toBe("default");
+  });
+});
 
 describe("coverageStatus / coverageColor", () => {
   it("flags coverage below 70% as error", () => {
