@@ -134,8 +134,7 @@ type Usage struct {
 }
 
 // AggregatedUsage is the sum-over-agents of MirrorUsageEntry for a single
-// client. Returned by Service.AggregateUsage and the equivalent method
-// on controlplane/server.Server.
+// client. Returned by Service.AggregateUsage.
 type AggregatedUsage struct {
 	TrafficUsedBytes uint64
 	UniqueIPsUsed    int

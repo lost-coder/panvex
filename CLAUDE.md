@@ -194,6 +194,14 @@ go run ./cmd/control-plane bootstrap-admin -username admin -password '<pw>'
   fleet, jobs, configtargets, history, webhooks, updates, auth, ...) —
   никогда напрямую через `s.store.*`.
 - Доменные пакеты не импортируют `internal/controlplane/server`. Обратная
-  связь — только через интерфейс на стороне домена (образец: `gateway.Deps`).
+  связь — только через интерфейс на стороне домена (образец: `gateway.Deps`,
+  `clients.Deps`).
 - Оба правила закреплены arch-тестом `internal/controlplane/archguard`;
   allowlist в нём — ratchet: записи можно только удалять.
+- `clients` — полный домен-сервис (R8a): вся клиентская оркестрация
+  (create/update/rotate/delete/adopt, job-dispatch, job-result path, R10
+  reconciler, discovery/adopt) живёт в `clients.Service` за `clients.Deps` +
+  `clients.JobQueue`. В `server` осталась только HTTP-презентация (viewmodel,
+  scope-фильтры) + wiring. `clients.Deps.AppendAudit`/`Topology`/`ClientJobTTL`
+  и т.п. реализованы `*Server`; adopt-UoW ходит через `ClientsRepoSet` (не
+  `storage/uow`, во избежание цикла).
