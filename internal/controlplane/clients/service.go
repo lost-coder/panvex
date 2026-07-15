@@ -122,6 +122,14 @@ type Service struct {
 	// layer in R8.1.)
 	saveLocksMu sync.Mutex
 	saveLocks   map[ClientID]*sync.Mutex
+
+	// adoptMu serialises the whole discovery-adopt read-check-create-mark
+	// sequence (P2-LOG-03 / L-11) so two concurrent adopts of the same
+	// discovered record cannot both pass the status check and each create a
+	// managed client. It also covers mergeAdoptIntoExistingClient (P2-LOG-04
+	// / L-12). Held by AdoptDiscovered / BulkAdoptDiscovered around
+	// adoptDiscoveredClientLocked.
+	adoptMu sync.Mutex
 }
 
 // ServiceConfig carries the dependencies for NewService: a

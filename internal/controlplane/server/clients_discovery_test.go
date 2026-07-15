@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -341,14 +342,14 @@ func TestAdoptDiscoveredClientConcurrentIsAtomic(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			client, err := server.adoptDiscoveredClient(ctx, discoveredID, "operator-1", now)
+			client, err := server.clientsSvc.AdoptDiscovered(ctx, discoveredID, "operator-1", now)
 			mu.Lock()
 			defer mu.Unlock()
 			switch {
 			case err == nil:
 				successes++
 				createdIDs = append(createdIDs, string(client.ID))
-			case errors.Is(err, ErrAlreadyAdopted):
+			case errors.Is(err, clients.ErrAlreadyAdopted):
 				alreadyAdopted++
 			default:
 				otherErrs = append(otherErrs, err)
@@ -488,12 +489,12 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		<-start
-		_, errs[0] = server.adoptDiscoveredClient(ctx, discoveredA, "operator-1", now)
+		_, errs[0] = server.clientsSvc.AdoptDiscovered(ctx, discoveredA, "operator-1", now)
 	}()
 	go func() {
 		defer wg.Done()
 		<-start
-		_, errs[1] = server.adoptDiscoveredClient(ctx, discoveredB, "operator-1", now)
+		_, errs[1] = server.clientsSvc.AdoptDiscovered(ctx, discoveredB, "operator-1", now)
 	}()
 	close(start)
 	wg.Wait()
@@ -503,7 +504,7 @@ func TestMergeAdoptNoTOCTOU(t *testing.T) {
 		switch {
 		case err == nil:
 			okCount++
-		case errors.Is(err, ErrAlreadyAdopted):
+		case errors.Is(err, clients.ErrAlreadyAdopted):
 			alreadyCount++
 		default:
 			t.Fatalf("merge-adopt #%d: unexpected error = %v", i, err)
@@ -834,7 +835,7 @@ func TestAdoptDiscoveredClientGeneratesSubscriptionToken(t *testing.T) {
 		updatedAt:       now,
 	})
 
-	client, err := server.adoptDiscoveredClient(ctx, discoveredID, "operator-1", now)
+	client, err := server.clientsSvc.AdoptDiscovered(ctx, discoveredID, "operator-1", now)
 	if err != nil {
 		t.Fatalf("adoptDiscoveredClient() error = %v", err)
 	}

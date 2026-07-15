@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/discovered"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
@@ -120,7 +121,7 @@ func (s *Server) handleAdoptDiscoveredClient() http.HandlerFunc {
 		if !s.checkDiscoveredClientScope(w, r, scope, id) {
 			return
 		}
-		client, err := s.adoptDiscoveredClient(r.Context(), id, session.UserID, s.now())
+		client, err := s.clientsSvc.AdoptDiscovered(r.Context(), id, session.UserID, s.now())
 		if err != nil {
 			writeAdoptDiscoveredClientError(w, err)
 			return
@@ -160,7 +161,7 @@ func writeAdoptDiscoveredClientError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, storage.ErrNotFound):
 		writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
-	case errors.Is(err, ErrAlreadyAdopted):
+	case errors.Is(err, clients.ErrAlreadyAdopted):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		handleClientMutationError(w, err)
@@ -172,11 +173,11 @@ type bulkAdoptRequest struct {
 }
 
 type bulkAdoptResponse struct {
-	Results             []BulkAdoptResult `json:"results"`
-	AdoptedCount        int               `json:"adopted_count"`
-	AlreadyAdoptedCount int               `json:"already_adopted_count"`
-	ErrorCount          int               `json:"error_count"`
-	SkippedOutOfScope   int               `json:"skipped_out_of_scope,omitempty"`
+	Results             []clients.BulkAdoptResult `json:"results"`
+	AdoptedCount        int                       `json:"adopted_count"`
+	AlreadyAdoptedCount int                       `json:"already_adopted_count"`
+	ErrorCount          int                       `json:"error_count"`
+	SkippedOutOfScope   int                       `json:"skipped_out_of_scope,omitempty"`
 }
 
 // maxBulkAdoptIDs caps a single bulk-adopt request. The 1 MiB request
@@ -205,7 +206,7 @@ func (s *Server) handleBulkAdoptDiscoveredClients() http.HandlerFunc {
 			return
 		}
 		if len(req.IDs) == 0 {
-			writeJSON(w, http.StatusOK, bulkAdoptResponse{Results: []BulkAdoptResult{}})
+			writeJSON(w, http.StatusOK, bulkAdoptResponse{Results: []clients.BulkAdoptResult{}})
 			return
 		}
 		if len(req.IDs) > maxBulkAdoptIDs {
@@ -220,7 +221,7 @@ func (s *Server) handleBulkAdoptDiscoveredClients() http.HandlerFunc {
 			return
 		}
 
-		results := s.bulkAdoptDiscoveredClients(r.Context(), filtered, session.UserID, s.now())
+		results := s.clientsSvc.BulkAdoptDiscovered(r.Context(), filtered, session.UserID, s.now())
 
 		resp := bulkAdoptResponse{Results: results, SkippedOutOfScope: skipped}
 		resp.AdoptedCount, resp.AlreadyAdoptedCount, resp.ErrorCount = countBulkAdoptResults(results)
@@ -262,7 +263,7 @@ func (s *Server) filterBulkAdoptIDsInScope(ctx context.Context, ids []string, sc
 
 // countBulkAdoptResults tallies a bulk-adopt result set into its per-status
 // counters (adopted / already-adopted / everything else as an error).
-func countBulkAdoptResults(results []BulkAdoptResult) (adopted, alreadyAdopted, errorCount int) {
+func countBulkAdoptResults(results []clients.BulkAdoptResult) (adopted, alreadyAdopted, errorCount int) {
 	for _, r := range results {
 		switch r.Status {
 		case "adopted":
@@ -298,7 +299,7 @@ func (s *Server) handleIgnoreDiscoveredClient() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
 			return
 		}
-		if err := s.ignoreDiscoveredClient(r.Context(), id, session.UserID, s.now()); err != nil {
+		if err := s.clientsSvc.IgnoreDiscovered(r.Context(), id, session.UserID, s.now()); err != nil {
 			if errors.Is(err, storage.ErrNotFound) {
 				writeError(w, http.StatusNotFound, msgDiscoveredClientNotFound)
 			} else {

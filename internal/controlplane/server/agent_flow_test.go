@@ -1289,7 +1289,17 @@ func TestUsageAdoptionSeededRowBaselinesFirstReport(t *testing.T) {
 	seedClientAndAgentRows(t, server, clientID, agentID, now)
 
 	// Discovery adoption seeded 5000 bytes from Telemt's counter.
-	server.seedClientUsage(context.Background(), clientID, agentID, 5000, 1, 1, now)
+	if err := server.clientsSvc.UpsertUsage(context.Background(), clients.Usage{
+		ClientID:         clients.ClientID(clientID),
+		AgentID:          agentID,
+		TrafficUsedBytes: 5000,
+		UniqueIPsUsed:    1,
+		ActiveTCPConns:   1,
+		ActiveUniqueIPs:  1,
+		ObservedAt:       now,
+	}); err != nil {
+		t.Fatalf("seed client usage: %v", err)
+	}
 
 	server.mu.Lock()
 	// First cumulative report: the agent counted 300 bytes since ITS boot —
