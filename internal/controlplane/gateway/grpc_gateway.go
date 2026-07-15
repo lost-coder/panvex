@@ -64,10 +64,27 @@ func (g *Gateway) ReportEnrollmentSteps(ctx context.Context, req *gatewayrpc.Rep
 	return g.deps.RecordEnrollmentSteps(ctx, req)
 }
 
+// TransportDirection identifies which side dialed the agent session, so the
+// panel can compare the live reality against the agent's persisted
+// transport_mode and detect drift (R-4). It is resolved at the entry point
+// (Connect vs RunAgentSession) and threaded into runAgentSession, because the
+// agent identity only becomes available post-auth — direction and agent_id
+// have to meet at the same point.
+type TransportDirection int
+
+const (
+	// DirectionInbound: the agent dialed the panel's public gRPC listener.
+	// Corresponds to DB transport_mode "inbound".
+	DirectionInbound TransportDirection = iota
+	// DirectionOutbound: the panel dialed a listening agent via
+	// agenttransport.Manager. Corresponds to DB transport_mode "outbound".
+	DirectionOutbound
+)
+
 // runAgentSession runs the bidirectional agent protocol over the given
-// transport session. Direction-agnostic — works for both inbound (agent
-// dialed the panel) and outbound (panel dialed the agent) sessions.
-func (g *Gateway) runAgentSession(ctx context.Context, sess agenttransport.AgentSession) error {
+// transport session. The protocol body is direction-agnostic; direction is
+// only used post-auth to report the established session (drift detection).
+func (g *Gateway) runAgentSession(ctx context.Context, sess agenttransport.AgentSession, direction TransportDirection) error {
 	agentID, presentedSerial, err := g.deps.AuthorizeAgentConnect(ctx, sess)
 	if err != nil {
 		// P2-LOG-11 / L-11: ensure every stream-close path produces a
@@ -101,6 +118,11 @@ func (g *Gateway) runAgentSession(ctx context.Context, sess agenttransport.Agent
 	g.presence.MarkConnected(agentID, g.now())
 	g.deps.MarkTransportSwitchResolved(agentID)
 	g.deps.OnAgentConnected(agentID)
+	// Compare the live connection direction against the persisted
+	// transport_mode; a mismatch is R-4 drift (surfaced in inventory +
+	// self-healed by re-enqueueing the switch job). Direction-only, no
+	// bearing on the fail-closed auth above.
+	g.deps.OnAgentSessionEstablished(agentID, direction)
 	g.logger.InfoContext(connectionCtx, "accepted agent stream", "agent_id", agentID)
 
 	channels := newAgentStreamChannels()
@@ -123,14 +145,15 @@ func (g *Gateway) runAgentSession(ctx context.Context, sess agenttransport.Agent
 
 // Connect handles an inbound (agent-dialed) Connect bidi-stream.
 func (g *Gateway) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
-	return g.runAgentSession(stream.Context(), &agenttransport.ServerStreamSession{Stream: stream})
+	return g.runAgentSession(stream.Context(), &agenttransport.ServerStreamSession{Stream: stream}, DirectionInbound)
 }
 
 // RunAgentSession is the public SessionHandler entry point used by
-// agenttransport.Manager. The agent identity is rediscovered inside
-// runAgentSession from the gRPC peer context.
+// agenttransport.Manager (panel dials a listening agent → outbound). The
+// agent identity is rediscovered inside runAgentSession from the gRPC peer
+// context.
 func (g *Gateway) RunAgentSession(ctx context.Context, sess agenttransport.AgentSession) error {
-	return g.runAgentSession(ctx, sess)
+	return g.runAgentSession(ctx, sess, DirectionOutbound)
 }
 
 func authenticatedAgentID(ctx context.Context) (string, error) {

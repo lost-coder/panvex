@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"net"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agentrevocation"
@@ -217,6 +218,79 @@ func (s *Server) MarkTransportSwitchResolved(agentID string) {
 // because this particular connection drops again mid-pass.
 func (s *Server) OnAgentConnected(agentID string) {
 	go s.reconcileClientDeployments(s.Context(), agentID)
+}
+
+// OnAgentSessionEstablished compares the direction of the just-accepted stream
+// against the agent's persisted transport_mode and, on a mismatch (R-4 drift),
+// records an in-memory marker (surfaced in inventory) and re-enqueues the
+// switch job so the agent self-heals. When the direction AGREES it clears any
+// stale marker. It runs inline on the stream goroutine: the common no-drift
+// case is a single map delete under s.mu; only a genuine mismatch does the
+// (rare) enqueue, and s.mu is never held across the enqueue / notify / publish.
+func (s *Server) OnAgentSessionEstablished(agentID string, direction gateway.TransportDirection) {
+	liveDirection := "inbound"
+	if direction == gateway.DirectionOutbound {
+		liveDirection = "outbound"
+	}
+
+	agent, ok := s.live.Get(agentID)
+	if !ok {
+		return
+	}
+	dbMode := agent.DialTransportMode
+	// An unset persisted mode (legacy inbound rows) is not a drift signal —
+	// there is nothing authoritative to disagree with. Clear any marker and
+	// leave the agent alone.
+	drift := dbMode != "" && dbMode != liveDirection
+
+	ctx := s.Context()
+	if !drift {
+		s.mu.Lock()
+		delete(s.transportDriftAt, agentID)
+		delete(s.transportDriftReenqueuedAt, agentID)
+		s.mu.Unlock()
+		return
+	}
+
+	now := s.now()
+	s.mu.Lock()
+	s.transportDriftAt[agentID] = now
+	lastReenqueue, seen := s.transportDriftReenqueuedAt[agentID]
+	shouldReenqueue := !seen || now.Sub(lastReenqueue) >= transportSwitchJobTTL
+	if shouldReenqueue {
+		s.transportDriftReenqueuedAt[agentID] = now
+	}
+	s.mu.Unlock()
+
+	s.logger.WarnContext(ctx, "agent transport mode drift",
+		"agent_id", agentID,
+		"db_mode", dbMode,
+		"live_direction", liveDirection,
+	)
+
+	if !shouldReenqueue {
+		return
+	}
+
+	// Rebuild the agent-side listen bind for outbound the same way the operator
+	// PUT does: ":<port>" derived from the persisted dial_address. The custom
+	// listen_address an operator may have supplied is not persisted, so the
+	// self-heal falls back to the NAT-safe default — good enough to converge.
+	listenBind := ""
+	if dbMode == "outbound" && agent.DialAddress != "" {
+		if _, port, splitErr := net.SplitHostPort(agent.DialAddress); splitErr == nil {
+			listenBind = ":" + port
+		}
+	}
+
+	job, err := s.enqueueTransportSwitchJob(ctx, agentID, dbMode, listenBind, "system:transport-drift")
+	if err != nil {
+		s.logger.ErrorContext(ctx, "re-enqueue switch_transport_mode job for drift failed",
+			"agent_id", agentID, "error", err)
+		return
+	}
+	s.notifyAgentSessions([]string{agentID})
+	s.publishJobCreated(job)
 }
 
 // RenewAgentCertificate is the post-authentication core of the unary

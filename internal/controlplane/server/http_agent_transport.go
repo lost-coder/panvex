@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -117,38 +118,25 @@ func (s *Server) handleUpdateAgentTransportMode() http.HandlerFunc {
 			}
 		}
 
-		// Map DB transport_mode to agent-level naming for the job payload.
-		// DB "inbound"  → agent "dial"   (agent dials the panel)
-		// DB "outbound" → agent "listen" (agent listens; panel dials it)
-		agentMode := "dial"
-		listenAddr := ""
-		if req.TransportMode == "outbound" {
-			agentMode = "listen"
-			listenAddr = listenBind
-		}
-
-		jobPayload, _ := json.Marshal(map[string]string{
-			"mode":        agentMode,
-			"listen_addr": listenAddr,
-		})
-
-		var idempotencyKey [16]byte
-		_, _ = rand.Read(idempotencyKey[:])
-
-		job, err := s.jobs.Enqueue(r.Context(), jobs.CreateJobInput{
-			Action:         jobs.ActionSwitchTransportMode,
-			TargetAgentIDs: []string{agentID},
-			IdempotencyKey: hex.EncodeToString(idempotencyKey[:]),
-			ActorID:        session.UserID,
-			ReadOnlyAgents: s.readOnlyAgents([]string{agentID}),
-			PayloadJSON:    string(jobPayload),
-			TTL:            transportSwitchJobTTL,
-		}, s.now())
+		job, err := s.enqueueTransportSwitchJob(r.Context(), agentID, req.TransportMode, listenBind, session.UserID)
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "enqueue switch_transport_mode job failed", "agent_id", agentID, "error", err)
 			writeError(w, http.StatusInternalServerError, "failed to enqueue transport mode switch job")
 			return
 		}
+
+		// Keep the live snapshot in step with the DB so drift detection
+		// (OnAgentSessionEstablished) compares against the just-persisted mode
+		// within this process, not only after a restart reloads it. Uses s.live
+		// (own lock), no store round-trip.
+		dialAddr := req.DialAddress
+		if req.TransportMode == "inbound" {
+			dialAddr = ""
+		}
+		s.updateAgentIdentity(agentID, func(a *Agent) {
+			a.DialTransportMode = req.TransportMode
+			a.DialAddress = dialAddr
+		})
 
 		// A2: track "switched but never reconnected" until the next accepted
 		// agent stream clears it (runAgentSession). In-memory only: the panel is
@@ -177,4 +165,43 @@ func (s *Server) handleUpdateAgentTransportMode() http.HandlerFunc {
 
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// enqueueTransportSwitchJob enqueues a switch_transport_mode job that tells the
+// agent to converge on dbMode. It maps the DB transport_mode to the agent-level
+// naming carried in the payload:
+//
+//	DB "inbound"  → agent "dial"   (agent dials the panel; listen_addr empty)
+//	DB "outbound" → agent "listen" (agent listens; panel dials it)
+//
+// listenBind is the agent-side net.Listen spec for outbound mode (already
+// resolved by the caller — the operator's explicit listen_address, or ":<port>"
+// derived from dial_address); it is ignored for inbound. actorID records who or
+// what triggered the switch. Shared by the operator PUT handler and the R-4
+// drift self-heal so both produce byte-identical jobs.
+func (s *Server) enqueueTransportSwitchJob(ctx context.Context, agentID, dbMode, listenBind, actorID string) (jobs.Job, error) {
+	agentMode := "dial"
+	listenAddr := ""
+	if dbMode == "outbound" {
+		agentMode = "listen"
+		listenAddr = listenBind
+	}
+
+	jobPayload, _ := json.Marshal(map[string]string{
+		"mode":        agentMode,
+		"listen_addr": listenAddr,
+	})
+
+	var idempotencyKey [16]byte
+	_, _ = rand.Read(idempotencyKey[:])
+
+	return s.jobs.Enqueue(ctx, jobs.CreateJobInput{
+		Action:         jobs.ActionSwitchTransportMode,
+		TargetAgentIDs: []string{agentID},
+		IdempotencyKey: hex.EncodeToString(idempotencyKey[:]),
+		ActorID:        actorID,
+		ReadOnlyAgents: s.readOnlyAgents([]string{agentID}),
+		PayloadJSON:    string(jobPayload),
+		TTL:            transportSwitchJobTTL,
+	}, s.now())
 }

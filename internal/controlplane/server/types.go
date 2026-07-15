@@ -56,6 +56,7 @@ func agentFromRecord(record storage.AgentRecord) Agent {
 		CertExpiresAt:     record.CertExpiresAt,
 		BootstrapState:    record.BootstrapState,
 		DialTransportMode: record.TransportMode,
+		DialAddress:       record.DialAddress,
 	}
 }
 

@@ -255,6 +255,20 @@ type Server struct {
 	// In-memory only: the panel is single-instance and the agent-side
 	// probation window is the durable safety net.
 	transportSwitchPendingAt map[string]time.Time
+	// transportDriftAt marks agents whose last accepted stream connected in a
+	// direction that disagrees with their persisted transport_mode (R-4): the
+	// DB says outbound but the agent keeps dialing IN, or vice versa. Presence
+	// in the map means "currently drifting"; the value is the time the drift
+	// was last observed. Surfaced as api.Agent.TransportDrift in inventory and
+	// cleared on the next session whose direction agrees with the DB. In-memory
+	// only: it is recomputed on every session establishment, so it survives a
+	// panel restart without new persistence.
+	transportDriftAt map[string]time.Time
+	// transportDriftReenqueuedAt throttles the self-heal re-enqueue: at most
+	// one switch_transport_mode job per transportSwitchJobTTL per agent, so a
+	// drifting agent that reconnects in a tight loop cannot flood the queue.
+	// Value is the time of the last drift-triggered re-enqueue.
+	transportDriftReenqueuedAt map[string]time.Time
 	// discoveredOrphanSeen dedupes the clients.discovery_orphan audit event
 	// (R10b Task 3): a discovered record carrying a panel-assigned client_id
 	// that does not resolve to a live managed client (deleted, rotated away,
