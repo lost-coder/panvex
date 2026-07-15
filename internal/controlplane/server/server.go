@@ -255,6 +255,15 @@ type Server struct {
 	// In-memory only: the panel is single-instance and the agent-side
 	// probation window is the durable safety net.
 	transportSwitchPendingAt map[string]time.Time
+	// discoveredOrphanSeen dedupes the clients.discovery_orphan audit event
+	// (R10b Task 3): a discovered record carrying a panel-assigned client_id
+	// that does not resolve to a live managed client (deleted, rotated away,
+	// or unknown) is a real anomaly, but reconcileDiscoveredClients runs on
+	// every telemetry tick, so without this set the same finding would be
+	// audited over and over. Keyed by agentID+"|"+panelID. In-memory only:
+	// the set is small and lives for the process lifetime; a restart simply
+	// re-audits once, which is acceptable.
+	discoveredOrphanSeen map[string]struct{}
 	// live is the single owner of agent live-state (full Agent value:
 	// identity + runtime telemetry) and per-agent Telemt instances, with
 	// replace/prune semantics and deep-copy isolation (A2/A1). It replaces
