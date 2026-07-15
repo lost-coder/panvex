@@ -19,7 +19,6 @@ type TelemtConfig struct {
 	Censorship map[string]any      `toml:"censorship"`
 	Timeouts   map[string]any      `toml:"timeouts"`
 	Upstreams  []map[string]any    `toml:"upstreams"`
-	ShowLink   map[string]any      `toml:"show_link"`
 }
 
 // TelemtGeneralConfig holds the [general] section.

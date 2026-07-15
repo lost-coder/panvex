@@ -47,7 +47,7 @@ message InstanceSnapshot {
   int32 connections = 5;
   bool read_only = 6;
   // Canonical SHA-256 of the node's current editable config sections
-  // (general/timeouts/censorship/upstreams/show_link/dc_overrides). Sent every
+  // (general/timeouts/censorship/upstreams/dc_overrides). Sent every
   // snapshot as a cheap drift change-detector; empty when local Telemt is too old.
   string managed_config_hash = 7;
   // Full editable config sections as canonical JSON, sent ONLY when

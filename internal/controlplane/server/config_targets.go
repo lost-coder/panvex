@@ -4,11 +4,13 @@ import "fmt"
 
 // editableConfigSections is the allowlist of top-level Telemt config
 // sections an operator may store via the config-target endpoints. It
-// mirrors the agent's editable contract — any other top-level key
-// (e.g. access/server/network) is rejected with 400 on PUT.
+// mirrors Telemt's PATCH /v1/config EDITABLE_SECTIONS exactly — any other
+// top-level key (e.g. access/server/network) is rejected with 400 on PUT.
+// Note show_link is NOT editable: it is a legacy key Telemt auto-migrates
+// to general.links.show on load and rejects on PATCH (telemt-audit F4).
 var editableConfigSections = map[string]struct{}{
 	"general": {}, "timeouts": {}, "censorship": {},
-	"upstreams": {}, "show_link": {}, "dc_overrides": {},
+	"upstreams": {}, "dc_overrides": {},
 }
 
 // validateEditableSections returns an error if any top-level key is not

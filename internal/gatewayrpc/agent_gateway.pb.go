@@ -7,13 +7,12 @@
 package gatewayrpc
 
 import (
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
-
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
 )
 
 const (
@@ -277,7 +276,7 @@ type InstanceSnapshot struct {
 	Connections       int32                  `protobuf:"varint,5,opt,name=connections,proto3" json:"connections,omitempty"`
 	ReadOnly          bool                   `protobuf:"varint,6,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	// Canonical SHA-256 of the node's current editable config sections
-	// (general/timeouts/censorship/upstreams/show_link/dc_overrides). Sent every
+	// (general/timeouts/censorship/upstreams/dc_overrides). Sent every
 	// snapshot as a cheap drift change-detector; empty when local Telemt is too old.
 	ManagedConfigHash string `protobuf:"bytes,7,opt,name=managed_config_hash,json=managedConfigHash,proto3" json:"managed_config_hash,omitempty"`
 	// Full editable config sections as canonical JSON, sent ONLY when

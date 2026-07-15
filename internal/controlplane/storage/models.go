@@ -585,7 +585,7 @@ type ServerLoadHourlyRecord struct {
 // AgentConfigTargetRecord is the operator's desired Telemt config for one scope.
 // ScopeType is ConfigScopeGroup (ScopeID = fleet group id) or ConfigScopeAgent
 // (ScopeID = agent id). SectionsJSON is a sparse JSON object of editable config
-// sections (general/timeouts/censorship/upstreams/show_link/dc_overrides).
+// sections (general/timeouts/censorship/upstreams/dc_overrides).
 type AgentConfigTargetRecord struct {
 	ScopeType    string
 	ScopeID      string

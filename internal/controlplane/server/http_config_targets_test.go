@@ -91,6 +91,29 @@ func TestConfigTargetGroupPutRejectsNonEditableSection(t *testing.T) {
 	}
 }
 
+// TestConfigTargetPutRejectsShowLinkSection guards telemt-audit F4: Telemt's
+// PATCH /v1/config editable sections are exactly general, timeouts,
+// censorship, upstreams, dc_overrides. show_link is a legacy top-level key
+// Telemt auto-migrates to general.links.show on load, rejects on PATCH with
+// 400 section_not_editable, and never returns from GET. A stored show_link
+// target therefore made every config-apply fail permanently and showed as
+// perpetual drift — the panel must reject it up front like any other
+// non-editable section.
+func TestConfigTargetPutRejectsShowLinkSection(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "cfg-group-showlink", time.Time{})
+
+	body := map[string]any{
+		"sections": map[string]any{
+			"show_link": map[string]any{"show": true},
+		},
+	}
+	resp := performJSONRequest(t, srv, http.MethodPut, "/api/fleet-groups/"+groupID+"/config", body, cookies)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("PUT show_link section status = %d, want %d (body: %s)", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
 func TestConfigTargetAgentPutThenGet(t *testing.T) {
 	srv, cookies := newConfigTargetTestServer(t)
 	const agentID = "agent-override-1"
