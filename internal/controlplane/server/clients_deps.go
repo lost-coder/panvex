@@ -37,7 +37,9 @@ func (s *Server) Topology() clients.AgentTopology {
 
 // ReadOnlyAgents reports the read-only flag for each requested agent that is
 // currently registered. VERBATIM copy of the readOnlyAgents-map loop shared
-// by enqueueClientResetQuotaJob and enqueueClientJob (clients_jobs.go).
+// by clients.Service.EnqueueClientResetQuotaJob and .EnqueueClientJob
+// (internal/controlplane/clients/jobsdispatch.go, moved from clients_jobs.go
+// in R8a Task 3).
 func (s *Server) ReadOnlyAgents(agentIDs []string) map[string]bool {
 	readOnlyAgents := make(map[string]bool, len(agentIDs))
 	for _, agentID := range agentIDs {
@@ -68,8 +70,9 @@ func (s *Server) PublishJobCreated(job jobs.Job) { s.publishJobCreated(job) }
 func (s *Server) PublishClientsUpdated(clientID clients.ClientID) { s.publishClientsUpdated(clientID) }
 
 // ClientJobTTL resolves the live client-job TTL. VERBATIM delegation to
-// effectiveClientJobTTL (clients_flow.go); effectiveClientJobTTL itself is
-// removed in Task 3 once orchestration moves onto Service.
+// effectiveClientJobTTL (clients_flow.go), which stays server-side: its
+// compiled-in fallback constant clientJobTTL is also read directly by
+// clientReconcileMinInterval (clients_reconcile.go).
 func (s *Server) ClientJobTTL() time.Duration {
 	return s.effectiveClientJobTTL()
 }

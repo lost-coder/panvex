@@ -188,7 +188,7 @@ func TestApplyClientResetQuotaResultRecordsTimestamp(t *testing.T) {
 		UpdatedAt:        now.Add(-time.Hour),
 	}})
 
-	payload, err := json.Marshal(clientResetQuotaJobPayload{ClientID: clientID, Name: "alice"})
+	payload, err := json.Marshal(clients.ClientResetQuotaJobPayload{ClientID: clientID, Name: "alice"})
 	if err != nil {
 		t.Fatalf("json.Marshal payload: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestApplyClientResetQuotaResultFailureLeavesDeploymentUntouched(t *testing.
 		UpdatedAt:          now,
 	}})
 
-	payload, _ := json.Marshal(clientResetQuotaJobPayload{ClientID: clientID, Name: "alice"})
+	payload, _ := json.Marshal(clients.ClientResetQuotaJobPayload{ClientID: clientID, Name: "alice"})
 	failureResult := `{"used_bytes":0,"last_reset_epoch_secs":0,"unsupported_telemt":true}`
 	job := jobs.Job{
 		ID:             "job-reset-failed",

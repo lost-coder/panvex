@@ -83,19 +83,6 @@ type clientMutationInput struct {
 	AgentIDs          []string
 }
 
-type clientJobPayload struct {
-	ClientID          string `json:"client_id"`
-	PreviousName      string `json:"previous_name,omitempty"`
-	Name              string `json:"name"`
-	Secret            string `json:"secret"`
-	UserADTag         string `json:"user_ad_tag"`
-	Enabled           bool   `json:"enabled"`
-	MaxTCPConns       int    `json:"max_tcp_conns"`
-	MaxUniqueIPs      int    `json:"max_unique_ips"`
-	DataQuotaBytes    int64  `json:"data_quota_bytes"`
-	ExpirationRFC3339 string `json:"expiration_rfc3339"`
-}
-
 type clientJobResultPayload struct {
 	ConnectionLinks []string `json:"connection_links"`
 }
@@ -190,7 +177,7 @@ func (s *Server) createClient(ctx context.Context, actorID string, input clientM
 	if err := s.replaceClientStateWithContext(ctx, client, assignments, deployments); err != nil {
 		return managedClient{}, nil, nil, err
 	}
-	if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientCreate, client, "", targetAgentIDs, observedAt); err != nil {
+	if _, err := s.clientsSvc.EnqueueClientJob(ctx, actorID, jobs.ActionClientCreate, client, "", targetAgentIDs, observedAt); err != nil {
 		return managedClient{}, nil, nil, err
 	}
 
@@ -229,7 +216,7 @@ func (s *Server) updateClient(ctx context.Context, clientID, actorID string, inp
 		return managedClient{}, nil, nil, err
 	}
 
-	if err := s.dispatchClientUpdateJobs(ctx, actorID, currentClient, previousName, currentDeployments, targetAgentIDs, observedAt); err != nil {
+	if err := s.clientsSvc.DispatchClientUpdateJobs(ctx, actorID, currentClient, previousName, currentDeployments, targetAgentIDs, observedAt); err != nil {
 		return managedClient{}, nil, nil, err
 	}
 
@@ -319,7 +306,7 @@ func (s *Server) redeployClientWithContext(ctx context.Context, clientID, actorI
 	if err := s.replaceClientStateWithContext(ctx, currentClient, assignments, deployments); err != nil {
 		return managedClient{}, nil, nil, err
 	}
-	if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientCreate, currentClient, "", targetAgentIDs, observedAt); err != nil {
+	if _, err := s.clientsSvc.EnqueueClientJob(ctx, actorID, jobs.ActionClientCreate, currentClient, "", targetAgentIDs, observedAt); err != nil {
 		return managedClient{}, nil, nil, err
 	}
 	return currentClient, assignments, deployments, nil
@@ -352,7 +339,7 @@ func (s *Server) rotateClientSecret(ctx context.Context, clientID, actorID strin
 		return managedClient{}, nil, nil, err
 	}
 	if len(targetAgentIDs) > 0 {
-		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientRotateSecret, currentClient, "", targetAgentIDs, observedAt); err != nil {
+		if _, err := s.clientsSvc.EnqueueClientJob(ctx, actorID, jobs.ActionClientRotateSecret, currentClient, "", targetAgentIDs, observedAt); err != nil {
 			return managedClient{}, nil, nil, err
 		}
 	}
@@ -441,7 +428,7 @@ func (s *Server) resetClientQuota(ctx context.Context, clientID, targetAgentID, 
 		return currentClient, assignments, deployments, jobs.Job{}, nil
 	}
 
-	job, err := s.enqueueClientResetQuotaJob(ctx, actorID, currentClient, targetAgentIDs, observedAt)
+	job, err := s.clientsSvc.EnqueueClientResetQuotaJob(ctx, actorID, currentClient, targetAgentIDs, observedAt)
 	if err != nil {
 		return managedClient{}, nil, nil, jobs.Job{}, err
 	}
@@ -477,7 +464,7 @@ func (s *Server) deleteClient(ctx context.Context, clientID, actorID string, obs
 	}
 
 	if len(targetAgentIDs) > 0 {
-		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, "", targetAgentIDs, observedAt); err != nil {
+		if _, err := s.clientsSvc.EnqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, "", targetAgentIDs, observedAt); err != nil {
 			return err
 		}
 	}
@@ -584,7 +571,7 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 		return
 	}
 
-	var payload clientJobPayload
+	var payload clients.ClientJobPayload
 	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
 		return
 	}
@@ -646,7 +633,7 @@ func (s *Server) onClientJobsExpired(expired []jobs.ExpiredTarget) {
 		if !isClientJobAction(target.Job.Action) {
 			continue
 		}
-		var payload clientJobPayload
+		var payload clients.ClientJobPayload
 		if err := json.Unmarshal([]byte(target.Job.PayloadJSON), &payload); err != nil {
 			continue
 		}
@@ -683,7 +670,7 @@ func (s *Server) applyClientResetQuotaResult(ctx context.Context, agentID string
 		return
 	}
 
-	var payload clientResetQuotaJobPayload
+	var payload clients.ClientResetQuotaJobPayload
 	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
 		return
 	}

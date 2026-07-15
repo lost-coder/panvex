@@ -1,4 +1,4 @@
-package server
+package clients
 
 import (
 	"context"
@@ -9,25 +9,25 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 )
 
-// dispatchClientUpdateJobs queues an update job for the current target
+// DispatchClientUpdateJobs queues an update job for the current target
 // agents and a delete job for any agents the client no longer targets.
-func (s *Server) dispatchClientUpdateJobs(ctx context.Context, actorID string, currentClient managedClient, previousName string, currentDeployments []managedClientDeployment, targetAgentIDs []string, observedAt time.Time) error {
+func (s *Service) DispatchClientUpdateJobs(ctx context.Context, actorID string, currentClient Client, previousName string, currentDeployments []Deployment, targetAgentIDs []string, observedAt time.Time) error {
 	if len(targetAgentIDs) > 0 {
-		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientUpdate, currentClient, previousName, targetAgentIDs, observedAt); err != nil {
+		if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientUpdate, currentClient, previousName, targetAgentIDs, observedAt); err != nil {
 			return err
 		}
 	}
 
-	removedAgentIDs := removedClientTargetAgentIDs(currentDeployments, targetAgentIDs)
+	removedAgentIDs := RemovedTargetAgentIDs(currentDeployments, targetAgentIDs)
 	if len(removedAgentIDs) > 0 {
-		if _, err := s.enqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, "", removedAgentIDs, observedAt); err != nil {
+		if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, "", removedAgentIDs, observedAt); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// enqueueClientResetQuotaJob enqueues a client.reset_quota job carrying
+// EnqueueClientResetQuotaJob enqueues a client.reset_quota job carrying
 // just the (client_id, name) needed by the agent — full ManagedClient
 // would be wasteful and would also leak Secret (which we never want to
 // resend over the wire for what is purely a counter-reset operation).
@@ -37,8 +37,8 @@ func (s *Server) dispatchClientUpdateJobs(ctx context.Context, actorID string, c
 // reports back independently via JobResult.ResultJSON, so a mixed
 // fleet with some Telemt < 3.4.6 surfaces the per-agent
 // unsupported_telemt flag without affecting the rest.
-func (s *Server) enqueueClientResetQuotaJob(ctx context.Context, actorID string, client managedClient, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
-	payloadJSON, err := json.Marshal(clientResetQuotaJobPayload{
+func (s *Service) EnqueueClientResetQuotaJob(ctx context.Context, actorID string, client Client, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
+	payloadJSON, err := json.Marshal(ClientResetQuotaJobPayload{
 		ClientID: string(client.ID),
 		Name:     client.Name,
 	})
@@ -46,17 +46,12 @@ func (s *Server) enqueueClientResetQuotaJob(ctx context.Context, actorID string,
 		return jobs.Job{}, err
 	}
 
-	readOnlyAgents := make(map[string]bool, len(targetAgentIDs))
-	for _, agentID := range targetAgentIDs {
-		if agent, ok := s.live.Get(agentID); ok {
-			readOnlyAgents[agentID] = agent.ReadOnly
-		}
-	}
+	readOnlyAgents := s.deps.ReadOnlyAgents(targetAgentIDs)
 
-	job, err := s.jobs.Enqueue(ctx, jobs.CreateJobInput{
+	job, err := s.jobQueue.Enqueue(ctx, jobs.CreateJobInput{
 		Action:         jobs.ActionClientResetQuota,
 		TargetAgentIDs: targetAgentIDs,
-		TTL:            s.effectiveClientJobTTL(),
+		TTL:            s.deps.ClientJobTTL(),
 		IdempotencyKey: fmt.Sprintf("%s:%s:%d", jobs.ActionClientResetQuota, client.ID, observedAt.UnixNano()),
 		ActorID:        actorID,
 		ReadOnlyAgents: readOnlyAgents,
@@ -65,22 +60,35 @@ func (s *Server) enqueueClientResetQuotaJob(ctx context.Context, actorID string,
 	if err != nil {
 		return jobs.Job{}, err
 	}
-	s.notifyAgentSessions(job.TargetAgentIDs)
-	s.publishJobCreated(job)
+	s.deps.NotifyAgentSessions(job.TargetAgentIDs)
+	s.deps.PublishJobCreated(job)
 	return job, nil
 }
 
-// clientResetQuotaJobPayload mirrors the same-named struct on the
+// ClientResetQuotaJobPayload mirrors the same-named struct on the
 // agent side (internal/agent/runtime/agent.go). Keep the JSON tags
 // in lockstep — any drift here breaks the agent's payload decode and
 // the job will fail with "invalid reset_quota payload".
-type clientResetQuotaJobPayload struct {
+type ClientResetQuotaJobPayload struct {
 	ClientID string `json:"client_id"`
 	Name     string `json:"name"`
 }
 
-func (s *Server) enqueueClientJob(ctx context.Context, actorID string, action jobs.Action, client managedClient, previousName string, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
-	payloadJSON, err := json.Marshal(clientJobPayload{
+type ClientJobPayload struct {
+	ClientID          string `json:"client_id"`
+	PreviousName      string `json:"previous_name,omitempty"`
+	Name              string `json:"name"`
+	Secret            string `json:"secret"`
+	UserADTag         string `json:"user_ad_tag"`
+	Enabled           bool   `json:"enabled"`
+	MaxTCPConns       int    `json:"max_tcp_conns"`
+	MaxUniqueIPs      int    `json:"max_unique_ips"`
+	DataQuotaBytes    int64  `json:"data_quota_bytes"`
+	ExpirationRFC3339 string `json:"expiration_rfc3339"`
+}
+
+func (s *Service) EnqueueClientJob(ctx context.Context, actorID string, action jobs.Action, client Client, previousName string, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
+	payloadJSON, err := json.Marshal(ClientJobPayload{
 		ClientID:          string(client.ID),
 		PreviousName:      previousName,
 		Name:              client.Name,
@@ -96,17 +104,12 @@ func (s *Server) enqueueClientJob(ctx context.Context, actorID string, action jo
 		return jobs.Job{}, err
 	}
 
-	readOnlyAgents := make(map[string]bool, len(targetAgentIDs))
-	for _, agentID := range targetAgentIDs {
-		if agent, ok := s.live.Get(agentID); ok {
-			readOnlyAgents[agentID] = agent.ReadOnly
-		}
-	}
+	readOnlyAgents := s.deps.ReadOnlyAgents(targetAgentIDs)
 
-	job, err := s.jobs.Enqueue(ctx, jobs.CreateJobInput{
+	job, err := s.jobQueue.Enqueue(ctx, jobs.CreateJobInput{
 		Action:         action,
 		TargetAgentIDs: targetAgentIDs,
-		TTL:            s.effectiveClientJobTTL(),
+		TTL:            s.deps.ClientJobTTL(),
 		IdempotencyKey: fmt.Sprintf("%s:%s:%d", action, client.ID, observedAt.UnixNano()),
 		ActorID:        actorID,
 		ReadOnlyAgents: readOnlyAgents,
@@ -115,8 +118,8 @@ func (s *Server) enqueueClientJob(ctx context.Context, actorID string, action jo
 	if err != nil {
 		return jobs.Job{}, err
 	}
-	s.notifyAgentSessions(job.TargetAgentIDs)
-	s.publishJobCreated(job)
+	s.deps.NotifyAgentSessions(job.TargetAgentIDs)
+	s.deps.PublishJobCreated(job)
 
 	return job, nil
 }
