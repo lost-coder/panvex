@@ -31,14 +31,18 @@ import (
 // resolveClientTargetAgentIDs and resolveClientIDByName below for the
 // snapshot pattern.
 
+// Client-mutation error sentinels are aliases to the clients-package
+// sentinels so existing errors.Is checks (handleClientMutationError) keep
+// matching after the mutation flows moved onto clients.Service, which
+// returns the clients.Err* values directly.
 var (
-	errClientNameRequired    = errors.New("client name is required")
-	errClientNameInvalid     = errors.New("client name must match [A-Za-z0-9_.-] and be 1..64 chars")
-	errClientNameTaken       = errors.New("client name is already in use")
-	errClientUserADTag       = errors.New("user_ad_tag must contain exactly 32 hex characters")
-	errClientExpiration      = errors.New("expiration_rfc3339 must be a valid RFC3339 timestamp")
-	errClientTargetsRequired = errors.New("client must target at least one agent")
-	errClientLimitNegative   = errors.New("max_tcp_conns, max_unique_ips and data_quota_bytes must be >= 0")
+	errClientNameRequired    = clients.ErrNameRequired
+	errClientNameInvalid     = clients.ErrNameInvalid
+	errClientNameTaken       = clients.ErrNameTaken
+	errClientUserADTag       = clients.ErrUserADTag
+	errClientExpiration      = clients.ErrExpiration
+	errClientTargetsRequired = clients.ErrTargetsRequired
+	errClientLimitNegative   = clients.ErrLimitNegative
 )
 
 // clientNameRegex mirrors Telemt's username constraint

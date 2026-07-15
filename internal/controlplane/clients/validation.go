@@ -14,9 +14,12 @@ import (
 // Validation sentinels. Callers match with errors.Is.
 var (
 	ErrNameRequired    = errors.New("client name is required")
+	ErrNameInvalid     = errors.New("client name must match [A-Za-z0-9_.-] and be 1..64 chars")
+	ErrNameTaken       = errors.New("client name is already in use")
 	ErrUserADTag       = errors.New("user_ad_tag must contain exactly 32 hex characters")
 	ErrExpiration      = errors.New("expiration_rfc3339 must be a valid RFC3339 timestamp")
 	ErrTargetsRequired = errors.New("client must target at least one agent")
+	ErrLimitNegative   = errors.New("max_tcp_conns, max_unique_ips and data_quota_bytes must be >= 0")
 	ErrInvalidSecret   = errors.New("invalid secret format: must be 32 hex characters")
 )
 
