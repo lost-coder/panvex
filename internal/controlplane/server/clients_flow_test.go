@@ -105,7 +105,7 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	// Now arm the persist failure for the delete tombstone write.
 	failingRepo.saveErr = persistErr
 
-	err = server.deleteClient(ctx, clientID, "user-1", now)
+	err = server.clientsSvc.DeleteFlow(ctx, clientID, "user-1", now)
 	if !errors.Is(err, persistErr) {
 		t.Fatalf("deleteClient() error = %v, want %v", err, persistErr)
 	}

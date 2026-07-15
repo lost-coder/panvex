@@ -42,7 +42,7 @@ func TestOfflineNodeConvergesOnDeleteAfterReconnect(t *testing.T) {
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	client, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+	client, _, _, err := server.clientsSvc.Create(context.Background(), "user-000001", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now)
@@ -58,7 +58,7 @@ func TestOfflineNodeConvergesOnDeleteAfterReconnect(t *testing.T) {
 	// is enqueued and never answered.
 	deleteAt := now.Add(time.Minute)
 	currentTime = deleteAt
-	if err := server.deleteClient(context.Background(), string(client.ID), "user-000001", deleteAt); err != nil {
+	if err := server.clientsSvc.DeleteFlow(context.Background(), string(client.ID), "user-000001", deleteAt); err != nil {
 		t.Fatalf("deleteClient() error = %v", err)
 	}
 	if got := countJobsWithAction(t, server, jobs.ActionClientDelete); got != 1 {
@@ -105,7 +105,7 @@ func TestReconcileSkipsConfirmedDeployments(t *testing.T) {
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	if _, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+	if _, _, _, err := server.clientsSvc.Create(context.Background(), "user-000001", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now); err != nil {
@@ -145,7 +145,7 @@ func TestReconcileThrottlesRepeatedAttempts(t *testing.T) {
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	if _, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+	if _, _, _, err := server.clientsSvc.Create(context.Background(), "user-000001", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now); err != nil {
@@ -196,7 +196,7 @@ func TestExpiredClientJobSurfacesAsAwaitingNode(t *testing.T) {
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	client, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+	client, _, _, err := server.clientsSvc.Create(context.Background(), "user-000001", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now)
@@ -321,13 +321,13 @@ func TestTopologyChangeRollsClientsOntoAndOffTheNode(t *testing.T) {
 	})
 
 	// One client per group.
-	if _, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+	if _, _, _, err := server.clientsSvc.Create(context.Background(), "user-000001", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupA},
 	}, now); err != nil {
 		t.Fatalf("createClient(alice) error = %v", err)
 	}
-	if _, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+	if _, _, _, err := server.clientsSvc.Create(context.Background(), "user-000001", clients.MutationInput{
 		Name:          "bob",
 		FleetGroupIDs: []string{groupB},
 	}, now); err != nil {

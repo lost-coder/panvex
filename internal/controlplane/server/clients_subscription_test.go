@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
@@ -51,7 +52,7 @@ func TestResolveBySubscriptionToken_KnownToken(t *testing.T) {
 	server, groupID := newSubscriptionTestServer(t, now)
 	ctx := context.Background()
 
-	created, _, _, err := server.createClient(ctx, "user-000001", clientMutationInput{
+	created, _, _, err := server.clientsSvc.Create(ctx, "user-000001", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now)
@@ -116,7 +117,7 @@ func TestRotateSubscriptionToken_ChangesToken(t *testing.T) {
 	ctx := context.Background()
 
 	// Create the client; captures the initial token.
-	created, _, _, err := server.createClient(ctx, "user-000001", clientMutationInput{
+	created, _, _, err := server.clientsSvc.Create(ctx, "user-000001", clients.MutationInput{
 		Name:          "bob",
 		FleetGroupIDs: []string{groupID},
 	}, now)
@@ -130,7 +131,7 @@ func TestRotateSubscriptionToken_ChangesToken(t *testing.T) {
 
 	// Rotate.
 	rotatedAt := now.Add(time.Minute)
-	updated, _, _, err := server.rotateSubscriptionToken(ctx, string(created.ID), "user-000001", rotatedAt)
+	updated, _, _, err := server.clientsSvc.RotateSubscriptionToken(ctx, string(created.ID), "user-000001", rotatedAt)
 	if err != nil {
 		t.Fatalf("rotateSubscriptionToken: %v", err)
 	}
@@ -170,7 +171,7 @@ func TestRotateSubscriptionToken_DeletedClientReturnsNotFound(t *testing.T) {
 	server, groupID := newSubscriptionTestServer(t, now)
 	ctx := context.Background()
 
-	created, _, _, err := server.createClient(ctx, "user-000001", clientMutationInput{
+	created, _, _, err := server.clientsSvc.Create(ctx, "user-000001", clients.MutationInput{
 		Name:          "carol",
 		FleetGroupIDs: []string{groupID},
 	}, now)
@@ -178,11 +179,11 @@ func TestRotateSubscriptionToken_DeletedClientReturnsNotFound(t *testing.T) {
 		t.Fatalf("createClient: %v", err)
 	}
 
-	if err := server.deleteClient(ctx, string(created.ID), "user-000001", now.Add(time.Minute)); err != nil {
+	if err := server.clientsSvc.DeleteFlow(ctx, string(created.ID), "user-000001", now.Add(time.Minute)); err != nil {
 		t.Fatalf("deleteClient: %v", err)
 	}
 
-	_, _, _, err = server.rotateSubscriptionToken(ctx, string(created.ID), "user-000001", now.Add(2*time.Minute))
+	_, _, _, err = server.clientsSvc.RotateSubscriptionToken(ctx, string(created.ID), "user-000001", now.Add(2*time.Minute))
 	if !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("rotateSubscriptionToken(deleted): err = %v, want storage.ErrNotFound", err)
 	}

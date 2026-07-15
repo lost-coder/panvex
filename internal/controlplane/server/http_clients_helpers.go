@@ -267,7 +267,7 @@ func appendBulkClientFailureFromError(response *bulkClientResponse, id string, e
 
 // applyBulkClientEnable runs the enable/disable variant. It loads each
 // client, flips Enabled if it differs from the requested value, and
-// dispatches the existing updateClient flow. Clients whose
+// dispatches the existing clients.Service.Update flow. Clients whose
 // state already matches are recorded as "skipped" so the UI can show
 // accurate counts.
 func (s *Server) applyBulkClientEnable(ctx context.Context, actorID string, scope FleetScopeAccess, request bulkClientRequest, response *bulkClientResponse) {
@@ -292,7 +292,7 @@ func (s *Server) applyBulkClientEnable(ctx context.Context, actorID string, scop
 			response.Skipped = append(response.Skipped, id)
 			continue
 		}
-		input := clientMutationInput{
+		input := clients.MutationInput{
 			Name:              current.Name,
 			Enabled:           &want,
 			UserADTag:         current.UserADTag,
@@ -303,7 +303,7 @@ func (s *Server) applyBulkClientEnable(ctx context.Context, actorID string, scop
 			FleetGroupIDs:     assignmentFleetGroupIDs(assignments),
 			AgentIDs:          assignmentAgentIDs(assignments),
 		}
-		if _, _, _, err := s.updateClient(ctx, id, actorID, input, s.now()); err != nil {
+		if _, _, _, err := s.clientsSvc.Update(ctx, id, actorID, input, s.now()); err != nil {
 			appendBulkClientFailureFromError(response, id, err)
 			continue
 		}
@@ -330,7 +330,7 @@ func (s *Server) applyBulkClientDelete(ctx context.Context, actorID string, scop
 			response.Failed = append(response.Failed, bulkClientFailure{ID: id, Error: msgClientNotFound})
 			continue
 		}
-		if err := s.deleteClient(ctx, id, actorID, s.now()); err != nil {
+		if err := s.clientsSvc.DeleteFlow(ctx, id, actorID, s.now()); err != nil {
 			appendBulkClientFailureFromError(response, id, err)
 			continue
 		}

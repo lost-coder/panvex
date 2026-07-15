@@ -115,4 +115,8 @@ func swapClientsRepoForTests(t *testing.T, s *Server, rawDB *sql.DB, repo client
 		Vault:          s.secretVault,
 		Now:            s.now,
 	})
+	// Re-wire the orchestration deps onto the replacement Service, exactly as
+	// New()/initStoreBackedSubsystems do — the mutation flows on the Service
+	// resolve topology and enqueue jobs through these (R8a Task 4).
+	s.clientsSvc.SetDeps(s, s.jobs, s.logger)
 }

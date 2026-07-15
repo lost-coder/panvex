@@ -763,7 +763,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	client, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+	client, _, _, err := server.clientsSvc.Create(context.Background(), "user-000001", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{defaultGroupID},
 	}, now)
@@ -821,7 +821,7 @@ func TestRecordClientJobResultPublishesClientsUpdated(t *testing.T) {
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	client, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+	client, _, _, err := server.clientsSvc.Create(context.Background(), "user-000001", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{defaultGroupID},
 	}, now)
@@ -839,7 +839,7 @@ func TestRecordClientJobResultPublishesClientsUpdated(t *testing.T) {
 	assertClientsUpdatedPublished(t, ch, string(client.ID))
 
 	deleteAt := now.Add(2 * time.Minute)
-	if err := server.deleteClient(context.Background(), string(client.ID), "user-000001", deleteAt); err != nil {
+	if err := server.clientsSvc.DeleteFlow(context.Background(), string(client.ID), "user-000001", deleteAt); err != nil {
 		t.Fatalf("deleteClient() error = %v", err)
 	}
 	deleteJob := latestQueuedJob(t, server, jobs.ActionClientDelete)
@@ -977,7 +977,7 @@ func TestCreateClientGeneratesSubscriptionToken(t *testing.T) {
 		LastSeenAt: now.Add(-time.Minute),
 	})
 
-	created, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+	created, _, _, err := server.clientsSvc.Create(context.Background(), "user-000001", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now)

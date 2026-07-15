@@ -31,19 +31,19 @@ func ctxGet(t *testing.T, url string) (*http.Response, error) {
 // seedSubscriptionClient creates a client via createClient (always enabled,
 // no expiry by default) using the fleet-group from newSubscriptionTestServer,
 // then optionally patches it with updateClient to apply the given
-// clientMutationInput overrides. Returns the client's SubscriptionToken.
+// clients.MutationInput overrides. Returns the client's SubscriptionToken.
 func seedSubscriptionClient(
 	t *testing.T,
 	server *Server,
 	groupID string,
 	name string,
 	now time.Time,
-	patch *clientMutationInput, // nil → leave as-is (enabled, no expiry)
+	patch *clients.MutationInput, // nil → leave as-is (enabled, no expiry)
 ) string {
 	t.Helper()
 	ctx := context.Background()
 
-	created, _, _, err := server.createClient(ctx, "user-sub-test", clientMutationInput{
+	created, _, _, err := server.clientsSvc.Create(ctx, "user-sub-test", clients.MutationInput{
 		Name:          name,
 		FleetGroupIDs: []string{groupID},
 	}, now)
@@ -62,7 +62,7 @@ func seedSubscriptionClient(
 		if len(patch.FleetGroupIDs) == 0 {
 			patch.FleetGroupIDs = []string{groupID}
 		}
-		if _, _, _, err := server.updateClient(ctx, string(created.ID), "user-sub-test", *patch, now); err != nil {
+		if _, _, _, err := server.clientsSvc.Update(ctx, string(created.ID), "user-sub-test", *patch, now); err != nil {
 			t.Fatalf("seedSubscriptionClient updateClient(%q): %v", name, err)
 		}
 	}
@@ -138,7 +138,7 @@ func TestHandleSubscriptionPage_Disabled(t *testing.T) {
 	server, groupID := newSubscriptionTestServer(t, now)
 
 	disabled := false
-	token := seedSubscriptionClient(t, server, groupID, "bob-disabled", now, &clientMutationInput{
+	token := seedSubscriptionClient(t, server, groupID, "bob-disabled", now, &clients.MutationInput{
 		Enabled: &disabled,
 	})
 
@@ -165,7 +165,7 @@ func TestHandleSubscriptionPage_Expired(t *testing.T) {
 
 	// Expiration one hour in the past relative to the server's now.
 	pastExpiry := now.Add(-time.Hour).UTC().Format(time.RFC3339)
-	token := seedSubscriptionClient(t, server, groupID, "carol-expired", now, &clientMutationInput{
+	token := seedSubscriptionClient(t, server, groupID, "carol-expired", now, &clients.MutationInput{
 		ExpirationRFC3339: pastExpiry,
 	})
 

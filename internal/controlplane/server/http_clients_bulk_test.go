@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -49,7 +50,7 @@ func TestApplyBulkClientDelete_OperationalErrorIsRetryableNotNotFound(t *testing
 	server, groupID := newSubscriptionTestServer(t, now)
 	ctx := context.Background()
 
-	created, _, _, err := server.createClient(ctx, "user-000001", clientMutationInput{
+	created, _, _, err := server.clientsSvc.Create(ctx, "user-000001", clients.MutationInput{
 		Name:          "delete-me",
 		FleetGroupIDs: []string{groupID},
 	}, now)

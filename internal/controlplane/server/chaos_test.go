@@ -102,7 +102,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 	})
 	server.mu.Unlock()
 
-	input := clientMutationInput{
+	input := clients.MutationInput{
 		Name:      "alice",
 		Secret:    "0123456789abcdef0123456789abcdef",
 		UserADTag: "0123456789abcdef0123456789abcdef",
@@ -111,7 +111,7 @@ func TestChaosDBDropDuringTransact(t *testing.T) {
 
 	jobsBefore := len(server.jobs.ListWithContext(context.Background()))
 
-	_, _, _, createErr := server.createClient(ctx, "user-1", input, now)
+	_, _, _, createErr := server.clientsSvc.Create(ctx, "user-1", input, now)
 	if !errors.Is(createErr, chaosErr) {
 		t.Fatalf("createClient() error = %v, want chaos injection error", createErr)
 	}

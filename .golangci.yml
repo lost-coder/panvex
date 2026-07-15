@@ -316,13 +316,6 @@ linters:
         text: "G115"
         path: "_test\\.go$"
 
-      # G117 — Marshaled struct field "Secret". clients_jobs.go is the
-      # canonical job payload carrying the rotated client secret to
-      # the agent; the JSON tag is intentional.
-      - linters: [gosec]
-        text: "G117"
-        path: "internal/controlplane/server/clients_jobs.go"
-
       # G118 — context.CancelFunc not called. outbound.go stores the
       # supervisor cancel in supervisors[meta.NodeID].cancel and
       # invokes it from stopAll/removeSupervisor. Annotated in code
