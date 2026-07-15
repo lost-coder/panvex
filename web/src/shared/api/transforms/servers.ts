@@ -470,6 +470,7 @@ export function transformServerDetail(
     fallbackEnteredAtUnix,
     telemtUnreachable: runtime?.telemt_unreachable ?? false,
     telemtUnreachableSinceUnix: runtime?.telemt_unreachable_since_unix ?? 0,
+    transportDrift: agent?.transport_drift ?? false,
   };
 }
 

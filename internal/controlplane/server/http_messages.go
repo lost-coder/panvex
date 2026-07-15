@@ -34,6 +34,7 @@ const (
 	// is unchanged for well-formed requests.
 	msgClientNameRequired    = "client name is required"
 	msgClientNameInvalid     = "client name must match [A-Za-z0-9_.-] and be 1..64 chars"
+	msgClientNameTaken       = "client name is already in use"
 	msgClientUserADTag       = "user_ad_tag must contain exactly 32 hex characters"
 	msgClientExpiration      = "expiration_rfc3339 must be a valid RFC3339 timestamp"
 	msgClientTargetsRequired = "client must target at least one agent"

@@ -29,6 +29,13 @@ type Intervals struct {
 	// (agent connected count, event-hub subscribers, job queue depth,
 	// lockout count, DB pool stats).
 	MetricsPoller time.Duration
+	// ClientReconcile is the cadence for the client-state reconcile worker
+	// (R10 convergent delivery). Zero falls back to the built-in
+	// clientReconcileInterval. A NEGATIVE value disables the background
+	// worker entirely — unit tests set this so the worker's goroutine does
+	// not read s.now() concurrently with a test that mutates its fake clock
+	// (the reconcile path is exercised directly via reconcileClientDeployments).
+	ClientReconcile time.Duration
 }
 
 // DefaultIntervals returns the values matching the legacy package-level

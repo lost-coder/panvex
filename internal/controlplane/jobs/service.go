@@ -211,6 +211,24 @@ type Service struct {
 	// (clients.JobSupersedeKey via SetSupersedeKeyFunc) so this package
 	// stays free of the clients domain (P8.1, audit #24).
 	supersedeKey func(action Action, payloadJSON string) string
+	// expiryHook, when set, is invoked AFTER the service lock is released,
+	// once per expiry sweep, with every (job, agentID) target that flipped to
+	// expired in that sweep. Injected by the composition root
+	// (server.onClientJobsExpired via SetExpiryHook) so this package stays
+	// free of the clients/server domains — same injection style as
+	// supersedeKey. This is a NEW functional channel into the clients domain
+	// (surface an expired client deployment as awaiting_node), deliberately
+	// unlike the metrics-only SetJobFailureHook that P5 removed (audit #19);
+	// do not confuse the two.
+	expiryHook func(expired []ExpiredTarget)
+}
+
+// ExpiredTarget describes one (job, agent) pair whose target just flipped to
+// expired in a TTL sweep. Job is a snapshot (safe to read after the sweep's
+// lock is released); AgentID is the target that expired.
+type ExpiredTarget struct {
+	Job     Job
+	AgentID string
 }
 
 // MetricsSink receives job observability signals (C3). Implemented by
@@ -248,6 +266,35 @@ func (s *Service) SetSupersedeKeyFunc(fn func(action Action, payloadJSON string)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.supersedeKey = fn
+}
+
+// SetExpiryHook registers a callback invoked AFTER the service lock is
+// released, once per expiry sweep, with every target that flipped to expired
+// in that sweep. Deliberately a batch: one sweep may expire many targets and
+// the consumer persists per-deployment. Call during boot, before background
+// traffic starts (same contract as SetSupersedeKeyFunc). Nil disables the
+// hook (the default for bare NewService callers).
+func (s *Service) SetExpiryHook(hook func(expired []ExpiredTarget)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expiryHook = hook
+}
+
+// invokeExpiryHook fans the batch out to the registered hook. It MUST be called
+// with s.mu released: the hook may re-enter the service (e.g. Get takes the
+// read lock), and firing it under the write lock would deadlock. The hook
+// reference is read under a short read lock so a concurrent SetExpiryHook (in
+// practice boot-only) does not race the read.
+func (s *Service) invokeExpiryHook(expired []ExpiredTarget) {
+	if len(expired) == 0 {
+		return
+	}
+	s.mu.RLock()
+	hook := s.expiryHook
+	s.mu.RUnlock()
+	if hook != nil {
+		hook(expired)
+	}
 }
 
 // supersedeKeyLocked evaluates the injected rule; "" when none is set.
@@ -857,7 +904,7 @@ func (s *Service) ListWithContext(ctx context.Context) []Job {
 
 	s.mu.Lock()
 	now = s.now().UTC()
-	candidates := s.expireJobsLocked(now)
+	candidates, expired := s.expireJobsLocked(now)
 	result := make([]Job, 0, len(s.jobs))
 	for _, job := range s.jobs {
 		result = append(result, cloneJob(job))
@@ -869,6 +916,7 @@ func (s *Service) ListWithContext(ctx context.Context) []Job {
 	for _, candidate := range candidates {
 		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
+	s.invokeExpiryHook(expired)
 
 	return result
 }
@@ -999,11 +1047,12 @@ func (s *Service) ListRecentWithContext(ctx context.Context, limit int) []Job {
 	s.mu.RUnlock()
 	if needsExpiry {
 		s.mu.Lock()
-		candidates := s.expireJobsLocked(s.now().UTC())
+		candidates, expired := s.expireJobsLocked(s.now().UTC())
 		s.mu.Unlock()
 		for _, candidate := range candidates {
 			s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 		}
+		s.invokeExpiryHook(expired)
 	}
 
 	s.mu.RLock()
@@ -1067,7 +1116,7 @@ func (s *Service) PendingForAgent(ctx context.Context, agentID string, retryAfte
 
 	s.mu.Lock()
 	now = s.now().UTC()
-	candidates := s.expireJobsLocked(now)
+	candidates, expired := s.expireJobsLocked(now)
 
 	jobsForAgent := s.agentJobs[agentID]
 	result := make([]Job, 0, len(jobsForAgent))
@@ -1087,6 +1136,7 @@ func (s *Service) PendingForAgent(ctx context.Context, agentID string, retryAfte
 	for _, candidate := range candidates {
 		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
+	s.invokeExpiryHook(expired)
 
 	return result
 }
@@ -1305,18 +1355,31 @@ func (s *Service) RecordResult(ctx context.Context, agentID, jobID string, succe
 }
 
 // expireJobAndCollectCandidatesLocked transitions every still-active target on
-// `job` to expired and marks the job itself expired. Returns nil when the job
-// was already fully expired (nothing to do). Caller must hold s.mu.
-func (s *Service) expireJobAndCollectCandidatesLocked(job Job, now time.Time) []persistCandidate {
-	_, expired, ok := expireJobTargets(job, now)
+// `job` to expired and marks the job itself expired. Returns nil, nil when the
+// job was already fully expired (nothing to do). The second return is the batch
+// of (job, agentID) targets that flipped, which the caller fires through the
+// expiry hook AFTER releasing s.mu. The expired-target batch is collected
+// independently of the persist candidate: a store-less service (nil jobStore)
+// produces no candidate yet still expired targets the hook must observe. Caller
+// must hold s.mu.
+func (s *Service) expireJobAndCollectCandidatesLocked(job Job, now time.Time) ([]persistCandidate, []ExpiredTarget) {
+	_, expired, expiredAgentIDs, ok := expireJobTargets(job, now)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	candidate := s.commitJobLocked(expired, now, jobCommit{forceStatus: StatusExpired})
-	if candidate == nil {
-		return nil
+	var targets []ExpiredTarget
+	if len(expiredAgentIDs) > 0 {
+		snapshot := cloneJob(expired)
+		targets = make([]ExpiredTarget, 0, len(expiredAgentIDs))
+		for _, agentID := range expiredAgentIDs {
+			targets = append(targets, ExpiredTarget{Job: snapshot, AgentID: agentID})
+		}
 	}
-	return []persistCandidate{*candidate}
+	if candidate == nil {
+		return nil, targets
+	}
+	return []persistCandidate{*candidate}, targets
 }
 
 // applyTargetMutationLocked applies `mutate` to the job target whose
@@ -1377,9 +1440,10 @@ func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, mutat
 	}
 
 	var candidates []persistCandidate
+	var expired []ExpiredTarget
 	applied := true
 	if jobShouldExpire(job, now) {
-		candidates = s.expireJobAndCollectCandidatesLocked(job, now)
+		candidates, expired = s.expireJobAndCollectCandidatesLocked(job, now)
 	} else {
 		candidates, applied = s.applyTargetMutationLocked(job, agentID, now, mutate)
 	}
@@ -1388,30 +1452,38 @@ func (s *Service) updateTarget(ctx context.Context, agentID, jobID string, mutat
 	for _, candidate := range candidates {
 		s.persistLatestJobVersion(ctx, candidate.jobID, candidate.version, candidate.job)
 	}
+	s.invokeExpiryHook(expired)
 	return applied
 }
 
-func (s *Service) expireJobsLocked(now time.Time) []persistCandidate {
+// expireJobsLocked is the sweep. It returns the persist candidates (for the
+// post-unlock store fan-out) and the batch of every (job, agentID) target that
+// flipped to expired across all jobs in this sweep (for the post-unlock expiry
+// hook). Neither may be acted on while s.mu is held. Caller must hold s.mu.
+func (s *Service) expireJobsLocked(now time.Time) ([]persistCandidate, []ExpiredTarget) {
 	var candidates []persistCandidate
 	if s.jobStore != nil {
 		candidates = make([]persistCandidate, 0)
 	}
+	var expired []ExpiredTarget
 	for _, job := range s.jobs {
 		if !jobShouldExpire(job, now) {
 			continue
 		}
-		candidates = append(candidates, s.expireJobAndCollectCandidatesLocked(job, now)...)
+		jobCandidates, jobExpired := s.expireJobAndCollectCandidatesLocked(job, now)
+		candidates = append(candidates, jobCandidates...)
+		expired = append(expired, jobExpired...)
 	}
 	s.recomputeNextExpiryLocked()
-	return candidates
+	return candidates, expired
 }
 
 // expireJobTargets flips any non-terminal targets on the job to expired and
-// returns the updated job. Reports updated=true when at least one target was
-// transitioned. Returns ok=false when the job is already in StatusExpired with
-// nothing to update — the caller should skip it.
-func expireJobTargets(job Job, now time.Time) (bool, Job, bool) {
-	updated := false
+// returns the updated job plus the agent IDs of the targets it just
+// transitioned. Reports updated=true when at least one target was transitioned.
+// Returns ok=false when the job is already in StatusExpired with nothing to
+// update — the caller should skip it.
+func expireJobTargets(job Job, now time.Time) (updated bool, updatedJob Job, expiredAgentIDs []string, ok bool) {
 	for index := range job.Targets {
 		target := &job.Targets[index]
 		if target.Status == TargetStatusSucceeded || target.Status == TargetStatusFailed || target.Status == TargetStatusExpired {
@@ -1419,13 +1491,14 @@ func expireJobTargets(job Job, now time.Time) (bool, Job, bool) {
 		}
 		target.Status = TargetStatusExpired
 		target.UpdatedAt = now.UTC()
+		expiredAgentIDs = append(expiredAgentIDs, target.AgentID)
 		updated = true
 	}
 	if !updated && job.Status == StatusExpired {
-		return false, job, false
+		return false, job, nil, false
 	}
 	job.Status = StatusExpired
-	return updated, job, true
+	return updated, job, expiredAgentIDs, true
 }
 
 func jobShouldExpire(job Job, now time.Time) bool {

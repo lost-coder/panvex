@@ -401,6 +401,14 @@ export interface components {
              */
             transport_reconnect_pending?: boolean;
             /**
+             * @description True when the direction of the last accepted stream disagreed with
+             *     dial_transport_mode — the agent is still dialing IN while the DB
+             *     says outbound, or vice versa (R-4). The panel re-enqueues the
+             *     switch job to converge; cleared once a session connects in the
+             *     direction the DB expects.
+             */
+            transport_drift?: boolean;
+            /**
              * @description Enrollment lifecycle state of the agents row: "pending"
              *     (provisioned, awaiting first enrollment), "expired" (bootstrap
              *     token lapsed before enrollment) or "active" (enrolled). Empty for

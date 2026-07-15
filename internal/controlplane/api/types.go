@@ -25,7 +25,17 @@ type Agent struct {
 	// "inbound" (agent dials the panel) or "outbound" (panel dials the
 	// agent). Distinct from Runtime.TransportMode, which is Telemt's
 	// classic/middle_proxy runtime mode (R9a).
-	DialTransportMode   string                                 `json:"dial_transport_mode,omitempty"`
+	DialTransportMode string `json:"dial_transport_mode,omitempty"`
+	// DialAddress is the panel-dials-agent target (host:port) persisted for
+	// outbound rows. Not exposed in the public JSON shape — it is carried on
+	// the live snapshot only so the transport-drift self-heal can rebuild the
+	// agent listen bind without a store round-trip (R10b Task 4 / R-4).
+	DialAddress string `json:"-"`
+	// TransportDrift is true when the live connection direction of the last
+	// accepted stream disagreed with DialTransportMode (agent still dialing IN
+	// while the DB says outbound, or vice versa). Request-time derived from the
+	// in-memory drift marker; the panel re-enqueues the switch job to converge.
+	TransportDrift      bool                                   `json:"transport_drift,omitempty"`
 	CertificateRecovery *AgentCertificateRecoveryGrantResponse `json:"certificate_recovery,omitempty"`
 	CertIssuedAt        *time.Time                             `json:"cert_issued_at,omitempty"`
 	CertExpiresAt       *time.Time                             `json:"cert_expires_at,omitempty"`

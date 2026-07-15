@@ -245,6 +245,9 @@
     "nodeCount_other": "{{count}} nodes",
     "secretRotatedBadge": "Secret rotated — awaiting redeploy",
     "neverApplied": "never applied",
+    "status": {
+      "awaitingNode": "awaiting node"
+    },
     "links": {
       "tls": "TLS",
       "secure": "Secure",

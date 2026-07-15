@@ -75,7 +75,10 @@ describe("ClientDetailPage", () => {
 
   it("renders the Redeploy action when at least one deployment is not yet succeeded", () => {
     const onRedeploy = vi.fn();
-    for (const status of ["failed", "queued"] as const) {
+    // R10b Task 2: "awaiting_node" (job expired before an offline node
+    // confirmed it) must roll up the same as "failed"/"queued" — still
+    // pending, redeploy affordance shown — not silently treated as done.
+    for (const status of ["failed", "queued", "awaiting_node"] as const) {
       const { unmount } = renderWithClient(
         <ClientDetailPage
           {...makeProps({
@@ -100,6 +103,42 @@ describe("ClientDetailPage", () => {
       expect(screen.getAllByRole("button", { name: /redeploy/i }).length).toBeGreaterThan(0);
       unmount();
     }
+  });
+
+  it("rolls up an awaiting_node-only client to the neutral 'not deployed' state, not 'deploy failed'", () => {
+    // Regression guard for the roll-up itself (ClientDetailPage.tsx:97-102 →
+    // deriveClientState), independent of the Redeploy-affordance test above:
+    // Redeploy is driven by hasFailedDeployment (any status !== "succeeded"),
+    // which is blind to *which* non-succeeded status it is. This test instead
+    // asserts on the rendered ClientStateBadge, so a future edit that
+    // misclassifies "awaiting_node" as "failed" in the roll-up (rendering the
+    // error-toned "deploy failed" header badge for a client that is merely
+    // waiting on a reconnect) fails here even though Redeploy would still show.
+    renderWithClient(
+      <ClientDetailPage
+        {...makeProps({
+          deployments: [
+            {
+              agentId: "agent-1",
+              desiredOperation: "client.create",
+              status: "awaiting_node",
+              lastError: "",
+              links: { classic: [], secure: [], tls: [] },
+              lastAppliedAtUnix: 0,
+              quotaUsedBytes: 0,
+              quotaLastResetUnix: 0,
+              panelLastResetUnix: 0,
+              quotaResetDrift: false,
+            },
+          ],
+        })}
+        onRedeploy={vi.fn()}
+      />,
+    );
+    // Mobile PageHeader + desktop HeroStrip both render the badge, hence
+    // getAllByText rather than getByText.
+    expect(screen.getAllByText(/not deployed/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/deploy failed/i)).toBeNull();
   });
 
   it("hides the Redeploy action when every deployment has succeeded", () => {

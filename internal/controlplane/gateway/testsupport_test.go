@@ -29,6 +29,7 @@ func (stubDeps) AuthorizeAgentConnect(context.Context, agenttransport.AgentSessi
 func (stubDeps) ShouldTerminateForRevocation(context.Context, string, string) bool   { return false }
 func (stubDeps) MarkTransportSwitchResolved(string)                                  {}
 func (stubDeps) OnAgentConnected(string)                                             {}
+func (stubDeps) OnAgentSessionEstablished(string, TransportDirection)                {}
 func (stubDeps) ApplyAgentSnapshot(context.Context, AgentSnapshot) error             { return nil }
 func (stubDeps) AppendAudit(context.Context, string, string, string, map[string]any) {}
 func (stubDeps) RecordClientJobResult(context.Context, string, string, bool, string, string, time.Time) {

@@ -24,11 +24,40 @@ export const roleVariant: Record<string, BadgeVariant> = {
   viewer: "default",
 };
 
-/** Deploy / health status → badge variant */
+/**
+ * Deploy / health status → badge variant.
+ *
+ * The real per-deployment status vocabulary emitted by the backend
+ * (`internal/controlplane/clients/types.go`) is `queued` / `succeeded` /
+ * `failed` / `awaiting_node`. The badge row is meant to read as a
+ * coherent escalation:
+ *
+ *  - `succeeded` → ok (green): the deployment applied cleanly.
+ *  - `failed`    → error (red): Telemt rejected the config — needs
+ *    operator attention now.
+ *  - `awaiting_node` → warn (amber): the job expired before an offline
+ *    node confirmed it. The reconciler will re-send on reconnect, so
+ *    this is a *distinct* attention state from `failed` (nothing to
+ *    fix, just waiting) but must not look the same as a freshly-queued
+ *    job either.
+ *  - `queued` is deliberately left OUT of this map (falls through to
+ *    `"default"`, neutral): a job that's simply in flight is the
+ *    normal, non-attention state — it should not compete visually with
+ *    `awaiting_node`'s amber "waiting on an offline node" signal.
+ *
+ * The `ok`/`pending`/`error` keys below predate the real vocabulary and
+ * are unreachable from the one call site (`DeployLinksCard.tsx` passes
+ * the raw backend status straight through) — kept in case something
+ * else starts passing those literal values, but they are not part of
+ * the deploy-status escalation above.
+ */
 const _deployVariant: Record<string, BadgeVariant> = {
   ok: "ok",
   pending: "warn",
   error: "error",
+  succeeded: "ok",
+  failed: "error",
+  awaiting_node: "warn",
 };
 export function deployVariant(status: string): BadgeVariant {
   return _deployVariant[status] ?? "default";

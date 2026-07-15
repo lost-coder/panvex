@@ -117,32 +117,35 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		// slog records shipped over the Connect bidi-stream. Always
 		// constructed (independent of Store wiring) so the message
 		// dispatcher and HTTP handler can rely on a non-nil pointer.
-		runtimeEvents:             runtimeevents.New(500),
-		now:                       now,
-		panelRuntime:              defaultPanelRuntime(options.PanelRuntime),
-		requestRestart:            options.RequestRestart,
-		loginRateLimiter:          sessions.NewRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
-		agentBootstrapRateLimiter: sessions.NewRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
-		grpcConnectRateLimiter:    sessions.NewRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
-		sensitiveRateLimiter:      sessions.NewRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
-		installScriptRateLimiter:  sessions.NewRateLimiter(httpInstallScriptRateLimitPerWindow, defaultRateLimitWindow),
-		loginLockout:              sessions.NewLockoutTracker(),
-		totpLockout:               sessions.NewTOTPLockoutTracker(),
-		ipLockout:                 sessions.NewIPLockoutTracker(),
-		wsConnLimiter:             newWSConnLimiter(),
-		trustedProxyCIDRs:         options.TrustedProxyCIDRs,
-		encryptionKey:             options.EncryptionKey,
-		secretVault:               vault,
-		logger:                    options.Logger,
-		version:                   options.Version,
-		commitSHA:                 options.CommitSHA,
-		buildTime:                 options.BuildTime,
-		csrfManager:               csrfManager,
-		loginTimingFloor:          resolveLoginTimingFloor(options.LoginTimingFloor),
-		revokedAgentIDs:           make(map[string]struct{}),
-		revokedDropWarned:         make(map[string]struct{}),
-		transportSwitchPendingAt:  map[string]time.Time{},
-		retentionDisabledWarned:   make(map[string]bool),
+		runtimeEvents:              runtimeevents.New(500),
+		now:                        now,
+		panelRuntime:               defaultPanelRuntime(options.PanelRuntime),
+		requestRestart:             options.RequestRestart,
+		loginRateLimiter:           sessions.NewRateLimiter(httpLoginRateLimitPerWindow, defaultRateLimitWindow),
+		agentBootstrapRateLimiter:  sessions.NewRateLimiter(httpAgentBootstrapRateLimitPerWindow, defaultRateLimitWindow),
+		grpcConnectRateLimiter:     sessions.NewRateLimiter(grpcConnectRateLimitPerWindow, defaultRateLimitWindow),
+		sensitiveRateLimiter:       sessions.NewRateLimiter(httpSensitiveRateLimitPerWindow, defaultRateLimitWindow),
+		installScriptRateLimiter:   sessions.NewRateLimiter(httpInstallScriptRateLimitPerWindow, defaultRateLimitWindow),
+		loginLockout:               sessions.NewLockoutTracker(),
+		totpLockout:                sessions.NewTOTPLockoutTracker(),
+		ipLockout:                  sessions.NewIPLockoutTracker(),
+		wsConnLimiter:              newWSConnLimiter(),
+		trustedProxyCIDRs:          options.TrustedProxyCIDRs,
+		encryptionKey:              options.EncryptionKey,
+		secretVault:                vault,
+		logger:                     options.Logger,
+		version:                    options.Version,
+		commitSHA:                  options.CommitSHA,
+		buildTime:                  options.BuildTime,
+		csrfManager:                csrfManager,
+		loginTimingFloor:           resolveLoginTimingFloor(options.LoginTimingFloor),
+		revokedAgentIDs:            make(map[string]struct{}),
+		revokedDropWarned:          make(map[string]struct{}),
+		transportSwitchPendingAt:   map[string]time.Time{},
+		transportDriftAt:           map[string]time.Time{},
+		transportDriftReenqueuedAt: map[string]time.Time{},
+		discoveredOrphanSeen:       make(map[string]struct{}),
+		retentionDisabledWarned:    make(map[string]bool),
 		// live (A2/A1): single owner of agent live-state + instances. The
 		// clone funcs deep-copy every reference-type field of Agent/Instance
 		// so reads return isolated copies (see live_clone.go). instanceID
@@ -174,6 +177,9 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 	// P8.1: клиентское правило supersession живёт в clients-слое; jobs.Service
 	// получает его инъекцией и сам домена клиентов не знает.
 	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
+	// R10b: surface expired client jobs as awaiting_node. Same injection style —
+	// jobs stays free of the clients/server domains.
+	s.jobs.SetExpiryHook(s.onClientJobsExpired)
 	return s
 }
 
@@ -230,6 +236,9 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	// before background workers start (satisfies SetSupersedeKeyFunc's boot
 	// contract).
 	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
+	// R10b: re-attach the expiry hook onto the freshly-constructed store-backed
+	// jobs service before background workers start (same boot contract).
+	s.jobs.SetExpiryHook(s.onClientJobsExpired)
 	s.auth = auth.NewServiceWithStore(store)
 	s.updatesSvc = updates.NewService(store)
 	// Wire the injected clock onto the freshly-constructed services BEFORE any
@@ -511,8 +520,14 @@ func (s *Server) startBackgroundWorkers() {
 	// deployments left queued by a panel that died between persisting client
 	// state and enqueueing its job, plus every job that expired while the panel
 	// was down.
-	s.rollupWg.Add(1)
-	s.startClientReconcileWorker(rollupCtx, clientReconcileInterval, &s.rollupWg)
+	// A negative ClientReconcile interval disables the background worker
+	// (unit tests, which drive reconcileClientDeployments directly and mutate
+	// a fake clock the worker would otherwise read concurrently). Zero uses
+	// the worker's built-in default.
+	if s.intervals.ClientReconcile >= 0 {
+		s.rollupWg.Add(1)
+		s.startClientReconcileWorker(rollupCtx, s.intervals.ClientReconcile, &s.rollupWg)
+	}
 
 	// R7: reclaim expired sessions + consumed TOTP codes on a ticker. This
 	// sweep used to run under the auth write lock on EVERY GetSession — i.e.

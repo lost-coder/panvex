@@ -36,6 +36,7 @@
     "queued": "в очереди",
     "succeeded": "успех",
     "partial": "частично",
+    "expired": "истекла",
     "failed": "ошибка"
   },
   "auditWindow": {

@@ -67,7 +67,7 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 	// authoritative snapshot of what exists on the node right now (IN-M5).
 	seenNames := make(map[string]struct{}, len(records))
 
-	var disc, skippedManaged, skippedPanelID int
+	var disc, skippedManaged, skippedPanelID, orphaned int
 	for _, record := range records {
 		clientName := strings.TrimSpace(record.GetClientName())
 		if clientName == "" {
@@ -99,16 +99,26 @@ func (s *Server) reconcileDiscoveredClients(ctx context.Context, agentID string,
 			}
 		}
 
-		// Skip if panel-assigned client_id is present (means panel created it).
-		if strings.TrimSpace(record.GetClientId()) != "" {
-			skippedPanelID++
+		// A record carrying a panel-assigned client_id is normally an echo of
+		// our own rollout. But if the panel has no LIVING managed client
+		// under that id (deleted, rotated away, or plain unknown), the node
+		// is serving credentials the panel no longer vouches for — the
+		// exact C1->C2 revocation-hole scenario from the rollout diagnosis.
+		// Surface it instead of silently skipping it.
+		if panelID := strings.TrimSpace(record.GetClientId()); panelID != "" {
+			if s.clientIsLiveManaged(ctx, panelID) {
+				skippedPanelID++
+				continue
+			}
+			orphaned++
+			s.recordDiscoveredOrphan(ctx, agentID, panelID, clientName, observedAt)
 			continue
 		}
 
 		disc++
 		s.upsertDiscoveredClient(ctx, agentID, record, observedAt)
 	}
-	s.logger.InfoContext(ctx, "reconciled discovered clients", "agent_id", agentID, "total", len(records), "new", disc, "managed", skippedManaged, "panel_assigned", skippedPanelID)
+	s.logger.InfoContext(ctx, "reconciled discovered clients", "agent_id", agentID, "total", len(records), "new", disc, "managed", skippedManaged, "panel_assigned", skippedPanelID, "orphaned", orphaned)
 
 	// IN-M5: prune pending discovered records for this agent that the node no
 	// longer reports (e.g. the user was removed, or the agent's fleet group
@@ -154,6 +164,74 @@ func (s *Server) pruneStaleDiscoveredForAgent(ctx context.Context, agentID strin
 // managedClientIdentifiersForAgent returns the set of client names and secrets deployed on an agent.
 func (s *Server) managedClientIdentifiersForAgent(agentID string) (names map[string]struct{}, secrets map[string]struct{}) {
 	return s.clientsSvc.MirrorIdentifiersForAgent(agentID)
+}
+
+// clientIsLiveManaged reports whether panelID resolves to a managed client
+// the panel still vouches for (R10b Task 3 / C1->C2 revocation-hole guard).
+//
+// clients.Service.Get reads only the in-memory mirror. Verified: the mirror
+// never holds a tombstoned Client. Runtime Service.Delete both soft-deletes
+// the row in storage (deleted_at_unix) AND evicts the entry from the mirror
+// outright via deleteMirrorClientLocked — it does not leave a Client with
+// DeletedAt set in place. Startup Restore rebuilds the mirror exclusively
+// from Repository.List, whose query filters `WHERE deleted_at_unix IS NULL`,
+// so a tombstoned client never re-enters the mirror after a restart either.
+// That means "not found" (err != nil) already covers every real tombstone
+// path today. The DeletedAt check below is defense in depth in case that
+// invariant ever changes (e.g. a future caller starts writing tombstoned
+// values into the mirror directly via MirrorReplaceInMemory/SaveState,
+// which do not special-case DeletedAt).
+func (s *Server) clientIsLiveManaged(ctx context.Context, panelID string) bool {
+	client, err := s.clientsSvc.Get(ctx, clients.ClientID(panelID))
+	return err == nil && client.DeletedAt == nil
+}
+
+// recordDiscoveredOrphan surfaces a discovered record whose panel-assigned
+// client_id does not resolve to a live managed client. Unlike
+// upsertDiscoveredClient this deliberately does NOT create a discovered_client
+// row: the record has a clear owner (the panel that issued the id), so
+// "adopting" it would create a duplicate managed client. The operator's
+// channel is this audit event + Warn log, plus the existing R10 reconciler,
+// which re-sends the delete for ids the panel no longer owns and makes the
+// node stop reporting it.
+//
+// Audited only on the first observation of a given (agentID, panelID) pair
+// — reconcileDiscoveredClients runs on every telemetry tick, and without
+// this dedup the same finding would be audited repeatedly. observedAt is
+// accepted for signature symmetry with upsertDiscoveredClient's caller site
+// and potential future use; the audit event's own timestamp comes from
+// appendAuditWithContext (s.now()).
+//
+// CONCURRENCY: reconcileDiscoveredClients can run concurrently for
+// different agents and does not hold s.mu itself. s.mu is taken ONLY for
+// the check-and-set on discoveredOrphanSeen, then released before the
+// audit write / log call — appendAuditWithContext must never run while
+// s.mu is held (lock-ordering invariant, see clients_flow.go).
+func (s *Server) recordDiscoveredOrphan(ctx context.Context, agentID, panelID, clientName string, observedAt time.Time) {
+	_ = observedAt
+
+	key := agentID + "|" + panelID
+	s.mu.Lock()
+	_, already := s.discoveredOrphanSeen[key]
+	if !already {
+		s.discoveredOrphanSeen[key] = struct{}{}
+	}
+	s.mu.Unlock()
+	if already {
+		return
+	}
+
+	s.logger.WarnContext(ctx, "discovered client carries a panel client_id with no live managed client backing it",
+		"agent_id", agentID,
+		"client_id", panelID,
+		"client_name", clientName,
+		"alert", "discovered_client_orphaned_panel_id",
+	)
+	s.appendAuditWithContext(ctx, "system", "clients.discovery_orphan", panelID, map[string]any{
+		"agent_id":  agentID,
+		"client_id": panelID,
+		"name":      clientName,
+	})
 }
 
 func (s *Server) upsertDiscoveredClient(ctx context.Context, agentID string, record *gatewayrpc.ClientDetailRecord, observedAt time.Time) {
@@ -318,6 +396,15 @@ func (s *Server) adoptDiscoveredClientLocked(ctx context.Context, id, actorID st
 	if existing, ok := s.findManagedClientByNameAndSecret(record.ClientName, secret); ok {
 		s.logger.InfoContext(ctx, "adopting discovered client into existing managed client", "discovered_id", id, "client_id", existing.ID, "client_name", record.ClientName, "agent_id", record.AgentID, "siblings", len(siblings))
 		return s.mergeAdoptIntoExistingClient(ctx, existing, record, siblings, actorID, id, observedAt)
+	}
+	// The merge branch above already claimed any living client whose name AND
+	// secret match. If a living client still carries this name here, it is a
+	// DIFFERENT secret — adopting as a new managed client would create a
+	// duplicate name (a single collapsed Telemt user on any common node), so
+	// reject it as a name conflict. This runs BEFORE buildAdoptedClientState /
+	// persistAdoptedClient so no brand-new client is ever written.
+	if s.clientsSvc.NameTaken(record.ClientName, "") {
+		return managedClient{}, errClientNameTaken
 	}
 	s.logger.InfoContext(ctx, "adopting discovered client as new managed client", "discovered_id", id, "client_name", record.ClientName, "agent_id", record.AgentID, "traffic_bytes", record.TotalOctets, "active_ips", record.ActiveUniqueIPs, "siblings", len(siblings))
 

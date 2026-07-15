@@ -80,6 +80,12 @@ type Deps interface {
 	// while it was away (R10). Must not block: implementations hand the work
 	// to a goroutine.
 	OnAgentConnected(agentID string)
+	// OnAgentSessionEstablished reports the direction of an accepted stream so
+	// the panel can compare it against the agent's persisted transport_mode.
+	// A mismatch is R-4 drift: the implementation records an in-memory marker
+	// (surfaced in inventory) and re-enqueues the switch job, throttled. Cheap
+	// in the common (no-drift) case, so it runs inline on the stream goroutine.
+	OnAgentSessionEstablished(agentID string, direction TransportDirection)
 	// ApplyAgentSnapshot applies a runtime snapshot against panel state.
 	ApplyAgentSnapshot(ctx context.Context, snap AgentSnapshot) error
 	// AppendAudit records one audit-trail entry (best-effort).

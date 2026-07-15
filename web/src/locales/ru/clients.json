@@ -248,6 +248,9 @@
     "nodeCount_many": "{{count}} нод",
     "secretRotatedBadge": "Секрет сменён — ждём перевыкатывания",
     "neverApplied": "никогда не применялось",
+    "status": {
+      "awaitingNode": "ожидает ноду"
+    },
     "links": {
       "tls": "TLS",
       "secure": "Secure",

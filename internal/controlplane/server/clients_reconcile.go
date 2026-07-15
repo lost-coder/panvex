@@ -95,11 +95,17 @@ func (s *Server) startClientReconcileWorker(ctx context.Context, interval time.D
 	if interval <= 0 {
 		interval = clientReconcileInterval
 	}
+	// Capture the client service once, in the caller's goroutine, before the
+	// worker starts. The field is written exactly once at construction in
+	// production, but the test harness rebuilds s.clientsSvc after New()
+	// returns; capturing here keeps the shared-field read out of the worker
+	// goroutine so those swaps do not race the reconcile pass.
+	svc := s.clientsSvc
 	go func() {
 		if wg != nil {
 			defer wg.Done()
 		}
-		s.reconcileClientDeployments(ctx, "")
+		s.reconcileClientDeploymentsWith(ctx, svc, "")
 
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -108,7 +114,7 @@ func (s *Server) startClientReconcileWorker(ctx context.Context, interval time.D
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.reconcileClientDeployments(ctx, "")
+				s.reconcileClientDeploymentsWith(ctx, svc, "")
 			}
 		}
 	}()
@@ -121,11 +127,21 @@ func (s *Server) startClientReconcileWorker(ctx context.Context, interval time.D
 //
 // Returns the number of jobs enqueued (used by tests).
 func (s *Server) reconcileClientDeployments(ctx context.Context, agentFilter string) int {
-	if s.clientsSvc == nil {
+	return s.reconcileClientDeploymentsWith(ctx, s.clientsSvc, agentFilter)
+}
+
+// reconcileClientDeploymentsWith is the body of reconcileClientDeployments,
+// operating on an explicitly supplied client service. The reconcile worker
+// passes a service captured once at start-up so its goroutine never reads the
+// shared s.clientsSvc field (see startClientReconcileWorker); all other callers
+// go through reconcileClientDeployments, which reads the field in their own
+// goroutine where it is stable.
+func (s *Server) reconcileClientDeploymentsWith(ctx context.Context, svc *clients.Service, agentFilter string) int {
+	if svc == nil {
 		return 0
 	}
 	now := s.now().UTC()
-	mirror := s.clientsSvc.MirrorSnapshot()
+	mirror := svc.MirrorSnapshot()
 
 	enqueued := 0
 	for clientID, byAgent := range mirror.Deployments {
@@ -207,7 +223,9 @@ func divergentDeploymentAction(deployment clients.Deployment) (jobs.Action, bool
 	switch deployment.Status {
 	case clients.DeploymentStatusSucceeded:
 		return "", false
-	case clients.DeploymentStatusQueued:
+	case clients.DeploymentStatusQueued, clients.DeploymentStatusAwaitingNode:
+		// awaiting_node is a queued job whose TTL lapsed unconfirmed — the same
+		// re-send class as queued: the node still owes us this operation.
 		return action, true
 	case clients.DeploymentStatusFailed:
 		if action == jobs.ActionClientDelete || action == jobs.ActionClientRotateSecret {

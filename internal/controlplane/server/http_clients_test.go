@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/clients"
+	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
+	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
 	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -786,6 +789,130 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 	}
 	if len(deployments) != 1 {
 		t.Fatalf("len(deployments) = %d, want %d", len(deployments), 1)
+	}
+}
+
+// TestRecordClientJobResultPublishesClientsUpdated is the R10b/Task-5 gap
+// (C8): the main client-job-result path (create/update/delete/rotate)
+// updated the deployment row but never told the web dashboard, so a live
+// success or failure only surfaced on the next poll. Both a success and a
+// failure result must publish clients.updated for the affected client — a
+// node reporting a failure is exactly the kind of transition an operator
+// needs to see live, not just a success.
+func TestRecordClientJobResultPublishesClientsUpdated(t *testing.T) {
+	now := time.Date(2026, time.March, 19, 9, 15, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	defaultGroupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-000001",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
+	})
+
+	client, _, _, err := server.createClient(context.Background(), "user-000001", clientMutationInput{
+		Name:          "alice",
+		FleetGroupIDs: []string{defaultGroupID},
+	}, now)
+	if err != nil {
+		t.Fatalf("createClient() error = %v", err)
+	}
+	createJob := latestQueuedJob(t, server, jobs.ActionClientCreate)
+
+	// Subscribe only after setup so the create's own publish (from
+	// replaceClientStateWithContext) doesn't pollute the assertions below.
+	ch, cancel := server.events.Subscribe()
+	defer cancel()
+
+	server.recordClientJobResultWithContext(context.Background(), "agent-000001", createJob.ID, true, "ok", "{}", now.Add(time.Minute))
+	assertClientsUpdatedPublished(t, ch, string(client.ID))
+
+	deleteAt := now.Add(2 * time.Minute)
+	if err := server.deleteClient(context.Background(), string(client.ID), "user-000001", deleteAt); err != nil {
+		t.Fatalf("deleteClient() error = %v", err)
+	}
+	deleteJob := latestQueuedJob(t, server, jobs.ActionClientDelete)
+	// The delete's own enqueue path also publishes; drain it before the
+	// job-result assertion so the two publishes aren't conflated.
+	assertClientsUpdatedPublished(t, ch, string(client.ID))
+
+	server.recordClientJobResultWithContext(context.Background(), "agent-000001", deleteJob.ID, false, "node rejected delete", "{}", deleteAt.Add(time.Minute))
+	assertClientsUpdatedPublished(t, ch, string(client.ID))
+}
+
+// TestRecordClientJobResultDoesNotPublishOnNoOpBranches guards the other
+// direction: a job result that doesn't actually touch a tracked deployment
+// (unknown job, non-client action, or a client that's no longer tracked)
+// must not spam clients.updated.
+func TestRecordClientJobResultDoesNotPublishOnNoOpBranches(t *testing.T) {
+	now := time.Date(2026, time.March, 19, 9, 15, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	ch, cancel := server.events.Subscribe()
+	defer cancel()
+
+	// Unknown job ID: jobByID lookup fails, early return before any publish.
+	server.recordClientJobResultWithContext(context.Background(), "agent-000001", "no-such-job", true, "ok", "{}", now)
+
+	select {
+	case evt := <-ch:
+		t.Fatalf("unexpected event published for unknown job: %+v", evt)
+	default:
+	}
+}
+
+// assertClientsUpdatedPublished drains events off ch, skipping any that
+// aren't clients.updated (e.g. the jobs.created event a job enqueue also
+// fires), and asserts the first clients.updated event found carries the
+// given client ID. Fails the test if none is immediately available (Publish
+// is synchronous, so a published event is already in the buffered channel by
+// the time the caller returns).
+func assertClientsUpdatedPublished(t *testing.T, ch <-chan eventbus.Event, wantClientID string) {
+	t.Helper()
+	for {
+		select {
+		case evt := <-ch:
+			if evt.Type != cpevents.TypeClientsUpdated {
+				continue
+			}
+			data, ok := evt.Data.(map[string]any)
+			if !ok {
+				t.Fatalf("event data type = %T, want map[string]any", evt.Data)
+			}
+			// publishClientsUpdated accepts `any`; different callers pass
+			// either a plain string or a clients.ClientID (identical
+			// underlying string, different dynamic type), so compare the
+			// formatted value rather than via ==, which would treat the two
+			// types as unequal.
+			if got := fmt.Sprintf("%v", data["client_id"]); got != wantClientID {
+				t.Fatalf("event client_id = %v, want %q", got, wantClientID)
+			}
+			return
+		default:
+			t.Fatal("expected a clients.updated event, got none")
+		}
 	}
 }
 

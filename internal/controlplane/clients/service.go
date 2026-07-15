@@ -373,6 +373,34 @@ func (s *Service) Get(ctx context.Context, id ClientID) (Client, error) {
 	return c, nil
 }
 
+// NameTaken reports whether a LIVING client other than excludeID already
+// carries this name. Client names are the Telemt username — two managed
+// clients sharing one name collapse into a single Telemt user on any
+// common node (mutual secret/limit overwrite, shared-user removal on
+// delete), so the panel enforces global name uniqueness among non-deleted
+// clients. Pass excludeID = "" on create; on update pass the client's own
+// ID so renaming a client to its current name is allowed.
+//
+// Walks mirrorNamesIndex[name] (O(clients-with-that-name)) under the read
+// lock. A tiny check-then-create race between this call and the subsequent
+// persist is accepted: the panel is a single instance and the window is
+// microseconds; the DB has no unique constraint on name, so the loser of
+// such a race would create a duplicate — deemed acceptable versus the
+// locking complexity of closing it (see task-6 brief).
+func (s *Service) NameTaken(name string, excludeID ClientID) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for id := range s.mirrorNamesIndex[name] {
+		if id == excludeID {
+			continue
+		}
+		if c, ok := s.mirrorClients[id]; ok && c.DeletedAt == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // List returns all cached Clients (snapshot of the mirror at call
 // time). Order is unspecified — callers that need ordering must sort.
 func (s *Service) List(ctx context.Context) ([]Client, error) {

@@ -851,3 +851,271 @@ func TestAdoptDiscoveredClientGeneratesSubscriptionToken(t *testing.T) {
 		t.Fatalf("resolved client ID = %q, want %q", resolved.ID, client.ID)
 	}
 }
+
+// countAuditActions returns how many events in got have the given action.
+func countAuditActions(events []AuditEvent, action string) int {
+	n := 0
+	for _, ev := range events {
+		if ev.Action == action {
+			n++
+		}
+	}
+	return n
+}
+
+// TestReconcileSurfacesOrphanedPanelClientID guards R10b Task 3 / C1->C2: a
+// discovered record carrying a panel-assigned client_id that does not
+// resolve to ANY managed client (deleted, rotated away, or simply unknown
+// to this panel) must be surfaced as an audited anomaly instead of being
+// silently skipped as "the panel already knows about this". Before the
+// fix, any non-empty client_id short-circuited the loop unconditionally.
+func TestReconcileSurfacesOrphanedPanelClientID(t *testing.T) {
+	now := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
+	agentID := "agent-orphan-1"
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     "node-A",
+		FleetGroupID: fleetGroupID,
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	record := &gatewayrpc.ClientDetailRecord{
+		ClientName: "ghost-user",
+		Secret:     "9999999999999999999999999999999a",
+		ClientId:   "client-does-not-exist",
+	}
+
+	// First tick: orphan record → audited once, no discovered_client row.
+	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
+
+	got, err := server.listDiscoveredClients(ctx)
+	if err != nil {
+		t.Fatalf("listDiscoveredClients() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("listDiscoveredClients() = %+v, want none (orphan must not create a discovered_client row)", got)
+	}
+
+	server.batchWriter.Flush(ctx)
+	events, err := server.auditFirstPage(ctx)
+	if err != nil {
+		t.Fatalf("auditFirstPage() error = %v", err)
+	}
+	if n := countAuditActions(events, "clients.discovery_orphan"); n != 1 {
+		t.Fatalf("clients.discovery_orphan audit count after 1st tick = %d, want 1; actions = %v", n, auditActions(events))
+	}
+	var orphanEvent *AuditEvent
+	for i := range events {
+		if events[i].Action == "clients.discovery_orphan" {
+			orphanEvent = &events[i]
+			break
+		}
+	}
+	if orphanEvent == nil {
+		t.Fatal("expected a clients.discovery_orphan audit event")
+	}
+	if orphanEvent.TargetID != "client-does-not-exist" {
+		t.Fatalf("orphan audit TargetID = %q, want %q", orphanEvent.TargetID, "client-does-not-exist")
+	}
+	if got := orphanEvent.Details["agent_id"]; got != agentID {
+		t.Fatalf("orphan audit details agent_id = %v, want %q", got, agentID)
+	}
+	if got := orphanEvent.Details["client_id"]; got != "client-does-not-exist" {
+		t.Fatalf("orphan audit details client_id = %v, want %q", got, "client-does-not-exist")
+	}
+	if got := orphanEvent.Details["name"]; got != "ghost-user" {
+		t.Fatalf("orphan audit details name = %v, want %q", got, "ghost-user")
+	}
+
+	// Second, identical tick: same (agent, client_id) pair must NOT
+	// duplicate the audit event.
+	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now.Add(time.Minute))
+	server.batchWriter.Flush(ctx)
+	events2, err := server.auditFirstPage(ctx)
+	if err != nil {
+		t.Fatalf("auditFirstPage() error (2nd tick) = %v", err)
+	}
+	if n := countAuditActions(events2, "clients.discovery_orphan"); n != 1 {
+		t.Fatalf("clients.discovery_orphan audit count after 2nd (identical) tick = %d, want 1 (deduped); actions = %v", n, auditActions(events2))
+	}
+
+	got2, err := server.listDiscoveredClients(ctx)
+	if err != nil {
+		t.Fatalf("listDiscoveredClients() error = %v", err)
+	}
+	if len(got2) != 0 {
+		t.Fatalf("listDiscoveredClients() after 2nd tick = %+v, want none", got2)
+	}
+}
+
+// TestReconcileSkipsLiveManagedPanelClientID verifies unchanged behaviour:
+// a record whose panel-assigned client_id resolves to a live (non-deleted)
+// managed client is skipped as before — no orphan audit, no discovered row.
+func TestReconcileSkipsLiveManagedPanelClientID(t *testing.T) {
+	now := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
+	agentID := "agent-live-1"
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     "node-A",
+		FleetGroupID: fleetGroupID,
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	// A managed client NOT assigned to this agent (so managedClientIdentifiersForAgent
+	// doesn't already skip it as "managed by name/secret" — we want the
+	// client_id branch specifically to be exercised).
+	liveClient := managedClient{
+		ID:        server.nextClientID(),
+		Name:      "internal-user-live",
+		Secret:    "1010101010101010101010101010101a",
+		Enabled:   true,
+		CreatedAt: now.Add(-time.Hour),
+		UpdatedAt: now.Add(-time.Hour),
+	}
+	if err := server.replaceClientStateWithContext(ctx, liveClient, nil, nil); err != nil {
+		t.Fatalf("replaceClientStateWithContext() error = %v", err)
+	}
+
+	record := &gatewayrpc.ClientDetailRecord{
+		ClientName: "reported-under-different-name",
+		Secret:     "2020202020202020202020202020202b",
+		ClientId:   string(liveClient.ID),
+	}
+
+	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
+
+	got, err := server.listDiscoveredClients(ctx)
+	if err != nil {
+		t.Fatalf("listDiscoveredClients() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("listDiscoveredClients() = %+v, want none (live-managed client_id must be skipped, not discovered)", got)
+	}
+
+	server.batchWriter.Flush(ctx)
+	events, err := server.auditFirstPage(ctx)
+	if err != nil {
+		t.Fatalf("auditFirstPage() error = %v", err)
+	}
+	if n := countAuditActions(events, "clients.discovery_orphan"); n != 0 {
+		t.Fatalf("clients.discovery_orphan audit count = %d, want 0 (live-managed client_id is not an orphan); actions = %v", n, auditActions(events))
+	}
+}
+
+// TestReconcileSurfacesTombstonedPanelClientID verifies that a record whose
+// client_id belonged to a managed client that has since been deleted
+// (tombstoned) is treated as an orphan, not silently skipped — this is the
+// exact revocation-hole scenario (C1->C2) the task targets: the panel
+// deleted the client, but an offline node kept serving it.
+func TestReconcileSurfacesTombstonedPanelClientID(t *testing.T) {
+	now := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	fleetGroupID := seedTestFleetGroup(t, store, "default", now.Add(-time.Minute))
+	agentID := "agent-tombstone-1"
+	if err := store.PutAgent(ctx, storage.AgentRecord{
+		ID:           agentID,
+		NodeName:     "node-A",
+		FleetGroupID: fleetGroupID,
+		Version:      "dev",
+		LastSeenAt:   now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	deletedClient := managedClient{
+		ID:        server.nextClientID(),
+		Name:      "internal-user-deleted",
+		Secret:    "3030303030303030303030303030303c",
+		Enabled:   true,
+		CreatedAt: now.Add(-time.Hour),
+		UpdatedAt: now.Add(-time.Hour),
+	}
+	if err := server.replaceClientStateWithContext(ctx, deletedClient, nil, nil); err != nil {
+		t.Fatalf("replaceClientStateWithContext() error = %v", err)
+	}
+	// Delete the managed client through the real service path: this
+	// soft-deletes the row in storage AND evicts it from the in-memory
+	// mirror (verified: clients.Service.Delete/deleteMirrorClientLocked
+	// removes the entry outright rather than leaving DeletedAt set in
+	// place), so clientsSvc.Get subsequently returns ErrNotFound for it.
+	if err := server.clientsSvc.Delete(ctx, deletedClient.ID); err != nil {
+		t.Fatalf("clientsSvc.Delete() error = %v", err)
+	}
+
+	record := &gatewayrpc.ClientDetailRecord{
+		ClientName: "reported-after-delete",
+		Secret:     "4040404040404040404040404040404d",
+		ClientId:   string(deletedClient.ID),
+	}
+
+	server.reconcileDiscoveredClients(ctx, agentID, []*gatewayrpc.ClientDetailRecord{record}, false, now)
+
+	got, err := server.listDiscoveredClients(ctx)
+	if err != nil {
+		t.Fatalf("listDiscoveredClients() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("listDiscoveredClients() = %+v, want none (orphan must not create a discovered_client row)", got)
+	}
+
+	server.batchWriter.Flush(ctx)
+	events, err := server.auditFirstPage(ctx)
+	if err != nil {
+		t.Fatalf("auditFirstPage() error = %v", err)
+	}
+	if n := countAuditActions(events, "clients.discovery_orphan"); n != 1 {
+		t.Fatalf("clients.discovery_orphan audit count = %d, want 1 (tombstoned client_id must be treated as orphan); actions = %v", n, auditActions(events))
+	}
+}

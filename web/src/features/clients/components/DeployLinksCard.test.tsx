@@ -38,6 +38,52 @@ function makeDeployment(
   };
 }
 
+describe("DeployLinksCard status badge", () => {
+  // R10b Task 2: a deployment whose job expired before an offline node
+  // confirmed it comes back as "awaiting_node" (reconciler will re-send
+  // on reconnect). That's a wait state, not a failure — the badge must
+  // read as a distinct warning tone, not the neutral/default tone the
+  // raw-status fallback would otherwise produce, and not the error tone
+  // reserved for "failed".
+  it("renders a warning-toned 'awaiting node' badge for an awaiting_node deployment", () => {
+    render(
+      <DeployLinksCard
+        deployments={[makeDeployment({ status: "awaiting_node" })]}
+      />,
+    );
+
+    const badge = screen.getByText("awaiting node");
+    expect(badge.className).toContain("text-status-warn");
+    expect(badge.className).not.toContain("text-status-error");
+    expect(badge.className).not.toContain("bg-fg-faint");
+    // The raw backend status string must not leak into the UI verbatim.
+    expect(screen.queryByText("awaiting_node")).toBeNull();
+  });
+
+  // Tone-map follow-up: succeeded/failed/awaiting_node must render as a
+  // coherent escalation (green/red/amber) rather than all collapsing to
+  // the same neutral "default" tone — a genuinely failed deployment must
+  // not look identical to a succeeded one right next to the amber
+  // awaiting_node badge.
+  it("renders an ok-toned (green) badge for a succeeded deployment", () => {
+    render(<DeployLinksCard deployments={[makeDeployment({ status: "succeeded" })]} />);
+    const badge = screen.getByText("succeeded");
+    expect(badge.className).toContain("text-status-ok");
+    expect(badge.className).not.toContain("text-status-error");
+  });
+
+  it("renders an error-toned (red) badge for a failed deployment", () => {
+    render(
+      <DeployLinksCard
+        deployments={[makeDeployment({ status: "failed", lastError: "telemt rejected" })]}
+      />,
+    );
+    const badge = screen.getByText("failed");
+    expect(badge.className).toContain("text-status-error");
+    expect(badge.className).not.toContain("text-status-ok");
+  });
+});
+
 describe("DeployLinksCard QuotaCell", () => {
   it("renders a quota progress bar + used/quota label + relative reset when quota and history are set", () => {
     // Anchor the relative-time label by using a recent epoch — exact

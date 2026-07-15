@@ -28,6 +28,23 @@ import {
 
 const LazyQRCode = lazy(() => import("@/ui/compositions/internal/QRCode"));
 
+/**
+ * Raw deployment `status` → i18n key, for statuses whose backend literal
+ * isn't fit to show verbatim. Only `awaiting_node` needs this today
+ * (R10b Task 2); every other status (`succeeded` / `queued` / `failed`)
+ * keeps rendering the raw string as before — mirrors the
+ * `localizeReason` "map known values, fall through to verbatim" pattern
+ * in `@/ui/lib/reason-text.ts`.
+ */
+const DEPLOY_STATUS_LABEL_KEYS: Record<string, string> = {
+  awaiting_node: "deployments.status.awaitingNode",
+};
+
+function deployStatusLabel(status: string, t: (key: string) => string): string {
+  const key = DEPLOY_STATUS_LABEL_KEYS[status];
+  return key ? t(key) : status;
+}
+
 // navigator.share is mobile-first and absent on most desktop browsers;
 // compute support once so the Share affordance only appears where it works.
 function canShare(): boolean {
@@ -404,7 +421,7 @@ export function DeployLinksCard({
                     {d.agentId.slice(0, 8)}…
                   </span>
                 )}
-                <Badge variant={tone}>{d.status}</Badge>
+                <Badge variant={tone}>{deployStatusLabel(d.status, t)}</Badge>
                 {d.desiredOperation && d.desiredOperation !== "none" && (
                   <Badge variant="accent">{d.desiredOperation}</Badge>
                 )}

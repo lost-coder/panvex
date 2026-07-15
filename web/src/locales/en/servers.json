@@ -107,6 +107,8 @@
     "metaUp": "up {{value}}",
     "metaReloads": "reloads: {{count}}",
     "modeUnknown": "Mode unknown",
+    "transportDrift": "Transport out of sync",
+    "transportDriftTitle": "The agent is connecting in a different direction than its saved transport mode. The panel is re-sending the switch — this clears once it reconnects the expected way.",
     "telemtLost": "Telemt connection lost",
     "telemtLostDetail": "since {{since}} UTC ({{elapsed}}). Make sure Telemt is running and listening on loopback. Metrics and mode are unavailable until the connection is restored.",
     "elapsedSec": "{{value}}s",
