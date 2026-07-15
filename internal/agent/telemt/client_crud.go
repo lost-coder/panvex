@@ -32,6 +32,13 @@ var ErrResetQuotaReadOnly = errors.New("telemt: API is in read-only mode")
 // a create (re-enable / drift-heal path).
 var ErrClientNotFound = errors.New("telemt: user not found")
 
+// ErrClientAlreadyExists is returned by CreateClient when Telemt answers
+// 409 user_exists — the username is already configured on the node. The
+// client payload is a full desired-state upsert, so callers converge by
+// falling back to the PATCH path (audit F6: a redelivered create after a
+// lost ack must not fail forever).
+var ErrClientAlreadyExists = errors.New("telemt: user already exists")
+
 // FetchActiveIPs fetches the /v1/stats/users/active-ips endpoint and returns per-user active IPs.
 func (c *Client) FetchActiveIPs(ctx context.Context) ([]UserActiveIPs, error) {
 	var users []UserActiveIPs
@@ -203,6 +210,19 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 
 	if response.StatusCode == http.StatusNotFound {
 		return ClientApplyResult{}, ErrClientNotFound
+	}
+	if response.StatusCode == http.StatusConflict {
+		// Telemt's create handler answers 409 code "user_exists" when the
+		// username is already configured (users.rs). The job payload is a
+		// full desired-state upsert, so callers use this sentinel to
+		// converge via the PATCH path instead of failing forever on a
+		// redelivered create (audit F6). Other 409s (e.g.
+		// last_user_forbidden) stay generic.
+		apiErr := decodeAPIError(response.Body, "apply client failed with status 409")
+		if strings.Contains(apiErr.Error(), "user_exists") {
+			return ClientApplyResult{}, fmt.Errorf("apply client: %w", ErrClientAlreadyExists)
+		}
+		return ClientApplyResult{}, fmt.Errorf("apply client failed: %w", apiErr)
 	}
 	if response.StatusCode >= http.StatusBadRequest {
 		return ClientApplyResult{}, fmt.Errorf("apply client failed: %w", decodeAPIError(response.Body, fmt.Sprintf("apply client failed with status %d", response.StatusCode)))

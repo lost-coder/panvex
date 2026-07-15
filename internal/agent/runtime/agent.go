@@ -965,6 +965,14 @@ func (a *Agent) handleClientCreateJob(ctx context.Context, payload clientJobPayl
 		return result
 	}
 	applyResult, err := a.telemt.CreateClient(ctx, managedClient)
+	// A redelivered create (panel retry after a lost ack) hits 409
+	// user_exists. The payload carries the FULL desired state, so converge
+	// via the PATCH path — symmetric to update's 404→create fallback and
+	// delete's absent-user tolerance (audit F6); failing forever here left
+	// an already-correct node permanently "failed" in the panel.
+	if errors.Is(err, telemt.ErrClientAlreadyExists) {
+		applyResult, err = a.telemt.UpdateClient(ctx, managedClient)
+	}
 	if err != nil {
 		result.Message = err.Error()
 		return result
