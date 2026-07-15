@@ -77,6 +77,21 @@ const (
 	defaultRateLimitWindow          = time.Minute
 )
 
+// Lock ordering invariant for the Server struct (P2-LOG-11 / M-C11 / L-08):
+//
+//	s.mu  ->  s.metricsAuditMu
+//
+// Whenever two of these locks must be observed together, they MUST be taken
+// in the order above and released in the reverse order.
+//
+// Client/usage/deployment state is owned by clients.Service, which guards it
+// with its own internal lock. The server takes the Service lock (via Service
+// methods) while holding s.mu in applyAgentSnapshot/purgeAgentInMemory, so the
+// effective ordering is s.mu -> Service.mu. Functions that need data from BOTH
+// the agent maps and the Service snapshot the agent fields under s.mu, release
+// it, then call into the Service — they never nest the two. See
+// resolveClientTargetAgentIDs (clients_flow.go) for the snapshot pattern.
+//
 // Server wires local-auth, inventory, jobs, and operator APIs into one HTTP surface.
 type Server struct {
 	// gateway hosts the agent-facing gRPC surface (Connect stream, unary

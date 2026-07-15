@@ -62,8 +62,8 @@ func TestApplyBulkClientDelete_OperationalErrorIsRetryableNotNotFound(t *testing
 	// operational error (not storage.ErrNotFound) by closing the store
 	// while the in-memory mirror (clientsSvc) still believes the client
 	// exists — deleteClient's clientDetailSnapshot hit succeeds (mirror
-	// lookup, no store access) but replaceClientStateWithContext's
-	// SaveState call hits the now-closed store and fails operationally.
+	// lookup, no store access) but clients.Service's SaveState call hits
+	// the now-closed store and fails operationally.
 	if err := server.store.Close(); err != nil {
 		t.Fatalf("store.Close: %v", err)
 	}

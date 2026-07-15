@@ -41,8 +41,9 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	persistErr := errors.New("persist failure injected")
 	// After Wave 4.2 the production path is clientsSvc.SaveState →
 	// uow.Do → clients.Repository.Save, not s.store.PutClient. Failure is
-	// injected at the Repository layer so replaceClientStateWithContext
-	// returns the error before the in-memory state is committed.
+	// injected at the Repository layer so clients.Service's
+	// saveStateAndPublish returns the error before the in-memory state is
+	// committed.
 	// saveErr starts nil so the initial seed (below) can populate the
 	// clients.Service mirror via SaveState; it is set just before the
 	// delete so the persist-failure path is exercised.
@@ -116,8 +117,8 @@ func TestDeleteClientPersistsStateBeforeJob(t *testing.T) {
 	}
 
 	// The in-memory record must remain live (DeletedAt=nil) because persist
-	// returned an error; replaceClientStateWithContext bails out before
-	// touching the mirror.
+	// returned an error; clients.Service's saveStateAndPublish bails out
+	// before touching the mirror.
 	stored, err := server.clientsSvc.Get(ctx, clients.ClientID(clientID))
 	if err != nil {
 		t.Fatalf("client %s missing from mirror after failed delete: %v", clientID, err)
