@@ -202,6 +202,32 @@ func (s *Server) readOnlyAgents(targetIDs []string) map[string]bool {
 	return out
 }
 
+// createJobActionAllowed gates which actions the generic POST /api/jobs
+// endpoint may enqueue (wire-audit I1). createJobRequest has no payload_json
+// field, so any action whose agent handler decodes a payload used to be
+// accepted here, dispatched, and then failed on EVERY agent with a JSON
+// decode error — nothing warned at enqueue time.
+//
+//   - runtime.restart / telemetry.refresh_diagnostics: payload-free on the
+//     agent (agent.go HandleJob decodes nothing) → dispatchable as-is.
+//   - agent.self-update: REQUIRES {version, release_base_url}; the panel
+//     builds it server-side (selfUpdateJobPayloadForCreate) so the
+//     dashboard's bulk self-update button keeps working.
+//   - client.create/update/delete/rotate_secret, client.reset_quota,
+//     config.apply, switch_transport_mode: payload-carrying, enqueued
+//     exclusively by their dedicated panel flows which construct the
+//     payload (clients flow, config-apply handler, transport-mode PUT).
+func createJobActionAllowed(action jobs.Action) bool {
+	switch action {
+	case jobs.ActionRuntimeRestart,
+		jobs.ActionTelemetryRefreshDiagnostics,
+		jobs.ActionAgentSelfUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
 // validateCreateJobRequest gates the operator's createJob payload
 // against role, scope, and action validity. Returns (scope, true)
 // only when all checks pass; on failure it writes the appropriate
@@ -215,6 +241,10 @@ func (s *Server) validateCreateJobRequest(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "unknown job action")
 		return FleetScopeAccess{}, false
 	}
+	if !createJobActionAllowed(jobs.Action(request.Action)) {
+		writeError(w, http.StatusBadRequest, "action carries a payload this endpoint cannot supply; use its dedicated endpoint")
+		return FleetScopeAccess{}, false
+	}
 	// R-S-14: every target agent must sit inside the operator's scope.
 	scope, ok := s.requireFleetScope(w, r, user)
 	if !ok {
@@ -225,6 +255,35 @@ func (s *Server) validateCreateJobRequest(w http.ResponseWriter, r *http.Request
 		return FleetScopeAccess{}, false
 	}
 	return scope, true
+}
+
+// selfUpdateJobPayloadForCreate assembles the agent.self-update payload for
+// the generic jobs endpoint, resolving the target version (cached latest)
+// and repo exactly like the dedicated per-agent update endpoint
+// (handleAgentUpdate). Writes the HTTP error and returns ok=false when no
+// version is known or the configured repo is invalid — an honest 400 at
+// enqueue time instead of a job that fails on every agent.
+func (s *Server) selfUpdateJobPayloadForCreate(ctx context.Context, w http.ResponseWriter) (string, bool) {
+	s.settingsMu.RLock()
+	state := s.updateState
+	settings := s.updateSettings
+	s.settingsMu.RUnlock()
+
+	targetVersion, ok := resolveAgentTargetVersion(w, "", state)
+	if !ok {
+		return "", false
+	}
+	if err := validateGitHubRepo(settings.GitHubRepo); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid github_repo configured")
+		return "", false
+	}
+	payloadJSON, err := buildAgentDirectUpdatePayload(settings.GitHubRepo, targetVersion)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "create job: build self-update payload failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to build update payload")
+		return "", false
+	}
+	return string(payloadJSON), true
 }
 
 // writeCreateJobError maps Enqueue errors to HTTP status codes.
@@ -257,6 +316,18 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 			return
 		}
 
+		// agent.self-update is the one allowed action that requires a
+		// payload; build it here so the job dispatched from this endpoint
+		// carries what the agent needs (see createJobActionAllowed).
+		payloadJSON := ""
+		if jobs.Action(request.Action) == jobs.ActionAgentSelfUpdate {
+			var ok bool
+			payloadJSON, ok = s.selfUpdateJobPayloadForCreate(r.Context(), w)
+			if !ok {
+				return
+			}
+		}
+
 		readOnlyAgents := s.readOnlyAgents(request.TargetAgentIDs)
 
 		job, err := s.jobs.Enqueue(r.Context(), jobs.CreateJobInput{
@@ -266,6 +337,7 @@ func (s *Server) handleCreateJob() http.HandlerFunc {
 			IdempotencyKey: request.IdempotencyKey,
 			ActorID:        session.UserID,
 			ReadOnlyAgents: readOnlyAgents,
+			PayloadJSON:    payloadJSON,
 		}, s.now())
 		if err != nil {
 			writeCreateJobError(r.Context(), w, err)
