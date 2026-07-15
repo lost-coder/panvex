@@ -28,7 +28,6 @@ func (failingTelemt) FetchSystemInfo(context.Context) (telemt.SystemInfo, error)
 func (failingTelemt) FetchDiscoveredUsers(context.Context, string) ([]telemt.DiscoveredUser, error) {
 	return nil, nil
 }
-func (failingTelemt) ExecuteRuntimeReload(context.Context) error { return nil }
 func (failingTelemt) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
 	return telemt.ClientApplyResult{}, nil
 }
@@ -69,10 +68,6 @@ func (c *fakeDiagnosticsRefreshTelemtClient) FetchClientUsageFromMetrics(context
 
 func (c *fakeDiagnosticsRefreshTelemtClient) FetchActiveIPs(context.Context) ([]telemt.UserActiveIPs, error) {
 	return nil, nil
-}
-
-func (c *fakeDiagnosticsRefreshTelemtClient) ExecuteRuntimeReload(context.Context) error {
-	return nil
 }
 
 func (c *fakeDiagnosticsRefreshTelemtClient) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {

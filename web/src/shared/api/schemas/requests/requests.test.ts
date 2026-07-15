@@ -174,7 +174,6 @@ describe("createEnrollmentTokenRequestSchema", () => {
 
 describe("createJobRequestSchema", () => {
   const validActions = [
-    "runtime.reload",
     "users.create",
     "client.create",
     "client.update",
@@ -209,7 +208,7 @@ describe("createJobRequestSchema", () => {
   it("requires at least one target agent", () => {
     expect(() =>
       createJobRequestSchema.parse({
-        action: "runtime.reload",
+        action: "telemetry.refresh_diagnostics",
         target_agent_ids: [],
         idempotency_key: "k",
         ttl_seconds: 60,

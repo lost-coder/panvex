@@ -50,7 +50,7 @@
   },
   "empty": {
     "jobsTitle": "Jobs will appear here",
-    "jobsDescription": "Mutations run by operators (client rollouts, runtime reloads, self-updates) are recorded here once the first one fires.",
+    "jobsDescription": "Mutations run by operators (client rollouts, runtime restarts, self-updates) are recorded here once the first one fires.",
     "jobsFilteredTitle": "No jobs match the filter",
     "jobsFilteredDescription": "Widen the filter or clear the search.",
     "auditTitle": "Audit trail is empty",

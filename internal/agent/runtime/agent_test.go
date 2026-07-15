@@ -392,34 +392,6 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 	}
 }
 
-func TestAgentHandleJobExecutesRuntimeReload(t *testing.T) {
-	client := &fakeTelemtClient{}
-	agent := New(Config{
-		AgentID:      "agent-1",
-		NodeName:     "node-a",
-		FleetGroupID: "ams-1",
-		Version:      "1.0.0",
-	}, client)
-
-	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		Id:             "job-1",
-		Action:         "runtime.reload",
-		IdempotencyKey: "key-1",
-		PayloadJson:    `{"scope":"telemt"}`,
-	}, time.Date(2026, time.March, 14, 8, 0, 0, 0, time.UTC))
-
-	if !result.Success {
-		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
-	}
-	if result.ResultJson != "" {
-		t.Fatalf("HandleJob() ResultJson = %q, want empty string", result.ResultJson)
-	}
-
-	if !client.reloadCalled {
-		t.Fatal("HandleJob() did not invoke Telemt runtime reload")
-	}
-}
-
 func TestAgentHandleJobDeduplicatesRepeatedDelivery(t *testing.T) {
 	client := &fakeTelemtClient{}
 	agent := New(Config{
@@ -431,7 +403,7 @@ func TestAgentHandleJobDeduplicatesRepeatedDelivery(t *testing.T) {
 
 	job := &gatewayrpc.JobCommand{
 		Id:             "job-duplicate",
-		Action:         "runtime.reload",
+		Action:         "telemetry.refresh_diagnostics",
 		IdempotencyKey: "key-dup",
 	}
 
@@ -447,8 +419,8 @@ func TestAgentHandleJobDeduplicatesRepeatedDelivery(t *testing.T) {
 	if second.Message != first.Message {
 		t.Fatalf("second HandleJob() Message = %q, want %q", second.Message, first.Message)
 	}
-	if client.reloadCalls != 1 {
-		t.Fatalf("reload call count = %d, want %d", client.reloadCalls, 1)
+	if client.invalidateSlowDataCalls != 1 {
+		t.Fatalf("diagnostics-refresh call count = %d, want %d", client.invalidateSlowDataCalls, 1)
 	}
 }
 
@@ -464,7 +436,7 @@ func TestAgentHandleJobReexecutesAfterDedupRetentionWindow(t *testing.T) {
 
 	job := &gatewayrpc.JobCommand{
 		Id:             "job-expired-cache",
-		Action:         "runtime.reload",
+		Action:         "telemetry.refresh_diagnostics",
 		IdempotencyKey: "key-expired-cache",
 	}
 
@@ -477,8 +449,8 @@ func TestAgentHandleJobReexecutesAfterDedupRetentionWindow(t *testing.T) {
 	if !second.Success {
 		t.Fatalf("second HandleJob() Success = false, want true, message = %q", second.Message)
 	}
-	if client.reloadCalls != 2 {
-		t.Fatalf("reload call count = %d, want %d", client.reloadCalls, 2)
+	if client.invalidateSlowDataCalls != 2 {
+		t.Fatalf("diagnostics-refresh call count = %d, want %d", client.invalidateSlowDataCalls, 2)
 	}
 }
 
@@ -755,8 +727,6 @@ type fakeTelemtClient struct {
 	metricsUsage            []telemt.ClientUsage
 	metricsUptime           float64
 	activeIPs               []telemt.UserActiveIPs
-	reloadCalled            bool
-	reloadCalls             int
 	createdClient           telemt.ManagedClient
 	updatedClient           telemt.ManagedClient
 	deletedClientName       string
@@ -791,12 +761,6 @@ func (c *fakeTelemtClient) FetchClientUsageFromMetrics(context.Context) (telemt.
 
 func (c *fakeTelemtClient) FetchActiveIPs(context.Context) ([]telemt.UserActiveIPs, error) {
 	return c.activeIPs, nil
-}
-
-func (c *fakeTelemtClient) ExecuteRuntimeReload(context.Context) error {
-	c.reloadCalls++
-	c.reloadCalled = true
-	return nil
 }
 
 func (c *fakeTelemtClient) CreateClient(_ context.Context, client telemt.ManagedClient) (telemt.ClientApplyResult, error) {

@@ -51,10 +51,10 @@ export interface ServerListItem {
 /**
  * Bulk actions operators can trigger against a multi-selection of
  * servers on the Servers list. Each value maps to a backend job
- * action; the UI stays compact (reload / upgrade today, more as
- * backend support lands).
+ * action; the UI stays compact (upgrade today, more as backend
+ * support lands).
  */
-export type BulkServerAction = "reload" | "selfUpdate";
+export type BulkServerAction = "selfUpdate";
 
 export interface ServersPageProps {
   servers: ServerListItem[];

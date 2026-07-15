@@ -63,7 +63,7 @@
   },
   "createJobRequest": {
     "full": {
-      "action": "runtime.reload",
+      "action": "telemetry.refresh_diagnostics",
       "target_agent_ids": ["agent-1", "agent-2"],
       "idempotency_key": "idemp-abc",
       "ttl_seconds": 300

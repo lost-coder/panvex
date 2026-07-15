@@ -57,7 +57,7 @@ func BenchmarkServiceEnqueueFanOut10(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := svc.Enqueue(context.Background(), CreateJobInput{
-			Action:         ActionRuntimeReload,
+			Action:         ActionTelemetryRefreshDiagnostics,
 			TargetAgentIDs: targets,
 			TTL:            30 * time.Second,
 			IdempotencyKey: fmt.Sprintf("bench-fanout-%d", i),
@@ -80,7 +80,7 @@ func BenchmarkServicePendingForAgent(b *testing.B) {
 		// Round-robin across 10 agents so each agent ends up with ~100 jobs.
 		agent := fmt.Sprintf("agent-%02d", i%10)
 		if _, err := svc.Enqueue(context.Background(), CreateJobInput{
-			Action:         ActionRuntimeReload,
+			Action:         ActionTelemetryRefreshDiagnostics,
 			TargetAgentIDs: []string{agent},
 			TTL:            30 * time.Second,
 			IdempotencyKey: fmt.Sprintf("preload-%d", i),

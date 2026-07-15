@@ -27,8 +27,6 @@ var (
 type Action string
 
 const (
-	// ActionRuntimeReload reloads the runtime configuration through Telemt.
-	ActionRuntimeReload Action = "runtime.reload"
 	// ActionRuntimeRestart restarts the local Telemt process on the target
 	// node via the agent's configured restart strategy (e.g. `systemctl
 	// restart`). Heavier than a reload — used to recover a degraded node.
@@ -75,8 +73,7 @@ const (
 // IsValidAction reports whether the action is a recognized job type.
 func IsValidAction(a Action) bool {
 	switch a {
-	case ActionRuntimeReload,
-		ActionRuntimeRestart,
+	case ActionRuntimeRestart,
 		ActionUsersCreate,
 		ActionClientCreate,
 		ActionClientUpdate,
@@ -644,7 +641,7 @@ func (s *Service) Enqueue(ctx context.Context, input CreateJobInput, now time.Ti
 
 func isMutatingAction(action Action) bool {
 	switch action {
-	case ActionUsersCreate, ActionRuntimeReload, ActionClientCreate, ActionClientUpdate, ActionClientDelete, ActionClientRotateSecret:
+	case ActionUsersCreate, ActionClientCreate, ActionClientUpdate, ActionClientDelete, ActionClientRotateSecret:
 		return true
 	default:
 		return false

@@ -31,7 +31,7 @@ func TestListRecentTopKMatchesReference(t *testing.T) {
 	for i := 0; i < 500; i++ {
 		created := base.Add(time.Duration(rng.Intn(100)) * time.Minute)
 		if _, err := svc.Enqueue(context.Background(), CreateJobInput{
-			Action:         ActionRuntimeReload,
+			Action:         ActionTelemetryRefreshDiagnostics,
 			TargetAgentIDs: []string{fmt.Sprintf("agent-%d", i)},
 			TTL:            0,
 			IdempotencyKey: fmt.Sprintf("key-%d", i),
@@ -62,7 +62,7 @@ func TestListRecentStillExpiresStaleJobs(t *testing.T) {
 	svc.SetNow(func() time.Time { return now })
 
 	if _, err := svc.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "key-expire",
@@ -89,7 +89,7 @@ func BenchmarkListRecent10kJobs(b *testing.B) {
 	}
 	for i := 0; i < 10000; i++ {
 		if _, err := svc.Enqueue(context.Background(), CreateJobInput{
-			Action:         ActionRuntimeReload,
+			Action:         ActionTelemetryRefreshDiagnostics,
 			TargetAgentIDs: []string{fmt.Sprintf("agent-%d", i)},
 			TTL:            0,
 			IdempotencyKey: fmt.Sprintf("key-%d", i),

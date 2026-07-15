@@ -33,7 +33,7 @@ func runJobsContract(t *testing.T, open OpenStore) {
 			id := fmt.Sprintf("job-%02d", i)
 			if err := store.PutJob(ctx, storage.JobRecord{
 				ID:             id,
-				Action:         "runtime.reload",
+				Action:         "telemetry.refresh_diagnostics",
 				ActorID:        "user-1",
 				Status:         "queued",
 				CreatedAt:      base.Add(time.Duration(i) * time.Minute),
@@ -98,7 +98,7 @@ func runJobsContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		job := storage.JobRecord{
 			ID:             "job-000001",
-			Action:         "runtime.reload",
+			Action:         "telemetry.refresh_diagnostics",
 			ActorID:        "user-000001",
 			Status:         "queued",
 			CreatedAt:      time.Date(2026, time.March, 15, 8, 30, 0, 0, time.UTC),

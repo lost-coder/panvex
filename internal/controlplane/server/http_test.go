@@ -253,7 +253,7 @@ func TestServerCreateJobRejectsViewerRole(t *testing.T) {
 	}, nil)
 
 	jobResponse := performJSONRequest(t, server, http.MethodPost, "/api/jobs", map[string]any{
-		"action":           "runtime.reload",
+		"action":           "telemetry.refresh_diagnostics",
 		"target_agent_ids": []string{"agent-1"},
 		"idempotency_key":  "job-1",
 		"ttl_seconds":      60,
@@ -308,7 +308,7 @@ func TestServerCreateJobAcceptsOperatorWithTotp(t *testing.T) {
 	}
 
 	jobResponse := performJSONRequest(t, server, http.MethodPost, "/api/jobs", map[string]any{
-		"action":           "runtime.reload",
+		"action":           "telemetry.refresh_diagnostics",
 		"target_agent_ids": []string{"agent-1"},
 		"idempotency_key":  "job-1",
 		"ttl_seconds":      60,
@@ -934,7 +934,7 @@ func TestHTTPJobsAndAuditSurviveRestart(t *testing.T) {
 	}
 
 	jobResponse := performJSONRequest(t, first, http.MethodPost, "/api/jobs", map[string]any{
-		"action":           "runtime.reload",
+		"action":           "telemetry.refresh_diagnostics",
 		"target_agent_ids": []string{agentOne.AgentID, agentTwo.AgentID},
 		"idempotency_key":  "reload-both",
 		"ttl_seconds":      60,
@@ -1558,7 +1558,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	server.presence.MarkConnected("agent-3", currentTime.Add(-2*time.Minute))
 
 	queuedJob, err := server.jobs.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "control-room-queued",
@@ -1569,7 +1569,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 		t.Fatalf("Enqueue(queued) error = %v", err)
 	}
 	runningJob, err := server.jobs.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Minute,
 		IdempotencyKey: "control-room-running",
@@ -1582,7 +1582,7 @@ func TestHTTPControlRoomSummarizesConnectedFleetAndActivity(t *testing.T) {
 	server.jobs.MarkDelivered(context.Background(), "agent-2", runningJob.ID, currentTime.Add(-80*time.Second))
 
 	failedJob, err := server.jobs.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-3"},
 		TTL:            time.Minute,
 		IdempotencyKey: "control-room-failed",

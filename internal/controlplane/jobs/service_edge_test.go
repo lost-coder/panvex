@@ -31,7 +31,7 @@ func TestLazyExpirySealsQueuedJob(t *testing.T) {
 	service.SetNow(func() time.Time { return currentNow })
 
 	if _, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "expire-key",
@@ -87,7 +87,7 @@ func TestRecordResultIdempotentForSealedTarget(t *testing.T) {
 	service.SetNow(func() time.Time { return currentNow })
 
 	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "seal-key",
@@ -152,7 +152,7 @@ func TestConcurrentEnqueueListRecordResult(t *testing.T) {
 			for i := 0; i < perEnq; i++ {
 				key := keyFor(w, i)
 				job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-					Action:         jobs.ActionRuntimeReload,
+					Action:         jobs.ActionTelemetryRefreshDiagnostics,
 					TargetAgentIDs: []string{"agent-1"},
 					TTL:            time.Hour,
 					IdempotencyKey: key,
@@ -258,7 +258,7 @@ func TestPersistedAcknowledgedTargetsRedispatchedAfterRestart(t *testing.T) {
 	first := jobs.NewServiceWithStore(context.Background(), store)
 	first.SetNow(func() time.Time { return now })
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "ack-restore-key",

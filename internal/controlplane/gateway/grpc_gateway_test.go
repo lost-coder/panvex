@@ -562,7 +562,7 @@ func TestDispatchReconnectRedeliveryAvoidsDuplicateRuntimeMutation(t *testing.T)
 		t.Fatalf("first command id = %q, want %q", firstCommand.GetId(), job.ID)
 	}
 
-	telemtClient := &fakeRuntimeReloadClient{}
+	telemtClient := &fakeAgentTelemtClient{}
 	agent := runtime.New(runtime.Config{
 		AgentID:      "agent-1",
 		NodeName:     "node-a",
@@ -574,8 +574,8 @@ func TestDispatchReconnectRedeliveryAvoidsDuplicateRuntimeMutation(t *testing.T)
 	if !firstResult.GetSuccess() {
 		t.Fatalf("first HandleJob() success = false, want true: %s", firstResult.GetMessage())
 	}
-	if telemtClient.reloadCalls != 1 {
-		t.Fatalf("reload call count after first execution = %d, want %d", telemtClient.reloadCalls, 1)
+	if telemtClient.invalidateCalls != 1 {
+		t.Fatalf("mutation call count after first execution = %d, want %d", telemtClient.invalidateCalls, 1)
 	}
 
 	// Simulate stream disconnect before result delivery, then trigger redelivery after lease timeout.
@@ -599,8 +599,8 @@ func TestDispatchReconnectRedeliveryAvoidsDuplicateRuntimeMutation(t *testing.T)
 	if !secondResult.GetSuccess() {
 		t.Fatalf("second HandleJob() success = false, want true: %s", secondResult.GetMessage())
 	}
-	if telemtClient.reloadCalls != 1 {
-		t.Fatalf("reload call count after redelivery = %d, want %d", telemtClient.reloadCalls, 1)
+	if telemtClient.invalidateCalls != 1 {
+		t.Fatalf("mutation call count after redelivery = %d, want %d", telemtClient.invalidateCalls, 1)
 	}
 
 	if err := g.processPriorityAgentMessage(context.Background(), "agent-1", &gatewayrpc.ConnectClientMessage{

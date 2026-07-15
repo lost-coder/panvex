@@ -95,8 +95,7 @@ export interface ServerDetailPageProps {
     transportDrift: boolean;
   };
   onBack?: (() => void) | undefined;
-  onReload?: (() => void) | undefined;
-  /** Restart the node's Telemt process (heavier than reload). */
+  /** Restart the node's Telemt process. */
   onRestart?: (() => void) | undefined;
   onBoostDetail?: (() => void) | undefined;
   agentConnection?: AgentConnectionData | undefined;

@@ -40,8 +40,6 @@ const (
 
 func pipelineForAction(action string) Pipeline {
 	switch action {
-	case "runtime.reload":
-		return PipelineRuntimeReload
 	case "telemetry.refresh_diagnostics":
 		return PipelineRuntimeReload
 	case "client.create", "client.update", "client.rotate_secret", "client.delete", "client.reset_quota":
@@ -63,11 +61,11 @@ func shouldSendRuntimeSnapshotAfterJob(action string, success bool) bool {
 // single-worker BY DESIGN; the lanes exist for isolation (a slow lane cannot
 // head-of-line-block another), not for intra-lane parallelism:
 //
-//   - runtime_reload: runtime.reload and telemetry.refresh_diagnostics share
-//     this lane on purpose — both hit the same local Telemt admin API, and a
-//     reload racing a diagnostics refresh would let the refresh observe a
-//     half-reloaded config. One worker serialises them. (The previous
-//     unexplained value of 2 reintroduced exactly that race.)
+//   - runtime_reload: telemetry.refresh_diagnostics runs here, isolated from
+//     the mutation lanes so a slow diagnostics pull cannot delay client
+//     mutations. (The historical name comes from the removed runtime.reload
+//     action that used to share this lane; the lane const is kept to avoid a
+//     rename ripple through the connection layer.)
 //   - client_mutation: per-client mutations must apply in delivery order;
 //     two workers would let client.update#2 overtake #1.
 //   - default: config.apply / self-update / transport switches are

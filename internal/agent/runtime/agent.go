@@ -44,7 +44,6 @@ type telemtClient interface {
 	FetchActiveIPs(context.Context) ([]telemt.UserActiveIPs, error)
 	FetchSystemInfo(context.Context) (telemt.SystemInfo, error)
 	FetchDiscoveredUsers(ctx context.Context, configPath string) ([]telemt.DiscoveredUser, error)
-	ExecuteRuntimeReload(context.Context) error
 	CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error)
 	UpdateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error)
 	DeleteClient(context.Context, string) error
@@ -826,8 +825,6 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 	defer a.rememberCompletedJobResult(job.GetId(), result, observedAt)
 
 	switch job.GetAction() {
-	case "runtime.reload":
-		return a.handleRuntimeReloadJob(ctx, result)
 	case "runtime.restart":
 		return a.handleRuntimeRestartJob(ctx, result)
 	case "telemetry.refresh_diagnostics":
@@ -851,17 +848,6 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 		result.Message = fmt.Sprintf("unsupported action %s", job.GetAction())
 		return result
 	}
-}
-
-// handleRuntimeReloadJob runs a runtime.reload job and returns the populated result.
-func (a *Agent) handleRuntimeReloadJob(ctx context.Context, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
-	if err := a.telemt.ExecuteRuntimeReload(ctx); err != nil {
-		result.Message = err.Error()
-		return result
-	}
-	result.Success = true
-	result.Message = "runtime reloaded"
-	return result
 }
 
 // handleRuntimeRestartJob restarts the local Telemt process via the agent's

@@ -10,13 +10,6 @@ import (
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
-func TestJobPipelineForActionRoutesRuntimeReload(t *testing.T) {
-	pipeline := pipelineForAction("runtime.reload")
-	if pipeline != PipelineRuntimeReload {
-		t.Fatalf("pipelineForAction(runtime.reload) = %q, want %q", pipeline, PipelineRuntimeReload)
-	}
-}
-
 func TestJobPipelineForActionRoutesDiagnosticsRefreshToRuntimePipeline(t *testing.T) {
 	pipeline := pipelineForAction("telemetry.refresh_diagnostics")
 	if pipeline != PipelineRuntimeReload {
@@ -53,8 +46,8 @@ func TestShouldSendRuntimeSnapshotAfterJobOnlyForSuccessfulDiagnosticsRefresh(t 
 	if shouldSendRuntimeSnapshotAfterJob("telemetry.refresh_diagnostics", false) {
 		t.Fatal("shouldSendRuntimeSnapshotAfterJob(refresh, false) = true, want false")
 	}
-	if shouldSendRuntimeSnapshotAfterJob("runtime.reload", true) {
-		t.Fatal("shouldSendRuntimeSnapshotAfterJob(runtime.reload, true) = true, want false")
+	if shouldSendRuntimeSnapshotAfterJob("client.create", true) {
+		t.Fatal("shouldSendRuntimeSnapshotAfterJob(client.create, true) = true, want false")
 	}
 }
 
@@ -185,7 +178,7 @@ func TestEnqueueReceivedJobQueuesAndAcknowledges(t *testing.T) {
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
 	job := &gatewayrpc.JobCommand{
 		Id:     "job-1",
-		Action: "runtime.reload",
+		Action: "telemetry.refresh_diagnostics",
 	}
 
 	queued := EnqueueReceived(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
@@ -219,7 +212,7 @@ func TestEnqueueReceivedJobSkipsDuplicateQueueEntry(t *testing.T) {
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 2)
 	job := &gatewayrpc.JobCommand{
 		Id:     "job-dup",
-		Action: "runtime.reload",
+		Action: "telemetry.refresh_diagnostics",
 	}
 
 	firstQueued := EnqueueReceived(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
@@ -249,7 +242,7 @@ func TestEnqueueReceivedJobQueuesCommandWithoutIdentifier(t *testing.T) {
 	}
 	criticalOutbound := make(chan *gatewayrpc.ConnectClientMessage, 1)
 	job := &gatewayrpc.JobCommand{
-		Action: "runtime.reload",
+		Action: "telemetry.refresh_diagnostics",
 	}
 
 	queued := EnqueueReceived(connectionCtx, "agent-1", nil, tracker, jobQueues, criticalOutbound, job)
