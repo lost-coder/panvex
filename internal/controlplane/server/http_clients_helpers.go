@@ -181,6 +181,8 @@ func handleClientMutationError(w http.ResponseWriter, err error) bool {
 		writeError(w, http.StatusBadRequest, msgClientNameInvalid)
 	case errors.Is(err, errClientNameTaken):
 		writeError(w, http.StatusConflict, msgClientNameTaken)
+	case errors.Is(err, errClientNameImmutable):
+		writeError(w, http.StatusBadRequest, msgClientNameImmutable)
 	case errors.Is(err, errClientUserADTag):
 		writeError(w, http.StatusBadRequest, msgClientUserADTag)
 	case errors.Is(err, errClientExpiration):

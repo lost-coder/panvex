@@ -87,6 +87,7 @@
     "editSubtitle": "Update client parameters.",
     "nameLabel": "Client Name",
     "nameRule": "Use A–Z, a–z, 0–9, _, . or -. Up to 64 chars.",
+    "nameImmutableHint": "Name cannot be changed after creation.",
     "namePlaceholder": "e.g. premium-users",
     "adTagLabel": "Ad Tag",
     "adTagAutoDescription": "Auto-generate a random 32-hex tag on save.",

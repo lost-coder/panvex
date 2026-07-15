@@ -125,7 +125,7 @@ func (s *Service) Create(ctx context.Context, actorID string, input MutationInpu
 	if err := s.saveStateAndPublish(ctx, client, assignments, deployments); err != nil {
 		return Client{}, nil, nil, err
 	}
-	if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientCreate, client, "", targetAgentIDs, observedAt); err != nil {
+	if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientCreate, client, targetAgentIDs, observedAt); err != nil {
 		return Client{}, nil, nil, err
 	}
 
@@ -145,15 +145,21 @@ func (s *Service) Update(ctx context.Context, clientID, actorID string, input Mu
 		return Client{}, nil, nil, storage.ErrNotFound
 	}
 
-	previousName, err := applyClientMutationFields(&currentClient, input, observedAt)
-	if err != nil {
-		return Client{}, nil, nil, err
+	// Audit F2: Telemt has no rename operation (PatchUserRequest has no
+	// username field), so the client name is immutable after create. Reject
+	// a name change up-front, before any state is mutated or persisted.
+	// The name-uniqueness check that used to run here is moot: the name
+	// cannot change, and it was already validated unique at create time.
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		return Client{}, nil, nil, ErrNameRequired
 	}
-	// Enforce global name uniqueness among living clients. excludeID is this
-	// client's own ID so renaming a client to its current name (or any no-op
-	// save) is allowed; a clash with a DIFFERENT living client is rejected.
-	if s.NameTaken(currentClient.Name, ClientID(clientID)) {
-		return Client{}, nil, nil, ErrNameTaken
+	if name != currentClient.Name {
+		return Client{}, nil, nil, ErrNameImmutable
+	}
+
+	if err := applyClientMutationFields(&currentClient, input, observedAt); err != nil {
+		return Client{}, nil, nil, err
 	}
 
 	assignments := s.buildClientAssignments(ClientID(clientID), input, observedAt)
@@ -166,7 +172,7 @@ func (s *Service) Update(ctx context.Context, clientID, actorID string, input Mu
 		return Client{}, nil, nil, err
 	}
 
-	if err := s.DispatchClientUpdateJobs(ctx, actorID, currentClient, previousName, currentDeployments, targetAgentIDs, observedAt); err != nil {
+	if err := s.DispatchClientUpdateJobs(ctx, actorID, currentClient, currentDeployments, targetAgentIDs, observedAt); err != nil {
 		return Client{}, nil, nil, err
 	}
 
@@ -185,29 +191,22 @@ func validateClientLimits(maxTCPConns, maxUniqueIPs int, dataQuotaBytes int64) e
 }
 
 // applyClientMutationFields validates the mutation input and merges it
-// into currentClient in-place. Returns the pre-mutation Name (used for
-// rename detection in the apply flow) or any validation error.
-func applyClientMutationFields(currentClient *Client, input MutationInput, observedAt time.Time) (string, error) {
-	name := strings.TrimSpace(input.Name)
-	if name == "" {
-		return "", ErrNameRequired
-	}
-	if !clientNameRegex.MatchString(name) {
-		return "", ErrNameInvalid
-	}
-
+// into currentClient in-place. The Name is NOT touched — it is immutable
+// after create (audit F2: Telemt has no rename operation); Update rejects
+// a changed name before calling this.
+func applyClientMutationFields(currentClient *Client, input MutationInput, observedAt time.Time) error {
 	userADTag, err := resolveUserADTagForMutation(input, currentClient.UserADTag)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	expirationRFC3339, err := NormalizeExpiration(input.ExpirationRFC3339)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	if err := validateClientLimits(input.MaxTCPConns, input.MaxUniqueIPs, input.DataQuotaBytes); err != nil {
-		return "", err
+		return err
 	}
 
 	enabled := currentClient.Enabled
@@ -215,8 +214,6 @@ func applyClientMutationFields(currentClient *Client, input MutationInput, obser
 		enabled = *input.Enabled
 	}
 
-	previousName := currentClient.Name
-	currentClient.Name = name
 	currentClient.UserADTag = userADTag
 	currentClient.Enabled = enabled
 	currentClient.MaxTCPConns = input.MaxTCPConns
@@ -224,7 +221,7 @@ func applyClientMutationFields(currentClient *Client, input MutationInput, obser
 	currentClient.DataQuotaBytes = input.DataQuotaBytes
 	currentClient.ExpirationRFC3339 = expirationRFC3339
 	currentClient.UpdatedAt = observedAt
-	return previousName, nil
+	return nil
 }
 
 // Redeploy re-queues the create job for every target agent on the client.
@@ -256,7 +253,7 @@ func (s *Service) Redeploy(ctx context.Context, clientID, actorID string, observ
 	if err := s.saveStateAndPublish(ctx, currentClient, assignments, deployments); err != nil {
 		return Client{}, nil, nil, err
 	}
-	if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientCreate, currentClient, "", targetAgentIDs, observedAt); err != nil {
+	if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientCreate, currentClient, targetAgentIDs, observedAt); err != nil {
 		return Client{}, nil, nil, err
 	}
 	return currentClient, assignments, deployments, nil
@@ -291,7 +288,7 @@ func (s *Service) RotateSecret(ctx context.Context, clientID, actorID string, ob
 		return Client{}, nil, nil, err
 	}
 	if len(targetAgentIDs) > 0 {
-		if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientRotateSecret, currentClient, "", targetAgentIDs, observedAt); err != nil {
+		if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientRotateSecret, currentClient, targetAgentIDs, observedAt); err != nil {
 			return Client{}, nil, nil, err
 		}
 	}
@@ -420,7 +417,7 @@ func (s *Service) DeleteFlow(ctx context.Context, clientID, actorID string, obse
 	}
 
 	if len(targetAgentIDs) > 0 {
-		if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, "", targetAgentIDs, observedAt); err != nil {
+		if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, targetAgentIDs, observedAt); err != nil {
 			return err
 		}
 	}

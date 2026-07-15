@@ -580,7 +580,10 @@ func TestAgentHandleJobReenableFallsBackToCreate(t *testing.T) {
 	}
 }
 
-func TestAgentHandleJobUpdatesManagedClientUsingPreviousName(t *testing.T) {
+// TestAgentHandleJobUpdatesManagedClient (audit F2): the rename plumbing is
+// gone — a client.update always targets the client's current (immutable)
+// name; the payload carries no previous_name.
+func TestAgentHandleJobUpdatesManagedClient(t *testing.T) {
 	client := &fakeTelemtClient{
 		updateResult: telemt.ClientApplyResult{
 			ConnectionLinks: []string{"tg://proxy?server=node-a&secret=update"},
@@ -596,17 +599,17 @@ func TestAgentHandleJobUpdatesManagedClientUsingPreviousName(t *testing.T) {
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
 		Id:          "job-3",
 		Action:      "client.update",
-		PayloadJson: `{"client_id":"client-1","previous_name":"alice","name":"alice-new","secret":"secret-2","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true}`,
+		PayloadJson: `{"client_id":"client-1","name":"alice","secret":"secret-2","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true}`,
 	}, time.Date(2026, time.March, 17, 18, 5, 0, 0, time.UTC))
 
 	if !result.Success {
 		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
 	}
-	if client.updatedClient.PreviousName != "alice" {
-		t.Fatalf("updated previous name = %q, want %q", client.updatedClient.PreviousName, "alice")
+	if client.updateCalls != 1 {
+		t.Fatalf("UpdateClient calls = %d, want 1", client.updateCalls)
 	}
-	if client.updatedClient.Name != "alice-new" {
-		t.Fatalf("updated client name = %q, want %q", client.updatedClient.Name, "alice-new")
+	if client.updatedClient.Name != "alice" {
+		t.Fatalf("updated client name = %q, want %q", client.updatedClient.Name, "alice")
 	}
 }
 

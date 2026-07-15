@@ -11,16 +11,16 @@ import (
 
 // DispatchClientUpdateJobs queues an update job for the current target
 // agents and a delete job for any agents the client no longer targets.
-func (s *Service) DispatchClientUpdateJobs(ctx context.Context, actorID string, currentClient Client, previousName string, currentDeployments []Deployment, targetAgentIDs []string, observedAt time.Time) error {
+func (s *Service) DispatchClientUpdateJobs(ctx context.Context, actorID string, currentClient Client, currentDeployments []Deployment, targetAgentIDs []string, observedAt time.Time) error {
 	if len(targetAgentIDs) > 0 {
-		if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientUpdate, currentClient, previousName, targetAgentIDs, observedAt); err != nil {
+		if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientUpdate, currentClient, targetAgentIDs, observedAt); err != nil {
 			return err
 		}
 	}
 
 	removedAgentIDs := RemovedTargetAgentIDs(currentDeployments, targetAgentIDs)
 	if len(removedAgentIDs) > 0 {
-		if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, "", removedAgentIDs, observedAt); err != nil {
+		if _, err := s.EnqueueClientJob(ctx, actorID, jobs.ActionClientDelete, currentClient, removedAgentIDs, observedAt); err != nil {
 			return err
 		}
 	}
@@ -76,7 +76,6 @@ type ClientResetQuotaJobPayload struct {
 
 type ClientJobPayload struct {
 	ClientID          string `json:"client_id"`
-	PreviousName      string `json:"previous_name,omitempty"`
 	Name              string `json:"name"`
 	Secret            string `json:"secret"`
 	UserADTag         string `json:"user_ad_tag"`
@@ -87,10 +86,9 @@ type ClientJobPayload struct {
 	ExpirationRFC3339 string `json:"expiration_rfc3339"`
 }
 
-func (s *Service) EnqueueClientJob(ctx context.Context, actorID string, action jobs.Action, client Client, previousName string, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
+func (s *Service) EnqueueClientJob(ctx context.Context, actorID string, action jobs.Action, client Client, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
 	payloadJSON, err := json.Marshal(ClientJobPayload{
 		ClientID:          string(client.ID),
-		PreviousName:      previousName,
 		Name:              client.Name,
 		Secret:            client.Secret,
 		UserADTag:         client.UserADTag,

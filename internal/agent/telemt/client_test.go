@@ -1184,7 +1184,12 @@ func TestClientCreateClientParsesNestedLinksFromCreateUserResponse(t *testing.T)
 	}
 }
 
-func TestClientUpdateClientUsesPreviousNameInPath(t *testing.T) {
+// TestClientUpdateClientPatchesCurrentName (audit F2): Telemt has NO rename
+// operation — PatchUserRequest has no username field, so the old test that
+// asserted `username` in the PATCH body encoded a contract Telemt never had.
+// The PATCH must target the client's current name and must not carry a
+// username key at all.
+func TestClientUpdateClientPatchesCurrentName(t *testing.T) {
 	var requestPath string
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1219,9 +1224,8 @@ func TestClientUpdateClientUsesPreviousNameInPath(t *testing.T) {
 	}
 
 	result, err := client.UpdateClient(context.Background(), ManagedClient{
-		PreviousName: "alice",
-		Name:         "alice-new",
-		Secret:       "secret-2",
+		Name:   "alice",
+		Secret: "secret-2",
 	})
 	if err != nil {
 		t.Fatalf("UpdateClient() error = %v", err)
@@ -1230,8 +1234,8 @@ func TestClientUpdateClientUsesPreviousNameInPath(t *testing.T) {
 	if requestPath != "/v1/users/alice" {
 		t.Fatalf("request path = %q, want %q", requestPath, "/v1/users/alice")
 	}
-	if requestBody["username"] != "alice-new" {
-		t.Fatalf("request username = %v, want %q", requestBody["username"], "alice-new")
+	if got, ok := requestBody["username"]; ok {
+		t.Fatalf("PATCH body carries username = %v; Telemt's PatchUserRequest has no such field (no rename)", got)
 	}
 	if got := result.ConnectionLinks; len(got) != 1 || got[0] != "tg://proxy?server=node-a&secret=secure" {
 		t.Fatalf("result.ConnectionLinks = %v, want [tg://proxy?server=node-a&secret=secure]", got)

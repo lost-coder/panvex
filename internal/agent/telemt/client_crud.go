@@ -55,14 +55,11 @@ func (c *Client) CreateClient(ctx context.Context, client ManagedClient) (Client
 	return c.applyClient(ctx, http.MethodPost, "/v1/users", client)
 }
 
-// UpdateClient updates one managed Telemt client and returns the preferred connection link.
+// UpdateClient updates one managed Telemt client and returns the preferred
+// connection link. The PATCH always targets client.Name — the name is
+// immutable panel-side because Telemt has no rename operation (audit F2).
 func (c *Client) UpdateClient(ctx context.Context, client ManagedClient) (ClientApplyResult, error) {
-	targetName := client.Name
-	if strings.TrimSpace(client.PreviousName) != "" {
-		targetName = client.PreviousName
-	}
-
-	return c.applyClient(ctx, http.MethodPatch, "/v1/users/"+url.PathEscape(targetName), client)
+	return c.applyClient(ctx, http.MethodPatch, "/v1/users/"+url.PathEscape(client.Name), client)
 }
 
 // ResetUserQuotaResult carries the post-reset quota snapshot Telemt
@@ -151,9 +148,15 @@ func (c *Client) DeleteClient(ctx context.Context, clientName string) error {
 }
 
 func (c *Client) applyClient(ctx context.Context, method string, path string, client ManagedClient) (ClientApplyResult, error) {
+	isPatch := method == http.MethodPatch
 	payload := map[string]any{
-		"username": client.Name,
-		"secret":   client.Secret,
+		"secret": client.Secret,
+	}
+	// Telemt's PatchUserRequest has no username field (there is no rename
+	// operation anywhere in its API — audit F2), so the name is only sent
+	// on create; the PATCH target user is identified by the URL path.
+	if !isPatch {
+		payload["username"] = client.Name
 	}
 	// Panvex always ships the FULL desired client state on every apply,
 	// so the optional fields are mapped to two distinct wire encodings:
@@ -169,7 +172,6 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 	//     complete desired state, a cleared field must be sent as explicit
 	//     null so it is actually removed; omitting it would silently
 	//     preserve the stale value on the node.
-	isPatch := method == http.MethodPatch
 	setOptionalString := func(key, value string) {
 		if strings.TrimSpace(value) != "" {
 			payload[key] = value

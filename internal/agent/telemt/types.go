@@ -228,9 +228,10 @@ type RuntimeEvent struct {
 	Context       string
 }
 
-// ManagedClient stores the centrally managed Telemt client fields applied on one node.
+// ManagedClient stores the centrally managed Telemt client fields applied
+// on one node. Name is immutable panel-side (audit F2: Telemt has no rename
+// operation), so it always identifies the Telemt user to target.
 type ManagedClient struct {
-	PreviousName      string
 	Name              string
 	Secret            string
 	UserADTag         string

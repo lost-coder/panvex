@@ -909,7 +909,6 @@ func (a *Agent) handleSwitchTransportModeJob(result *gatewayrpc.JobResult, job *
 // clientJobPayload mirrors the JSON envelope shared by all client.* jobs.
 type clientJobPayload struct {
 	ClientID          string `json:"client_id"`
-	PreviousName      string `json:"previous_name"`
 	Name              string `json:"name"`
 	Secret            string `json:"secret"`
 	UserADTag         string `json:"user_ad_tag"`
@@ -922,7 +921,6 @@ type clientJobPayload struct {
 
 func (p clientJobPayload) toManagedClient() telemt.ManagedClient {
 	return telemt.ManagedClient{
-		PreviousName:      p.PreviousName,
 		Name:              p.Name,
 		Secret:            p.Secret,
 		UserADTag:         p.UserADTag,

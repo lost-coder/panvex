@@ -168,7 +168,7 @@ func (s *Service) ReconcileDeployments(ctx context.Context, agentFilter string) 
 		}
 
 		for action, agentIDs := range pending {
-			if _, err := s.EnqueueClientJob(ctx, actorReconciler, action, client, "", agentIDs, now); err != nil {
+			if _, err := s.EnqueueClientJob(ctx, actorReconciler, action, client, agentIDs, now); err != nil {
 				s.logger.ErrorContext(ctx, "re-enqueue of unconfirmed client job failed",
 					"client_id", string(clientID),
 					"action", string(action),
@@ -259,7 +259,7 @@ func (s *Service) ReconcileTopology(ctx context.Context, actorID string, observe
 				"client_id", string(clientID), "error", err)
 			continue
 		}
-		if err := s.DispatchClientUpdateJobs(ctx, actorID, client, "", deployments, targetAgentIDs, observedAt); err != nil {
+		if err := s.DispatchClientUpdateJobs(ctx, actorID, client, deployments, targetAgentIDs, observedAt); err != nil {
 			s.logger.ErrorContext(ctx, "dispatch client jobs after topology change failed",
 				"client_id", string(clientID), "error", err)
 		}
