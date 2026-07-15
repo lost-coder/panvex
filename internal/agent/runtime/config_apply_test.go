@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/agent/telemt"
-	"github.com/lost-coder/panvex/internal/configcanon"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -306,21 +305,21 @@ func TestHandleConfigApplyJobHotChange(t *testing.T) {
 	}
 }
 
-func TestHandleConfigFetchJob(t *testing.T) {
-	sections := map[string]any{"general": map[string]any{"log_level": "debug"}}
-	a := New(Config{}, &fakeTelemtClient{managedConfig: sections, managedRevision: "r7"})
-	res := a.handleConfigFetchJob(context.Background(), &gatewayrpc.JobResult{})
-	if !res.Success {
-		t.Fatalf("expected success, got %q", res.Message)
+// TestConfigFetchActionRemoved pins the wire-audit I3 removal: config.fetch
+// had a fully implemented agent pipeline whose result no panel code ever
+// requested or parsed. The action is gone; a stale delivery now gets the
+// standard unsupported-action failure (same as the removed runtime.reload).
+func TestConfigFetchActionRemoved(t *testing.T) {
+	a := New(Config{}, &fakeTelemtClient{managedConfig: map[string]any{"general": map[string]any{}}, managedRevision: "r7"})
+	res := a.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:     "job-config-fetch",
+		Action: "config.fetch",
+	}, time.Date(2026, time.July, 16, 12, 0, 0, 0, time.UTC))
+	if res.Success {
+		t.Fatalf("config.fetch succeeded, want unsupported-action failure")
 	}
-	if !strings.Contains(res.ResultJson, `"log_level":"debug"`) {
-		t.Fatalf("ResultJson missing sections: %q", res.ResultJson)
-	}
-	if !strings.Contains(res.ResultJson, `"revision":"r7"`) {
-		t.Fatalf("ResultJson missing revision: %q", res.ResultJson)
-	}
-	if want := configcanon.Hash(sections); !strings.Contains(res.ResultJson, want) {
-		t.Fatalf("ResultJson missing hash %q: %q", want, res.ResultJson)
+	if !strings.Contains(res.Message, "unsupported action") {
+		t.Fatalf("Message = %q, want unsupported action", res.Message)
 	}
 }
 

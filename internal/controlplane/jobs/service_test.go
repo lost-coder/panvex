@@ -383,10 +383,10 @@ func TestServiceEnqueueRejectsMutatingActionForReadOnlyTarget(t *testing.T) {
 	service := NewService()
 
 	_, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionUsersCreate,
+		Action:         ActionClientCreate,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
-		IdempotencyKey: "create-user",
+		IdempotencyKey: "create-client",
 		ActorID:        "user-1",
 		ReadOnlyAgents: map[string]bool{
 			"agent-1": true,
@@ -929,9 +929,15 @@ func TestConfigApplyActionValid(t *testing.T) {
 	}
 }
 
-func TestConfigFetchActionValid(t *testing.T) {
-	if !IsValidAction(ActionConfigFetch) {
-		t.Fatalf("config.fetch must be a valid action")
+// TestRemovedActionsAreInvalid pins the wire-audit I2/I3 removals:
+// users.create never had an agent handler (always "unsupported action"),
+// and config.fetch had a full agent pipeline no panel code ever requested
+// or parsed. Both are gone — same class as the removed runtime.reload.
+func TestRemovedActionsAreInvalid(t *testing.T) {
+	for _, action := range []Action{"users.create", "config.fetch", "runtime.reload"} {
+		if IsValidAction(action) {
+			t.Fatalf("IsValidAction(%q) = true, want false (removed action)", action)
+		}
 	}
 }
 
