@@ -12,7 +12,7 @@ import (
 // tests keep this local helper to drive the flow without a live stream.
 func recordJobResultForTest(s *Server, ctx context.Context, agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) {
 	s.jobs.RecordResult(ctx, agentID, jobID, success, message, resultJSON, observedAt)
-	s.recordClientJobResultWithContext(ctx, agentID, jobID, success, message, resultJSON, observedAt)
+	s.clientsSvc.RecordJobResult(ctx, agentID, jobID, success, message, resultJSON, observedAt)
 	s.appendAuditWithContext(ctx, agentID, "jobs.result", jobID, map[string]any{
 		"success": success,
 		"message": message,

@@ -4,7 +4,7 @@
 // silently-stale link after a host/secret change. These tests pin the
 // three branches applyClientJobOutcome owns on the success path.
 
-package server
+package clients
 
 import (
 	"testing"
@@ -18,7 +18,7 @@ func TestApplyClientJobOutcomeLinkDiagnostic(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("non-delete success with fresh links clears diagnostic", func(t *testing.T) {
-		dep := managedClientDeployment{
+		dep := Deployment{
 			ConnectionLinks: []string{"tg://old"},
 			LinkDiagnostic:  "previous stale warning",
 		}
@@ -31,13 +31,13 @@ func TestApplyClientJobOutcomeLinkDiagnostic(t *testing.T) {
 		if dep.LinkDiagnostic != "" {
 			t.Fatalf("LinkDiagnostic = %q, want empty (fresh links clear it)", dep.LinkDiagnostic)
 		}
-		if dep.Status != clientDeploymentStatusSucceeded {
+		if dep.Status != DeploymentStatusSucceeded {
 			t.Fatalf("Status = %q, want succeeded", dep.Status)
 		}
 	})
 
 	t.Run("non-delete success with no links keeps stale links and sets diagnostic", func(t *testing.T) {
-		dep := managedClientDeployment{
+		dep := Deployment{
 			ClientID:        "client-1",
 			AgentID:         "agent-A",
 			ConnectionLinks: []string{"tg://old"},
@@ -50,7 +50,7 @@ func TestApplyClientJobOutcomeLinkDiagnostic(t *testing.T) {
 		if dep.LinkDiagnostic == "" {
 			t.Fatalf("LinkDiagnostic is empty, want a stale-link warning")
 		}
-		if dep.Status != clientDeploymentStatusSucceeded {
+		if dep.Status != DeploymentStatusSucceeded {
 			t.Fatalf("Status = %q, want succeeded", dep.Status)
 		}
 		if dep.LastError != "" {
@@ -59,7 +59,7 @@ func TestApplyClientJobOutcomeLinkDiagnostic(t *testing.T) {
 	})
 
 	t.Run("non-delete success with empty links array sets diagnostic", func(t *testing.T) {
-		dep := managedClientDeployment{
+		dep := Deployment{
 			ConnectionLinks: []string{"tg://old"},
 		}
 		applyClientJobOutcome(ctx, &dep, jobs.ActionClientUpdate, true, "ok",
@@ -74,7 +74,7 @@ func TestApplyClientJobOutcomeLinkDiagnostic(t *testing.T) {
 	})
 
 	t.Run("delete success clears links and diagnostic", func(t *testing.T) {
-		dep := managedClientDeployment{
+		dep := Deployment{
 			ConnectionLinks: []string{"tg://old"},
 			LinkDiagnostic:  "previous stale warning",
 		}
@@ -89,13 +89,13 @@ func TestApplyClientJobOutcomeLinkDiagnostic(t *testing.T) {
 	})
 
 	t.Run("failure leaves diagnostic untouched", func(t *testing.T) {
-		dep := managedClientDeployment{
+		dep := Deployment{
 			ConnectionLinks: []string{"tg://old"},
 			LinkDiagnostic:  "earlier stale warning",
 		}
 		applyClientJobOutcome(ctx, &dep, jobs.ActionClientUpdate, false, "boom", "", now)
 
-		if dep.Status != clientDeploymentStatusFailed {
+		if dep.Status != DeploymentStatusFailed {
 			t.Fatalf("Status = %q, want failed", dep.Status)
 		}
 		if dep.LinkDiagnostic != "earlier stale warning" {

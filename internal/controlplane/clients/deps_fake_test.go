@@ -58,6 +58,10 @@ func (f *fakeDeps) ClientJobTTL() time.Duration {
 	return f.ttl
 }
 
+func (f *fakeDeps) Context() context.Context {
+	return context.Background()
+}
+
 var _ Deps = (*fakeDeps)(nil)
 
 // fakeJobQueue is a settable, call-recording test double for JobQueue.

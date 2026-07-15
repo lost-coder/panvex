@@ -1,11 +1,10 @@
-package server
+package clients
 
 import (
 	"context"
 	"sync"
 	"time"
 
-	"github.com/lost-coder/panvex/internal/controlplane/clients"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 )
 
@@ -32,26 +31,32 @@ import (
 // but somehow missed a job still converges.
 const clientReconcileInterval = 10 * time.Minute
 
+// clientJobTTLDefault is the compiled-in default client-job TTL used to throttle
+// the reconciler. The live, operator-tunable TTL stays server-side (resolved via
+// server.effectiveClientJobTTL); the reconciler's throttle keys off the
+// compiled-in default so re-sends never outrun the window a node has to answer.
+const clientJobTTLDefault = 10 * time.Minute
+
 // clientReconcileMinInterval throttles how often the SAME (client, agent) pair
 // may be re-enqueued. It matches the job TTL: re-sending sooner than that just
 // supersedes a job the node has not had time to answer yet.
-const clientReconcileMinInterval = clientJobTTL
+const clientReconcileMinInterval = clientJobTTLDefault
 
 // clientReconcileWarnAfter is how many consecutive re-enqueues for one pair go
 // by before we say so out loud. A node that keeps failing the same job is not
 // something to retry silently forever.
 const clientReconcileWarnAfter = 5
 
-// clientReconciler tracks per-pair attempts so the reconciler neither storms a
+// reconciler tracks per-pair attempts so the reconciler neither storms a
 // node nor loops silently.
-type clientReconciler struct {
+type reconciler struct {
 	mu       sync.Mutex
 	lastTry  map[string]time.Time
 	attempts map[string]int
 }
 
-func newClientReconciler() *clientReconciler {
-	return &clientReconciler{
+func newReconciler() *reconciler {
+	return &reconciler{
 		lastTry:  make(map[string]time.Time),
 		attempts: make(map[string]int),
 	}
@@ -59,7 +64,7 @@ func newClientReconciler() *clientReconciler {
 
 // shouldRetry reports whether the pair may be re-enqueued now, and returns the
 // attempt count so the caller can log a persistently-failing pair.
-func (r *clientReconciler) shouldRetry(key string, now time.Time) (int, bool) {
+func (r *reconciler) shouldRetry(key string, now time.Time) (int, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -74,38 +79,32 @@ func (r *clientReconciler) shouldRetry(key string, now time.Time) (int, bool) {
 // confirm clears the bookkeeping for a pair the node has confirmed. Called from
 // the job-result path so a converged deployment starts from a clean slate if it
 // ever diverges again.
-func (r *clientReconciler) confirm(key string) {
+func (r *reconciler) confirm(key string) {
 	r.mu.Lock()
 	delete(r.lastTry, key)
 	delete(r.attempts, key)
 	r.mu.Unlock()
 }
 
-func reconcileKey(clientID clients.ClientID, agentID string) string {
+func reconcileKey(clientID ClientID, agentID string) string {
 	return string(clientID) + "|" + agentID
 }
 
-// startClientReconcileWorker runs the safety-net tick until ctx is cancelled,
-// after one immediate pass. The immediate pass IS the boot trigger: it picks up
+// StartReconcileWorker runs the safety-net tick until ctx is cancelled, after
+// one immediate pass. The immediate pass IS the boot trigger: it picks up
 // deployments left queued by a panel that died between persisting client state
 // and enqueueing its job, and every job that expired while the panel was down.
 //
 // The caller owns wg.Add(1); the worker Done()s on exit.
-func (s *Server) startClientReconcileWorker(ctx context.Context, interval time.Duration, wg *sync.WaitGroup) {
+func (s *Service) StartReconcileWorker(ctx context.Context, interval time.Duration, wg *sync.WaitGroup) {
 	if interval <= 0 {
 		interval = clientReconcileInterval
 	}
-	// Capture the client service once, in the caller's goroutine, before the
-	// worker starts. The field is written exactly once at construction in
-	// production, but the test harness rebuilds s.clientsSvc after New()
-	// returns; capturing here keeps the shared-field read out of the worker
-	// goroutine so those swaps do not race the reconcile pass.
-	svc := s.clientsSvc
 	go func() {
 		if wg != nil {
 			defer wg.Done()
 		}
-		s.reconcileClientDeploymentsWith(ctx, svc, "")
+		s.ReconcileDeployments(ctx, "")
 
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -114,34 +113,21 @@ func (s *Server) startClientReconcileWorker(ctx context.Context, interval time.D
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.reconcileClientDeploymentsWith(ctx, svc, "")
+				s.ReconcileDeployments(ctx, "")
 			}
 		}
 	}()
 }
 
-// reconcileClientDeployments re-enqueues a job for every deployment whose node
+// ReconcileDeployments re-enqueues a job for every deployment whose node
 // has not confirmed its desired operation. agentFilter, when non-empty, limits
 // the pass to one node — that is the reconnect trigger, which is the one that
 // actually closes the offline-during-delete hole.
 //
 // Returns the number of jobs enqueued (used by tests).
-func (s *Server) reconcileClientDeployments(ctx context.Context, agentFilter string) int {
-	return s.reconcileClientDeploymentsWith(ctx, s.clientsSvc, agentFilter)
-}
-
-// reconcileClientDeploymentsWith is the body of reconcileClientDeployments,
-// operating on an explicitly supplied client service. The reconcile worker
-// passes a service captured once at start-up so its goroutine never reads the
-// shared s.clientsSvc field (see startClientReconcileWorker); all other callers
-// go through reconcileClientDeployments, which reads the field in their own
-// goroutine where it is stable.
-func (s *Server) reconcileClientDeploymentsWith(ctx context.Context, svc *clients.Service, agentFilter string) int {
-	if svc == nil {
-		return 0
-	}
+func (s *Service) ReconcileDeployments(ctx context.Context, agentFilter string) int {
 	now := s.now().UTC()
-	mirror := svc.MirrorSnapshot()
+	mirror := s.MirrorSnapshot()
 
 	enqueued := 0
 	for clientID, byAgent := range mirror.Deployments {
@@ -165,7 +151,7 @@ func (s *Server) reconcileClientDeploymentsWith(ctx context.Context, svc *client
 			if !ok {
 				continue
 			}
-			attempt, allowed := s.clientReconcile.shouldRetry(reconcileKey(clientID, agentID), now)
+			attempt, allowed := s.reconcile.shouldRetry(reconcileKey(clientID, agentID), now)
 			if !allowed {
 				continue
 			}
@@ -182,7 +168,7 @@ func (s *Server) reconcileClientDeploymentsWith(ctx context.Context, svc *client
 		}
 
 		for action, agentIDs := range pending {
-			if _, err := s.clientsSvc.EnqueueClientJob(ctx, actorReconciler, action, client, "", agentIDs, now); err != nil {
+			if _, err := s.EnqueueClientJob(ctx, actorReconciler, action, client, "", agentIDs, now); err != nil {
 				s.logger.ErrorContext(ctx, "re-enqueue of unconfirmed client job failed",
 					"client_id", string(clientID),
 					"action", string(action),
@@ -212,7 +198,7 @@ const actorReconciler = "system:reconciler"
 // operation is a revocation (delete or secret rotation): leaving stale
 // credentials live on a node because one apply failed is the exact hole this
 // exists to close, whereas re-sending a failing create forever would just churn.
-func divergentDeploymentAction(deployment clients.Deployment) (jobs.Action, bool) {
+func divergentDeploymentAction(deployment Deployment) (jobs.Action, bool) {
 	action := jobs.Action(deployment.DesiredOperation)
 	switch action {
 	case jobs.ActionClientCreate, jobs.ActionClientUpdate, jobs.ActionClientDelete, jobs.ActionClientRotateSecret:
@@ -221,13 +207,13 @@ func divergentDeploymentAction(deployment clients.Deployment) (jobs.Action, bool
 	}
 
 	switch deployment.Status {
-	case clients.DeploymentStatusSucceeded:
+	case DeploymentStatusSucceeded:
 		return "", false
-	case clients.DeploymentStatusQueued, clients.DeploymentStatusAwaitingNode:
+	case DeploymentStatusQueued, DeploymentStatusAwaitingNode:
 		// awaiting_node is a queued job whose TTL lapsed unconfirmed — the same
 		// re-send class as queued: the node still owes us this operation.
 		return action, true
-	case clients.DeploymentStatusFailed:
+	case DeploymentStatusFailed:
 		if action == jobs.ActionClientDelete || action == jobs.ActionClientRotateSecret {
 			return action, true
 		}
@@ -237,7 +223,7 @@ func divergentDeploymentAction(deployment clients.Deployment) (jobs.Action, bool
 	}
 }
 
-// reconcileClientTopology recomputes each client's target nodes and dispatches
+// ReconcileTopology recomputes each client's target nodes and dispatches
 // the jobs the change implies: an update (create, in effect) to nodes that just
 // became targets, a delete to nodes that stopped being targets.
 //
@@ -250,11 +236,8 @@ func divergentDeploymentAction(deployment clients.Deployment) (jobs.Action, bool
 // It is deliberately whole-fleet rather than scoped to the agent that moved:
 // a group change can add and remove targets for many clients at once, and the
 // mirror walk is cheap next to the round-trip it saves.
-func (s *Server) reconcileClientTopology(ctx context.Context, actorID string, observedAt time.Time) {
-	if s.clientsSvc == nil {
-		return
-	}
-	mirror := s.clientsSvc.MirrorSnapshot()
+func (s *Service) ReconcileTopology(ctx context.Context, actorID string, observedAt time.Time) {
+	mirror := s.MirrorSnapshot()
 
 	for clientID, client := range mirror.Clients {
 		if client.DeletedAt != nil {
@@ -265,27 +248,27 @@ func (s *Server) reconcileClientTopology(ctx context.Context, actorID string, ob
 		assignments := mirror.Assignments[clientID]
 		deployments := deploymentsForClient(mirror, clientID)
 
-		targetAgentIDs := s.resolveClientTargetAgentIDs(assignments)
-		if sameAgentSet(deploymentAgentIDs(deployments), targetAgentIDs) {
+		targetAgentIDs := s.ResolveTargetAgentIDs(assignments, s.deps.Topology())
+		if sameAgentSet(DeploymentAgentIDs(deployments), targetAgentIDs) {
 			continue
 		}
 
-		next := buildClientDeployments(deployments, clientID, targetAgentIDs, string(jobs.ActionClientUpdate), observedAt)
-		if err := s.replaceClientStateWithContext(ctx, client, assignments, next); err != nil {
+		next := BuildDeployments(deployments, clientID, targetAgentIDs, string(jobs.ActionClientUpdate), string(jobs.ActionClientDelete), observedAt)
+		if err := s.saveStateAndPublish(ctx, client, assignments, next); err != nil {
 			s.logger.ErrorContext(ctx, "persist client state after topology change failed",
 				"client_id", string(clientID), "error", err)
 			continue
 		}
-		if err := s.clientsSvc.DispatchClientUpdateJobs(ctx, actorID, client, "", deployments, targetAgentIDs, observedAt); err != nil {
+		if err := s.DispatchClientUpdateJobs(ctx, actorID, client, "", deployments, targetAgentIDs, observedAt); err != nil {
 			s.logger.ErrorContext(ctx, "dispatch client jobs after topology change failed",
 				"client_id", string(clientID), "error", err)
 		}
 	}
 }
 
-func deploymentsForClient(mirror clients.MirrorState, clientID clients.ClientID) []managedClientDeployment {
+func deploymentsForClient(mirror MirrorState, clientID ClientID) []Deployment {
 	byAgent := mirror.Deployments[clientID]
-	out := make([]managedClientDeployment, 0, len(byAgent))
+	out := make([]Deployment, 0, len(byAgent))
 	for _, deployment := range byAgent {
 		out = append(out, deployment)
 	}

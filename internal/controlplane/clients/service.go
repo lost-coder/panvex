@@ -83,6 +83,11 @@ type Service struct {
 	jobQueue JobQueue
 	logger   *slog.Logger
 
+	// reconcile tracks the per-(client, agent) retry bookkeeping for the
+	// convergent re-delivery worker (R10). Constructed once here; the
+	// reconcile worker and job-result path share this single instance.
+	reconcile *reconciler
+
 	mirrorClients     map[ClientID]Client
 	mirrorAssignments map[ClientID][]Assignment
 	mirrorDeployments map[ClientID]map[string]Deployment // outer=ClientID, inner=AgentID
@@ -152,6 +157,8 @@ func NewService(cfg ServiceConfig) *Service {
 		deps:     cfg.Deps,
 		jobQueue: cfg.JobQueue,
 		logger:   logger,
+
+		reconcile: newReconciler(),
 
 		mirrorClients:     make(map[ClientID]Client),
 		mirrorAssignments: make(map[ClientID][]Assignment),

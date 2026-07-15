@@ -778,7 +778,7 @@ func TestRecordClientJobResultDoesNotPanicWhenDeploymentPersistenceFails(t *test
 
 	store.putClientDeploymentErr = errors.New("put client deployment failed")
 
-	server.recordClientJobResultWithContext(t.Context(), "agent-000001", jobList[0].ID, true, "ok", `{"connection_links":["tg://proxy?secret=abc"]}`, now.Add(time.Minute))
+	server.clientsSvc.RecordJobResult(t.Context(), "agent-000001", jobList[0].ID, true, "ok", `{"connection_links":["tg://proxy?secret=abc"]}`, now.Add(time.Minute))
 
 	detailClient, _, deployments, err := server.clientDetailSnapshot(string(client.ID))
 	if err != nil {
@@ -835,7 +835,7 @@ func TestRecordClientJobResultPublishesClientsUpdated(t *testing.T) {
 	ch, cancel := server.events.Subscribe()
 	defer cancel()
 
-	server.recordClientJobResultWithContext(context.Background(), "agent-000001", createJob.ID, true, "ok", "{}", now.Add(time.Minute))
+	server.clientsSvc.RecordJobResult(context.Background(), "agent-000001", createJob.ID, true, "ok", "{}", now.Add(time.Minute))
 	assertClientsUpdatedPublished(t, ch, string(client.ID))
 
 	deleteAt := now.Add(2 * time.Minute)
@@ -847,7 +847,7 @@ func TestRecordClientJobResultPublishesClientsUpdated(t *testing.T) {
 	// job-result assertion so the two publishes aren't conflated.
 	assertClientsUpdatedPublished(t, ch, string(client.ID))
 
-	server.recordClientJobResultWithContext(context.Background(), "agent-000001", deleteJob.ID, false, "node rejected delete", "{}", deleteAt.Add(time.Minute))
+	server.clientsSvc.RecordJobResult(context.Background(), "agent-000001", deleteJob.ID, false, "node rejected delete", "{}", deleteAt.Add(time.Minute))
 	assertClientsUpdatedPublished(t, ch, string(client.ID))
 }
 
@@ -874,7 +874,7 @@ func TestRecordClientJobResultDoesNotPublishOnNoOpBranches(t *testing.T) {
 	defer cancel()
 
 	// Unknown job ID: jobByID lookup fails, early return before any publish.
-	server.recordClientJobResultWithContext(context.Background(), "agent-000001", "no-such-job", true, "ok", "{}", now)
+	server.clientsSvc.RecordJobResult(context.Background(), "agent-000001", "no-such-job", true, "ok", "{}", now)
 
 	select {
 	case evt := <-ch:

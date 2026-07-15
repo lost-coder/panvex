@@ -395,7 +395,7 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 		// deployment the node had never heard of — and, worse, left the old
 		// group's clients live on a node that is no longer supposed to serve
 		// them.
-		s.reconcileClientTopology(r.Context(), session.UserID, s.now())
+		s.clientsSvc.ReconcileTopology(r.Context(), session.UserID, s.now())
 
 		writeJSON(w, http.StatusOK, current)
 	}

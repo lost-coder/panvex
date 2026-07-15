@@ -52,7 +52,7 @@ func TestOfflineNodeConvergesOnDeleteAfterReconnect(t *testing.T) {
 
 	// The node applies the create, so that deployment is converged.
 	createJob := server.jobs.ListWithContext(context.Background())[0]
-	server.recordClientJobResultWithContext(context.Background(), "agent-000001", createJob.ID, true, "ok", "{}", now)
+	server.clientsSvc.RecordJobResult(context.Background(), "agent-000001", createJob.ID, true, "ok", "{}", now)
 
 	// The operator deletes the client while the node is offline. The delete job
 	// is enqueued and never answered.
@@ -72,7 +72,7 @@ func TestOfflineNodeConvergesOnDeleteAfterReconnect(t *testing.T) {
 	assertDeploymentUnconfirmed(t, server, client.ID, "agent-000001", string(jobs.ActionClientDelete))
 
 	// The node reconnects.
-	server.reconcileClientDeployments(context.Background(), "agent-000001")
+	server.clientsSvc.ReconcileDeployments(context.Background(), "agent-000001")
 
 	if got := countJobsWithAction(t, server, jobs.ActionClientDelete); got != 2 {
 		t.Fatalf("delete jobs after reconnect = %d, want 2 (the original plus the re-sent one)", got)
@@ -112,10 +112,10 @@ func TestReconcileSkipsConfirmedDeployments(t *testing.T) {
 		t.Fatalf("createClient() error = %v", err)
 	}
 	createJob := server.jobs.ListWithContext(context.Background())[0]
-	server.recordClientJobResultWithContext(context.Background(), "agent-000001", createJob.ID, true, "ok", "{}", now)
+	server.clientsSvc.RecordJobResult(context.Background(), "agent-000001", createJob.ID, true, "ok", "{}", now)
 
 	currentTime = now.Add(2 * clientJobTTL)
-	if enqueued := server.reconcileClientDeployments(context.Background(), "agent-000001"); enqueued != 0 {
+	if enqueued := server.clientsSvc.ReconcileDeployments(context.Background(), "agent-000001"); enqueued != 0 {
 		t.Fatalf("reconcile enqueued %d jobs for a converged deployment, want 0", enqueued)
 	}
 }
@@ -154,16 +154,16 @@ func TestReconcileThrottlesRepeatedAttempts(t *testing.T) {
 
 	// Never confirmed. Two reconciles back to back: the second must be a no-op.
 	currentTime = now.Add(clientJobTTL + time.Minute)
-	if enqueued := server.reconcileClientDeployments(context.Background(), "agent-000001"); enqueued != 1 {
+	if enqueued := server.clientsSvc.ReconcileDeployments(context.Background(), "agent-000001"); enqueued != 1 {
 		t.Fatalf("first reconcile enqueued %d jobs, want 1", enqueued)
 	}
-	if enqueued := server.reconcileClientDeployments(context.Background(), "agent-000001"); enqueued != 0 {
+	if enqueued := server.clientsSvc.ReconcileDeployments(context.Background(), "agent-000001"); enqueued != 0 {
 		t.Fatalf("second reconcile enqueued %d jobs, want 0 (throttled within the TTL window)", enqueued)
 	}
 
 	// Past the throttle window it tries again.
 	currentTime = currentTime.Add(clientJobTTL + time.Minute)
-	if enqueued := server.reconcileClientDeployments(context.Background(), "agent-000001"); enqueued != 1 {
+	if enqueued := server.clientsSvc.ReconcileDeployments(context.Background(), "agent-000001"); enqueued != 1 {
 		t.Fatalf("reconcile past the throttle window enqueued %d jobs, want 1", enqueued)
 	}
 }
@@ -224,13 +224,13 @@ func TestExpiredClientJobSurfacesAsAwaitingNode(t *testing.T) {
 	}
 
 	// The reconciler treats awaiting_node as the same re-send class as queued.
-	if enqueued := server.reconcileClientDeployments(context.Background(), "agent-000001"); enqueued != 1 {
+	if enqueued := server.clientsSvc.ReconcileDeployments(context.Background(), "agent-000001"); enqueued != 1 {
 		t.Fatalf("reconcile of an awaiting_node deployment enqueued %d jobs, want 1", enqueued)
 	}
 
 	// The node finally applies the re-sent create; the deployment converges.
 	resent := latestQueuedJob(t, server, jobs.ActionClientCreate)
-	server.recordClientJobResultWithContext(context.Background(), "agent-000001", resent.ID, true, "ok", "{}", currentTime)
+	server.clientsSvc.RecordJobResult(context.Background(), "agent-000001", resent.ID, true, "ok", "{}", currentTime)
 
 	deployment = mirrorDeployment(server, string(client.ID), "agent-000001")
 	if deployment.Status != clients.DeploymentStatusSucceeded {
@@ -340,7 +340,7 @@ func TestTopologyChangeRollsClientsOntoAndOffTheNode(t *testing.T) {
 	server.updateAgentIdentity("agent-000001", func(a *Agent) { a.FleetGroupID = groupB })
 	server.mu.Unlock()
 
-	server.reconcileClientTopology(context.Background(), "user-000001", currentTime)
+	server.clientsSvc.ReconcileTopology(context.Background(), "user-000001", currentTime)
 
 	mirror := server.clientsSvc.MirrorSnapshot()
 	alice := findClientByName(t, mirror, "alice")

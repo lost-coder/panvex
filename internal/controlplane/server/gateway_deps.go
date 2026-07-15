@@ -217,7 +217,7 @@ func (s *Server) MarkTransportSwitchResolved(agentID string) {
 // serverCtx rather than the stream ctx so a re-enqueue is not cancelled just
 // because this particular connection drops again mid-pass.
 func (s *Server) OnAgentConnected(agentID string) {
-	go s.reconcileClientDeployments(s.Context(), agentID)
+	go s.clientsSvc.ReconcileDeployments(s.Context(), agentID)
 }
 
 // OnAgentSessionEstablished compares the direction of the just-accepted stream
@@ -507,7 +507,7 @@ func (s *Server) AppendAudit(ctx context.Context, actorID, action, targetID stri
 
 // RecordClientJobResult updates client deployment state from a job result.
 func (s *Server) RecordClientJobResult(ctx context.Context, agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) {
-	s.recordClientJobResultWithContext(ctx, agentID, jobID, success, message, resultJSON, observedAt)
+	s.clientsSvc.RecordJobResult(ctx, agentID, jobID, success, message, resultJSON, observedAt)
 }
 
 // ReconcileDiscoveredClients reconciles a full client-list response.
@@ -517,5 +517,5 @@ func (s *Server) ReconcileDiscoveredClients(ctx context.Context, agentID string,
 
 // ResolveClientIDByName resolves a client_id from an agent-scoped name.
 func (s *Server) ResolveClientIDByName(agentID, clientName string) string {
-	return s.resolveClientIDByName(agentID, clientName)
+	return s.clientsSvc.ResolveIDByName(agentID, clientName)
 }

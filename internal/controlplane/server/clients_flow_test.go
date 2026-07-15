@@ -183,16 +183,16 @@ func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 		CreatedAt:    now,
 	}}, nil)
 
-	if got := server.resolveClientIDByName("agent-EU", "bob"); got != clientID {
+	if got := server.clientsSvc.ResolveIDByName("agent-EU", "bob"); got != clientID {
 		t.Fatalf("resolveClientIDByName(agent-EU, bob) = %q, want %q (fleet-group member should resolve)", got, clientID)
 	}
-	if got := server.resolveClientIDByName("agent-US", "bob"); got != "" {
+	if got := server.clientsSvc.ResolveIDByName("agent-US", "bob"); got != "" {
 		t.Fatalf("resolveClientIDByName(agent-US, bob) = %q, want empty (different fleet group must not match)", got)
 	}
-	if got := server.resolveClientIDByName("agent-solo", "bob"); got != "" {
+	if got := server.clientsSvc.ResolveIDByName("agent-solo", "bob"); got != "" {
 		t.Fatalf("resolveClientIDByName(agent-solo, bob) = %q, want empty (agent without fleet group must not match)", got)
 	}
-	if got := server.resolveClientIDByName("agent-EU", "nonexistent"); got != "" {
+	if got := server.clientsSvc.ResolveIDByName("agent-EU", "nonexistent"); got != "" {
 		t.Fatalf("resolveClientIDByName(agent-EU, nonexistent) = %q, want empty", got)
 	}
 
@@ -213,7 +213,7 @@ func TestResolveClientIDByNameHitsFleetGroupAssignment(t *testing.T) {
 		CreatedAt:  now,
 	}}, nil)
 
-	if got := server.resolveClientIDByName("agent-US", "carol"); got != directClientID {
+	if got := server.clientsSvc.ResolveIDByName("agent-US", "carol"); got != directClientID {
 		t.Fatalf("resolveClientIDByName(agent-US, carol) = %q, want %q (direct agent assignment)", got, directClientID)
 	}
 }
