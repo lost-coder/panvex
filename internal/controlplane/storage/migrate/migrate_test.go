@@ -412,7 +412,7 @@ func populateSourceStore(t *testing.T, store storage.MigrationStore, now time.Ti
 	}
 	if err := store.PutJob(ctx, storage.JobRecord{
 		ID:             "job-000001",
-		Action:         "runtime.reload",
+		Action:         "telemetry.refresh_diagnostics",
 		ActorID:        "user-000001",
 		Status:         "failed",
 		CreatedAt:      now,
@@ -439,7 +439,7 @@ func populateSourceStore(t *testing.T, store storage.MigrationStore, now time.Ti
 		TargetID:  "job-000001",
 		CreatedAt: now,
 		Details: map[string]any{
-			"action": "runtime.reload",
+			"action": "telemetry.refresh_diagnostics",
 		},
 	}); err != nil {
 		t.Fatalf("AppendAuditEvent() error = %v", err)

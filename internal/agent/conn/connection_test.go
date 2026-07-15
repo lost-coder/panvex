@@ -455,10 +455,6 @@ func (c *fakeInitialSyncTelemtClient) FetchActiveIPs(context.Context) ([]telemt.
 	return c.activeIPs, nil
 }
 
-func (c *fakeInitialSyncTelemtClient) ExecuteRuntimeReload(context.Context) error {
-	return nil
-}
-
 func (c *fakeInitialSyncTelemtClient) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
 	return telemt.ClientApplyResult{}, nil
 }

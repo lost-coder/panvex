@@ -23,7 +23,6 @@ export function ServerHero({
   pulseWord,
   relativeTime,
   relativeTimeStale,
-  onReload,
   onRestart,
   onBoostDetail,
   onRename,
@@ -34,7 +33,6 @@ export function ServerHero({
   pulseWord: string;
   relativeTime: string | null;
   relativeTimeStale: boolean;
-  onReload?: (() => void) | undefined;
   onRestart?: (() => void) | undefined;
   onBoostDetail?: (() => void) | undefined;
   onRename?: (() => void) | undefined;
@@ -86,7 +84,6 @@ export function ServerHero({
           )}
           {relativeTime && <RelativeTimeBadge label={relativeTime} stale={relativeTimeStale} />}
           <ServerActionsDropdown
-            onReload={onReload}
             onRestart={onRestart}
             onBoostDetail={onBoostDetail}
             onRename={onRename}

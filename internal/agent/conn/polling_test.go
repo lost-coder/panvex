@@ -30,7 +30,6 @@ func (failingTelemt) FetchSystemInfo(context.Context) (telemt.SystemInfo, error)
 func (failingTelemt) FetchDiscoveredUsers(context.Context, string) ([]telemt.DiscoveredUser, error) {
 	return nil, nil
 }
-func (failingTelemt) ExecuteRuntimeReload(context.Context) error { return nil }
 func (failingTelemt) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
 	return telemt.ClientApplyResult{}, nil
 }
@@ -162,7 +161,6 @@ func (r *recoveringTelemt) FetchSystemInfo(context.Context) (telemt.SystemInfo, 
 func (r *recoveringTelemt) FetchDiscoveredUsers(context.Context, string) ([]telemt.DiscoveredUser, error) {
 	return nil, nil
 }
-func (r *recoveringTelemt) ExecuteRuntimeReload(context.Context) error { return nil }
 func (r *recoveringTelemt) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
 	return telemt.ClientApplyResult{}, nil
 }

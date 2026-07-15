@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 export const jobActionSchema = z.enum([
-  "runtime.reload",
   "users.create",
   "client.create",
   "client.update",

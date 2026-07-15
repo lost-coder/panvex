@@ -68,7 +68,7 @@ func enqueueJobForAgent(t *testing.T, svc *jobs.Service, agentID string, idempot
 	t.Helper()
 
 	job, err := svc.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{agentID},
 		TTL:            time.Minute,
 		IdempotencyKey: idempotencyKey,
@@ -154,61 +154,58 @@ func (s *fakeGatewayConnectStream) RecvMsg(_ any) error {
 	return io.EOF
 }
 
-type fakeRuntimeReloadClient struct {
-	reloadCalls int
+type fakeAgentTelemtClient struct {
+	invalidateCalls int
 }
 
-func (c *fakeRuntimeReloadClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
+func (c *fakeAgentTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
 	return telemt.RuntimeState{}, nil
 }
 
-func (c *fakeRuntimeReloadClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
+func (c *fakeAgentTelemtClient) PatchConfig(context.Context, map[string]any, string) (telemt.PatchConfigResult, error) {
 	return telemt.PatchConfigResult{}, nil
 }
 
-func (c *fakeRuntimeReloadClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
+func (c *fakeAgentTelemtClient) GetManagedConfig(context.Context) (map[string]any, string, error) {
 	return nil, "", nil
 }
 
-func (c *fakeRuntimeReloadClient) HealthReady(context.Context) (bool, string, error) {
+func (c *fakeAgentTelemtClient) HealthReady(context.Context) (bool, string, error) {
 	return true, "", nil
 }
 
-func (c *fakeRuntimeReloadClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {
+func (c *fakeAgentTelemtClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {
 	return telemt.ClientUsageMetricsSnapshot{}, nil
 }
 
-func (c *fakeRuntimeReloadClient) FetchActiveIPs(context.Context) ([]telemt.UserActiveIPs, error) {
+func (c *fakeAgentTelemtClient) FetchActiveIPs(context.Context) ([]telemt.UserActiveIPs, error) {
 	return nil, nil
 }
 
-func (c *fakeRuntimeReloadClient) ExecuteRuntimeReload(context.Context) error {
-	c.reloadCalls++
-	return nil
-}
-
-func (c *fakeRuntimeReloadClient) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
+func (c *fakeAgentTelemtClient) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
 	return telemt.ClientApplyResult{}, nil
 }
 
-func (c *fakeRuntimeReloadClient) UpdateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
+func (c *fakeAgentTelemtClient) UpdateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
 	return telemt.ClientApplyResult{}, nil
 }
 
-func (c *fakeRuntimeReloadClient) DeleteClient(context.Context, string) error {
+func (c *fakeAgentTelemtClient) DeleteClient(context.Context, string) error {
 	return nil
 }
 
-func (c *fakeRuntimeReloadClient) InvalidateSlowDataCache() {}
+func (c *fakeAgentTelemtClient) InvalidateSlowDataCache() {
+	c.invalidateCalls++
+}
 
-func (c *fakeRuntimeReloadClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) {
+func (c *fakeAgentTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) {
 	return telemt.SystemInfo{}, nil
 }
 
-func (c *fakeRuntimeReloadClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
+func (c *fakeAgentTelemtClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
 	return nil, nil
 }
 
-func (c *fakeRuntimeReloadClient) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
+func (c *fakeAgentTelemtClient) ResetUserQuota(context.Context, string) (telemt.ResetUserQuotaResult, error) {
 	return telemt.ResetUserQuotaResult{}, nil
 }

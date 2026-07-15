@@ -953,36 +953,6 @@ func TestClientFetchRuntimeStatePartialOnSomeFailures(t *testing.T) {
 	}
 }
 
-func TestClientExecuteRuntimeReloadCallsTelemtEndpoint(t *testing.T) {
-	var called bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/runtime/reload" {
-			http.NotFound(w, r)
-			return
-		}
-
-		called = true
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer server.Close()
-
-	client, err := NewClient(Config{
-		BaseURL:       server.URL,
-		Authorization: "secret",
-	}, server.Client())
-	if err != nil {
-		t.Fatalf("NewClient() error = %v", err)
-	}
-
-	if err := client.ExecuteRuntimeReload(context.Background()); err != nil {
-		t.Fatalf("ExecuteRuntimeReload() error = %v", err)
-	}
-
-	if !called {
-		t.Fatal("ExecuteRuntimeReload() did not call Telemt runtime reload endpoint")
-	}
-}
-
 func TestClientCreateClientCallsTelemtUsersEndpoint(t *testing.T) {
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

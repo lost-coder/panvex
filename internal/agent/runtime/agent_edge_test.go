@@ -21,7 +21,6 @@ type errTelemt struct {
 	fetchActiveIPsErr    error
 	fetchSystemInfoErr   error
 	fetchDiscoveredErr   error
-	executeReloadErr     error
 	createErr            error
 	updateErr            error
 	deleteErr            error
@@ -45,7 +44,6 @@ func (e *errTelemt) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) 
 func (e *errTelemt) FetchDiscoveredUsers(context.Context, string) ([]telemt.DiscoveredUser, error) {
 	return nil, e.fetchDiscoveredErr
 }
-func (e *errTelemt) ExecuteRuntimeReload(context.Context) error { return e.executeReloadErr }
 func (e *errTelemt) CreateClient(context.Context, telemt.ManagedClient) (telemt.ClientApplyResult, error) {
 	e.createCalls.Add(1)
 	return telemt.ClientApplyResult{}, e.createErr

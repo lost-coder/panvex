@@ -58,7 +58,6 @@
     },
     "bulk": {
       "hint": "run a bulk action or clear the selection",
-      "reload": "Reload runtime",
       "selfUpdate": "Self-update"
     },
     "card": {
@@ -117,7 +116,6 @@
     "elapsedHourMin": "{{hours}}h {{minutes}}m",
     "actions": {
       "title": "Server actions",
-      "reload": "Reload runtime",
       "restart": "Restart Telemt",
       "restartDone": "Telemt restart requested",
       "restartConfirmTitle": "Restart Telemt?",

@@ -164,7 +164,7 @@ func TestReverseTransportRedialWithAuthorityIssuedCerts(t *testing.T) {
 			Body: &gatewayrpc.ConnectServerMessage_Job{
 				Job: &gatewayrpc.JobCommand{
 					Id:     jobID,
-					Action: "runtime.reload",
+					Action: "telemetry.refresh_diagnostics",
 				},
 			},
 		}); err != nil {

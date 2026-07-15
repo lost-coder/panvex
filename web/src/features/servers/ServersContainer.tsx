@@ -17,7 +17,6 @@ import { apiClient } from "@/shared/api/api";
 import { useToast } from "@/app/providers/ToastProvider";
 
 const BULK_ACTION_MAP: Record<BulkServerAction, string> = {
-  reload: "runtime.reload",
   selfUpdate: "agent.self-update",
 };
 

@@ -76,7 +76,7 @@ func runJobFanout(tb testing.TB) (ingest, ack *latencySamples, completion time.D
 	// ---- Ingest: one operator enqueues the fan-out job. ----
 	t0 := time.Now()
 	job, err := svc.Enqueue(ctx, jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: targetIDs,
 		TTL:            30 * time.Second,
 		IdempotencyKey: fmt.Sprintf("loadtest-fanout-%d", time.Now().UnixNano()),

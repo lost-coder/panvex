@@ -21,7 +21,7 @@ func TestJobExecutionBudget(t *testing.T) {
 	}{
 		{
 			name: "default action keeps the 30s budget",
-			job:  &gatewayrpc.JobCommand{Action: "runtime.reload"},
+			job:  &gatewayrpc.JobCommand{Action: "telemetry.refresh_diagnostics"},
 			want: jobExecutionTimeout,
 		},
 		{
@@ -93,7 +93,7 @@ func TestStartJobWorkersJoinWaitGroupOnCancel(t *testing.T) {
 func TestReleaseQueuedJobsFreesReservations(t *testing.T) {
 	tracker := NewInflightTracker()
 	queues := newTestJobQueues()
-	job := &gatewayrpc.JobCommand{Id: "job-9", Action: "runtime.reload"}
+	job := &gatewayrpc.JobCommand{Id: "job-9", Action: "telemetry.refresh_diagnostics"}
 	if !tracker.reserve(job.GetId()) {
 		t.Fatal("setup: reserve failed")
 	}
@@ -113,7 +113,7 @@ func TestReleaseQueuedJobsFreesReservations(t *testing.T) {
 func TestDuplicateDeliveryAcrossConnectionsIsNotReExecuted(t *testing.T) {
 	tracker := NewInflightTracker() // hoisted: one tracker, two connections
 	agent := runtime.New(runtime.Config{AgentID: "agent-1"}, failingTelemt{})
-	job := &gatewayrpc.JobCommand{Id: "job-7", Action: "runtime.reload"}
+	job := &gatewayrpc.JobCommand{Id: "job-7", Action: "telemetry.refresh_diagnostics"}
 
 	// Connection 1 accepts the job; no worker runs, so it stays in flight.
 	queues1 := newTestJobQueues()

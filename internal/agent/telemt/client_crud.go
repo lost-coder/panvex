@@ -43,26 +43,6 @@ func (c *Client) FetchActiveIPs(ctx context.Context) ([]UserActiveIPs, error) {
 	return users, nil
 }
 
-// ExecuteRuntimeReload invokes the Telemt runtime reload endpoint.
-func (c *Client) ExecuteRuntimeReload(ctx context.Context) error {
-	request, err := c.newRequest(ctx, http.MethodPost, "/v1/runtime/reload", nil)
-	if err != nil {
-		return err
-	}
-
-	response, err := c.httpClient.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("runtime reload failed: %w", decodeAPIError(response.Body, fmt.Sprintf("runtime reload failed with status %d", response.StatusCode)))
-	}
-
-	return nil
-}
-
 // CreateClient creates one managed Telemt client and returns the preferred connection link.
 func (c *Client) CreateClient(ctx context.Context, client ManagedClient) (ClientApplyResult, error) {
 	return c.applyClient(ctx, http.MethodPost, "/v1/users", client)

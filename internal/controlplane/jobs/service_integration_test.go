@@ -98,7 +98,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKeyAfterRestart(t *testing.T) 
 
 	first := jobs.NewServiceWithStore(context.Background(), store)
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "same-key",
@@ -110,7 +110,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKeyAfterRestart(t *testing.T) 
 
 	restored := jobs.NewServiceWithStore(context.Background(), store)
 	if _, err := restored.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "same-key",
@@ -138,7 +138,7 @@ func TestServiceRecordResultPersistsTargetsAcrossRestart(t *testing.T) {
 	first := jobs.NewServiceWithStore(context.Background(), store)
 	first.SetNow(func() time.Time { return now })
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1", "agent-2"},
 		TTL:            time.Minute,
 		IdempotencyKey: "reload-two",
@@ -226,7 +226,7 @@ func TestServiceMarkDeliveredKeepsInMemoryStateWhenPersistenceFails(t *testing.T
 	store := &failingJobStore{JobStore: sqliteStore}
 	service := jobs.NewServiceWithStore(context.Background(), store)
 	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "deliver-with-store-error",
@@ -262,7 +262,7 @@ func TestServicePendingForAgentWorksAfterRestore(t *testing.T) {
 
 	first := jobs.NewServiceWithStore(context.Background(), store)
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "pending-after-restore",
@@ -293,7 +293,7 @@ func TestServiceListPersistsExpiredQueuedJobsAcrossRestart(t *testing.T) {
 
 	first := jobs.NewServiceWithStore(context.Background(), store)
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "persist-expired",
@@ -342,7 +342,7 @@ func TestServiceListAllowsConcurrentUpdateWhileExpirationPersistenceBlocks(t *te
 	store := &blockingJobStore{JobStore: sqliteStore}
 	service := jobs.NewServiceWithStore(context.Background(), store)
 	expiredJob, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-expired"},
 		TTL:            time.Minute,
 		IdempotencyKey: "expired-for-list-blocking",
@@ -352,7 +352,7 @@ func TestServiceListAllowsConcurrentUpdateWhileExpirationPersistenceBlocks(t *te
 		t.Fatalf("Enqueue(expired) error = %v", err)
 	}
 	liveJob, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-live"},
 		TTL:            time.Hour,
 		IdempotencyKey: "live-for-list-blocking",
@@ -432,7 +432,7 @@ func TestServiceMarkDeliveredAllowsConcurrentListWhilePersistenceBlocks(t *testi
 	service := jobs.NewServiceWithStore(context.Background(), store)
 	service.SetNow(func() time.Time { return now.Add(10 * time.Second) })
 	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "mark-delivered-list-unblocked",
@@ -499,7 +499,7 @@ func TestServiceUpdateTargetPersistsLatestVersionAfterOutOfOrderWrites(t *testin
 	service := jobs.NewServiceWithStore(context.Background(), store)
 	service.SetNow(func() time.Time { return now.Add(10 * time.Second) })
 	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "persist-latest-version",
@@ -589,7 +589,7 @@ func TestEnqueueReleasesLockDuringPersist(t *testing.T) {
 	enqueueDone := make(chan error, 1)
 	go func() {
 		_, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-			Action:         jobs.ActionRuntimeReload,
+			Action:         jobs.ActionTelemetryRefreshDiagnostics,
 			TargetAgentIDs: []string{"agent-1"},
 			TTL:            time.Minute,
 			IdempotencyKey: "p2-perf-04-slow-persist",
@@ -673,7 +673,7 @@ func TestEnqueueDuplicateKeyRejectedDuringOutOfLockWindow(t *testing.T) {
 	firstDone := make(chan error, 1)
 	go func() {
 		_, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-			Action:         jobs.ActionRuntimeReload,
+			Action:         jobs.ActionTelemetryRefreshDiagnostics,
 			TargetAgentIDs: []string{"agent-1"},
 			TTL:            time.Minute,
 			IdempotencyKey: "p2-perf-04-dup-key",
@@ -691,7 +691,7 @@ func TestEnqueueDuplicateKeyRejectedDuringOutOfLockWindow(t *testing.T) {
 	// Second Enqueue with the same key — must be rejected immediately even
 	// though the first one has not completed persist yet.
 	_, err = service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Minute,
 		IdempotencyKey: "p2-perf-04-dup-key",
@@ -715,7 +715,7 @@ func TestEnqueueDuplicateKeyRejectedDuringOutOfLockWindow(t *testing.T) {
 	// After the in-flight call completes the key is still reserved by the
 	// first job — a third Enqueue must also see the duplicate.
 	_, err = service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-3"},
 		TTL:            time.Minute,
 		IdempotencyKey: "p2-perf-04-dup-key",
@@ -755,7 +755,7 @@ func TestEnqueueDuplicateKeyConcurrentExactlyOneWins(t *testing.T) {
 			defer wg.Done()
 			<-start
 			_, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-				Action:         jobs.ActionRuntimeReload,
+				Action:         jobs.ActionTelemetryRefreshDiagnostics,
 				TargetAgentIDs: []string{"agent-1"},
 				TTL:            time.Minute,
 				IdempotencyKey: "p2-perf-04-race",
@@ -805,7 +805,7 @@ func TestEnqueuePersistFailureRollsBack(t *testing.T) {
 	service := jobs.NewServiceWithStore(context.Background(), store)
 
 	_, err = service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "p2-perf-04-rollback",
@@ -830,7 +830,7 @@ func TestEnqueuePersistFailureRollsBack(t *testing.T) {
 	// same key should now succeed once the store is healthy again.
 	store.putJobErr = nil
 	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "p2-perf-04-rollback",
@@ -861,7 +861,7 @@ func TestAcknowledgedJobsAreRedispatchedAfterRestart(t *testing.T) {
 	first := jobs.NewServiceWithStore(context.Background(), store)
 	first.SetNow(func() time.Time { return now })
 	job, err := first.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "ack-redispatch",
@@ -916,7 +916,7 @@ func TestEnqueueRetryAfterTransientStoreError(t *testing.T) {
 	store.putJobErr = errors.New("transient")
 
 	if _, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "retry-key",
@@ -929,7 +929,7 @@ func TestEnqueueRetryAfterTransientStoreError(t *testing.T) {
 	// reservation was rolled back.
 	store.putJobErr = nil
 	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "retry-key",
@@ -997,7 +997,7 @@ func TestServicePersistFailureNotifiesMetricsSink(t *testing.T) {
 	service.SetMetricsSink(sink)
 
 	job, err := service.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "persist-failure-metric",
@@ -1036,7 +1036,7 @@ func TestGetWithContextReadsEvictedJobFromStore(t *testing.T) {
 	svc.SetNow(func() time.Time { return base })
 
 	job, err := svc.Enqueue(ctx, jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "evict-then-read-1",

@@ -74,7 +74,6 @@ const noop = () => {};
 export function ServerDetailPage({
   server,
   onBack,
-  onReload,
   onRestart,
   onBoostDetail,
   initState,
@@ -375,7 +374,6 @@ export function ServerDetailPage({
               )}
               <NodeStateBadge state={server.state} label={tc(nodeStatePresentation(server.state).labelKey)} />
               <ServerActionsDropdown
-                onReload={onReload}
                 onRestart={onRestart}
                 onBoostDetail={onBoostDetail}
                 onRename={onRename ? handleOpenRename : undefined}
@@ -392,7 +390,6 @@ export function ServerDetailPage({
         pulseWord={pulseWord}
         relativeTime={relativeTime}
         relativeTimeStale={relativeTimeStale}
-        onReload={onReload}
         onRestart={onRestart}
         onBoostDetail={onBoostDetail}
         onRename={onRename ? handleOpenRename : undefined}

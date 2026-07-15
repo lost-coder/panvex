@@ -292,7 +292,7 @@ func RunSQLiteOnlyJSONValidationContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		err := store.PutJob(ctx, storage.JobRecord{
 			ID:             "job-malformed-json",
-			Action:         "runtime.reload",
+			Action:         "telemetry.refresh_diagnostics",
 			ActorID:        "user-1",
 			Status:         "queued",
 			CreatedAt:      time.Now(),
@@ -312,7 +312,7 @@ func RunSQLiteOnlyJSONValidationContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		err := store.PutJob(ctx, storage.JobRecord{
 			ID:             "job-valid-json",
-			Action:         "runtime.reload",
+			Action:         "telemetry.refresh_diagnostics",
 			ActorID:        "user-1",
 			Status:         "queued",
 			CreatedAt:      time.Now(),
@@ -335,7 +335,7 @@ func RunSQLiteOnlyJSONValidationContract(t *testing.T, open OpenStore) {
 		ctx := context.Background()
 		err := store.PutJob(ctx, storage.JobRecord{
 			ID:             "job-empty-payload",
-			Action:         "runtime.reload",
+			Action:         "telemetry.refresh_diagnostics",
 			ActorID:        "user-1",
 			Status:         "queued",
 			CreatedAt:      time.Now(),

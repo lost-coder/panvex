@@ -25,7 +25,7 @@ func TestJobSupersedeKey(t *testing.T) {
 		{"client.delete keys by client_id", jobs.ActionClientDelete, payload, "c-1"},
 		{"client.rotate_secret keys by client_id", jobs.ActionClientRotateSecret, payload, "c-1"},
 		{"client.reset_quota is out of scope", jobs.ActionClientResetQuota, payload, ""},
-		{"non-client action is out of scope", jobs.ActionRuntimeReload, payload, ""},
+		{"non-client action is out of scope", jobs.ActionTelemetryRefreshDiagnostics, payload, ""},
 		{"empty payload yields no key", jobs.ActionClientUpdate, "", ""},
 		{"malformed payload yields no key", jobs.ActionClientUpdate, `{"client_id"`, ""},
 		{"payload without client_id yields no key", jobs.ActionClientUpdate, `{"name":"alice"}`, ""},

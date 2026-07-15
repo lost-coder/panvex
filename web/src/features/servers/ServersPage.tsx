@@ -140,12 +140,6 @@ export function ServersPage({
           hint={t("list.bulk.hint")}
           actions={[
             {
-              id: "reload",
-              label: t("list.bulk.reload"),
-              variant: "ghost",
-              disabled: !onBulkAction,
-            },
-            {
               id: "selfUpdate",
               label: t("list.bulk.selfUpdate"),
               variant: "ghost",

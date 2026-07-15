@@ -219,7 +219,7 @@ func TestChaosJobDispatchInterrupted(t *testing.T) {
 	const agentID = "chaos-target-agent"
 
 	job, err := svc.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{agentID},
 		TTL:            time.Hour,
 		IdempotencyKey: "chaos-dispatch-1",

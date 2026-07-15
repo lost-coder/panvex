@@ -174,7 +174,7 @@ func TestJobsKeysEviction(t *testing.T) {
 
 	// Job A: will be completed, then aged past TTL — should be evicted.
 	jobA, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "key-a",
@@ -186,7 +186,7 @@ func TestJobsKeysEviction(t *testing.T) {
 
 	// Job B: will stay live the whole test — must never be evicted.
 	_, err = service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Hour,
 		IdempotencyKey: "key-b",
@@ -204,7 +204,7 @@ func TestJobsKeysEviction(t *testing.T) {
 		t.Fatalf("PruneKeys immediate = %d, want 0", evicted)
 	}
 	if _, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "key-a",
@@ -222,7 +222,7 @@ func TestJobsKeysEviction(t *testing.T) {
 
 	// key-a should now be re-usable (key has been evicted from the map).
 	if _, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "key-a",
@@ -233,7 +233,7 @@ func TestJobsKeysEviction(t *testing.T) {
 
 	// key-b is still live — it must remain protected from eviction.
 	if _, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Hour,
 		IdempotencyKey: "key-b",
@@ -253,7 +253,7 @@ func TestJobsKeysEvictionViaExpiredJobs(t *testing.T) {
 	service.SetNow(func() time.Time { return now })
 
 	if _, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "key-expire",
@@ -274,7 +274,7 @@ func TestJobsKeysEvictionViaExpiredJobs(t *testing.T) {
 
 	// Re-enqueue with the same key should succeed.
 	if _, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "key-expire",
@@ -300,7 +300,7 @@ func TestJobsKeysEvictionWorker(t *testing.T) {
 	service.SetNow(nowFn)
 
 	jobA, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "key-worker",
@@ -348,7 +348,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKey(t *testing.T) {
 	service := NewService()
 
 	first, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "same-key",
@@ -363,7 +363,7 @@ func TestServiceEnqueueRejectsDuplicateIdempotencyKey(t *testing.T) {
 	}
 
 	_, err = service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "same-key",
@@ -409,7 +409,7 @@ func TestServiceMarkAcknowledgedTransitionsTargetState(t *testing.T) {
 	})
 
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "ack-transition",
@@ -442,7 +442,7 @@ func TestServiceMarkDeliveredDoesNotDowngradeAcknowledgedTarget(t *testing.T) {
 	})
 
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "ack-no-downgrade",
@@ -476,7 +476,7 @@ func TestServiceMarkAcknowledgedIgnoresQueuedTarget(t *testing.T) {
 	})
 
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "ack-queued",
@@ -510,7 +510,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 	})
 
 	queued, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "pending-queued",
@@ -520,7 +520,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 		t.Fatalf("Enqueue(queued) error = %v", err)
 	}
 	staleSent, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "pending-stale-sent",
@@ -530,7 +530,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 		t.Fatalf("Enqueue(staleSent) error = %v", err)
 	}
 	recentSent, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "pending-recent-sent",
@@ -540,7 +540,7 @@ func TestServicePendingForAgentReturnsQueuedAndStaleSentJobs(t *testing.T) {
 		t.Fatalf("Enqueue(recentSent) error = %v", err)
 	}
 	otherAgent, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-2"},
 		TTL:            time.Hour,
 		IdempotencyKey: "pending-other-agent",
@@ -592,7 +592,7 @@ func TestServicePendingForAgentRedeliversAcknowledgedAfterRetryWindow(t *testing
 	service.SetNow(func() time.Time { return clock })
 
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "pending-index-ack-redeliver",
@@ -627,7 +627,7 @@ func TestServiceListProjectsExpiredQueuedJobsAsFailed(t *testing.T) {
 	now := time.Now().UTC().Add(-2 * time.Minute)
 
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "expired-job",
@@ -668,7 +668,7 @@ func TestServiceRecordResultDoesNotOverrideExpiredTarget(t *testing.T) {
 	})
 
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "expired-result",
@@ -704,7 +704,7 @@ func TestServiceUpdateTargetDoesNotExpireUnrelatedJobs(t *testing.T) {
 	})
 
 	expiredJob, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-expired"},
 		TTL:            time.Minute,
 		IdempotencyKey: "unrelated-expired",
@@ -715,7 +715,7 @@ func TestServiceUpdateTargetDoesNotExpireUnrelatedJobs(t *testing.T) {
 	}
 
 	liveJob, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-live"},
 		TTL:            time.Hour,
 		IdempotencyKey: "unrelated-live",
@@ -768,7 +768,7 @@ func TestAcknowledgedJobsExpireAfterTTL(t *testing.T) {
 	// Large TTL so the job itself does not expire via jobShouldExpire
 	// before the ack-expiry worker gets a chance to fire.
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            24 * time.Hour,
 		IdempotencyKey: "ack-expire",
@@ -841,7 +841,7 @@ func TestStartAcknowledgedExpiryWorker(t *testing.T) {
 	})
 
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "ack-worker",
@@ -899,7 +899,7 @@ func TestServiceGetReturnsJobByID(t *testing.T) {
 	now := time.Now().UTC()
 
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "key-get-1",
@@ -987,7 +987,7 @@ func TestUpdateTargetUsesPanelClockNotAgentClock(t *testing.T) {
 	service.SetNow(func() time.Time { return panelNow })
 
 	job, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "panel-clock",
@@ -1022,7 +1022,7 @@ func TestExpiryWatermarkTracksEnqueueAndExpiry(t *testing.T) {
 	service.SetNow(func() time.Time { return current })
 
 	shortJob, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "wm-short",
@@ -1031,7 +1031,7 @@ func TestExpiryWatermarkTracksEnqueueAndExpiry(t *testing.T) {
 		t.Fatalf("enqueue short: %v", err)
 	}
 	if _, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            2 * time.Minute,
 		IdempotencyKey: "wm-long",
@@ -1075,7 +1075,7 @@ func TestExpiryWatermarkClearedWhenNothingCanExpire(t *testing.T) {
 	service.SetNow(func() time.Time { return current })
 
 	if _, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "wm-only",
@@ -1187,7 +1187,7 @@ func TestJobFailureHookFiresOnTerminalFailure(t *testing.T) {
 	svc.SetMetricsSink(sink)
 
 	job, err := svc.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Hour,
 		IdempotencyKey: "fail-hook-1",
@@ -1219,7 +1219,7 @@ func TestEnqueueDoesNotSupersedeNonClientActions(t *testing.T) {
 	service.SetSupersedeKeyFunc(testClientSupersedeKey)
 
 	reload, err := service.Enqueue(context.Background(), CreateJobInput{
-		Action:         ActionRuntimeReload,
+		Action:         ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            10 * time.Minute,
 		IdempotencyKey: "reload-1",
@@ -1238,6 +1238,6 @@ func TestEnqueueDoesNotSupersedeNonClientActions(t *testing.T) {
 	}
 	got, _ := service.Get(reload.ID)
 	if got.Targets[0].Status != TargetStatusQueued {
-		t.Fatalf("runtime.reload target status = %s, want queued", got.Targets[0].Status)
+		t.Fatalf("telemetry.refresh_diagnostics target status = %s, want queued", got.Targets[0].Status)
 	}
 }

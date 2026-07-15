@@ -24,7 +24,7 @@ func TestExpiryHookReceivesExpiredTargets(t *testing.T) {
 	})
 
 	if _, err := svc.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1", "agent-2"},
 		TTL:            time.Minute,
 		IdempotencyKey: "expire-key",
@@ -55,8 +55,8 @@ func TestExpiryHookReceivesExpiredTargets(t *testing.T) {
 	seen := map[string]bool{}
 	for _, target := range batch {
 		seen[target.AgentID] = true
-		if target.Job.Action != jobs.ActionRuntimeReload {
-			t.Fatalf("target.Job.Action = %q, want %q", target.Job.Action, jobs.ActionRuntimeReload)
+		if target.Job.Action != jobs.ActionTelemetryRefreshDiagnostics {
+			t.Fatalf("target.Job.Action = %q, want %q", target.Job.Action, jobs.ActionTelemetryRefreshDiagnostics)
 		}
 		if target.Job.PayloadJSON != `{"client_id":"c1"}` {
 			t.Fatalf("target.Job.PayloadJSON = %q", target.Job.PayloadJSON)
@@ -93,7 +93,7 @@ func TestExpiryHookNotInvokedUnderLock(t *testing.T) {
 	})
 
 	if _, err := svc.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionRuntimeReload,
+		Action:         jobs.ActionTelemetryRefreshDiagnostics,
 		TargetAgentIDs: []string{"agent-1"},
 		TTL:            time.Minute,
 		IdempotencyKey: "expire-key",
