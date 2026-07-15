@@ -591,6 +591,15 @@ func (s *Server) recordClientJobResultWithContext(ctx context.Context, agentID, 
 	if s.clientsSvc != nil {
 		if err := s.clientsSvc.PersistDeployment(ctx, deployment); err != nil {
 			s.logger.ErrorContext(ctx, "client deployment persistence failed", "client_id", payload.ClientID, "agent_id", agentID, "error", err)
+		} else {
+			// Tell the web dashboard live (R10b/Task 5, C8): before this, a
+			// job result only updated the deployment row, and the operator
+			// learned of the transition on the next poll. Publish on both
+			// success and failure — a node reporting a failure is exactly
+			// the kind of transition that needs to surface immediately, not
+			// just a success. Mirrors onClientJobsExpired, which likewise
+			// only publishes after a successful PersistDeployment.
+			s.publishClientsUpdated(payload.ClientID)
 		}
 	}
 }
