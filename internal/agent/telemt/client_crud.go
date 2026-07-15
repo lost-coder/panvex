@@ -39,6 +39,14 @@ var ErrClientNotFound = errors.New("telemt: user not found")
 // lost ack must not fail forever).
 var ErrClientAlreadyExists = errors.New("telemt: user already exists")
 
+// ErrLastUserForbidden is returned by DeleteClient when Telemt answers 409
+// last_user_forbidden — the node refuses to delete its last configured user
+// (telemt users.rs delete_user). Disable does NOT hit this (it is a PATCH
+// enabled=false); only a real delete of the last user does. Surfaced typed
+// so the panel shows the honest reason instead of a generic failure
+// (audit F7 residual).
+var ErrLastUserForbidden = errors.New("telemt: node refuses to delete its last configured user (Telemt requires at least one user; disable it instead)")
+
 // FetchActiveIPs fetches the /v1/stats/users/active-ips endpoint and returns per-user active IPs.
 func (c *Client) FetchActiveIPs(ctx context.Context) ([]UserActiveIPs, error) {
 	var users []UserActiveIPs
@@ -140,6 +148,16 @@ func (c *Client) DeleteClient(ctx context.Context, clientName string) error {
 	if response.StatusCode == http.StatusNotFound {
 		return ErrClientNotFound
 	}
+	if response.StatusCode == http.StatusConflict {
+		// 409 code "last_user_forbidden": Telemt never deletes its last
+		// configured user (users.rs). Typed so callers/panel can render
+		// the real reason. Other 409s stay generic.
+		apiErr := decodeAPIError(response.Body, "delete client failed with status 409")
+		if strings.Contains(apiErr.Error(), "last_user_forbidden") {
+			return fmt.Errorf("delete client: %w", ErrLastUserForbidden)
+		}
+		return fmt.Errorf("delete client failed: %w", apiErr)
+	}
 	if response.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("delete client failed: %w", decodeAPIError(response.Body, fmt.Sprintf("delete client failed with status %d", response.StatusCode)))
 	}
@@ -151,6 +169,13 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 	isPatch := method == http.MethodPatch
 	payload := map[string]any{
 		"secret": client.Secret,
+		// Always sent explicitly (audit F7/M1): CreateUserRequest models it
+		// as Option<bool> (omitted = enabled) and PatchUserRequest as
+		// Patch<bool> (omitted = Unchanged) — since Panvex ships the FULL
+		// desired state, omitting it on PATCH would silently never toggle a
+		// user, and omitting it on create would deploy a disabled client
+		// enabled.
+		"enabled": client.Enabled,
 	}
 	// Telemt's PatchUserRequest has no username field (there is no rename
 	// operation anywhere in its API — audit F2), so the name is only sent

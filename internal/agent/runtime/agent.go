@@ -952,16 +952,12 @@ func (a *Agent) handleClientJob(ctx context.Context, job *gatewayrpc.JobCommand,
 }
 
 func (a *Agent) handleClientCreateJob(ctx context.Context, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
-	// A client created in the disabled state must not be deployed to the
-	// node: Telemt has no per-user enabled flag, so the only way to keep a
-	// disabled client from proxying is to not register it at all. Record
-	// the name mapping so a later enable can patch/create it.
-	if !managedClient.Enabled {
-		a.setClientName(payload.ClientID, managedClient.Name)
-		result.Success = true
-		result.Message = "client created (disabled; not deployed to node)"
-		return result
-	}
+	// A disabled client is still deployed: Telemt has a per-user enabled
+	// flag (CreateUserRequest.enabled, audit F7/M1), so the user is created
+	// with enabled=false — configured on the node (limits, ad-tag, quota
+	// counters in place) but not proxying, and any live sessions are
+	// cancelled by Telemt. The old skip-deployment shortcut rested on the
+	// stale "Telemt has no enabled flag" assumption.
 	applyResult, err := a.telemt.CreateClient(ctx, managedClient)
 	// A redelivered create (panel retry after a lost ack) hits 409
 	// user_exists. The payload carries the FULL desired state, so converge
@@ -983,27 +979,17 @@ func (a *Agent) handleClientCreateJob(ctx context.Context, payload clientJobPayl
 }
 
 func (a *Agent) handleClientUpdateJob(ctx context.Context, job *gatewayrpc.JobCommand, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
-	// Disabled client → ensure it is absent from Telemt so it stops
-	// proxying. Telemt has no enabled flag (the field is silently dropped),
-	// so disable maps to a delete. Deleting an already-absent user is a
-	// success (idempotent disable); other failures (e.g. Telemt refusing to
-	// remove the last configured user) are surfaced to the operator.
-	if !managedClient.Enabled {
-		err := a.telemt.DeleteClient(ctx, managedClient.Name)
-		if err != nil && !errors.Is(err, telemt.ErrClientNotFound) {
-			result.Message = err.Error()
-			return result
-		}
-		a.setClientName(payload.ClientID, managedClient.Name)
-		result.Success = true
-		result.Message = "client disabled (removed from node)"
-		return result
-	}
-
+	// Disable/enable rides the normal PATCH: Telemt's PatchUserRequest has
+	// an enabled Patch<bool> field (audit F7/M1) and the payload always
+	// carries the explicit desired value, so enabled=false disables the
+	// user in place (sessions cancelled, node-side quota/history preserved)
+	// and enabled=true re-enables it. Unlike the old delete-based disable
+	// this also works on the node's last remaining user
+	// (last_user_forbidden only guards real deletes).
 	applyResult, err := a.telemt.UpdateClient(ctx, managedClient)
-	// Re-enabling a previously-disabled client (or healing config drift)
-	// patches a user Telemt no longer has → 404. Fall back to create so the
-	// user is restored on the node.
+	// Patching a user Telemt no longer has (drift, or a client disabled
+	// under the old delete-based regime) → 404. Fall back to create so the
+	// user is restored on the node in the desired enabled state.
 	if errors.Is(err, telemt.ErrClientNotFound) {
 		applyResult, err = a.telemt.CreateClient(ctx, managedClient)
 	}

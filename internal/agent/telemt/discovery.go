@@ -17,8 +17,13 @@ type SystemInfo struct {
 
 // UserInfo represents one user as returned by GET /v1/users.
 type UserInfo struct {
-	Username           string    `json:"username"`
-	InRuntime          bool      `json:"in_runtime"`
+	Username  string `json:"username"`
+	InRuntime bool   `json:"in_runtime"`
+	// Enabled is Telemt's real per-user enabled flag (UserInfo.enabled,
+	// always serialized on 3.4.x). Pointer so an absent field (older
+	// Telemt) is distinguishable from false and can fall back to
+	// InRuntime (audit M-2).
+	Enabled            *bool     `json:"enabled"`
 	UserADTag          *string   `json:"user_ad_tag"`
 	MaxTCPConns        *int      `json:"max_tcp_conns"`
 	ExpirationRFC3339  *string   `json:"expiration_rfc3339"`
@@ -103,9 +108,17 @@ func (c *Client) FetchDiscoveredUsers(ctx context.Context, configPath string) ([
 // buildDiscoveredUser merges live UserInfo, API-returned limits, and any
 // config-file secrets into a single DiscoveredUser record.
 func buildDiscoveredUser(u UserInfo, configSecrets map[string]UserEntry) DiscoveredUser {
+	// Audit M-2: prefer Telemt's real per-user enabled flag; in_runtime is
+	// only "the user is in the runtime config snapshot" and stays true for
+	// a configured-but-disabled user. Fall back to in_runtime when the
+	// field is absent (older Telemt without the enabled flag).
+	enabled := u.InRuntime
+	if u.Enabled != nil {
+		enabled = *u.Enabled
+	}
 	du := DiscoveredUser{
 		Username:           u.Username,
-		Enabled:            u.InRuntime,
+		Enabled:            enabled,
 		TotalOctets:        u.TotalOctets,
 		CurrentConnections: u.CurrentConnections,
 		ActiveUniqueIPs:    u.ActiveUniqueIPs,
