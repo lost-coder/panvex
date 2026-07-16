@@ -36,7 +36,7 @@ type Bootstrap struct {
 	ObservabilityPprofAddr          string `setting:"name=observability.pprof_addr, type=string, default=, env=PANVEX_PPROF_ADDR, toml=observability.pprof_addr, apply=live, desc='pprof listener host:port. Empty disables pprof.'"`
 	ObservabilityMetricsScrapeToken string `setting:"name=observability.metrics_scrape_token, type=string, secret=true, default=, env=PANVEX_METRICS_SCRAPE_TOKEN, apply=live, desc='Bearer token required to scrape /metrics. Env-only.'"`
 
-	UpdatesInstallScriptURL string `setting:"name=updates.install_script_url, type=string, default=, env=PANVEX_INSTALL_SCRIPT_URL, toml=updates.install_script_url, apply=live, desc='Override default agent install-script URL emitted by /api/agents/{id}/install-command.'"`
+	UpdatesInstallScriptURL string `setting:"name=updates.install_script_url, type=string, default=, env=PANVEX_INSTALL_SCRIPT_URL, toml=updates.install_script_url, apply=live, desc='Override the agent install-script URL embedded in generated install commands.'"`
 
 	AgentClientDataConcurrency int `setting:"name=agent.client_data_concurrency, type=int, min=1, max=32, default=4, env=PANVEX_AGENT_CLIENT_DATA_CONCURRENCY, toml=agent.client_data_concurrency, apply=live, desc='Per-agent concurrency for the panel-side client-data fetcher.'"`
 }

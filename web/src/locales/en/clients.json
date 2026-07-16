@@ -110,11 +110,7 @@
     "maxUniqueIpsLabel": "Max Unique IPs",
     "dataQuotaLabel": "Data Quota",
     "quotaUnitLabel": "Unit",
-    "quotaUnits": {
-      "MB": "MB",
-      "GB": "GB",
-      "TB": "TB"
-    },
+    "quotaUnits": { "MB": "MB", "GB": "GB", "TB": "TB" },
     "unlimitedPlaceholder": "0 = unlimited",
     "cancel": "Cancel",
     "saving": "Saving...",

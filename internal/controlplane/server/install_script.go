@@ -95,11 +95,11 @@ func installScriptSHA256() (string, error) {
 }
 
 // InstallScriptSHA256 is the exported accessor for the install-script digest.
-// cmd/control-plane wires it into bootstrap.InstallCommandConfig.ScriptHash so
-// the generated curl|bash one-liner pins the body the panel currently serves.
+// The provision-outbound handler feeds it to BuildInstallCommand so the
+// generated curl|bash one-liner pins the body the panel currently serves.
 // On the unreachable error path it returns "" — callers should treat that as
-// "verification disabled" (consistent with the empty ScriptHash contract on
-// InstallCommandConfig). (S-3.)
+// "verification disabled" (the empty ScriptHash contract on
+// bootstrap.InstallCommandInput). (S-3.)
 func InstallScriptSHA256() string {
 	hash, err := installScriptSHA256()
 	if err != nil {

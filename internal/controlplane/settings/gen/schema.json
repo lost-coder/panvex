@@ -247,7 +247,7 @@
     "default": "",
     "env": "PANVEX_INSTALL_SCRIPT_URL",
     "toml": "updates.install_script_url",
-    "desc": "Override default agent install-script URL emitted by /api/agents/{id}/install-command."
+    "desc": "Override the agent install-script URL embedded in generated install commands."
   },
   {
     "name": "agent.client_data_concurrency",

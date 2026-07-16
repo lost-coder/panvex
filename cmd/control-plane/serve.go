@@ -188,9 +188,9 @@ func runServe(args []string) error {
 	gatewayrpc.RegisterAgentGatewayServer(grpcServer, api.Gateway())
 
 	// `queries` is the sqlc handle bound to the same pool as `store`; it comes
-	// from openStoreWithQueries. agenttransport.Manager,
-	// bootstrap.InstallCommandHandler and bootstrap.EnrollDriver execute
-	// transport/bootstrap SQL through it directly.
+	// from openStoreWithQueries. agenttransport.Manager, bootstrap.EnrollDriver
+	// and the provision-outbound handler execute transport/bootstrap SQL
+	// through it directly.
 
 	// agenttransport.Manager owns outbound supervisors and (in a later task)
 	// the inbound dispatch path. Now wired with real DB queries so outbound

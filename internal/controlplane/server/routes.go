@@ -68,7 +68,7 @@ func (s *Server) routes() http.Handler {
 	router.Use(s.csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
 	router.Get("/healthz", oapi.GetHealthz)
 	router.Get("/readyz", s.handleReadyz())
-	// Q-05: serve the bash installer the install-command points at. Top-level
+	// Q-05: serve the bash installer the provision-outbound command points at. Top-level
 	// path so the generated `curl <panel>/install-agent.sh | bash` works as
 	// pasted, with no /api prefix to remember. Unauthenticated by design — the
 	// per-agent bootstrap token (single-use, 5min TTL) is on the curl arg, not
