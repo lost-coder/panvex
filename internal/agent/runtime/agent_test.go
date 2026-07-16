@@ -741,29 +741,30 @@ func TestAgentBuildSnapshotMapsTelemtClientNamesBackToManagedClientIDs(t *testin
 }
 
 type fakeTelemtClient struct {
-	state                   telemt.RuntimeState
-	metricsUsage            []telemt.ClientUsage
-	metricsUptime           float64
-	activeIPs               []telemt.UserActiveIPs
-	createdClient           telemt.ManagedClient
-	updatedClient           telemt.ManagedClient
-	deletedClientName       string
-	createResult            telemt.ClientApplyResult
-	updateResult            telemt.ClientApplyResult
-	createErr               error
-	updateErr               error
-	deleteErr               error
-	createCalls             int
-	updateCalls             int
-	deleteCalls             int
-	invalidateSlowDataCalls int
-	resetQuotaUsername      string
-	resetQuotaCalls         int
-	resetQuotaResult        telemt.ResetUserQuotaResult
-	resetQuotaErr           error
-	discoverErr             error
-	managedConfig           map[string]any
-	managedRevision         string
+	state                          telemt.RuntimeState
+	metricsUsage                   []telemt.ClientUsage
+	metricsUptime                  float64
+	metricsUserTelemetrySuppressed bool
+	activeIPs                      []telemt.UserActiveIPs
+	createdClient                  telemt.ManagedClient
+	updatedClient                  telemt.ManagedClient
+	deletedClientName              string
+	createResult                   telemt.ClientApplyResult
+	updateResult                   telemt.ClientApplyResult
+	createErr                      error
+	updateErr                      error
+	deleteErr                      error
+	createCalls                    int
+	updateCalls                    int
+	deleteCalls                    int
+	invalidateSlowDataCalls        int
+	resetQuotaUsername             string
+	resetQuotaCalls                int
+	resetQuotaResult               telemt.ResetUserQuotaResult
+	resetQuotaErr                  error
+	discoverErr                    error
+	managedConfig                  map[string]any
+	managedRevision                string
 }
 
 func (c *fakeTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
@@ -772,8 +773,9 @@ func (c *fakeTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeSta
 
 func (c *fakeTelemtClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {
 	return telemt.ClientUsageMetricsSnapshot{
-		Users:         c.metricsUsage,
-		UptimeSeconds: c.metricsUptime,
+		Users:                   c.metricsUsage,
+		UptimeSeconds:           c.metricsUptime,
+		UserTelemetrySuppressed: c.metricsUserTelemetrySuppressed,
 	}, nil
 }
 
@@ -1164,5 +1166,85 @@ func TestBuildRuntimeSnapshotHashGatesDiagnostics(t *testing.T) {
 	}
 	if fourth.RuntimeDiagnostics.SystemInfoJson == "" || fourth.RuntimeSecurityInventory.EntriesJson == "" {
 		t.Fatal("post-unreachable snapshot must re-send full bodies")
+	}
+}
+
+// TestBuildRuntimeSnapshotReportsUserTelemetrySuppressed proves the flag
+// crosses the two-call boundary: BuildUsageSnapshot is what talks to the
+// Telemt /metrics endpoint and observes the suppression markers, while
+// BuildRuntimeSnapshot is what carries the flag to the panel. The agent must
+// remember the last observation between the two.
+func TestBuildRuntimeSnapshotReportsUserTelemetrySuppressed(t *testing.T) {
+	client := &fakeTelemtClient{
+		metricsUserTelemetrySuppressed: true,
+		state: telemt.RuntimeState{
+			Version: "2026.03",
+			Gates:   telemt.RuntimeGates{MERuntimeReady: true, UseMiddleProxy: true},
+		},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+	observedAt := time.Date(2026, time.May, 7, 12, 0, 0, 0, time.UTC)
+
+	if _, err := agent.BuildUsageSnapshot(context.Background(), observedAt); err != nil {
+		t.Fatalf("BuildUsageSnapshot() error = %v", err)
+	}
+	snap, err := agent.BuildRuntimeSnapshot(context.Background(), observedAt)
+	if err != nil {
+		t.Fatalf("BuildRuntimeSnapshot() error = %v", err)
+	}
+	if snap.Runtime == nil {
+		t.Fatal("Runtime = nil, want non-nil")
+	}
+	if !snap.Runtime.UserTelemetrySuppressed {
+		t.Fatal("Runtime.UserTelemetrySuppressed = false, want true")
+	}
+	// The suppression flag is a warning only: it must never masquerade as a
+	// Telemt reachability problem, which drives node status.
+	if snap.Runtime.TelemtUnreachable {
+		t.Fatal("Runtime.TelemtUnreachable = true, want false — suppression must not affect node status")
+	}
+}
+
+// TestBuildRuntimeSnapshotUserTelemetryHealthyDefaultsFalse guards the wire
+// contract: the healthy case must stay at proto3's bool default, and a node
+// that recovers (markers flip back to healthy) must clear the flag.
+func TestBuildRuntimeSnapshotUserTelemetryHealthyDefaultsFalse(t *testing.T) {
+	client := &fakeTelemtClient{
+		state: telemt.RuntimeState{Gates: telemt.RuntimeGates{MERuntimeReady: true}},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+	observedAt := time.Date(2026, time.May, 7, 12, 0, 0, 0, time.UTC)
+
+	snap, err := agent.BuildRuntimeSnapshot(context.Background(), observedAt)
+	if err != nil {
+		t.Fatalf("BuildRuntimeSnapshot() error = %v", err)
+	}
+	if snap.Runtime.UserTelemetrySuppressed {
+		t.Fatal("never-observed node: UserTelemetrySuppressed = true, want false")
+	}
+
+	// Observe suppression, then recovery — the flag must follow both edges.
+	client.metricsUserTelemetrySuppressed = true
+	if _, err := agent.BuildUsageSnapshot(context.Background(), observedAt); err != nil {
+		t.Fatalf("BuildUsageSnapshot() error = %v", err)
+	}
+	snap, err = agent.BuildRuntimeSnapshot(context.Background(), observedAt)
+	if err != nil {
+		t.Fatalf("BuildRuntimeSnapshot() error = %v", err)
+	}
+	if !snap.Runtime.UserTelemetrySuppressed {
+		t.Fatal("after suppressed scrape: UserTelemetrySuppressed = false, want true")
+	}
+
+	client.metricsUserTelemetrySuppressed = false
+	if _, err := agent.BuildUsageSnapshot(context.Background(), observedAt); err != nil {
+		t.Fatalf("BuildUsageSnapshot() error = %v", err)
+	}
+	snap, err = agent.BuildRuntimeSnapshot(context.Background(), observedAt)
+	if err != nil {
+		t.Fatalf("BuildRuntimeSnapshot() error = %v", err)
+	}
+	if snap.Runtime.UserTelemetrySuppressed {
+		t.Fatal("after recovery scrape: UserTelemetrySuppressed = true, want false (flag must clear)")
 	}
 }
