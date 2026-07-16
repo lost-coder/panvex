@@ -218,6 +218,7 @@ func (s *Server) MarkTransportSwitchResolved(agentID string) {
 // because this particular connection drops again mid-pass.
 func (s *Server) OnAgentConnected(agentID string) {
 	go s.clientsSvc.ReconcileDeployments(s.Context(), agentID)
+	go s.reconcileAgentSelfUpdate(s.Context(), agentID)
 }
 
 // OnAgentSessionEstablished compares the direction of the just-accepted stream

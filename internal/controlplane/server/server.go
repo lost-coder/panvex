@@ -272,6 +272,12 @@ type Server struct {
 	// drifting agent that reconnects in a tight loop cannot flood the queue.
 	// Value is the time of the last drift-triggered re-enqueue.
 	transportDriftReenqueuedAt map[string]time.Time
+	// selfUpdateReenqueuedAt throttles the pending-agent-update self-heal: at
+	// most one agent.self-update job per agentSelfUpdateJobTTL per agent, so a
+	// flapping node with an outstanding update cannot flood the queue. Value is
+	// the time of the last reconcile-triggered re-enqueue. In-memory only: a
+	// panel restart simply allows one immediate re-enqueue per agent.
+	selfUpdateReenqueuedAt map[string]time.Time
 	// live is the single owner of agent live-state (full Agent value:
 	// identity + runtime telemetry) and per-agent Telemt instances, with
 	// replace/prune semantics and deep-copy isolation (A2/A1). It replaces
