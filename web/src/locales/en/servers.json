@@ -108,6 +108,8 @@
     "modeUnknown": "Mode unknown",
     "transportDrift": "Transport out of sync",
     "transportDriftTitle": "The agent is connecting in a different direction than its saved transport mode. The panel is re-sending the switch — this clears once it reconnects the expected way.",
+    "userTelemetrySuppressed": "Per-user traffic telemetry is suppressed on this node",
+    "userTelemetrySuppressedDetail": "Telemt is not exporting per-user series (user telemetry disabled or over 4096 users). Client traffic and quota usage shown for this node are stale.",
     "telemtLost": "Telemt connection lost",
     "telemtLostDetail": "since {{since}} UTC ({{elapsed}}). Make sure Telemt is running and listening on loopback. Metrics and mode are unavailable until the connection is restored.",
     "elapsedSec": "{{value}}s",

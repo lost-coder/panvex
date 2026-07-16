@@ -22,6 +22,7 @@ import { MobileLayout } from "./components/MobileLayout";
 import { DesktopLayout } from "./components/DesktopLayout";
 import { MeDownHero } from "./components/MeDownHero";
 import { TelemtUnreachableBanner } from "./components/TelemtUnreachableBanner";
+import { UserTelemetrySuppressedBanner } from "./components/UserTelemetrySuppressedBanner";
 import { BadConnectionsCard } from "./components/BadConnectionsCard";
 import { GatesPanel } from "./components/GatesPanel";
 import { Fold } from "./components/Fold";
@@ -398,6 +399,7 @@ export function ServerDetailPage({
       />
 
       <div className="px-4 md:px-8 flex flex-col gap-6 pb-8 pt-6">
+        {server.userTelemetrySuppressed ? <UserTelemetrySuppressedBanner /> : null}
         {server.telemtUnreachable ? (
           <TelemtUnreachableBanner sinceUnix={server.telemtUnreachableSinceUnix} />
         ) : (
