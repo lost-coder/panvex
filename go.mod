@@ -2,6 +2,13 @@ module github.com/lost-coder/panvex
 
 go 1.26.2
 
+// Floor the toolchain at the patch that fixes GO-2026-5856 (Encrypted Client
+// Hello privacy leak in crypto/tls): the panel's gRPC/HTTPS listeners and the
+// agent's update downloads all reach tls.Conn, so govulncheck fails the build
+// on anything older. With GOTOOLCHAIN=auto an older local go fetches this
+// automatically, and CI's floating "1.26" can never resolve below it.
+toolchain go1.26.5
+
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/coder/websocket v1.8.15
