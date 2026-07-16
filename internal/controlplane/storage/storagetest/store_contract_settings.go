@@ -207,6 +207,61 @@ func runSettingsContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	t.Run("pending agent updates round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+
+		empty, err := store.GetPendingAgentUpdates(ctx)
+		if err != nil {
+			t.Fatalf("GetPendingAgentUpdates() error = %v", err)
+		}
+		if empty != nil {
+			t.Fatalf("GetPendingAgentUpdates() on empty store = %s, want nil", empty)
+		}
+
+		selfUpdate := json.RawMessage(`{"phase":"completed"}`)
+		if err := store.PutPanelSelfUpdate(ctx, selfUpdate); err != nil {
+			t.Fatalf("PutPanelSelfUpdate() error = %v", err)
+		}
+
+		pending := json.RawMessage(`{"agent-1":"1.4.0","agent-2":"1.5.0"}`)
+		if err := store.PutPendingAgentUpdates(ctx, pending); err != nil {
+			t.Fatalf("PutPendingAgentUpdates() error = %v", err)
+		}
+
+		gotPending, err := store.GetPendingAgentUpdates(ctx)
+		if err != nil {
+			t.Fatalf("GetPendingAgentUpdates() error = %v", err)
+		}
+		if string(gotPending) != string(pending) {
+			t.Fatalf("GetPendingAgentUpdates() = %s, want %s", gotPending, pending)
+		}
+
+		// Overwriting must replace the blob, not append to it.
+		replacement := json.RawMessage(`{"agent-2":"1.6.0"}`)
+		if err := store.PutPendingAgentUpdates(ctx, replacement); err != nil {
+			t.Fatalf("PutPendingAgentUpdates() overwrite error = %v", err)
+		}
+		gotReplaced, err := store.GetPendingAgentUpdates(ctx)
+		if err != nil {
+			t.Fatalf("GetPendingAgentUpdates() error = %v", err)
+		}
+		if string(gotReplaced) != string(replacement) {
+			t.Fatalf("GetPendingAgentUpdates() after overwrite = %s, want %s", gotReplaced, replacement)
+		}
+
+		// The pending key is independent of the panel self-update key.
+		gotSelfUpdate, err := store.GetPanelSelfUpdate(ctx)
+		if err != nil {
+			t.Fatalf("GetPanelSelfUpdate() error = %v", err)
+		}
+		if string(gotSelfUpdate) != string(selfUpdate) {
+			t.Fatalf("GetPanelSelfUpdate() after pending write = %s, want %s", gotSelfUpdate, selfUpdate)
+		}
+	})
+
 	runGeoIPSettingsContract(t, open)
 }
 

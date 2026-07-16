@@ -774,6 +774,19 @@ func (s *Server) handleAgentUpdate() http.HandlerFunc {
 			return
 		}
 
+		// Record the desired state so a node that is offline (or goes offline
+		// before the job's TTL elapses) still gets the update on its next
+		// reconnect — the job itself is one-shot and expires unescalated.
+		// Store the same bare form buildAgentDirectUpdatePayload puts on the
+		// wire, so the reconcile's version comparison never hinges on how the
+		// operator spelled the version.
+		// The job is already enqueued, so a failure here only costs the
+		// reconcile safety net: log, never fail the dispatch.
+		if err := s.updatesSvc.SetPendingAgentUpdate(r.Context(), agentID, strings.TrimPrefix(targetVersion, "v")); err != nil {
+			s.logger.WarnContext(r.Context(), "agent update: persist pending target failed",
+				"agent_id", agentID, "error", err)
+		}
+
 		s.notifyAgentSessions(job.TargetAgentIDs)
 		s.publishJobCreated(job)
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.update.dispatched", agentID, map[string]any{

@@ -63,3 +63,22 @@ func (s *Store) GetPanelSelfUpdate(ctx context.Context) (json.RawMessage, error)
 	}
 	return json.RawMessage(value), nil
 }
+
+func (s *Store) PutPendingAgentUpdates(ctx context.Context, data json.RawMessage) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO update_config (key, value) VALUES ('pending_agent_updates', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		string(data))
+	return err
+}
+
+func (s *Store) GetPendingAgentUpdates(ctx context.Context) (json.RawMessage, error) {
+	var value string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM update_config WHERE key = 'pending_agent_updates'`).Scan(&value)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return json.RawMessage(value), nil
+}
