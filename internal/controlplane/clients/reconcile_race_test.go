@@ -211,3 +211,94 @@ func TestReconcileDeploymentsSkipsClientTombstonedMidPass(t *testing.T) {
 		t.Fatalf("the enqueued job targets the tombstoned client %q — it must be for the other one", tombstonedID)
 	}
 }
+
+// TestReconcileTopologySavesFreshClientAfterConcurrentRotate is the R10-2
+// lost update:
+//
+//	t0  a fleet-group reassign triggers ReconcileTopology, which snapshots
+//	    the whole fleet (client at secret v1),
+//	t1  an operator rotate commits secret v2 (DB + mirror) and the operator
+//	    receives a 200 carrying v2,
+//	t2  the topology pass reaches the client (its target set changed) and
+//	    saves the FULL client row.
+//
+// Before the fix the save was built from the t0 snapshot: DB and mirror
+// reverted to v1 and the update jobs dispatched right after carried v1 —
+// created later than the operator's rotate job, they superseded it, so the
+// rotation (a revocation) was silently undone end-to-end. The save must be
+// based on the state current at write time.
+func TestReconcileTopologySavesFreshClientAfterConcurrentRotate(t *testing.T) {
+	t.Parallel()
+
+	deps := &hookedDeps{fakeDeps: &fakeDeps{
+		ttl: time.Minute,
+		topology: AgentTopology{
+			RegisteredAgents: map[string]struct{}{"agent-2": {}},
+			FleetMembers:     map[string][]string{"fg-1": {"agent-2"}},
+		},
+	}}
+	jq := &fakeJobQueue{}
+	svc := NewService(ServiceConfig{})
+	svc.SetDeps(deps, jq, nil)
+
+	observedAt := time.Date(2026, time.July, 16, 12, 0, 0, 0, time.UTC)
+	assignment := Assignment{
+		ID:           AssignmentID("client-assignment-1"),
+		ClientID:     ClientID("client-a"),
+		TargetType:   TargetTypeFleetGroup,
+		FleetGroupID: FleetGroupID("fg-1"),
+		CreatedAt:    observedAt,
+	}
+	// Deployed on agent-1, but the assignment now resolves to agent-2 (the
+	// fleet-group move) — the pass must reconcile this client.
+	deployment := Deployment{
+		ClientID:         ClientID("client-a"),
+		AgentID:          "agent-1",
+		DesiredOperation: string(jobs.ActionClientUpdate),
+		Status:           DeploymentStatusSucceeded,
+		UpdatedAt:        observedAt,
+	}
+	svc.MirrorReplaceInMemory(
+		Client{ID: "client-a", Name: "alice", Secret: "secret-v1", Enabled: true},
+		[]Assignment{assignment},
+		[]Deployment{deployment},
+	)
+
+	// The concurrent operator rotate: lands after the pass's snapshot (the
+	// pass reads Topology() per client, which is after MirrorSnapshot), and
+	// before the pass writes the client back.
+	var once sync.Once
+	deps.onTopology = func() {
+		once.Do(func() {
+			svc.MirrorReplaceInMemory(
+				Client{ID: "client-a", Name: "alice", Secret: "secret-v2", Enabled: true},
+				[]Assignment{assignment},
+				[]Deployment{deployment},
+			)
+		})
+	}
+
+	svc.ReconcileTopology(context.Background(), "actor-1", observedAt)
+
+	got, err := svc.Get(context.Background(), ClientID("client-a"))
+	if err != nil {
+		t.Fatalf("Get(client-a) error = %v", err)
+	}
+	if got.Secret != "secret-v2" {
+		t.Fatalf("topology reconcile reverted the concurrent rotate: Secret = %q, want %q", got.Secret, "secret-v2")
+	}
+
+	// The jobs dispatched by the pass are created AFTER the operator's rotate
+	// job and supersede it — so they too must carry v2, or the node converges
+	// on the revoked secret.
+	if len(jq.enqueued) == 0 {
+		t.Fatal("topology reconcile dispatched no jobs, want an update for agent-2")
+	}
+	for _, input := range jq.enqueued {
+		payload := decodeClientJobPayload(t, input.PayloadJSON)
+		if payload.Secret != "secret-v2" {
+			t.Fatalf("dispatched %s payload Secret = %q, want %q (a stale payload supersedes and undoes the rotation)",
+				input.Action, payload.Secret, "secret-v2")
+		}
+	}
+}

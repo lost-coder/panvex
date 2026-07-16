@@ -651,17 +651,26 @@ func (s *Service) Save(ctx context.Context, c Client) error {
 // one UoW transaction, then updates the in-memory mirror. On any Tx
 // error the mirror is left unchanged.
 func (s *Service) SaveState(ctx context.Context, c Client, assignments []Assignment, deployments []Deployment) error {
+	// R4 §1.6: serialise commit + mirror apply per client (see Save).
+	saveLock := s.clientSaveLock(c.ID)
+	saveLock.Lock()
+	defer saveLock.Unlock()
+	return s.saveStateHoldingSaveLock(ctx, c, assignments, deployments)
+}
+
+// saveStateHoldingSaveLock is SaveState's body without the lock acquisition.
+// The caller MUST hold clientSaveLock(c.ID) — either via SaveState (the
+// normal path) or because it needs the lock to span a read-compute-write
+// sequence (ReconcileTopology, R10-2: the fresh mirror read and the save must
+// be one critical section, or a save committed in between is lost). Lock
+// ordering is unchanged: saveLock → uow → s.mu.
+func (s *Service) saveStateHoldingSaveLock(ctx context.Context, c Client, assignments []Assignment, deployments []Deployment) error {
 	encryptedSecret, err := s.encryptSecret(c.Secret)
 	if err != nil {
 		return fmt.Errorf("clients.Service.SaveState: encrypt: %w", err)
 	}
 	toStore := c
 	toStore.Secret = encryptedSecret
-
-	// R4 §1.6: serialise commit + mirror apply per client (see Save).
-	saveLock := s.clientSaveLock(c.ID)
-	saveLock.Lock()
-	defer saveLock.Unlock()
 
 	if err := s.uow.Do(ctx, func(rs ClientsRepoSet) error {
 		if err := rs.Clients().Save(ctx, toStore); err != nil {
