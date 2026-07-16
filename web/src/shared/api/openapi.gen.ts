@@ -537,6 +537,7 @@ export interface components {
             telemt_unreachable: boolean;
             /** Format: int64 */
             telemt_unreachable_since_unix: number;
+            user_telemetry_suppressed: boolean;
             /** Format: date-time */
             updated_at: string;
         };
