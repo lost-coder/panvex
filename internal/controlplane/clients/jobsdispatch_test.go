@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -81,7 +82,7 @@ func TestEnqueueClientJobPayloadAndDispatch(t *testing.T) {
 		DataQuotaBytes:    1024,
 		ExpirationRFC3339: "2026-01-01T00:00:00Z",
 	}
-	if payload != want {
+	if !reflect.DeepEqual(payload, want) {
 		t.Fatalf("payload = %+v want %+v", payload, want)
 	}
 
@@ -116,6 +117,190 @@ func TestEnqueueClientJobHasNoPreviousName(t *testing.T) {
 	}
 	if got := jq.enqueued[0].PayloadJSON; !jsonHasNoKey(t, got, "previous_name") {
 		t.Fatalf("PayloadJSON = %s, want no previous_name key (rename removed, audit F2)", got)
+	}
+}
+
+// nameOwnerTestService seeds a mirror in which "alice" was client-old's name,
+// client-old is tombstoned and still deployed to agent-1 and agent-2, and a new
+// client re-used the freed name — deployed to agent-1 ONLY.
+//
+// That asymmetry is the whole point: the Telemt user "alice" on agent-2 is
+// still client-old's, so the delete must reach agent-2 even though the name is
+// live elsewhere.
+func nameOwnerTestService(t *testing.T, jq *fakeJobQueue, deletedAt time.Time, newOwnerAgents ...string) (*Service, Client) {
+	t.Helper()
+
+	svc := NewService(ServiceConfig{})
+	svc.SetDeps(&fakeDeps{ttl: time.Minute}, jq, nil)
+
+	old := Client{ID: ClientID("client-old"), Name: "alice", Secret: "s-old", DeletedAt: &deletedAt}
+	svc.MirrorReplaceInMemory(old, nil, []Deployment{
+		{ClientID: old.ID, AgentID: "agent-1", DesiredOperation: string(jobs.ActionClientDelete), Status: DeploymentStatusQueued},
+		{ClientID: old.ID, AgentID: "agent-2", DesiredOperation: string(jobs.ActionClientDelete), Status: DeploymentStatusQueued},
+	})
+
+	if len(newOwnerAgents) > 0 {
+		deployments := make([]Deployment, 0, len(newOwnerAgents))
+		for _, agentID := range newOwnerAgents {
+			deployments = append(deployments, Deployment{
+				ClientID:         ClientID("client-new"),
+				AgentID:          agentID,
+				DesiredOperation: string(jobs.ActionClientUpdate),
+				Status:           DeploymentStatusQueued,
+			})
+		}
+		svc.MirrorReplaceInMemory(Client{ID: ClientID("client-new"), Name: "alice", Secret: "s-new"}, nil, deployments)
+	}
+	return svc, old
+}
+
+// TestEnqueueClientDeleteJobCarriesPerAgentNameOwner is the core of the panel
+// half: the delete payload must name the client that currently owns the name ON
+// EACH TARGET AGENT, and must stay silent about agents where nobody else does.
+// One delete job fans out to many agents with one shared payload, so a scalar
+// could not express this — hence the map.
+func TestEnqueueClientDeleteJobCarriesPerAgentNameOwner(t *testing.T) {
+	t.Parallel()
+
+	jq := &fakeJobQueue{enqueueJob: jobs.Job{ID: "job-del"}}
+	deletedAt := time.Date(2026, time.July, 16, 9, 0, 0, 0, time.UTC)
+	svc, old := nameOwnerTestService(t, jq, deletedAt, "agent-1")
+
+	if _, err := svc.EnqueueClientJob(context.Background(), "actor", jobs.ActionClientDelete, old, []string{"agent-1", "agent-2"}, deletedAt); err != nil {
+		t.Fatalf("EnqueueClientJob: %v", err)
+	}
+
+	payload := decodeClientJobPayload(t, jq.enqueued[0].PayloadJSON)
+	want := map[string]string{"agent-1": "client-new"}
+	if !reflect.DeepEqual(payload.NameOwnerByAgent, want) {
+		t.Fatalf("NameOwnerByAgent = %+v, want %+v (agent-2 has no other owner and must be absent)", payload.NameOwnerByAgent, want)
+	}
+}
+
+// TestEnqueueClientDeleteJobOmitsNameOwnerWhenNameNotReused pins the common
+// case: nobody re-used the name, so the signal is absent entirely and the agent
+// deletes. The key must not appear at all — an empty map would be equivalent to
+// the agent, but omitempty keeps the wire form of the overwhelmingly common
+// case byte-identical to before.
+func TestEnqueueClientDeleteJobOmitsNameOwnerWhenNameNotReused(t *testing.T) {
+	t.Parallel()
+
+	jq := &fakeJobQueue{enqueueJob: jobs.Job{ID: "job-del"}}
+	deletedAt := time.Date(2026, time.July, 16, 9, 0, 0, 0, time.UTC)
+	svc, old := nameOwnerTestService(t, jq, deletedAt)
+
+	if _, err := svc.EnqueueClientJob(context.Background(), "actor", jobs.ActionClientDelete, old, []string{"agent-1", "agent-2"}, deletedAt); err != nil {
+		t.Fatalf("EnqueueClientJob: %v", err)
+	}
+
+	got := jq.enqueued[0].PayloadJSON
+	if !jsonHasNoKey(t, got, "name_owner_by_agent") {
+		t.Fatalf("PayloadJSON = %s, want no name_owner_by_agent key when the name was never re-used", got)
+	}
+}
+
+// TestEnqueueClientDeleteJobIgnoresTombstonedAndSelfOwners proves the two
+// exclusions the lookup must make: the client being deleted never counts as
+// "another owner" of its own name, and neither does a THIRD tombstoned client
+// that once held it (its Telemt user is itself being torn down).
+func TestEnqueueClientDeleteJobIgnoresTombstonedAndSelfOwners(t *testing.T) {
+	t.Parallel()
+
+	jq := &fakeJobQueue{enqueueJob: jobs.Job{ID: "job-del"}}
+	deletedAt := time.Date(2026, time.July, 16, 9, 0, 0, 0, time.UTC)
+	svc, old := nameOwnerTestService(t, jq, deletedAt)
+
+	// A third client that also held "alice" and is likewise tombstoned.
+	svc.MirrorReplaceInMemory(
+		Client{ID: ClientID("client-older"), Name: "alice", DeletedAt: &deletedAt},
+		nil,
+		[]Deployment{{ClientID: ClientID("client-older"), AgentID: "agent-1", DesiredOperation: string(jobs.ActionClientDelete)}},
+	)
+
+	if _, err := svc.EnqueueClientJob(context.Background(), "actor", jobs.ActionClientDelete, old, []string{"agent-1", "agent-2"}, deletedAt); err != nil {
+		t.Fatalf("EnqueueClientJob: %v", err)
+	}
+
+	payload := decodeClientJobPayload(t, jq.enqueued[0].PayloadJSON)
+	if len(payload.NameOwnerByAgent) != 0 {
+		t.Fatalf("NameOwnerByAgent = %+v, want empty (self and tombstoned clients are not owners)", payload.NameOwnerByAgent)
+	}
+}
+
+// TestEnqueueClientJobOmitsNameOwnerForNonDeleteActions keeps the signal scoped
+// to the one action that reads it. A create/update/rotate payload carrying it
+// would be dead weight on the wire and an invitation to misuse.
+func TestEnqueueClientJobOmitsNameOwnerForNonDeleteActions(t *testing.T) {
+	t.Parallel()
+
+	jq := &fakeJobQueue{enqueueJob: jobs.Job{ID: "job-upd"}}
+	deletedAt := time.Date(2026, time.July, 16, 9, 0, 0, 0, time.UTC)
+	svc, old := nameOwnerTestService(t, jq, deletedAt, "agent-1")
+
+	if _, err := svc.EnqueueClientJob(context.Background(), "actor", jobs.ActionClientUpdate, old, []string{"agent-1"}, deletedAt); err != nil {
+		t.Fatalf("EnqueueClientJob: %v", err)
+	}
+	if got := jq.enqueued[0].PayloadJSON; !jsonHasNoKey(t, got, "name_owner_by_agent") {
+		t.Fatalf("PayloadJSON = %s, want no name_owner_by_agent key on a non-delete action", got)
+	}
+}
+
+// TestReconcileDeploymentsRecomputesNameOwnerOnReEnqueue is the path that
+// matters most: the re-enqueue that gives an expired delete a fresh CreatedAt
+// is exactly when the name may have been re-used since the original job was
+// built. The signal must be recomputed from CURRENT mirror state at every
+// enqueue, never carried over from the first one.
+func TestReconcileDeploymentsRecomputesNameOwnerOnReEnqueue(t *testing.T) {
+	t.Parallel()
+
+	jq := &fakeJobQueue{enqueueJob: jobs.Job{ID: "job-del"}}
+	deletedAt := time.Date(2026, time.July, 16, 9, 0, 0, 0, time.UTC)
+	svc, _ := nameOwnerTestService(t, jq, deletedAt)
+
+	// First pass: the name is still free, so the delete carries no owner.
+	first := deletedAt
+	svc.SetNow(func() time.Time { return first })
+	if enqueued := svc.ReconcileDeployments(context.Background(), ""); enqueued != 1 {
+		t.Fatalf("first ReconcileDeployments() = %d jobs, want 1", enqueued)
+	}
+	if got := decodeClientJobPayload(t, jq.enqueued[0].PayloadJSON); len(got.NameOwnerByAgent) != 0 {
+		t.Fatalf("first re-enqueue NameOwnerByAgent = %+v, want empty", got.NameOwnerByAgent)
+	}
+
+	// An operator now re-uses the freed name on agent-1 only.
+	svc.MirrorReplaceInMemory(
+		Client{ID: ClientID("client-new"), Name: "alice", Secret: "s-new"},
+		nil,
+		[]Deployment{{ClientID: ClientID("client-new"), AgentID: "agent-1", DesiredOperation: string(jobs.ActionClientUpdate), Status: DeploymentStatusQueued}},
+	)
+
+	// Second pass, past the per-pair throttle: the payload must now name the
+	// new owner on agent-1 — and still leave agent-2 free to delete.
+	second := first.Add(clientReconcileMinInterval + time.Minute)
+	svc.SetNow(func() time.Time { return second })
+	if enqueued := svc.ReconcileDeployments(context.Background(), ""); enqueued == 0 {
+		t.Fatal("second ReconcileDeployments() enqueued nothing, want a re-send past the throttle")
+	}
+
+	// The pass also re-sends client-new's own (unconfirmed) update, and mirror
+	// map order decides which lands first — pick the delete explicitly.
+	var resent *ClientJobPayload
+	for _, input := range jq.enqueued[1:] {
+		if input.Action != jobs.ActionClientDelete {
+			continue
+		}
+		payload := decodeClientJobPayload(t, input.PayloadJSON)
+		if payload.ClientID == "client-old" {
+			resent = &payload
+		}
+	}
+	if resent == nil {
+		t.Fatal("second pass enqueued no client.delete for client-old")
+	}
+
+	want := map[string]string{"agent-1": "client-new"}
+	if !reflect.DeepEqual(resent.NameOwnerByAgent, want) {
+		t.Fatalf("re-enqueued NameOwnerByAgent = %+v, want %+v (recomputed, not copied from the first enqueue)", resent.NameOwnerByAgent, want)
 	}
 }
 

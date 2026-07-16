@@ -905,6 +905,9 @@ func (a *Agent) handleSwitchTransportModeJob(result *gatewayrpc.JobResult, job *
 }
 
 // clientJobPayload mirrors the JSON envelope shared by all client.* jobs.
+// Panel-side mirror: clients.ClientJobPayload
+// (internal/controlplane/clients/jobsdispatch.go). Keep the JSON tags in
+// lockstep — any drift here breaks this decode.
 type clientJobPayload struct {
 	ClientID          string `json:"client_id"`
 	Name              string `json:"name"`
@@ -915,6 +918,12 @@ type clientJobPayload struct {
 	MaxUniqueIPs      int    `json:"max_unique_ips"`
 	DataQuotaBytes    int64  `json:"data_quota_bytes"`
 	ExpirationRFC3339 string `json:"expiration_rfc3339"`
+
+	// NameOwnerByAgent is set on client.delete only: agentID -> the ID of the
+	// client that owns Name on that agent according to panel state at enqueue
+	// time. Read only for THIS agent's own ID — see
+	// deleteSupersededByOtherClient.
+	NameOwnerByAgent map[string]string `json:"name_owner_by_agent,omitempty"`
 }
 
 func (p clientJobPayload) toManagedClient() telemt.ManagedClient {
@@ -1007,6 +1016,13 @@ func (a *Agent) handleClientUpdateJob(ctx context.Context, job *gatewayrpc.JobCo
 }
 
 func (a *Agent) handleClientDeleteJob(ctx context.Context, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	if a.deleteSupersededByOtherClient(payload) {
+		result.Success = true
+		result.Message = "client name reassigned to another client; delete superseded"
+		a.deleteClientName(payload.ClientID)
+		return result
+	}
+
 	// Deleting an already-absent user is an idempotent success — mirrors the
 	// disable path in handleClientUpdateJob. Without this a re-delivered
 	// client.delete (panel retry after a lost ack) on an already-removed
@@ -1260,6 +1276,94 @@ func marshalClientJobResult(result telemt.ClientApplyResult) string {
 	return string(payload)
 }
 
+// deleteSupersededByOtherClient reports whether the Telemt user named in the
+// delete payload now belongs to a DIFFERENT client, which happens when a
+// re-enqueued delete (offline-node reconcile assigns it a fresh CreatedAt)
+// lands after a newer client re-used the freed name. Deleting purely by name
+// would erase the new client's user, so a superseded delete must become an
+// idempotent success instead.
+//
+// Two identity sources, in order:
+//
+//  1. the in-memory clientID->name registry. It is authoritative whenever it
+//     says anything at all: setClientName is last-writer-wins and evicts the
+//     previous holder, so an entry for ANOTHER client is proof of takeover,
+//     and an entry for payload.ClientID is proof that no other client's create
+//     has landed here since — the user on this node is still ours, whatever
+//     the panel believes about a deployment it has not confirmed. Agent-local
+//     truth therefore outranks source 2 in BOTH directions.
+//
+//  2. only when the registry is cold for this client (the agent restarted):
+//     payload.NameOwnerByAgent[a.config.AgentID], computed by the panel at
+//     enqueue time. The agent cannot derive this locally — the node's own
+//     evidence, the secret Telemt holds for the user, mismatches for two
+//     indistinguishable reasons: (a) another client took the name, or (b) a
+//     client.rotate for THIS client never reached the node and was then
+//     superseded by this very delete (clients/jobsupersede.go keys on
+//     client_id), so the payload carries the post-rotate secret while the node
+//     still has the pre-rotate one. Skipping in case (b) is an access hole:
+//     the user stays live with the old secret while the panel reports it
+//     deleted. Only the panel can tell the two apart, so only the panel is
+//     asked.
+//
+// No signal means delete. The bias is deliberate: a wrong delete is repaired
+// by the new client's own create being re-sent, a wrong skip strands live
+// credentials the panel believes are revoked.
+//
+// Residual: the signal is a snapshot of panel state at ENQUEUE time, so a
+// delete whose payload predates the re-use carries no owner. That is not
+// reachable as a mis-delete, though — client_mutation is a single-worker lane
+// delivered CreatedAt-asc, so a delete enqueued BEFORE the new client existed
+// is also delivered before that client's create, and it removes the old user
+// the create then replaces. Any delete that can land after the create was
+// enqueued after it, and so was computed against a mirror that already knew
+// the new owner. What does remain: the panel reports an owner whose create
+// never actually landed on this node and never will (permanently failing
+// deployment). The old client's user is then skipped and stays live — bounded
+// by the fact that the same unconfirmed deployment is re-sent by the
+// reconciler until it lands (at which point it overwrites the user's secret,
+// revoking the old credential anyway) and surfaces to the operator as a
+// failing deployment in the meantime.
+func (a *Agent) deleteSupersededByOtherClient(payload clientJobPayload) bool {
+	if payload.Name == "" || payload.ClientID == "" {
+		return false
+	}
+
+	if a.nameOwnedByOtherClient(payload.ClientID, payload.Name) {
+		return true
+	}
+	if a.clientNameKnown(payload.ClientID) {
+		return false
+	}
+
+	owner := payload.NameOwnerByAgent[a.config.AgentID]
+	return owner != "" && owner != payload.ClientID
+}
+
+// nameOwnedByOtherClient reports whether some clientID other than the given one
+// currently holds name in the in-memory registry.
+func (a *Agent) nameOwnedByOtherClient(clientID, name string) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	for otherID, otherName := range a.clientNames {
+		if otherName == name && otherID != clientID {
+			return true
+		}
+	}
+	return false
+}
+
+// clientNameKnown reports whether the registry currently holds a name for the
+// given clientID, i.e. whether it is warm for that client.
+func (a *Agent) clientNameKnown(clientID string) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	_, ok := a.clientNames[clientID]
+	return ok
+}
+
 func (a *Agent) clientIDForName(name string) string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -1283,6 +1387,17 @@ func (a *Agent) setClientName(clientID, name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// name->clientID is last-writer-wins: evict any other client still recorded
+	// under this name. Entries are otherwise only cleared by a delete for that
+	// clientID, so a delete that failed permanently on Telemt would leave a
+	// stale owner behind — and deleteSupersededByOtherClient would then read it
+	// as "someone else owns the name" and skip the NEW owner's delete, leaving
+	// that user live while the panel reports it deleted.
+	for otherID, otherName := range a.clientNames {
+		if otherName == name && otherID != clientID {
+			delete(a.clientNames, otherID)
+		}
+	}
 	a.clientNames[clientID] = name
 }
 
