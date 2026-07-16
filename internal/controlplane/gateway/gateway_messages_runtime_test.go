@@ -65,7 +65,7 @@ func TestHandleRuntimeEventsBatchPopulatesBufferAndPublishes(t *testing.T) {
 	}
 
 	regularSnapshots := newBoundedQueue[AgentSnapshot](1, policyDropOldest)
-	if err := g.processRegularAgentMessage(context.Background(), "agent-x", nil, regularSnapshots, msg); err != nil {
+	if err := g.processRegularAgentMessage(context.Background(), "agent-x", "", nil, regularSnapshots, msg); err != nil {
 		t.Fatalf("processRegularAgentMessage() error = %v", err)
 	}
 
@@ -129,7 +129,7 @@ func TestHeartbeatSnapshotIsPartial(t *testing.T) {
 		},
 	}
 	regularSnapshots := newBoundedQueue[AgentSnapshot](1, policyDropOldest)
-	if err := g.processRegularAgentMessage(context.Background(), "agent-x", nil, regularSnapshots, msg); err != nil {
+	if err := g.processRegularAgentMessage(context.Background(), "agent-x", "", nil, regularSnapshots, msg); err != nil {
 		t.Fatalf("processRegularAgentMessage() error = %v", err)
 	}
 	select {

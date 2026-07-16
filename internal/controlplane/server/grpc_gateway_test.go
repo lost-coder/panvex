@@ -151,7 +151,7 @@ func TestHandleInStreamRenewalRequestRejectsRevokedAgent(t *testing.T) {
 
 	sess := &fakeSendSession{}
 	srv.HandleInStreamRenewalRequest(
-		context.Background(), "agent-1", sess,
+		context.Background(), "agent-1", "", sess,
 		&gatewayrpc.RenewalRequest{AgentId: "agent-1", CsrPem: "unused-because-revoked"},
 	)
 
@@ -195,7 +195,7 @@ func TestHandleInStreamRenewalRequestSucceeds(t *testing.T) {
 
 	sess := &fakeSendSession{}
 	srv.HandleInStreamRenewalRequest(
-		context.Background(), "agent-1", sess,
+		context.Background(), "agent-1", "", sess,
 		&gatewayrpc.RenewalRequest{AgentId: "agent-1", CsrPem: csrPEM},
 	)
 
@@ -252,7 +252,7 @@ func TestHandleInStreamRenewalRequestRejectsAgentIDMismatch(t *testing.T) {
 
 	sess := &fakeSendSession{}
 	srv.HandleInStreamRenewalRequest(
-		context.Background(), "agent-1", sess,
+		context.Background(), "agent-1", "", sess,
 		&gatewayrpc.RenewalRequest{AgentId: "agent-2", CsrPem: "irrelevant"},
 	)
 
@@ -277,7 +277,7 @@ func TestHandleInStreamRenewalRequestRejectsInvalidCSR(t *testing.T) {
 
 	sess := &fakeSendSession{}
 	srv.HandleInStreamRenewalRequest(
-		context.Background(), "agent-1", sess,
+		context.Background(), "agent-1", "", sess,
 		&gatewayrpc.RenewalRequest{AgentId: "agent-1", CsrPem: "not-a-csr"},
 	)
 

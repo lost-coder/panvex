@@ -275,7 +275,7 @@ func TestProcessRegularAgentMessageRoutesAckToPriorityHandler(t *testing.T) {
 			},
 		},
 	}
-	if err := g.processRegularAgentMessage(context.Background(), "agent-1", nil, regularSnapshots, message); err != nil {
+	if err := g.processRegularAgentMessage(context.Background(), "agent-1", "", nil, regularSnapshots, message); err != nil {
 		t.Fatalf("processRegularAgentMessage() error = %v", err)
 	}
 

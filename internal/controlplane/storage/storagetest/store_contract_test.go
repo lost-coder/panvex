@@ -751,13 +751,14 @@ func (s *memoryStore) GetAgentCertPin(_ context.Context, agentID string) ([]byte
 // certPins mirrors the overlap columns for the in-memory double. Kept in its
 // own map rather than on AgentRecord because the record is the fleet-facing
 // projection and the overlap is a credential-rotation detail.
-func (s *memoryStore) RotateAgentCert(_ context.Context, agentID string, serial string, spki []byte, overlapUntil time.Time) error {
+func (s *memoryStore) RotateAgentCert(_ context.Context, agentID string, serial string, spki []byte, overlapUntil time.Time, presentedSerial string) error {
 	agent, ok := s.agents[agentID]
 	if !ok {
 		return storage.ErrNotFound
 	}
 	pins := s.certPins[agentID]
-	if agent.CertSerial != "" || len(agent.CertSPKISHA256) > 0 {
+	keepPrev := presentedSerial != "" && presentedSerial == pins.PrevSerial && pins.OverlapUntil != nil
+	if !keepPrev && (agent.CertSerial != "" || len(agent.CertSPKISHA256) > 0) {
 		until := overlapUntil.UTC()
 		pins.PrevSerial = agent.CertSerial
 		pins.PrevSPKI = agent.CertSPKISHA256

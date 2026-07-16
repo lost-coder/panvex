@@ -37,13 +37,13 @@ func (stubDeps) RecordClientJobResult(context.Context, string, string, bool, str
 func (stubDeps) ReconcileDiscoveredClients(context.Context, string, []*gatewayrpc.ClientDetailRecord, bool, time.Time) {
 }
 func (stubDeps) ResolveClientIDByName(string, string) string { return "" }
-func (stubDeps) RenewAgentCertificate(context.Context, string, *gatewayrpc.RenewCertificateRequest) (*gatewayrpc.RenewCertificateResponse, error) {
+func (stubDeps) RenewAgentCertificate(context.Context, string, string, *gatewayrpc.RenewCertificateRequest) (*gatewayrpc.RenewCertificateResponse, error) {
 	return nil, nil
 }
 func (stubDeps) RecordEnrollmentSteps(context.Context, *gatewayrpc.ReportEnrollmentStepsRequest) (*gatewayrpc.ReportEnrollmentStepsResponse, error) {
 	return nil, nil
 }
-func (stubDeps) HandleInStreamRenewalRequest(context.Context, string, agenttransport.AgentSession, *gatewayrpc.RenewalRequest) {
+func (stubDeps) HandleInStreamRenewalRequest(context.Context, string, string, agenttransport.AgentSession, *gatewayrpc.RenewalRequest) {
 }
 
 // newTestGateway builds a Gateway backed by a real in-memory jobs.Service

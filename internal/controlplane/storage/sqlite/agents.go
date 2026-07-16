@@ -264,16 +264,36 @@ func (s *Store) DeleteInstancesByAgent(ctx context.Context, agentID string) erro
 // (enrollment) has nothing to fall back to, and writing an empty pin as "prev"
 // would be indistinguishable from "no pin", which the verifier treats as
 // fail-closed anyway.
-func (s *Store) RotateAgentCert(ctx context.Context, agentID string, serial string, spki []byte, overlapUntil time.Time) error {
+//
+// When the renewal was presented over the PREVIOUS credential while the
+// overlap window is still open (presentedSerial = cert_serial_prev, deadline
+// set), prev and its deadline are kept as they are: the presenter just proved
+// the agent never received the current certificate, so shifting
+// prev := current would evict the only credential the agent holds (R11-1).
+// Each CASE arm repeats that condition because every right-hand side of an
+// UPDATE sees the pre-update row, so the three columns stay consistent.
+func (s *Store) RotateAgentCert(ctx context.Context, agentID string, serial string, spki []byte, overlapUntil time.Time, presentedSerial string) error {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE agents SET
-			cert_serial_prev = CASE WHEN cert_serial = '' THEN '' ELSE cert_serial END,
-			cert_spki_sha256_prev = CASE WHEN length(cert_spki_sha256) = 0 THEN x'' ELSE cert_spki_sha256 END,
-			cert_overlap_until_unix = CASE WHEN cert_serial = '' AND length(cert_spki_sha256) = 0 THEN NULL ELSE ? END,
+			cert_serial_prev = CASE
+				WHEN ? != '' AND ? = cert_serial_prev AND cert_overlap_until_unix IS NOT NULL THEN cert_serial_prev
+				WHEN cert_serial = '' THEN ''
+				ELSE cert_serial END,
+			cert_spki_sha256_prev = CASE
+				WHEN ? != '' AND ? = cert_serial_prev AND cert_overlap_until_unix IS NOT NULL THEN cert_spki_sha256_prev
+				WHEN length(cert_spki_sha256) = 0 THEN x''
+				ELSE cert_spki_sha256 END,
+			cert_overlap_until_unix = CASE
+				WHEN ? != '' AND ? = cert_serial_prev AND cert_overlap_until_unix IS NOT NULL THEN cert_overlap_until_unix
+				WHEN cert_serial = '' AND length(cert_spki_sha256) = 0 THEN NULL
+				ELSE ? END,
 			cert_serial = ?,
 			cert_spki_sha256 = ?
 		WHERE id = ?
-	`, toUnix(overlapUntil), serial, spki, agentID)
+	`, presentedSerial, presentedSerial,
+		presentedSerial, presentedSerial,
+		presentedSerial, presentedSerial, toUnix(overlapUntil),
+		serial, spki, agentID)
 	if err != nil {
 		return err
 	}

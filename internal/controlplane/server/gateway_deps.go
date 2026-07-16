@@ -303,9 +303,10 @@ func (s *Server) OnAgentSessionEstablished(agentID string, direction gateway.Tra
 // RenewAgentCertificate is the post-authentication core of the unary
 // RenewCertificate RPC: revocation check, agent/request identity match,
 // CSR issuance, in-memory cert-date update, serial persist and pin. The
-// caller (Gateway.RenewCertificate) has already resolved agentID from the
-// peer context.
-func (s *Server) RenewAgentCertificate(ctx context.Context, agentID string, request *gatewayrpc.RenewCertificateRequest) (*gatewayrpc.RenewCertificateResponse, error) {
+// caller (Gateway.RenewCertificate) has already resolved agentID and
+// presentedSerial (the serial of the mTLS client cert this request rode in
+// on) from the peer context.
+func (s *Server) RenewAgentCertificate(ctx context.Context, agentID, presentedSerial string, request *gatewayrpc.RenewCertificateRequest) (*gatewayrpc.RenewCertificateResponse, error) {
 	s.mu.RLock()
 	_, revoked := s.revokedAgentIDs[agentID]
 	s.mu.RUnlock()
@@ -336,8 +337,9 @@ func (s *Server) RenewAgentCertificate(ctx context.Context, agentID string, requ
 	s.mu.Unlock()
 	// Q4.U-S-04 + R11: pin the new credential, keeping the previous one
 	// accepted until it expires so an interrupted exchange cannot strand the
-	// agent on a certificate we no longer know.
-	s.rotateAgentCredential(ctx, agentID, issued.CertificatePEM)
+	// agent on a certificate we no longer know. The presented serial keeps a
+	// renewal asked over the PREVIOUS credential from evicting it (R11-1).
+	s.rotateAgentCredential(ctx, agentID, issued.CertificatePEM, presentedSerial)
 
 	return &gatewayrpc.RenewCertificateResponse{
 		CertificatePem: issued.CertificatePEM,
@@ -396,7 +398,10 @@ func (s *Server) RecordEnrollmentSteps(ctx context.Context, req *gatewayrpc.Repo
 // HandleInStreamRenewalRequest processes a cert renewal request from an agent
 // over the existing Connect bidi-stream. The response is sent back inline;
 // errors are reported via RenewalResponse.error so the stream stays open.
-func (s *Server) HandleInStreamRenewalRequest(ctx context.Context, agentID string, sess agenttransport.AgentSession, req *gatewayrpc.RenewalRequest) {
+// presentedSerial is the serial of the certificate the stream authenticated
+// with — threaded to the rotation so a renewal asked over the PREVIOUS
+// credential (a lost-response retry) does not evict it (R11-1).
+func (s *Server) HandleInStreamRenewalRequest(ctx context.Context, agentID, presentedSerial string, sess agenttransport.AgentSession, req *gatewayrpc.RenewalRequest) {
 	if req.GetAgentId() != agentID {
 		s.logger.WarnContext(ctx, "renewal request agent_id mismatch", "stream_agent_id", agentID, "request_agent_id", req.GetAgentId())
 		_ = sess.Send(&gatewayrpc.ConnectServerMessage{
@@ -470,8 +475,11 @@ func (s *Server) HandleInStreamRenewalRequest(ctx context.Context, agentID strin
 	// pin move. R11: the previous credential stays accepted until it expires —
 	// this exchange is exactly the one that strands a listen-mode node when it
 	// is interrupted, because the agent only learns of the new certificate when
-	// the RenewalResponse below reaches it.
-	s.rotateAgentCredential(ctx, agentID, certPEM)
+	// the RenewalResponse below reaches it. R11-1: when THIS stream itself was
+	// authenticated with the previous credential (an earlier response was
+	// already lost), the rotation keeps that credential and its window intact
+	// instead of shifting prev to a certificate nobody ever received.
+	s.rotateAgentCredential(ctx, agentID, certPEM, presentedSerial)
 
 	sendErr := sess.Send(&gatewayrpc.ConnectServerMessage{
 		Body: &gatewayrpc.ConnectServerMessage_RenewalResponse{

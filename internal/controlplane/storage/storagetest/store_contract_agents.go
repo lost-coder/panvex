@@ -280,7 +280,7 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 		overlapUntil := time.Date(2026, time.July, 15, 8, 25, 0, 0, time.UTC)
 
 		// First issuance: nothing to fall back to, so no overlap is opened.
-		if err := store.RotateAgentCert(ctx, agent.ID, "serial-1", firstPin, overlapUntil); err != nil {
+		if err := store.RotateAgentCert(ctx, agent.ID, "serial-1", firstPin, overlapUntil, ""); err != nil {
 			t.Fatalf("RotateAgentCert(first) error = %v", err)
 		}
 		pins, err := store.GetAgentCertPins(ctx, agent.ID)
@@ -295,7 +295,7 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 		}
 
 		// Renewal: the previous credential stays accepted.
-		if err := store.RotateAgentCert(ctx, agent.ID, "serial-2", secondPin, overlapUntil); err != nil {
+		if err := store.RotateAgentCert(ctx, agent.ID, "serial-2", secondPin, overlapUntil, "serial-1"); err != nil {
 			t.Fatalf("RotateAgentCert(renewal) error = %v", err)
 		}
 		pins, err = store.GetAgentCertPins(ctx, agent.ID)
@@ -326,6 +326,90 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 		}
 		if pins.Serial != "serial-2" || !bytes.Equal(pins.SPKI, secondPin) {
 			t.Fatalf("closing the overlap disturbed the current credential: serial=%q pin=%x", pins.Serial, pins.SPKI)
+		}
+	})
+
+	// R11-1: a renewal presented over the PREVIOUS credential while the window
+	// is open must NOT shift prev := current — the presenter just proved the
+	// agent never took delivery of the current certificate, and shifting would
+	// evict the only credential the agent holds after a second lost response.
+	t.Run("RotateAgentCert presented over the previous credential keeps it accepted", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+		group := storage.FleetGroupRecord{
+			ID:        testFleetGroupID,
+			Name:      "Default",
+			CreatedAt: time.Date(2026, time.July, 14, 8, 20, 0, 0, time.UTC),
+		}
+		agent := storage.AgentRecord{
+			ID:           "agent-rotate-prev-test",
+			NodeName:     "node-rotate-prev",
+			FleetGroupID: group.ID,
+			Version:      "dev",
+			LastSeenAt:   time.Date(2026, time.July, 14, 8, 25, 0, 0, time.UTC),
+		}
+		if err := store.PutFleetGroup(ctx, group); err != nil {
+			t.Fatalf("PutFleetGroup() error = %v", err)
+		}
+		if err := store.PutAgent(ctx, agent); err != nil {
+			t.Fatalf("PutAgent() error = %v", err)
+		}
+
+		pinA := bytes.Repeat([]byte{0x0a}, 32)
+		pinB := bytes.Repeat([]byte{0x0b}, 32)
+		pinC := bytes.Repeat([]byte{0x0c}, 32)
+		firstDeadline := time.Date(2026, time.July, 15, 8, 25, 0, 0, time.UTC)
+		secondDeadline := time.Date(2026, time.July, 16, 8, 25, 0, 0, time.UTC)
+
+		// Enrollment (no presented credential), then renewal#1 presented over
+		// the then-current serial-a: pins {cur=serial-b, prev=serial-a, window}.
+		if err := store.RotateAgentCert(ctx, agent.ID, "serial-a", pinA, firstDeadline, ""); err != nil {
+			t.Fatalf("RotateAgentCert(enrollment) error = %v", err)
+		}
+		if err := store.RotateAgentCert(ctx, agent.ID, "serial-b", pinB, firstDeadline, "serial-a"); err != nil {
+			t.Fatalf("RotateAgentCert(renewal#1) error = %v", err)
+		}
+
+		// The RenewalResponse carrying serial-b was lost: the agent reconnects
+		// still holding serial-a (the PREVIOUS credential) and asks again.
+		// The rotation must keep prev=serial-a and its original deadline —
+		// NOT shift prev := serial-b (which was never delivered to anyone).
+		if err := store.RotateAgentCert(ctx, agent.ID, "serial-c", pinC, secondDeadline, "serial-a"); err != nil {
+			t.Fatalf("RotateAgentCert(renewal#2 over prev) error = %v", err)
+		}
+		pins, err := store.GetAgentCertPins(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("GetAgentCertPins() error = %v", err)
+		}
+		if pins.Serial != "serial-c" || !bytes.Equal(pins.SPKI, pinC) {
+			t.Fatalf("current credential not rotated: serial=%q pin=%x, want serial-c / %x", pins.Serial, pins.SPKI, pinC)
+		}
+		if pins.PrevSerial != "serial-a" || !bytes.Equal(pins.PrevSPKI, pinA) {
+			t.Fatalf("renewal over the previous credential evicted it: prev serial=%q pin=%x, want serial-a / %x", pins.PrevSerial, pins.PrevSPKI, pinA)
+		}
+		if pins.OverlapUntil == nil || !pins.OverlapUntil.Equal(firstDeadline) {
+			t.Fatalf("overlap deadline re-armed: OverlapUntil = %v, want the original %v", pins.OverlapUntil, firstDeadline)
+		}
+
+		// Once the agent DOES take delivery (connects with the current serial,
+		// the window closes) a later renewal shifts normally again.
+		if err := store.CloseAgentCertOverlap(ctx, agent.ID); err != nil {
+			t.Fatalf("CloseAgentCertOverlap() error = %v", err)
+		}
+		if err := store.RotateAgentCert(ctx, agent.ID, "serial-d", pinA, secondDeadline, "serial-c"); err != nil {
+			t.Fatalf("RotateAgentCert(post-close renewal) error = %v", err)
+		}
+		pins, err = store.GetAgentCertPins(ctx, agent.ID)
+		if err != nil {
+			t.Fatalf("GetAgentCertPins() after post-close renewal error = %v", err)
+		}
+		if pins.Serial != "serial-d" || pins.PrevSerial != "serial-c" {
+			t.Fatalf("post-close renewal did not shift normally: serial=%q prev=%q, want serial-d / serial-c", pins.Serial, pins.PrevSerial)
+		}
+		if pins.OverlapUntil == nil || !pins.OverlapUntil.Equal(secondDeadline) {
+			t.Fatalf("post-close renewal did not open a fresh window: OverlapUntil = %v, want %v", pins.OverlapUntil, secondDeadline)
 		}
 	})
 

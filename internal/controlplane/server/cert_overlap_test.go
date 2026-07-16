@@ -3,10 +3,17 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"testing"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 // The certificate-overlap window (R11 / R-1). Issuance and delivery are not
@@ -113,6 +120,106 @@ func TestAcceptedAgentCertPinsIncludesPreviousDuringOverlap(t *testing.T) {
 	}
 	if len(accepted) != 1 || !bytes.Equal(accepted[0], store.pins.SPKI) {
 		t.Fatalf("after the window closed, accepted = %d pins, want only the current one", len(accepted))
+	}
+}
+
+// newOverlapTestCSR builds a CSR for agentID with a fresh keypair, the way the
+// agent does for each renewal attempt.
+func newOverlapTestCSR(t *testing.T, agentID string) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{CommonName: agentID},
+	}, key)
+	if err != nil {
+		t.Fatalf("create csr: %v", err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}))
+}
+
+// TestSecondRenewalOverPreviousCertKeepsAgentAccepted reconstructs the R11-1
+// failing sequence end-to-end against a real SQLite store:
+//
+//	t0  the agent holds certificate A (enrollment; pins {cur=A}).
+//	t1  in-stream renewal #1 over the A-authenticated stream rotates the pins
+//	    to {cur=B, prev=A, window open} — and the RenewalResponse is LOST, so
+//	    the agent never learns about B.
+//	t2  the agent reconnects still holding A (accepted: previous, window open;
+//	    a prev-cert connect does not close the window).
+//	t3  its renewal timer fires again within a minute — renewal #2, also asked
+//	    over A. Before the fix this shifted prev := B (a certificate nobody
+//	    ever received), evicting A from the accepted set.
+//	t4  response #2 is lost too. The agent's only credential is A — it must
+//	    still classify as accepted, or a listen-mode node is stranded until an
+//	    operator recovery grant: the exact failure R11 Task 1 closed.
+func TestSecondRenewalOverPreviousCertKeepsAgentAccepted(t *testing.T) {
+	now := time.Date(2026, time.July, 14, 12, 0, 0, 0, time.UTC)
+	srv := testServerWithSQLite(t, now)
+	ctx := context.Background()
+
+	const agentID = "agent-r11"
+	if err := srv.store.PutFleetGroup(ctx, storage.FleetGroupRecord{ID: "fg-overlap", Name: "Default", CreatedAt: now}); err != nil {
+		t.Fatalf("PutFleetGroup() error = %v", err)
+	}
+	if err := srv.store.PutAgent(ctx, storage.AgentRecord{
+		ID: agentID, NodeName: "node-r11", FleetGroupID: "fg-overlap", Version: "dev", LastSeenAt: now,
+	}); err != nil {
+		t.Fatalf("PutAgent() error = %v", err)
+	}
+
+	// t0: enrollment — certificate A, no presented credential, no window.
+	issuedA, err := srv.authority.issueAgentCertificateFromCSR(newOverlapTestCSR(t, agentID), agentID, agentCertificateLifetime, true, now)
+	if err != nil {
+		t.Fatalf("issue certificate A: %v", err)
+	}
+	srv.rotateAgentCredential(ctx, agentID, issuedA.CertificatePEM, "")
+	serialA := issuedA.Serial
+
+	renew := func(label string) *gatewayrpc.RenewalResponse {
+		t.Helper()
+		sess := &fakeSendSession{}
+		srv.HandleInStreamRenewalRequest(ctx, agentID, serialA, sess,
+			&gatewayrpc.RenewalRequest{AgentId: agentID, CsrPem: newOverlapTestCSR(t, agentID)})
+		if len(sess.sent) != 1 {
+			t.Fatalf("%s: len(sent) = %d, want 1", label, len(sess.sent))
+		}
+		resp := sess.sent[0].GetRenewalResponse()
+		if resp == nil || resp.GetError() != "" {
+			t.Fatalf("%s: renewal failed: %+v", label, resp)
+		}
+		return resp
+	}
+
+	// t1: renewal #1 over the A-authenticated stream; response lost.
+	renew("renewal#1")
+	// t2–t3: the agent reconnects with A and asks again; response lost again.
+	respC := renew("renewal#2")
+
+	// t4: the agent's only credential A must still be accepted.
+	pins, err := srv.store.GetAgentCertPins(ctx, agentID)
+	if err != nil {
+		t.Fatalf("GetAgentCertPins() error = %v", err)
+	}
+	if got := srv.classifyPresentedSerial(pins, serialA); got != certSerialPrevious {
+		t.Fatalf("after two lost renewal responses, presenting the certificate the agent still holds = %v (pins cur=%q prev=%q), want certSerialPrevious",
+			got, pins.Serial, pins.PrevSerial)
+	}
+
+	// The freshly issued certificate from renewal #2 is the pinned current one,
+	// so delivery of THAT response converges the agent normally.
+	certBlock, _ := pem.Decode([]byte(respC.GetCertificatePem()))
+	if certBlock == nil {
+		t.Fatal("renewal#2 certificate_pem decode failed")
+	}
+	leaf, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		t.Fatalf("parse renewal#2 leaf: %v", err)
+	}
+	if want := leaf.SerialNumber.Text(16); pins.Serial != want {
+		t.Fatalf("pins.Serial = %q, want the renewal#2 serial %q", pins.Serial, want)
 	}
 }
 
