@@ -13,6 +13,7 @@ import (
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/bootstrap"
 	"github.com/lost-coder/panvex/internal/controlplane/config"
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
 	"github.com/lost-coder/panvex/internal/controlplane/server"
 	"github.com/lost-coder/panvex/internal/controlplane/settings"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
@@ -85,6 +86,17 @@ func runServe(args []string) error {
 	// the process is still otherwise healthy. defer LIFO => this runs
 	// first among the defers registered below it.
 	defer shutdownOtel(otelShutdown)
+
+	// KDF profile. "low-memory" switches NEW password hashes and CA-key blobs
+	// to the OWASP low-memory Argon2id configuration (t=2, m=19 MiB, p=1) for
+	// small devices; existing v2/ENC2 material keeps verifying with its
+	// embedded / legacy parameters. Selected here, before anything derives a
+	// key: the admin bootstrap inside newAPIServer and the CA-key load both
+	// hash, and they must see the operator's choice. An unknown value fails
+	// the boot rather than silently falling back to a different cost.
+	if err := kdf.SetActiveProfile(strings.TrimSpace(os.Getenv("PANVEX_KDF_PROFILE"))); err != nil {
+		return fmt.Errorf("PANVEX_KDF_PROFILE: %w", err)
+	}
 
 	// A8: refuse insecure storage configurations before the first
 	// connection attempt. ResolveStorage (in parseServeConfig) stays a
