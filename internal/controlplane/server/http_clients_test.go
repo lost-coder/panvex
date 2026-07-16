@@ -194,7 +194,7 @@ func TestHTTPClientsUpdateRotateAndDeleteQueueLifecycleJobs(t *testing.T) {
 	}
 
 	updateResponse := performJSONRequest(t, server, http.MethodPut, "/api/clients/"+created.ID, map[string]any{
-		"name":               "alice-renamed",
+		"name":               "alice",
 		"enabled":            true,
 		"max_tcp_conns":      9,
 		"max_unique_ips":     5,

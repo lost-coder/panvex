@@ -3,15 +3,19 @@ package telemt
 // connectionSummaryTop carries the top-N connection / throughput rows
 // from /v1/runtime/connections/summary. Pulled out of the surrounding
 // anonymous struct so the deeply-nested decode tree stays readable
-// (S8205).
+// (S8205). Both lists share Telemt's RuntimeEdgeConnectionUserData row
+// (runtime_edge.rs): username / current_connections / total_octets —
+// the throughput ranking's value IS total_octets (audit F3; the old
+// `connections`/`throughput_bytes` tags matched nothing and decoded
+// zeroes forever).
 type connectionSummaryTop struct {
 	ByConnections []struct {
 		Username    string `json:"username"`
-		Connections int    `json:"connections"`
+		Connections int    `json:"current_connections"`
 	} `json:"by_connections"`
 	ByThroughput []struct {
 		Username        string `json:"username"`
-		ThroughputBytes uint64 `json:"throughput_bytes"`
+		ThroughputBytes uint64 `json:"total_octets"`
 	} `json:"by_throughput"`
 }
 

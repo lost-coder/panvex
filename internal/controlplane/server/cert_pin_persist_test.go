@@ -24,7 +24,7 @@ type pinRecordingStore struct {
 	pins map[string][]byte
 }
 
-func (s *pinRecordingStore) RotateAgentCert(_ context.Context, agentID string, _ string, spki []byte, _ time.Time) error {
+func (s *pinRecordingStore) RotateAgentCert(_ context.Context, agentID string, _ string, spki []byte, _ time.Time, _ string) error {
 	s.pins[agentID] = append([]byte(nil), spki...)
 	return nil
 }
@@ -51,7 +51,7 @@ func TestRotateAgentCredentialStoresSPKIHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issue cert: %v", err)
 	}
-	srv.rotateAgentCredential(context.Background(), "agent-pin", issued.CertificatePEM)
+	srv.rotateAgentCredential(context.Background(), "agent-pin", issued.CertificatePEM, "")
 
 	block, _ := pem.Decode([]byte(issued.CertificatePEM))
 	cert, err := x509.ParseCertificate(block.Bytes)

@@ -188,6 +188,8 @@ type DiscoveredClient struct {
 	DiscoveredAt       time.Time
 	UpdatedAt          time.Time
 	ConnectionLinks    json.RawMessage
+	UserAdTag          string
+	Enabled            bool
 }
 
 type EnrollmentAttempt struct {

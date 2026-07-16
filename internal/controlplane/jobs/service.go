@@ -32,8 +32,6 @@ const (
 	// restart`). Heavier than a reload — used to recover a degraded node.
 	// No-ops with a typed failure when the agent has no restart strategy.
 	ActionRuntimeRestart Action = "runtime.restart"
-	// ActionUsersCreate creates a Telemt operator account.
-	ActionUsersCreate Action = "users.create"
 	// ActionClientCreate creates one centrally managed Telemt client on the target node.
 	ActionClientCreate Action = "client.create"
 	// ActionClientUpdate updates one centrally managed Telemt client on the target node.
@@ -65,16 +63,12 @@ const (
 	// are currently unconditional. Wiring the node's live Telemt revision through
 	// is a follow-up (see the config-editing spec).
 	ActionConfigApply Action = "config.apply"
-	// ActionConfigFetch asks the agent to return the node's current observed
-	// managed config (diagnostic/force-refresh; the push path is primary).
-	ActionConfigFetch Action = "config.fetch"
 )
 
 // IsValidAction reports whether the action is a recognized job type.
 func IsValidAction(a Action) bool {
 	switch a {
 	case ActionRuntimeRestart,
-		ActionUsersCreate,
 		ActionClientCreate,
 		ActionClientUpdate,
 		ActionClientDelete,
@@ -83,8 +77,7 @@ func IsValidAction(a Action) bool {
 		ActionTelemetryRefreshDiagnostics,
 		ActionAgentSelfUpdate,
 		ActionSwitchTransportMode,
-		ActionConfigApply,
-		ActionConfigFetch:
+		ActionConfigApply:
 		return true
 	default:
 		return false
@@ -641,7 +634,7 @@ func (s *Service) Enqueue(ctx context.Context, input CreateJobInput, now time.Ti
 
 func isMutatingAction(action Action) bool {
 	switch action {
-	case ActionUsersCreate, ActionClientCreate, ActionClientUpdate, ActionClientDelete, ActionClientRotateSecret:
+	case ActionClientCreate, ActionClientUpdate, ActionClientDelete, ActionClientRotateSecret:
 		return true
 	default:
 		return false

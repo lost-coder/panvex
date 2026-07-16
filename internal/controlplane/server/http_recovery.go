@@ -52,7 +52,10 @@ func (s *Server) handleAgentCertificateRecovery() http.HandlerFunc {
 			return
 		}
 
-		s.rotateAgentCredential(r.Context(), request.AgentID, issued.CertificatePEM)
+		// Recovery is grant-based: the agent lost its credential and proved
+		// nothing about what it holds, so there is no presented serial and the
+		// rotation shifts prev unconditionally (pre-R11-1 behaviour).
+		s.rotateAgentCredential(r.Context(), request.AgentID, issued.CertificatePEM, "")
 		s.appendAuditWithContext(r.Context(), request.AgentID, "agents.certificate.recovered", request.AgentID, map[string]any{
 			"node_name": agent.NodeName,
 		})

@@ -168,7 +168,34 @@ func (s *Service) ReconcileDeployments(ctx context.Context, agentFilter string) 
 		}
 
 		for action, agentIDs := range pending {
-			if _, err := s.EnqueueClientJob(ctx, actorReconciler, action, client, "", agentIDs, now); err != nil {
+			// R10-1: the snapshot above may be stale by the time we get here —
+			// an operator rotate/update that committed in between would be
+			// silently undone on the node if this job shipped the snapshot's
+			// payload, because a job created LATER supersedes the operator's
+			// fresher one (supersede is CreatedAt-ordered, keyed by client_id)
+			// and the node then converges on the stale secret with
+			// Status=succeeded. Re-read the client from the mirror immediately
+			// before each enqueue so the payload always carries the newest
+			// committed state. The snapshot still decides WHICH pairs are owed
+			// a re-send; only the payload must be fresh. Lock discipline: Get
+			// takes and releases s.mu internally — s.mu is never held across
+			// EnqueueClientJob (enqueue/publish/audit).
+			freshClient, err := s.Get(ctx, clientID)
+			if err != nil {
+				// The client vanished between snapshot and enqueue: nothing to
+				// describe to the node. Same reasoning as the missing-row skip
+				// at the top of the loop.
+				continue
+			}
+			if freshClient.DeletedAt != nil && client.DeletedAt == nil {
+				// Tombstoned since the snapshot: DeleteFlow already enqueued
+				// the delete job, and shipping the snapshot's stale non-delete
+				// action now would supersede it (resurrecting the client on
+				// the node). The next pass re-sends the delete if the node
+				// leaves it unconfirmed.
+				continue
+			}
+			if _, err := s.EnqueueClientJob(ctx, actorReconciler, action, freshClient, agentIDs, now); err != nil {
 				s.logger.ErrorContext(ctx, "re-enqueue of unconfirmed client job failed",
 					"client_id", string(clientID),
 					"action", string(action),
@@ -236,6 +263,12 @@ func divergentDeploymentAction(deployment Deployment) (jobs.Action, bool) {
 // It is deliberately whole-fleet rather than scoped to the agent that moved:
 // a group change can add and remove targets for many clients at once, and the
 // mirror walk is cheap next to the round-trip it saves.
+//
+// R10-2: the whole-fleet snapshot only PRE-FILTERS which clients might
+// diverge. The actual read-compute-write per client runs inside
+// reconcileTopologyClient under that client's save lock, so a concurrent
+// operator mutation (e.g. a secret rotation) committed after the snapshot is
+// never overwritten by a full-row save built from stale data.
 func (s *Service) ReconcileTopology(ctx context.Context, actorID string, observedAt time.Time) {
 	mirror := s.MirrorSnapshot()
 
@@ -253,17 +286,78 @@ func (s *Service) ReconcileTopology(ctx context.Context, actorID string, observe
 			continue
 		}
 
-		next := BuildDeployments(deployments, clientID, targetAgentIDs, string(jobs.ActionClientUpdate), string(jobs.ActionClientDelete), observedAt)
-		if err := s.saveStateAndPublish(ctx, client, assignments, next); err != nil {
+		freshClient, freshDeployments, freshTargets, saved, err := s.reconcileTopologyClient(ctx, clientID, observedAt)
+		if err != nil {
 			s.logger.ErrorContext(ctx, "persist client state after topology change failed",
 				"client_id", string(clientID), "error", err)
 			continue
 		}
-		if err := s.DispatchClientUpdateJobs(ctx, actorID, client, "", deployments, targetAgentIDs, observedAt); err != nil {
+		if !saved {
+			// Vanished, tombstoned, or no longer divergent on fresh state —
+			// nothing to persist for this client.
+			continue
+		}
+		s.deps.PublishClientsUpdated(freshClient.ID)
+		if err := s.DispatchClientUpdateJobs(ctx, actorID, freshClient, freshDeployments, freshTargets, observedAt); err != nil {
 			s.logger.ErrorContext(ctx, "dispatch client jobs after topology change failed",
 				"client_id", string(clientID), "error", err)
 		}
 	}
+}
+
+// reconcileTopologyClient re-reads one client's state from the mirror,
+// re-checks that its topology actually diverges, and persists the rebuilt
+// deployments — all under the client's save lock, so the write is based on
+// the state current at write time (R10-2: the fleet snapshot in
+// ReconcileTopology is stale by the time the pass reaches a client, and a
+// full-row SaveState built from it silently reverts any operator mutation —
+// e.g. a secret rotation — committed in between).
+//
+// Lock discipline: operator save paths hold clientSaveLock across
+// commit + mirror-apply (SaveState), so under this lock the mirror is the
+// committed truth for this client — every concurrent save either finished
+// before the re-read (and is included) or starts after this critical section
+// (and wins as the later writer, with its later-created jobs superseding the
+// ones dispatched here). deps.Topology() is called by our caller BEFORE the
+// lock is taken (it acquires server-side locks; a client save lock must never
+// wait on those), and the mirror reads/writes inside take s.mu themselves —
+// the documented saveLock → uow → s.mu ordering is preserved, and the lock is
+// released before any publish/enqueue.
+//
+// Returns saved=false when the client vanished, was tombstoned, or no longer
+// diverges on fresh state. On success it returns the fresh client, its
+// PRE-rebuild deployments (DispatchClientUpdateJobs derives the delete
+// targets from them), and the fresh target set.
+func (s *Service) reconcileTopologyClient(ctx context.Context, clientID ClientID, observedAt time.Time) (Client, []Deployment, []string, bool, error) {
+	topology := s.deps.Topology()
+
+	saveLock := s.clientSaveLock(clientID)
+	saveLock.Lock()
+	defer saveLock.Unlock()
+
+	client, assignments, deployments, err := s.detailSnapshot(string(clientID))
+	if err != nil || client.DeletedAt != nil {
+		// Vanished or tombstoned between the fleet snapshot and now: the
+		// flow that removed it owns the follow-up jobs.
+		return Client{}, nil, nil, false, nil
+	}
+	targetAgentIDs := s.ResolveTargetAgentIDs(assignments, topology)
+	if sameAgentSet(DeploymentAgentIDs(deployments), targetAgentIDs) {
+		// The divergence seen on the stale snapshot is already resolved.
+		return Client{}, nil, nil, false, nil
+	}
+
+	next := BuildDeployments(deployments, clientID, targetAgentIDs, string(jobs.ActionClientUpdate), string(jobs.ActionClientDelete), observedAt)
+	if s.HasRepo() {
+		if err := s.saveStateHoldingSaveLock(ctx, client, assignments, next); err != nil {
+			return Client{}, nil, nil, false, err
+		}
+	} else {
+		// No-repo fallback (test doubles / pre-migrate stores), mirroring
+		// saveStateAndPublish's split.
+		s.MirrorReplaceInMemory(client, assignments, next)
+	}
+	return client, deployments, targetAgentIDs, true, nil
 }
 
 func deploymentsForClient(mirror MirrorState, clientID ClientID) []Deployment {

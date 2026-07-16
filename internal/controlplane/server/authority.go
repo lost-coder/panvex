@@ -480,7 +480,14 @@ const certOverlapMax = 7 * 24 * time.Hour
 // Best-effort, like the pin write it replaces: a failure is logged loudly but
 // does not abort issuance — losing the in-flight credential exchange to a
 // transient DB error would be worse, and the next renewal retries.
-func (s *Server) rotateAgentCredential(ctx context.Context, agentID, certPEM string) {
+//
+// presentedSerial is the serial the agent authenticated with on the connection
+// carrying this issuance ("" when there is none — enrollment, recovery). It is
+// threaded to RotateAgentCert so a renewal presented over the PREVIOUS
+// credential during an open overlap window keeps that credential accepted
+// instead of evicting it (R11-1: two consecutive lost RenewalResponses used to
+// strand a listen-mode node on a certificate outside the accepted set).
+func (s *Server) rotateAgentCredential(ctx context.Context, agentID, certPEM, presentedSerial string) {
 	if s.store == nil {
 		return
 	}
@@ -496,7 +503,7 @@ func (s *Server) rotateAgentCredential(ctx context.Context, agentID, certPEM str
 	}
 	pin := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 
-	if err := s.store.RotateAgentCert(ctx, agentID, cert.SerialNumber.Text(16), pin[:], s.certOverlapDeadline(agentID)); err != nil {
+	if err := s.store.RotateAgentCert(ctx, agentID, cert.SerialNumber.Text(16), pin[:], s.certOverlapDeadline(agentID), presentedSerial); err != nil {
 		s.obs.ObserveAgentCertPinPersistFailure()
 		s.logger.WarnContext(ctx, "rotate agent credential failed", "agent_id", agentID, "error", err,
 			"alert", "agent_cert_pin_persist_failed")

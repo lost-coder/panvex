@@ -32,6 +32,21 @@ var ErrResetQuotaReadOnly = errors.New("telemt: API is in read-only mode")
 // a create (re-enable / drift-heal path).
 var ErrClientNotFound = errors.New("telemt: user not found")
 
+// ErrClientAlreadyExists is returned by CreateClient when Telemt answers
+// 409 user_exists — the username is already configured on the node. The
+// client payload is a full desired-state upsert, so callers converge by
+// falling back to the PATCH path (audit F6: a redelivered create after a
+// lost ack must not fail forever).
+var ErrClientAlreadyExists = errors.New("telemt: user already exists")
+
+// ErrLastUserForbidden is returned by DeleteClient when Telemt answers 409
+// last_user_forbidden — the node refuses to delete its last configured user
+// (telemt users.rs delete_user). Disable does NOT hit this (it is a PATCH
+// enabled=false); only a real delete of the last user does. Surfaced typed
+// so the panel shows the honest reason instead of a generic failure
+// (audit F7 residual).
+var ErrLastUserForbidden = errors.New("telemt: node refuses to delete its last configured user (Telemt requires at least one user; disable it instead)")
+
 // FetchActiveIPs fetches the /v1/stats/users/active-ips endpoint and returns per-user active IPs.
 func (c *Client) FetchActiveIPs(ctx context.Context) ([]UserActiveIPs, error) {
 	var users []UserActiveIPs
@@ -48,14 +63,11 @@ func (c *Client) CreateClient(ctx context.Context, client ManagedClient) (Client
 	return c.applyClient(ctx, http.MethodPost, "/v1/users", client)
 }
 
-// UpdateClient updates one managed Telemt client and returns the preferred connection link.
+// UpdateClient updates one managed Telemt client and returns the preferred
+// connection link. The PATCH always targets client.Name — the name is
+// immutable panel-side because Telemt has no rename operation (audit F2).
 func (c *Client) UpdateClient(ctx context.Context, client ManagedClient) (ClientApplyResult, error) {
-	targetName := client.Name
-	if strings.TrimSpace(client.PreviousName) != "" {
-		targetName = client.PreviousName
-	}
-
-	return c.applyClient(ctx, http.MethodPatch, "/v1/users/"+url.PathEscape(targetName), client)
+	return c.applyClient(ctx, http.MethodPatch, "/v1/users/"+url.PathEscape(client.Name), client)
 }
 
 // ResetUserQuotaResult carries the post-reset quota snapshot Telemt
@@ -86,6 +98,16 @@ func (c *Client) ResetUserQuota(ctx context.Context, username string) (ResetUser
 
 	switch response.StatusCode {
 	case http.StatusNotFound:
+		// Two distinct 404s share the "not_found" error code (audit F5):
+		// the route handler's "User not found" (user absent from the node
+		// — rename/delete raced the job) vs the dispatcher's "Route not
+		// found" (Telemt < 3.4.6, endpoint absent). Only the latter means
+		// the feature is unsupported; conflating them told operators
+		// "Telemt too old" for a merely-missing user.
+		apiErr := decodeAPIError(response.Body, "reset user quota failed with status 404")
+		if strings.Contains(apiErr.Error(), "User not found") {
+			return ResetUserQuotaResult{}, fmt.Errorf("reset user quota: %w", ErrClientNotFound)
+		}
 		return ResetUserQuotaResult{}, ErrResetQuotaUnsupported
 	case http.StatusForbidden:
 		return ResetUserQuotaResult{}, ErrResetQuotaReadOnly
@@ -126,6 +148,16 @@ func (c *Client) DeleteClient(ctx context.Context, clientName string) error {
 	if response.StatusCode == http.StatusNotFound {
 		return ErrClientNotFound
 	}
+	if response.StatusCode == http.StatusConflict {
+		// 409 code "last_user_forbidden": Telemt never deletes its last
+		// configured user (users.rs). Typed so callers/panel can render
+		// the real reason. Other 409s stay generic.
+		apiErr := decodeAPIError(response.Body, "delete client failed with status 409")
+		if strings.Contains(apiErr.Error(), "last_user_forbidden") {
+			return fmt.Errorf("delete client: %w", ErrLastUserForbidden)
+		}
+		return fmt.Errorf("delete client failed: %w", apiErr)
+	}
 	if response.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("delete client failed: %w", decodeAPIError(response.Body, fmt.Sprintf("delete client failed with status %d", response.StatusCode)))
 	}
@@ -134,9 +166,22 @@ func (c *Client) DeleteClient(ctx context.Context, clientName string) error {
 }
 
 func (c *Client) applyClient(ctx context.Context, method string, path string, client ManagedClient) (ClientApplyResult, error) {
+	isPatch := method == http.MethodPatch
 	payload := map[string]any{
-		"username": client.Name,
-		"secret":   client.Secret,
+		"secret": client.Secret,
+		// Always sent explicitly (audit F7/M1): CreateUserRequest models it
+		// as Option<bool> (omitted = enabled) and PatchUserRequest as
+		// Patch<bool> (omitted = Unchanged) — since Panvex ships the FULL
+		// desired state, omitting it on PATCH would silently never toggle a
+		// user, and omitting it on create would deploy a disabled client
+		// enabled.
+		"enabled": client.Enabled,
+	}
+	// Telemt's PatchUserRequest has no username field (there is no rename
+	// operation anywhere in its API — audit F2), so the name is only sent
+	// on create; the PATCH target user is identified by the URL path.
+	if !isPatch {
+		payload["username"] = client.Name
 	}
 	// Panvex always ships the FULL desired client state on every apply,
 	// so the optional fields are mapped to two distinct wire encodings:
@@ -152,7 +197,6 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 	//     complete desired state, a cleared field must be sent as explicit
 	//     null so it is actually removed; omitting it would silently
 	//     preserve the stale value on the node.
-	isPatch := method == http.MethodPatch
 	setOptionalString := func(key, value string) {
 		if strings.TrimSpace(value) != "" {
 			payload[key] = value
@@ -193,6 +237,19 @@ func (c *Client) applyClient(ctx context.Context, method string, path string, cl
 
 	if response.StatusCode == http.StatusNotFound {
 		return ClientApplyResult{}, ErrClientNotFound
+	}
+	if response.StatusCode == http.StatusConflict {
+		// Telemt's create handler answers 409 code "user_exists" when the
+		// username is already configured (users.rs). The job payload is a
+		// full desired-state upsert, so callers use this sentinel to
+		// converge via the PATCH path instead of failing forever on a
+		// redelivered create (audit F6). Other 409s (e.g.
+		// last_user_forbidden) stay generic.
+		apiErr := decodeAPIError(response.Body, "apply client failed with status 409")
+		if strings.Contains(apiErr.Error(), "user_exists") {
+			return ClientApplyResult{}, fmt.Errorf("apply client: %w", ErrClientAlreadyExists)
+		}
+		return ClientApplyResult{}, fmt.Errorf("apply client failed: %w", apiErr)
 	}
 	if response.StatusCode >= http.StatusBadRequest {
 		return ClientApplyResult{}, fmt.Errorf("apply client failed: %w", decodeAPIError(response.Body, fmt.Sprintf("apply client failed with status %d", response.StatusCode)))

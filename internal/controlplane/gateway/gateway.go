@@ -98,13 +98,19 @@ type Deps interface {
 	ResolveClientIDByName(agentID, clientName string) string
 	// RenewAgentCertificate is the post-authentication core of the unary
 	// Server.RenewCertificate (issue-from-CSR + re-pin + in-memory update).
-	RenewAgentCertificate(ctx context.Context, agentID string, req *gatewayrpc.RenewCertificateRequest) (*gatewayrpc.RenewCertificateResponse, error)
+	// presentedSerial is the serial of the mTLS client certificate the
+	// request rode in on, so the re-pin can keep a still-held previous
+	// credential accepted (R11-1).
+	RenewAgentCertificate(ctx context.Context, agentID, presentedSerial string, req *gatewayrpc.RenewCertificateRequest) (*gatewayrpc.RenewCertificateResponse, error)
 	// RecordEnrollmentSteps is the former Server.ReportEnrollmentSteps body.
 	RecordEnrollmentSteps(ctx context.Context, req *gatewayrpc.ReportEnrollmentStepsRequest) (*gatewayrpc.ReportEnrollmentStepsResponse, error)
 	// HandleInStreamRenewalRequest is the former handleInStreamRenewalRequest:
 	// it signs the CSR, re-pins the serial, updates in-memory cert dates under
 	// s.mu, and sends the RenewalResponse back over the stream.
-	HandleInStreamRenewalRequest(ctx context.Context, agentID string, sess agenttransport.AgentSession, req *gatewayrpc.RenewalRequest)
+	// presentedSerial is the serial the stream authenticated with (from
+	// AuthorizeAgentConnect), threaded so the re-pin can keep a still-held
+	// previous credential accepted (R11-1).
+	HandleInStreamRenewalRequest(ctx context.Context, agentID, presentedSerial string, sess agenttransport.AgentSession, req *gatewayrpc.RenewalRequest)
 }
 
 // Config carries the direct subsystems and reverse dependencies the

@@ -18,6 +18,7 @@ var (
 	errClientNameRequired    = clients.ErrNameRequired
 	errClientNameInvalid     = clients.ErrNameInvalid
 	errClientNameTaken       = clients.ErrNameTaken
+	errClientNameImmutable   = clients.ErrNameImmutable
 	errClientUserADTag       = clients.ErrUserADTag
 	errClientExpiration      = clients.ErrExpiration
 	errClientTargetsRequired = clients.ErrTargetsRequired

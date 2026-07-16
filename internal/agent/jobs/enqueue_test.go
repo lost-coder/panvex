@@ -33,9 +33,9 @@ func TestJobPipelineForActionRoutesClientMutations(t *testing.T) {
 }
 
 func TestJobPipelineForActionRoutesUnknownActionsToDefault(t *testing.T) {
-	pipeline := pipelineForAction("users.create")
+	pipeline := pipelineForAction("agent.self-update")
 	if pipeline != PipelineDefault {
-		t.Fatalf("pipelineForAction(users.create) = %q, want %q", pipeline, PipelineDefault)
+		t.Fatalf("pipelineForAction(agent.self-update) = %q, want %q", pipeline, PipelineDefault)
 	}
 }
 

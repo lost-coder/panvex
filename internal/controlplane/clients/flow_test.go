@@ -70,6 +70,56 @@ func TestCreateNoTargetsRejected(t *testing.T) {
 	}
 }
 
+// TestUpdateNameChangeRejected (audit F2): Telemt has no rename operation
+// (PatchUserRequest has no username field), so the client name is immutable
+// after create. An update carrying a different name must be rejected with
+// ErrNameImmutable before anything is persisted or dispatched; re-submitting
+// the current name stays a normal save.
+func TestUpdateNameChangeRejected(t *testing.T) {
+	t.Parallel()
+	svc, deps, jq, _ := newFlowTestService(t)
+	registerAgents(deps, "agent-a")
+
+	client, _, _, err := svc.Create(context.Background(), "actor", MutationInput{
+		Name:     "alice",
+		Secret:   "0123456789abcdef0123456789abcdef",
+		AgentIDs: []string{"agent-a"},
+	}, time.Now())
+	if err != nil {
+		t.Fatalf("seed Create: %v", err)
+	}
+	jq.enqueued = nil
+
+	_, _, _, err = svc.Update(context.Background(), string(client.ID), "actor", MutationInput{
+		Name:     "alice-new",
+		Secret:   "0123456789abcdef0123456789abcdef",
+		AgentIDs: []string{"agent-a"},
+	}, time.Now())
+	if !errors.Is(err, ErrNameImmutable) {
+		t.Fatalf("Update with name change: err = %v, want ErrNameImmutable", err)
+	}
+	if len(jq.enqueued) != 0 {
+		t.Fatalf("Update with name change: enqueued %d jobs, want 0", len(jq.enqueued))
+	}
+
+	// Same name → regular save.
+	if _, _, _, err := svc.Update(context.Background(), string(client.ID), "actor", MutationInput{
+		Name:     "alice",
+		Secret:   "0123456789abcdef0123456789abcdef",
+		AgentIDs: []string{"agent-a"},
+	}, time.Now()); err != nil {
+		t.Fatalf("Update with unchanged name: err = %v, want nil", err)
+	}
+
+	// Empty name still gets the dedicated required error, not immutable.
+	if _, _, _, err := svc.Update(context.Background(), string(client.ID), "actor", MutationInput{
+		Name:     "   ",
+		AgentIDs: []string{"agent-a"},
+	}, time.Now()); !errors.Is(err, ErrNameRequired) {
+		t.Fatalf("Update with empty name: err = %v, want ErrNameRequired", err)
+	}
+}
+
 func TestCreateHappyPathPersistsBeforeEnqueueAndPublishes(t *testing.T) {
 	t.Parallel()
 	svc, deps, jq, repo := newFlowTestService(t)

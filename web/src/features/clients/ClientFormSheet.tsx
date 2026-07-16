@@ -32,6 +32,10 @@ export function ClientFormSheet({
 
   const trimmedName = data.name.trim();
   const nameInvalid = trimmedName.length > 0 && !CLIENT_NAME_REGEX.test(trimmedName);
+  // Audit F2: Telemt has no rename operation, so the backend rejects any
+  // name change on update — surface that as a read-only field with a hint
+  // instead of letting the operator hit a guaranteed 400.
+  const nameLocked = mode === "edit";
 
   function update<K extends keyof typeof data>(key: K, value: (typeof data)[K]) {
     onChange({ ...data, [key]: value });
@@ -94,15 +98,15 @@ export function ClientFormSheet({
         label={t("form.nameLabel")}
         variant="uppercase"
         required
-        description={nameRule}
-        {...(nameInvalid ? { error: nameRule } : {})}
+        description={nameLocked ? t("form.nameImmutableHint") : nameRule}
+        {...(nameInvalid && !nameLocked ? { error: nameRule } : {})}
       >
         <Input
           value={data.name}
           onChange={(e) => update("name", e.target.value)}
           placeholder={t("form.namePlaceholder")}
-          disabled={loading}
-          aria-invalid={nameInvalid || undefined}
+          disabled={loading || nameLocked}
+          aria-invalid={(nameInvalid && !nameLocked) || undefined}
           maxLength={64}
         />
       </FormField>

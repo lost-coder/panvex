@@ -7,6 +7,31 @@ import "testing"
 // other way around. Getting this wrong causes every user on a given
 // node to report the same domain-tail as their "secret", which blows
 // up the same_secret_different_names conflict detector.
+// TestBuildDiscoveredUserEnabledMapping (audit M-2): GET /v1/users exposes a
+// real per-user `enabled` field (UserInfo model.rs); discovery must map
+// Enabled from it, not from in_runtime (a user can be configured+disabled
+// while still present in the runtime snapshot). When the field is absent
+// (defensive: pre-enabled-flag Telemt), fall back to in_runtime.
+func TestBuildDiscoveredUserEnabledMapping(t *testing.T) {
+	disabled := false
+	du := buildDiscoveredUser(UserInfo{Username: "alice", InRuntime: true, Enabled: &disabled}, nil)
+	if du.Enabled {
+		t.Fatalf("Enabled = true for a user with enabled=false (mapped from in_runtime?)")
+	}
+
+	enabled := true
+	du = buildDiscoveredUser(UserInfo{Username: "bob", InRuntime: false, Enabled: &enabled}, nil)
+	if !du.Enabled {
+		t.Fatalf("Enabled = false for a user with enabled=true (mapped from in_runtime?)")
+	}
+
+	// Field absent → fall back to in_runtime.
+	du = buildDiscoveredUser(UserInfo{Username: "carol", InRuntime: true}, nil)
+	if !du.Enabled {
+		t.Fatalf("Enabled = false when the enabled field is absent, want in_runtime fallback")
+	}
+}
+
 func TestExtractSecretFromLinks_TLSFakeTLS(t *testing.T) {
 	const wantSecret = "2ed9f5e073e33b8838e3c55ee9ae0579"
 	// ee + wantSecret + hex("ds87j.metrion.icu")

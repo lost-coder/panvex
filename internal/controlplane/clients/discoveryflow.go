@@ -267,6 +267,8 @@ func (s *Service) upsertDiscoveredClient(ctx context.Context, agentID string, re
 		MaxUniqueIPs:       int(record.GetMaxUniqueIps()),     //nolint:gosec
 		DataQuotaBytes:     int64(record.GetDataQuotaBytes()), //nolint:gosec
 		Expiration:         record.GetExpiration(),
+		UserADTag:          record.GetUserAdTag(),
+		Enabled:            record.GetEnabled(),
 		FirstSeen:          firstSeen,
 		UpdatedAt:          observedAt.UTC(),
 	}
@@ -515,10 +517,15 @@ func (s *Service) buildAdoptedClientState(record discovered.DiscoveredClient, si
 		return Client{}, nil, nil, fmt.Errorf("buildAdoptedClientState: generate subscription token: %w", err)
 	}
 	client := Client{
-		ID:                ClientID(s.NextClientID()),
-		Name:              record.ClientName,
+		ID:   ClientID(s.NextClientID()),
+		Name: record.ClientName,
+		// UserADTag/Enabled mirror what the node reported for this user
+		// (wire-audit I4). Hardcoding Enabled=true with an empty tag made
+		// the first post-adopt edit PATCH user_ad_tag:null to the node,
+		// wiping the tag Telemt already had.
 		Secret:            secret,
-		Enabled:           true,
+		UserADTag:         record.UserADTag,
+		Enabled:           record.Enabled,
 		MaxTCPConns:       record.MaxTCPConns,
 		MaxUniqueIPs:      record.MaxUniqueIPs,
 		DataQuotaBytes:    record.DataQuotaBytes,

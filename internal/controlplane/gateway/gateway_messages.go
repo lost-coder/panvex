@@ -35,6 +35,7 @@ func isPriorityAgentMessage(message *gatewayrpc.ConnectClientMessage) bool {
 func (g *Gateway) processRegularAgentMessage(
 	connectionCtx context.Context,
 	agentID string,
+	presentedSerial string,
 	sess agenttransport.AgentSession,
 	regularSnapshots *boundedQueue[AgentSnapshot],
 	message *gatewayrpc.ConnectClientMessage,
@@ -84,7 +85,7 @@ func (g *Gateway) processRegularAgentMessage(
 
 	if req := message.GetRenewalRequest(); req != nil {
 		g.logger.DebugContext(connectionCtx, logMessageReceived, "agent_id", agentID, "type", "renewal_request")
-		g.deps.HandleInStreamRenewalRequest(connectionCtx, agentID, sess, req)
+		g.deps.HandleInStreamRenewalRequest(connectionCtx, agentID, presentedSerial, sess, req)
 		return nil
 	}
 

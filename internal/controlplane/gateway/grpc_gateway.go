@@ -49,11 +49,13 @@ const (
 // update) lives in the server package behind Deps.RenewAgentCertificate
 // because it touches server-only state (s.authority, s.mu, s.store).
 func (g *Gateway) RenewCertificate(ctx context.Context, request *gatewayrpc.RenewCertificateRequest) (*gatewayrpc.RenewCertificateResponse, error) {
-	agentID, err := authenticatedAgentID(ctx)
+	// The presented serial travels with the identity so the re-pin can tell a
+	// renewal asked over the previous credential from a normal one (R11-1).
+	agentID, presentedSerial, err := AuthenticatedAgentIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return g.deps.RenewAgentCertificate(ctx, agentID, request)
+	return g.deps.RenewAgentCertificate(ctx, agentID, presentedSerial, request)
 }
 
 // ReportEnrollmentSteps ingests an agent-reported batch of enrollment
@@ -137,7 +139,7 @@ func (g *Gateway) runAgentSession(ctx context.Context, sess agenttransport.Agent
 	g.startAuditEffectsLoop(connectionCtx, cancelConnection, agentID, channels)
 	g.startResultEffectsLoop(connectionCtx, cancelConnection, agentID, channels)
 	g.startSnapshotApplyLoop(connectionCtx, cancelConnection, agentID, channels, processErrorAndCancel)
-	g.startRegularInboundLoop(connectionCtx, cancelConnection, agentID, sess, channels, processErrorAndCancel)
+	g.startRegularInboundLoop(connectionCtx, cancelConnection, agentID, presentedSerial, sess, channels, processErrorAndCancel)
 	g.startJobDispatchLoop(connectionCtx, cancelConnection, agentID, sess, session, channels)
 
 	return g.awaitAgentStreamShutdown(connectionCtx, cancelConnection, agentID, channels)
@@ -154,11 +156,6 @@ func (g *Gateway) Connect(stream gatewayrpc.AgentGateway_ConnectServer) error {
 // context.
 func (g *Gateway) RunAgentSession(ctx context.Context, sess agenttransport.AgentSession) error {
 	return g.runAgentSession(ctx, sess, DirectionOutbound)
-}
-
-func authenticatedAgentID(ctx context.Context) (string, error) {
-	id, _, err := AuthenticatedAgentIdentity(ctx)
-	return id, err
 }
 
 // AuthenticatedAgentIdentity returns the (agent_id, serial-hex) pair for the

@@ -88,6 +88,7 @@
     "editSubtitle": "Обновите параметры клиента.",
     "nameLabel": "Имя клиента",
     "nameRule": "Допустимы A–Z, a–z, 0–9, _, . и -. До 64 символов.",
+    "nameImmutableHint": "Имя нельзя изменить после создания.",
     "namePlaceholder": "например, premium-users",
     "adTagLabel": "Ad Tag",
     "adTagAutoDescription": "При сохранении сгенерировать случайный 32-символьный hex-тег.",

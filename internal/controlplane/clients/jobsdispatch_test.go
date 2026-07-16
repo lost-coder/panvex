@@ -36,7 +36,7 @@ func TestEnqueueClientJobPayloadAndDispatch(t *testing.T) {
 	}
 	observedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	job, err := svc.EnqueueClientJob(context.Background(), "actor-1", jobs.ActionClientUpdate, client, "old-name", []string{"agent-1", "agent-2"}, observedAt)
+	job, err := svc.EnqueueClientJob(context.Background(), "actor-1", jobs.ActionClientUpdate, client, []string{"agent-1", "agent-2"}, observedAt)
 	if err != nil {
 		t.Fatalf("EnqueueClientJob: unexpected error: %v", err)
 	}
@@ -72,7 +72,6 @@ func TestEnqueueClientJobPayloadAndDispatch(t *testing.T) {
 	}
 	want := ClientJobPayload{
 		ClientID:          "client-1",
-		PreviousName:      "old-name",
 		Name:              "alice",
 		Secret:            "supersecret",
 		UserADTag:         "adtag",
@@ -86,8 +85,9 @@ func TestEnqueueClientJobPayloadAndDispatch(t *testing.T) {
 		t.Fatalf("payload = %+v want %+v", payload, want)
 	}
 
-	// Exact JSON string, to lock the wire tags byte-for-byte.
-	wantJSON := `{"client_id":"client-1","previous_name":"old-name","name":"alice","secret":"supersecret","user_ad_tag":"adtag","enabled":true,"max_tcp_conns":5,"max_unique_ips":3,"data_quota_bytes":1024,"expiration_rfc3339":"2026-01-01T00:00:00Z"}`
+	// Exact JSON string, to lock the wire tags byte-for-byte. previous_name
+	// was DELIBERATELY removed (audit F2: Telemt has no rename operation).
+	wantJSON := `{"client_id":"client-1","name":"alice","secret":"supersecret","user_ad_tag":"adtag","enabled":true,"max_tcp_conns":5,"max_unique_ips":3,"data_quota_bytes":1024,"expiration_rfc3339":"2026-01-01T00:00:00Z"}`
 	if input.PayloadJSON != wantJSON {
 		t.Fatalf("PayloadJSON = %s want %s", input.PayloadJSON, wantJSON)
 	}
@@ -100,7 +100,9 @@ func TestEnqueueClientJobPayloadAndDispatch(t *testing.T) {
 	}
 }
 
-func TestEnqueueClientJobPreviousNameOmitted(t *testing.T) {
+// TestEnqueueClientJobHasNoPreviousName pins the F2 removal: the rename
+// plumbing is gone, so no client job payload may carry a previous_name key.
+func TestEnqueueClientJobHasNoPreviousName(t *testing.T) {
 	t.Parallel()
 
 	deps := &fakeDeps{ttl: time.Minute}
@@ -109,11 +111,11 @@ func TestEnqueueClientJobPreviousNameOmitted(t *testing.T) {
 	svc.SetDeps(deps, jq, nil)
 
 	client := Client{ID: ClientID("client-2"), Name: "bob"}
-	if _, err := svc.EnqueueClientJob(context.Background(), "actor", jobs.ActionClientCreate, client, "", nil, time.Now()); err != nil {
+	if _, err := svc.EnqueueClientJob(context.Background(), "actor", jobs.ActionClientCreate, client, nil, time.Now()); err != nil {
 		t.Fatalf("EnqueueClientJob: %v", err)
 	}
 	if got := jq.enqueued[0].PayloadJSON; !jsonHasNoKey(t, got, "previous_name") {
-		t.Fatalf("PayloadJSON = %s, want previous_name omitted when empty", got)
+		t.Fatalf("PayloadJSON = %s, want no previous_name key (rename removed, audit F2)", got)
 	}
 }
 
@@ -142,7 +144,7 @@ func TestDispatchClientUpdateJobs(t *testing.T) {
 	}
 	targetAgentIDs := []string{"agent-a"} // agent-b dropped
 
-	err := svc.DispatchClientUpdateJobs(context.Background(), "actor", client, "old-carol", currentDeployments, targetAgentIDs, time.Now())
+	err := svc.DispatchClientUpdateJobs(context.Background(), "actor", client, currentDeployments, targetAgentIDs, time.Now())
 	if err != nil {
 		t.Fatalf("DispatchClientUpdateJobs: %v", err)
 	}
@@ -175,7 +177,7 @@ func TestDispatchClientUpdateJobsNoTargetsNoRemovals(t *testing.T) {
 	svc.SetDeps(deps, jq, nil)
 
 	client := Client{ID: ClientID("client-4")}
-	if err := svc.DispatchClientUpdateJobs(context.Background(), "actor", client, "", nil, nil, time.Now()); err != nil {
+	if err := svc.DispatchClientUpdateJobs(context.Background(), "actor", client, nil, nil, time.Now()); err != nil {
 		t.Fatalf("DispatchClientUpdateJobs: %v", err)
 	}
 	if len(jq.enqueued) != 0 {
@@ -242,7 +244,7 @@ func TestEnqueueClientJobQueueErrorPropagatesNoNotify(t *testing.T) {
 	svc.SetDeps(deps, jq, nil)
 
 	client := Client{ID: ClientID("client-6"), Name: "eve"}
-	_, err := svc.EnqueueClientJob(context.Background(), "actor", jobs.ActionClientCreate, client, "", []string{"agent-1"}, time.Now())
+	_, err := svc.EnqueueClientJob(context.Background(), "actor", jobs.ActionClientCreate, client, []string{"agent-1"}, time.Now())
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("EnqueueClientJob: err = %v want %v", err, wantErr)
 	}

@@ -195,8 +195,10 @@ func (g *Gateway) startSnapshotApplyLoop(ctx context.Context, cancel context.Can
 }
 
 // startRegularInboundLoop drains regular-priority inbound messages and
-// dispatches them through processRegularAgentMessage.
-func (g *Gateway) startRegularInboundLoop(ctx context.Context, cancel context.CancelFunc, agentID string, sess agenttransport.AgentSession, ch *agentStreamChannels, processErr func(error)) {
+// dispatches them through processRegularAgentMessage. presentedSerial is the
+// serial the stream authenticated with; the in-stream renewal path threads it
+// to the credential rotation (R11-1).
+func (g *Gateway) startRegularInboundLoop(ctx context.Context, cancel context.CancelFunc, agentID, presentedSerial string, sess agenttransport.AgentSession, ch *agentStreamChannels, processErr func(error)) {
 	go func() {
 		defer g.recoverAgentStreamGoroutine(agentID, "regular-inbound", cancel)
 		for {
@@ -207,7 +209,7 @@ func (g *Gateway) startRegularInboundLoop(ctx context.Context, cancel context.Ca
 				if message == nil {
 					continue
 				}
-				if err := g.processRegularAgentMessage(ctx, agentID, sess, ch.regularSnapshots, message); err != nil {
+				if err := g.processRegularAgentMessage(ctx, agentID, presentedSerial, sess, ch.regularSnapshots, message); err != nil {
 					processErr(err)
 					return
 				}

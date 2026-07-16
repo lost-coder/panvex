@@ -2,7 +2,8 @@
 // docs/telemt-config-param-catalog.md (hot = applied live by Telemt's file
 // watcher; restart = needs a Telemt process restart). The set is intentionally
 // small for v1; extend CONFIG_FIELDS as more knobs are surfaced. Editable
-// sections only: general, timeouts, censorship, upstreams, show_link, dc_overrides.
+// sections only: general, timeouts, censorship, upstreams, dc_overrides
+// (Telemt's PATCH /v1/config allowlist; show_link is legacy and rejected).
 export type ApplyMode = "hot" | "restart";
 export type FieldType = "string" | "number" | "boolean" | "string[]" | "select";
 

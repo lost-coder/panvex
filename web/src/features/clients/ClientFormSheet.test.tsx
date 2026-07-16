@@ -85,6 +85,40 @@ describe("ClientFormSheet", () => {
     expect(submitBtn).toBeEnabled();
   });
 
+  // Audit F2: Telemt has no rename operation — the panel rejects name
+  // changes on update, so the form must not offer an editable name field.
+  it("disables the name field in edit mode and shows the immutability hint", () => {
+    render(
+      <ClientFormSheet
+        mode="edit"
+        data={filledForm}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByDisplayValue("premium-users")).toBeDisabled();
+    expect(
+      screen.getByText("Name cannot be changed after creation."),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the name field editable in create mode", () => {
+    render(
+      <ClientFormSheet
+        mode="create"
+        data={filledForm}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByDisplayValue("premium-users")).toBeEnabled();
+    expect(
+      screen.queryByText("Name cannot be changed after creation."),
+    ).not.toBeInTheDocument();
+  });
+
   it("calls onChange when client name changes", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

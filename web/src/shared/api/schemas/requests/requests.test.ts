@@ -174,7 +174,6 @@ describe("createEnrollmentTokenRequestSchema", () => {
 
 describe("createJobRequestSchema", () => {
   const validActions = [
-    "users.create",
     "client.create",
     "client.update",
     "client.delete",

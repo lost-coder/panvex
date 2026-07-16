@@ -177,7 +177,19 @@ type FleetStore interface {
 	// accepted at once, and the first connection presenting the new one closes
 	// the window (CloseAgentCertOverlap). Outside that pair the verifier is
 	// fail-closed exactly as before.
-	RotateAgentCert(ctx context.Context, agentID string, serial string, spki []byte, overlapUntil time.Time) error
+	//
+	// presentedSerial is the serial of the certificate the agent authenticated
+	// with on the connection that carried this renewal ("" when no presented
+	// credential exists — enrollment, recovery). When an overlap window is
+	// already OPEN and the presenter is the PREVIOUS credential, the agent has
+	// just proven it never took delivery of the current one: shifting
+	// prev := current would evict the only certificate the agent holds from
+	// the accepted set (two consecutive lost renewal responses then strand a
+	// listen-mode node — R11-1). In that case only the current credential
+	// moves; prev and its overlap deadline stay untouched, so the credential
+	// the agent demonstrably holds stays accepted until the original window
+	// closes.
+	RotateAgentCert(ctx context.Context, agentID string, serial string, spki []byte, overlapUntil time.Time, presentedSerial string) error
 	// GetAgentCertPins returns the credentials the panel accepts for the agent:
 	// the current one, plus the previous one while the overlap window is open.
 	GetAgentCertPins(ctx context.Context, agentID string) (AgentCertPins, error)

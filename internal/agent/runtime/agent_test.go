@@ -490,10 +490,13 @@ func TestAgentHandleJobCreatesManagedClientAndReturnsConnectionLink(t *testing.T
 	}
 }
 
-// TestAgentHandleJobDisabledClientCreateSkipsTelemt guards H-1: a client
-// created in the disabled state must not be registered on the node (Telemt
-// has no enabled flag, so registering it would proxy traffic).
-func TestAgentHandleJobDisabledClientCreateSkipsTelemt(t *testing.T) {
+// TestAgentHandleJobDisabledClientCreateDeploysDisabled (audit F7/M1):
+// Telemt HAS a per-user enabled flag, so a client created in the disabled
+// state is deployed to the node with enabled=false — the user is configured
+// (quota counters, limits, ad-tag survive) but does not proxy. The old
+// behaviour (skip deployment entirely) rested on the stale "Telemt has no
+// enabled flag" assumption.
+func TestAgentHandleJobDisabledClientCreateDeploysDisabled(t *testing.T) {
 	client := &fakeTelemtClient{}
 	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
 
@@ -506,15 +509,20 @@ func TestAgentHandleJobDisabledClientCreateSkipsTelemt(t *testing.T) {
 	if !result.Success {
 		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
 	}
-	if client.createCalls != 0 {
-		t.Fatalf("CreateClient called %d times for a disabled client, want 0", client.createCalls)
+	if client.createCalls != 1 {
+		t.Fatalf("CreateClient called %d times for a disabled client, want 1 (create with enabled=false)", client.createCalls)
+	}
+	if client.createdClient.Enabled {
+		t.Fatalf("created client Enabled = true, want false")
 	}
 }
 
-// TestAgentHandleJobDisableRemovesTelemtUser guards H-1: disabling a client
-// (update with enabled=false) must delete the user from Telemt so it stops
-// proxying. An already-absent user is an idempotent success.
-func TestAgentHandleJobDisableRemovesTelemtUser(t *testing.T) {
+// TestAgentHandleJobDisablePatchesEnabledFalse (audit F7): disabling a
+// client (update with enabled=false) PATCHes the user with enabled=false
+// instead of deleting it. This keeps node-side state (quota used_bytes,
+// history) and — unlike delete — cannot hit last_user_forbidden, so the
+// node's last user can always be disabled.
+func TestAgentHandleJobDisablePatchesEnabledFalse(t *testing.T) {
 	client := &fakeTelemtClient{}
 	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
 
@@ -527,15 +535,19 @@ func TestAgentHandleJobDisableRemovesTelemtUser(t *testing.T) {
 	if !result.Success {
 		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
 	}
-	if client.deleteCalls != 1 || client.deletedClientName != "alice" {
-		t.Fatalf("DeleteClient calls=%d name=%q, want 1 / alice", client.deleteCalls, client.deletedClientName)
+	if client.updateCalls != 1 {
+		t.Fatalf("UpdateClient calls = %d, want 1 (disable = PATCH enabled=false)", client.updateCalls)
 	}
-	if client.updateCalls != 0 {
-		t.Fatalf("UpdateClient called %d times while disabling, want 0", client.updateCalls)
+	if client.updatedClient.Enabled {
+		t.Fatalf("patched client Enabled = true, want false")
+	}
+	if client.deleteCalls != 0 {
+		t.Fatalf("DeleteClient called %d times while disabling, want 0 (disable must not destroy node state)", client.deleteCalls)
 	}
 
-	// Already absent → still success (idempotent disable).
-	client2 := &fakeTelemtClient{deleteErr: telemt.ErrClientNotFound}
+	// User absent on the node (removed under the old delete-based disable,
+	// or drift) → the regular 404→create fallback restores it disabled.
+	client2 := &fakeTelemtClient{updateErr: telemt.ErrClientNotFound}
 	agent2 := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client2)
 	r2 := agent2.HandleJob(context.Background(), &gatewayrpc.JobCommand{
 		Id:          "job-disable-absent",
@@ -544,6 +556,9 @@ func TestAgentHandleJobDisableRemovesTelemtUser(t *testing.T) {
 	}, time.Date(2026, time.May, 29, 12, 2, 0, 0, time.UTC))
 	if !r2.Success {
 		t.Fatalf("disable of absent user Success = false, want true, message = %q", r2.Message)
+	}
+	if client2.createCalls != 1 || client2.createdClient.Enabled {
+		t.Fatalf("absent-user disable: createCalls=%d createdEnabled=%v, want 1/false (404→create fallback carries enabled=false)", client2.createCalls, client2.createdClient.Enabled)
 	}
 }
 
@@ -580,7 +595,10 @@ func TestAgentHandleJobReenableFallsBackToCreate(t *testing.T) {
 	}
 }
 
-func TestAgentHandleJobUpdatesManagedClientUsingPreviousName(t *testing.T) {
+// TestAgentHandleJobUpdatesManagedClient (audit F2): the rename plumbing is
+// gone — a client.update always targets the client's current (immutable)
+// name; the payload carries no previous_name.
+func TestAgentHandleJobUpdatesManagedClient(t *testing.T) {
 	client := &fakeTelemtClient{
 		updateResult: telemt.ClientApplyResult{
 			ConnectionLinks: []string{"tg://proxy?server=node-a&secret=update"},
@@ -596,17 +614,17 @@ func TestAgentHandleJobUpdatesManagedClientUsingPreviousName(t *testing.T) {
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
 		Id:          "job-3",
 		Action:      "client.update",
-		PayloadJson: `{"client_id":"client-1","previous_name":"alice","name":"alice-new","secret":"secret-2","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true}`,
+		PayloadJson: `{"client_id":"client-1","name":"alice","secret":"secret-2","user_ad_tag":"0123456789abcdef0123456789abcdef","enabled":true}`,
 	}, time.Date(2026, time.March, 17, 18, 5, 0, 0, time.UTC))
 
 	if !result.Success {
 		t.Fatalf("HandleJob() Success = false, want true, message = %q", result.Message)
 	}
-	if client.updatedClient.PreviousName != "alice" {
-		t.Fatalf("updated previous name = %q, want %q", client.updatedClient.PreviousName, "alice")
+	if client.updateCalls != 1 {
+		t.Fatalf("UpdateClient calls = %d, want 1", client.updateCalls)
 	}
-	if client.updatedClient.Name != "alice-new" {
-		t.Fatalf("updated client name = %q, want %q", client.updatedClient.Name, "alice-new")
+	if client.updatedClient.Name != "alice" {
+		t.Fatalf("updated client name = %q, want %q", client.updatedClient.Name, "alice")
 	}
 }
 

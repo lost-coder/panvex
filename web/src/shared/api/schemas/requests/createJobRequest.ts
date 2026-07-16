@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 export const jobActionSchema = z.enum([
-  "users.create",
   "client.create",
   "client.update",
   "client.delete",

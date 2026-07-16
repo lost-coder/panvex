@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -66,10 +67,12 @@ func TestCreateClientRejectsDuplicateName(t *testing.T) {
 	}
 }
 
-// TestUpdateClientNameUniqueness: renaming a client to a name held by ANOTHER
-// living client is a conflict; renaming a client to its OWN current name is
-// allowed (excludeID skips the client itself).
-func TestUpdateClientNameUniqueness(t *testing.T) {
+// TestUpdateClientNameImmutable (audit F2): Telemt has no rename operation,
+// so the client name is immutable after create. Any update carrying a
+// different name — whether the target name is free or held by another
+// client — is rejected with errClientNameImmutable; re-submitting the
+// client's own current name stays a normal save.
+func TestUpdateClientNameImmutable(t *testing.T) {
 	now := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
 	server, groupID := newNameUniqueTestServer(t, now)
 	ctx := context.Background()
@@ -89,28 +92,97 @@ func TestUpdateClientNameUniqueness(t *testing.T) {
 		t.Fatalf("createClient(bob): %v", err)
 	}
 
-	// Rename bob -> alice: conflict.
+	// bob -> alice: name change, rejected as immutable.
 	if _, _, _, err := server.clientsSvc.Update(ctx, string(bob.ID), "user-1", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
-	}, now); !errors.Is(err, errClientNameTaken) {
-		t.Fatalf("updateClient(bob->alice) error = %v, want errClientNameTaken", err)
+	}, now); !errors.Is(err, errClientNameImmutable) {
+		t.Fatalf("updateClient(bob->alice) error = %v, want errClientNameImmutable", err)
 	}
 
-	// Rename alice -> alice (its own current name): allowed.
+	// alice -> alice (its own current name): allowed.
 	if _, _, _, err := server.clientsSvc.Update(ctx, string(alice.ID), "user-1", clients.MutationInput{
 		Name:          "alice",
 		FleetGroupIDs: []string{groupID},
 	}, now); err != nil {
-		t.Fatalf("updateClient(alice->alice) error = %v, want nil (rename to own name is allowed)", err)
+		t.Fatalf("updateClient(alice->alice) error = %v, want nil (unchanged name is allowed)", err)
 	}
 
-	// Rename bob -> bob-2 (free): allowed.
+	// bob -> bob-2 (free name): still rejected — immutability, not uniqueness.
 	if _, _, _, err := server.clientsSvc.Update(ctx, string(bob.ID), "user-1", clients.MutationInput{
 		Name:          "bob-2",
 		FleetGroupIDs: []string{groupID},
+	}, now); !errors.Is(err, errClientNameImmutable) {
+		t.Fatalf("updateClient(bob->bob-2) error = %v, want errClientNameImmutable", err)
+	}
+}
+
+// TestHTTPUpdateClientNameChangeReturnsBadRequest exercises the full HTTP
+// path: a PUT carrying a different name returns 400 with the fixed
+// operator-safe immutability message; a PUT with the unchanged name is 200.
+func TestHTTPUpdateClientNameChangeReturnsBadRequest(t *testing.T) {
+	now := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "admin",
+		Password: "Admin1password",
+		Role:     auth.RoleAdmin,
 	}, now); err != nil {
-		t.Fatalf("updateClient(bob->bob-2) error = %v, want nil", err)
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	groupID := seedClientTargetAgent(t, store, server, "default", now.Add(-2*time.Minute), storage.AgentRecord{
+		ID:         "agent-http-2",
+		NodeName:   "node-a",
+		Version:    "dev",
+		LastSeenAt: now.Add(-time.Minute),
+	})
+
+	cookies := loginAdminForClients(t, server)
+	createResp := performJSONRequest(t, server, http.MethodPost, "/api/clients", map[string]any{
+		"name":            "alice",
+		"enabled":         true,
+		"fleet_group_ids": []string{groupID},
+	}, cookies)
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d", createResp.Code, http.StatusCreated)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal(create): %v", err)
+	}
+
+	renameResp := performJSONRequest(t, server, http.MethodPut, "/api/clients/"+created.ID, map[string]any{
+		"name":            "alice-new",
+		"enabled":         true,
+		"fleet_group_ids": []string{groupID},
+	}, cookies)
+	if renameResp.Code != http.StatusBadRequest {
+		t.Fatalf("rename status = %d, want %d", renameResp.Code, http.StatusBadRequest)
+	}
+	if got := renameResp.Body.String(); !strings.Contains(got, msgClientNameImmutable) {
+		t.Fatalf("rename body = %q, want it to contain %q", got, msgClientNameImmutable)
+	}
+
+	sameNameResp := performJSONRequest(t, server, http.MethodPut, "/api/clients/"+created.ID, map[string]any{
+		"name":            "alice",
+		"enabled":         true,
+		"fleet_group_ids": []string{groupID},
+	}, cookies)
+	if sameNameResp.Code != http.StatusOK {
+		t.Fatalf("same-name update status = %d, want %d", sameNameResp.Code, http.StatusOK)
 	}
 }
 
