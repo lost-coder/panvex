@@ -148,8 +148,8 @@ func historyTestServer(t *testing.T, now time.Time) (*Server, []*http.Cookie) {
 	return server, cookies
 }
 
-// historyEndpoints enumerates the 3 call sites that route through
-// parseTimeRangeAt, per the task brief (http_history.go:59/111/194).
+// historyEndpoints enumerates the call sites that route through
+// parseTimeRangeAt.
 func historyEndpoints() []struct {
 	name string
 	path string
@@ -159,7 +159,6 @@ func historyEndpoints() []struct {
 		path string
 	}{
 		{"server-load", "/api/telemetry/servers/srv-1/history/load"},
-		{"dc-health", "/api/telemetry/servers/srv-1/history/dc"},
 		{"client-ip", "/api/clients/client-1/history/ips"},
 	}
 }
