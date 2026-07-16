@@ -158,3 +158,83 @@ func TestTelemetryWriteUnitCarriesForwardHashGatedDiagnostics(t *testing.T) {
 		t.Fatal("empty-hash blank record must keep the historical overwrite semantics")
 	}
 }
+
+// TestAgentRuntimeFromSnapshotPropagatesUserTelemetrySuppressed pins the sole
+// proto→AgentRuntime ingest point for the suppression flag.
+func TestAgentRuntimeFromSnapshotPropagatesUserTelemetrySuppressed(t *testing.T) {
+	snap := &gatewayrpc.RuntimeSnapshot{UserTelemetrySuppressed: true}
+	out := agentRuntimeFromSnapshot(snap, time.Unix(1700000050, 0))
+	if !out.UserTelemetrySuppressed {
+		t.Fatal("UserTelemetrySuppressed = false, want true")
+	}
+}
+
+// TestAgentRuntimeFromSnapshotUserTelemetryHealthyDefault mirrors the
+// TelemtUnreachable passthrough guard: proto3's default (false) is healthy.
+func TestAgentRuntimeFromSnapshotUserTelemetryHealthyDefault(t *testing.T) {
+	snap := &gatewayrpc.RuntimeSnapshot{UseMiddleProxy: true, MeRuntimeReady: true}
+	out := agentRuntimeFromSnapshot(snap, time.Unix(1700000050, 0))
+	if out.UserTelemetrySuppressed {
+		t.Fatal("UserTelemetrySuppressed = true, want false (passthrough of healthy default)")
+	}
+}
+
+// TestUserTelemetrySuppressedDoesNotAffectSeverity guards the core constraint
+// of this feature: the suppression flag is a warning banner only. A node whose
+// per-user telemetry is suppressed but is otherwise healthy must still project
+// severity "ok" with an unchanged reason — it must never be conflated with the
+// TelemtUnreachable path, which drives node status.
+func TestUserTelemetrySuppressedDoesNotAffectSeverity(t *testing.T) {
+	now := time.Unix(1700000100, 0)
+	srv := testServerWithSQLite(t, now)
+
+	healthy := Agent{
+		ID:       "test-agent-suppressed",
+		NodeName: "test-node",
+		Runtime: AgentRuntime{
+			AcceptingNewConnections: true,
+			UseMiddleProxy:          true,
+			MERuntimeReady:          true,
+			UpdatedAt:               now.Add(-5 * time.Second),
+		},
+	}
+	suppressed := healthy
+	suppressed.Runtime.UserTelemetrySuppressed = true
+
+	project := func(agent Agent) (string, string) {
+		return srv.telemetrySeverityAndReason(
+			agent,
+			presence.StateOnline,
+			telemetryFreshnessForRuntime(agent.Runtime, now),
+			time.Time{}, // no fallback active
+			now,
+		)
+	}
+
+	wantSeverity, wantReason := project(healthy)
+	gotSeverity, gotReason := project(suppressed)
+
+	if gotSeverity != wantSeverity {
+		t.Fatalf("severity with suppression = %q, want %q (unchanged)", gotSeverity, wantSeverity)
+	}
+	if gotReason != wantReason {
+		t.Fatalf("reason with suppression = %q, want %q (unchanged)", gotReason, wantReason)
+	}
+}
+
+// TestRuntimeFromCurrentRecordPropagatesUserTelemetrySuppressed guards the
+// persistence round-trip: AgentRuntime is stored as a JSON blob, so a missing
+// json tag would silently drop the flag across a panel restart.
+func TestRuntimeFromCurrentRecordPropagatesUserTelemetrySuppressed(t *testing.T) {
+	agent := Agent{
+		ID: "agent-1",
+		Runtime: AgentRuntime{
+			UserTelemetrySuppressed: true,
+			UpdatedAt:               time.Unix(1700000050, 0).UTC(),
+		},
+	}
+	out := runtimeFromCurrentRecord(runtimeCurrentRecordFromAgent(agent))
+	if !out.UserTelemetrySuppressed {
+		t.Fatal("UserTelemetrySuppressed = false after store round-trip, want true")
+	}
+}
