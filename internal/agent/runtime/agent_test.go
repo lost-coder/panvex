@@ -696,6 +696,76 @@ func TestAgentHandleJobDeleteSupersededWhenNameOwnedByOtherClient(t *testing.T) 
 	if client.deleteCalls != 0 {
 		t.Fatalf("Telemt DeleteClient must NOT be called, got %d calls", client.deleteCalls)
 	}
+	// The superseded path must still drop the tombstoned client's registry
+	// entry: a lingering client-old->alice would make the NEW client's own
+	// delete false-positive later. setClientName is last-writer-wins, so the
+	// entry is normally already evicted by the client-new create; asserting
+	// the post-state pins the invariant either way.
+	if name, ok := agent.registryName("client-old"); ok {
+		t.Fatalf("superseded delete must leave no registry entry for the tombstoned client, got %q", name)
+	}
+	// ...and it must NOT evict the new owner, whose user is still live.
+	if name, ok := agent.registryName("client-new"); !ok || name != "alice" {
+		t.Fatalf("new owner registry entry must survive the superseded delete: name=%q ok=%v", name, ok)
+	}
+}
+
+// TestAgentHandleJobDeleteProceedsWhenRegistryWarmAndSecretDiffers pins that the
+// secret probe is a COLD-registry fallback only. A warm entry for the payload's
+// own clientID proves nobody else holds the name (setClientName is
+// last-writer-wins), so a secret mismatch here means the node's Telemt config
+// drifted from the panel — not a takeover. Reachable with no name reuse at all:
+// a rotate that stayed pending on an offline node is superseded by the delete
+// (both key on client_id), so the node keeps the pre-rotate secret while the
+// delete payload carries the post-rotate one. Skipping would leave the user
+// live on the node while the panel reports it deleted.
+func TestAgentHandleJobDeleteProceedsWhenRegistryWarmAndSecretDiffers(t *testing.T) {
+	client := &fakeTelemtClient{
+		discoveredUsers: []telemt.DiscoveredUser{{Username: "alice", Secret: "s-stale-on-node"}},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+	agent.setClientName("client-old", "alice")
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-warm-registry-secret-drift",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-rotated"}`,
+	}, time.Date(2026, time.July, 16, 10, 25, 0, 0, time.UTC))
+
+	if !result.Success || client.deletedClientName != "alice" {
+		t.Fatalf("warm registry with no other owner must delete despite secret drift: success=%v deleted=%q", result.Success, client.deletedClientName)
+	}
+	if client.discoverCalls != 0 {
+		t.Fatalf("warm registry must not trigger the Telemt discovery round-trip, got %d calls", client.discoverCalls)
+	}
+}
+
+// TestAgentHandleJobDeleteProceedsWhenNameWasReassigned pins that a stale
+// registry entry cannot strand the NEW client's delete. Registry entries are
+// only cleared by a delete for that clientID, so a client.delete that failed
+// permanently on Telemt leaves client-old->alice behind. Creating client-new as
+// "alice" must take the name over (last-writer-wins), otherwise client-new's own
+// delete would see the stale entry as "another owner", skip, and leave the user
+// live while the panel says deleted.
+func TestAgentHandleJobDeleteProceedsWhenNameWasReassigned(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+	agent.setClientName("client-old", "alice") // delete failed on Telemt: entry lingers
+	agent.setClientName("client-new", "alice") // new client re-uses the freed name
+
+	if name, ok := agent.registryName("client-old"); ok {
+		t.Fatalf("reassigning a name must evict the previous holder, still mapped to %q", name)
+	}
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-new-owner",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-new","name":"alice","secret":"s-new"}`,
+	}, time.Date(2026, time.July, 16, 10, 30, 0, 0, time.UTC))
+
+	if !result.Success || client.deletedClientName != "alice" {
+		t.Fatalf("a stale entry must not strand the new owner's delete: success=%v deleted=%q", result.Success, client.deletedClientName)
+	}
 }
 
 // TestAgentHandleJobDeleteSupersededBySecretMismatchAfterRestart covers the
@@ -762,8 +832,12 @@ func TestAgentHandleJobDeleteProceedsWhenSecretDiffersOnlyByCase(t *testing.T) {
 // TestAgentHandleJobDeleteProceedsWhenDiscoveryFails pins the accepted residual
 // risk: when identity cannot be proven either way the historical delete-by-name
 // behavior is kept, because a wrong skip would strand a user forever.
+// FetchDiscoveredUsers only errors when Telemt's /users API is down — an
+// unreadable Telemt CONFIG is swallowed by discovery (secrets are then derived
+// from the rendered links), so it is not a trigger here. The residual
+// mis-delete window is therefore reuse + agent reboot + Telemt API down.
 func TestAgentHandleJobDeleteProceedsWhenDiscoveryFails(t *testing.T) {
-	client := &fakeTelemtClient{discoverErr: errors.New("config unreadable")}
+	client := &fakeTelemtClient{discoverErr: errors.New("telemt /users API unavailable")}
 	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
 
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
@@ -869,8 +943,19 @@ type fakeTelemtClient struct {
 	resetQuotaErr           error
 	discoveredUsers         []telemt.DiscoveredUser
 	discoverErr             error
+	discoverCalls           int
 	managedConfig           map[string]any
 	managedRevision         string
+}
+
+// registryName reads the in-memory clientID->name registry under the agent's
+// lock, so tests can assert registry post-state without racing the fake.
+func (a *Agent) registryName(clientID string) (string, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	name, ok := a.clientNames[clientID]
+	return name, ok
 }
 
 func (c *fakeTelemtClient) FetchRuntimeState(context.Context) (telemt.RuntimeState, error) {
@@ -933,6 +1018,7 @@ func (c *fakeTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, 
 }
 
 func (c *fakeTelemtClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
+	c.discoverCalls++
 	if c.discoverErr != nil {
 		return nil, c.discoverErr
 	}

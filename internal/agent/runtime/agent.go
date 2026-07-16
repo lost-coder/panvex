@@ -1275,16 +1275,22 @@ func marshalClientJobResult(result telemt.ClientApplyResult) string {
 // idempotent success instead.
 //
 // Two identity sources, in order:
-//  1. the in-memory clientID->name registry — note the tombstoned client's own
-//     stale entry may still be present, so we look for ANY OTHER owner;
-//  2. after an agent restart the registry is cold — fall back to comparing the
-//     payload secret against the secret recorded in Telemt's config file (the
-//     same source discovery uses).
+//  1. the in-memory clientID->name registry, which is authoritative whenever it
+//     is warm for payload.ClientID: setClientName keeps name->clientID
+//     last-writer-wins, so a live entry for this client is proof that nobody
+//     else has taken the name;
+//  2. ONLY when the registry is cold for this client (agent restarted) — fall
+//     back to comparing the payload secret against the secret discovery reads
+//     from Telemt. This probe must never run against a warm registry: a secret
+//     mismatch there means the node's Telemt config drifted from the panel
+//     (e.g. a rotate superseded by this very delete never landed), not a
+//     takeover, and skipping would leave the user live on the node while the
+//     panel reports it deleted.
 //
-// When neither source can prove a takeover (empty secret, discovery error,
-// user absent), the historical delete-by-name behavior is kept: a wrong skip
-// would strand a user forever, while the residual mis-delete window now
-// requires reuse + agent reboot + broken discovery simultaneously.
+// When neither source can prove a takeover (empty secret, Telemt's /users API
+// down, user absent), the historical delete-by-name behavior is kept: a wrong
+// skip would strand a user forever, while the residual mis-delete window now
+// requires name reuse + agent reboot + Telemt's API being down simultaneously.
 func (a *Agent) deleteSupersededByOtherClient(ctx context.Context, payload clientJobPayload) bool {
 	if payload.Name == "" || payload.ClientID == "" {
 		return false
@@ -1292,6 +1298,12 @@ func (a *Agent) deleteSupersededByOtherClient(ctx context.Context, payload clien
 
 	if a.nameOwnedByOtherClient(payload.ClientID, payload.Name) {
 		return true
+	}
+
+	// Warm registry with no other owner: identity is already proven, so skip
+	// the secret probe and its Telemt round-trip entirely.
+	if a.clientNameKnown(payload.ClientID) {
+		return false
 	}
 
 	if payload.Secret == "" {
@@ -1327,6 +1339,16 @@ func (a *Agent) nameOwnedByOtherClient(clientID, name string) bool {
 	return false
 }
 
+// clientNameKnown reports whether the registry currently holds a name for the
+// given clientID, i.e. whether it is warm for that client.
+func (a *Agent) clientNameKnown(clientID string) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	_, ok := a.clientNames[clientID]
+	return ok
+}
+
 func (a *Agent) clientIDForName(name string) string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -1350,6 +1372,17 @@ func (a *Agent) setClientName(clientID, name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// name->clientID is last-writer-wins: evict any other client still recorded
+	// under this name. Entries are otherwise only cleared by a delete for that
+	// clientID, so a delete that failed permanently on Telemt would leave a
+	// stale owner behind — and deleteSupersededByOtherClient would then read it
+	// as "someone else owns the name" and skip the NEW owner's delete, leaving
+	// that user live while the panel reports it deleted.
+	for otherID, otherName := range a.clientNames {
+		if otherName == name && otherID != clientID {
+			delete(a.clientNames, otherID)
+		}
+	}
 	a.clientNames[clientID] = name
 }
 
