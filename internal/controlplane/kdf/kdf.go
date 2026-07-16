@@ -1,6 +1,6 @@
 // Package kdf owns the project's Argon2id parameter profiles and is the
-// single point where argon2.IDKey is invoked for password hashes and the
-// CA-key blob.
+// single point where argon2.IDKey is invoked in the control plane (password
+// hashes, the CA-key blob, and the secret-vault master key).
 //
 // It exists for two reasons, both measured in
 // docs/2026-07-16-resource-footprint.md:
@@ -96,11 +96,15 @@ var derivations atomic.Uint64
 // start. Monotonic; intended for tests and diagnostics.
 func Derivations() uint64 { return derivations.Load() }
 
-// IDKey derives a key with Argon2id. It is the only argon2.IDKey call site for
-// password hashes and the CA key: derivations are serialised on gate, and the
-// block array of THIS call is collected before the next waiter allocates its
-// own, so the resident peak stays at one buffer regardless of profile or
-// concurrency.
+// IDKey derives a key with Argon2id. It is the only argon2.IDKey call site in
+// the control plane: derivations are serialised on gate, and the block array of
+// THIS call is collected before the next waiter allocates its own, so the
+// resident peak stays at one buffer regardless of profile or concurrency.
+//
+// Callers pass parameters explicitly rather than having the active profile
+// applied here: hashes and CA blobs must verify with the parameters they were
+// WRITTEN with, and the vault's master key must reproduce byte-for-byte
+// forever. Only the writers (hashPassword, encryptPEM) consult Active().
 //
 // The trade-off is a queue on concurrent logins. That is deliberate: it is
 // exactly the anti-DoS property we want, and Argon2id's own parallelism

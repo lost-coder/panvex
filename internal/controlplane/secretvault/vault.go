@@ -28,7 +28,7 @@ import (
 	"io"
 	"strings"
 
-	"golang.org/x/crypto/argon2"
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -128,7 +128,14 @@ func NewWithSalt(passphrase string, domains []string, salt []byte) (*Vault, erro
 	if len(salt) == 0 {
 		return nil, errors.New("secretvault: empty per-install salt")
 	}
-	masterKey := argon2.IDKey([]byte(passphrase), []byte(masterSalt), argon2Time, argon2Memory, argon2Threads, keyLen)
+	// Through kdf.IDKey, not argon2 directly: the panel serialises every
+	// Argon2id derivation and collects each block array before the next one
+	// allocates. This call runs at startup beside the CA-key decrypt and the
+	// admin bootstrap hash, so an ungated 64 MiB buffer here stacks on top of
+	// theirs. The parameters stay hardcoded (NOT profile-driven): the master
+	// key must reproduce byte-for-byte across restarts or every stored secret
+	// becomes undecryptable.
+	masterKey := kdf.IDKey([]byte(passphrase), []byte(masterSalt), argon2Time, argon2Memory, argon2Threads, keyLen)
 	v := &Vault{
 		enabled: true,
 		keys:    make(map[string][]byte, len(domains)),
