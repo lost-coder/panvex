@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/config"
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
 	"github.com/lost-coder/panvex/internal/controlplane/server"
 )
 
@@ -37,6 +39,17 @@ func runRotateCA(args []string) error {
 	}
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+
+	// This command WRITES a fresh ENC3 blob, so it honours the same profile
+	// selection as serve. ENC3 is deliberately never re-encrypted once written
+	// (see needsReEncryption), so a default-profile header baked in here would
+	// make every later startup pay a 96 MiB derivation forever — silently
+	// undoing PANVEX_KDF_PROFILE on the box it was set for. Checked before
+	// --confirm acts: rotating invalidates the whole fleet, so a
+	// half-understood environment must not proceed.
+	if err := kdf.SetActiveProfile(strings.TrimSpace(os.Getenv("PANVEX_KDF_PROFILE"))); err != nil {
+		return fmt.Errorf("PANVEX_KDF_PROFILE: %w", err)
 	}
 
 	if !*confirm {
