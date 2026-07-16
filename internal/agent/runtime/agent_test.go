@@ -671,6 +671,112 @@ func TestAgentHandleJobDeleteAbsentClientIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestAgentHandleJobDeleteSupersededWhenNameOwnedByOtherClient covers the
+// name-reuse hole: a client.delete that expired while the node was offline is
+// re-enqueued with a fresh CreatedAt, so it can land AFTER an operator created
+// a new client re-using the freed name. Deleting the Telemt user by name would
+// erase the new client's user, so the agent must skip the superseded delete.
+// The tombstoned client's own stale registry entry is present alongside the new
+// owner's — the guard must look for ANY OTHER owner of the name.
+func TestAgentHandleJobDeleteSupersededWhenNameOwnedByOtherClient(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+	agent.setClientName("client-old", "alice")
+	agent.setClientName("client-new", "alice")
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-superseded",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-old"}`,
+	}, time.Date(2026, time.July, 16, 10, 0, 0, 0, time.UTC))
+
+	if !result.Success {
+		t.Fatalf("superseded delete must confirm terminal state, got failure: %s", result.Message)
+	}
+	if client.deleteCalls != 0 {
+		t.Fatalf("Telemt DeleteClient must NOT be called, got %d calls", client.deleteCalls)
+	}
+}
+
+// TestAgentHandleJobDeleteSupersededBySecretMismatchAfterRestart covers the
+// same hole once the agent has restarted and its in-memory name registry is
+// cold: identity then comes from the secret recorded in Telemt's config file.
+func TestAgentHandleJobDeleteSupersededBySecretMismatchAfterRestart(t *testing.T) {
+	client := &fakeTelemtClient{
+		discoveredUsers: []telemt.DiscoveredUser{{Username: "alice", Secret: "s-new"}},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-secret-mismatch",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-old"}`,
+	}, time.Date(2026, time.July, 16, 10, 5, 0, 0, time.UTC))
+
+	if !result.Success || client.deleteCalls != 0 {
+		t.Fatalf("secret mismatch must be a superseded no-op: success=%v deleteCalls=%d", result.Success, client.deleteCalls)
+	}
+}
+
+// TestAgentHandleJobDeleteProceedsWhenSecretMatches proves the guard does not
+// block the ordinary delete: same name, same secret means the payload targets
+// the user actually on the node.
+func TestAgentHandleJobDeleteProceedsWhenSecretMatches(t *testing.T) {
+	client := &fakeTelemtClient{
+		discoveredUsers: []telemt.DiscoveredUser{{Username: "alice", Secret: "s-old"}},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-secret-match",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-old"}`,
+	}, time.Date(2026, time.July, 16, 10, 10, 0, 0, time.UTC))
+
+	if !result.Success || client.deletedClientName != "alice" {
+		t.Fatalf("matching secret must delete: success=%v deleted=%q", result.Success, client.deletedClientName)
+	}
+}
+
+// TestAgentHandleJobDeleteProceedsWhenSecretDiffersOnlyByCase guards against
+// the guard itself stranding a user: MTProto secrets are 32 hex chars and both
+// the panel and Telemt's config accept either case verbatim, so a case-only
+// difference is the SAME secret and must not read as a takeover.
+func TestAgentHandleJobDeleteProceedsWhenSecretDiffersOnlyByCase(t *testing.T) {
+	client := &fakeTelemtClient{
+		discoveredUsers: []telemt.DiscoveredUser{{Username: "alice", Secret: "ABCDEF0123456789ABCDEF0123456789"}},
+	}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-secret-case",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"abcdef0123456789abcdef0123456789"}`,
+	}, time.Date(2026, time.July, 16, 10, 20, 0, 0, time.UTC))
+
+	if !result.Success || client.deletedClientName != "alice" {
+		t.Fatalf("case-only secret difference is the same secret and must delete: success=%v deleted=%q", result.Success, client.deletedClientName)
+	}
+}
+
+// TestAgentHandleJobDeleteProceedsWhenDiscoveryFails pins the accepted residual
+// risk: when identity cannot be proven either way the historical delete-by-name
+// behavior is kept, because a wrong skip would strand a user forever.
+func TestAgentHandleJobDeleteProceedsWhenDiscoveryFails(t *testing.T) {
+	client := &fakeTelemtClient{discoverErr: errors.New("config unreadable")}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-discovery-down",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-old"}`,
+	}, time.Date(2026, time.July, 16, 10, 15, 0, 0, time.UTC))
+
+	if !result.Success || client.deletedClientName != "alice" {
+		t.Fatalf("unverifiable delete keeps legacy behavior: success=%v deleted=%q", result.Success, client.deletedClientName)
+	}
+}
+
 func TestAgentHandleJobRefreshDiagnosticsInvalidatesSlowData(t *testing.T) {
 	client := &fakeTelemtClient{}
 	agent := New(Config{
@@ -761,6 +867,7 @@ type fakeTelemtClient struct {
 	resetQuotaCalls         int
 	resetQuotaResult        telemt.ResetUserQuotaResult
 	resetQuotaErr           error
+	discoveredUsers         []telemt.DiscoveredUser
 	discoverErr             error
 	managedConfig           map[string]any
 	managedRevision         string
@@ -829,7 +936,7 @@ func (c *fakeTelemtClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]
 	if c.discoverErr != nil {
 		return nil, c.discoverErr
 	}
-	return nil, nil
+	return c.discoveredUsers, nil
 }
 
 func (c *fakeTelemtClient) ResetUserQuota(_ context.Context, username string) (telemt.ResetUserQuotaResult, error) {

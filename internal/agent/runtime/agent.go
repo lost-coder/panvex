@@ -1007,6 +1007,13 @@ func (a *Agent) handleClientUpdateJob(ctx context.Context, job *gatewayrpc.JobCo
 }
 
 func (a *Agent) handleClientDeleteJob(ctx context.Context, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
+	if a.deleteSupersededByOtherClient(ctx, payload) {
+		result.Success = true
+		result.Message = "client name reassigned to another client; delete superseded"
+		a.deleteClientName(payload.ClientID)
+		return result
+	}
+
 	// Deleting an already-absent user is an idempotent success — mirrors the
 	// disable path in handleClientUpdateJob. Without this a re-delivered
 	// client.delete (panel retry after a lost ack) on an already-removed
@@ -1258,6 +1265,66 @@ func marshalClientJobResult(result telemt.ClientApplyResult) string {
 	}
 
 	return string(payload)
+}
+
+// deleteSupersededByOtherClient reports whether the Telemt user named in the
+// delete payload now belongs to a DIFFERENT client, which happens when a
+// re-enqueued delete (offline-node reconcile assigns it a fresh CreatedAt)
+// lands after a newer client re-used the freed name. Deleting purely by name
+// would erase the new client's user, so a superseded delete must become an
+// idempotent success instead.
+//
+// Two identity sources, in order:
+//  1. the in-memory clientID->name registry — note the tombstoned client's own
+//     stale entry may still be present, so we look for ANY OTHER owner;
+//  2. after an agent restart the registry is cold — fall back to comparing the
+//     payload secret against the secret recorded in Telemt's config file (the
+//     same source discovery uses).
+//
+// When neither source can prove a takeover (empty secret, discovery error,
+// user absent), the historical delete-by-name behavior is kept: a wrong skip
+// would strand a user forever, while the residual mis-delete window now
+// requires reuse + agent reboot + broken discovery simultaneously.
+func (a *Agent) deleteSupersededByOtherClient(ctx context.Context, payload clientJobPayload) bool {
+	if payload.Name == "" || payload.ClientID == "" {
+		return false
+	}
+
+	if a.nameOwnedByOtherClient(payload.ClientID, payload.Name) {
+		return true
+	}
+
+	if payload.Secret == "" {
+		return false
+	}
+	users, err := a.telemt.FetchDiscoveredUsers(ctx, a.resolveTelemtConfigPath(ctx))
+	if err != nil {
+		return false
+	}
+	for _, user := range users {
+		if user.Username == payload.Name {
+			// Secrets are 32 hex chars and both sides accept either case
+			// verbatim (an operator-supplied uppercase secret is stored as
+			// typed), so compare case-insensitively: a false mismatch here
+			// would skip a legitimate delete and strand the user on the node.
+			return user.Secret != "" && !strings.EqualFold(user.Secret, payload.Secret)
+		}
+	}
+	return false
+}
+
+// nameOwnedByOtherClient reports whether some clientID other than the given one
+// currently holds name in the in-memory registry.
+func (a *Agent) nameOwnedByOtherClient(clientID, name string) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	for otherID, otherName := range a.clientNames {
+		if otherName == name && otherID != clientID {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Agent) clientIDForName(name string) string {
