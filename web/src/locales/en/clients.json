@@ -110,25 +110,16 @@
     "maxUniqueIpsLabel": "Max Unique IPs",
     "dataQuotaLabel": "Data Quota",
     "quotaUnitLabel": "Unit",
-    "quotaUnits": { "MB": "MB", "GB": "GB", "TB": "TB" },
+    "quotaUnits": {
+      "MB": "MB",
+      "GB": "GB",
+      "TB": "TB"
+    },
     "unlimitedPlaceholder": "0 = unlimited",
     "cancel": "Cancel",
     "saving": "Saving...",
     "create": "Create Client",
     "save": "Save Changes"
-  },
-  "access": {
-    "title": "Manage Access",
-    "subtitle": "Select which nodes this client can access.",
-    "fleetGroups": "Fleet Groups",
-    "fineTuneCollapsed": "▸ Fine-tune individual nodes",
-    "fineTuneExpanded": "▾ Fine-tune individual nodes",
-    "totalPrefix": "Total:",
-    "totalSuffix_one": "node accessible",
-    "totalSuffix_other": "nodes accessible",
-    "cancel": "Cancel",
-    "saving": "Saving...",
-    "save": "Save Access"
   },
   "detail": {
     "breadcrumb": "Clients",

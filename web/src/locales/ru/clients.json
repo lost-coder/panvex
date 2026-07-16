@@ -111,26 +111,16 @@
     "maxUniqueIpsLabel": "Макс. уникальных IP",
     "dataQuotaLabel": "Квота трафика",
     "quotaUnitLabel": "Единица",
-    "quotaUnits": { "MB": "МБ", "GB": "ГБ", "TB": "ТБ" },
+    "quotaUnits": {
+      "MB": "МБ",
+      "GB": "ГБ",
+      "TB": "ТБ"
+    },
     "unlimitedPlaceholder": "0 = без ограничений",
     "cancel": "Отмена",
     "saving": "Сохраняем…",
     "create": "Создать клиента",
     "save": "Сохранить изменения"
-  },
-  "access": {
-    "title": "Управление доступом",
-    "subtitle": "Выберите ноды, к которым может обращаться этот клиент.",
-    "fleetGroups": "Группы серверов",
-    "fineTuneCollapsed": "▸ Тонкая настройка по нодам",
-    "fineTuneExpanded": "▾ Тонкая настройка по нодам",
-    "totalPrefix": "Всего:",
-    "totalSuffix_one": "нода доступна",
-    "totalSuffix_few": "ноды доступны",
-    "totalSuffix_many": "нод доступно",
-    "cancel": "Отмена",
-    "saving": "Сохраняем…",
-    "save": "Сохранить доступ"
   },
   "detail": {
     "breadcrumb": "Клиенты",

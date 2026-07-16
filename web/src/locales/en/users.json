@@ -78,10 +78,7 @@
   "section": {
     "title": "Panel Users"
   },
-  "card": {
-    "ips_one": "{{count}} IP",
-    "ips_other": "{{count}} IPs"
-  },
+  "card": {},
   "error": {
     "loadUsers": "Failed to load users",
     "fallbackDescription": "The server did not return a readable error. Try again."
