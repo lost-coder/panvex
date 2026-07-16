@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/kdf"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -146,5 +147,56 @@ func TestAuthenticateSkipsRehashWhenProfileUnchanged(t *testing.T) {
 	}
 	if after := storedPasswordHash(t, service, userID); after != before {
 		t.Fatalf("hash on the active profile must not be rewritten")
+	}
+}
+
+// failingPutUserStore wraps a UserStore and fails every write, modelling a
+// read-only / degraded database.
+type failingPutUserStore struct {
+	storage.UserStore
+	putErr error
+}
+
+func (f *failingPutUserStore) PutUser(context.Context, storage.UserRecord) error { return f.putErr }
+
+// TestAuthenticateSucceedsWhenRehashPersistFails: the rehash is an
+// opportunistic upgrade, never a precondition for logging in. If the store
+// cannot take the write (read-only replica, disk full, degraded DB), the
+// operator must still get in — otherwise a storage blip locks EVERY user out of
+// the panel exactly when they need it to investigate.
+func TestAuthenticateSucceedsWhenRehashPersistFails(t *testing.T) {
+	t.Cleanup(func() { _ = kdf.SetActiveProfile("") })
+	const password = "correct horse battery"
+	now := time.Date(2026, time.July, 16, 8, 0, 0, 0, time.UTC)
+
+	backing := newMemoryUserStore()
+	service := NewServiceWithStore(backing)
+	service.SetNow(func() time.Time { return now })
+	user, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "operator",
+		Password: password,
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	storeLegacyV2Hash(t, service, user.ID, password)
+	hashBefore := storedPasswordHash(t, service, user.ID)
+
+	// Now make every write fail, and switch the profile so a rehash is due.
+	service.userStore = &failingPutUserStore{UserStore: backing, putErr: errors.New("attempt to write a readonly database")}
+	if err := kdf.SetActiveProfile("low-memory"); err != nil {
+		t.Fatalf("SetActiveProfile: %v", err)
+	}
+
+	if _, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "operator",
+		Password: password,
+	}, now); err != nil {
+		t.Fatalf("a failed rehash persist must not break the login: %v", err)
+	}
+
+	if got := storedPasswordHash(t, service, user.ID); got != hashBefore {
+		t.Fatalf("the stored hash must be unchanged when the write failed:\n got %s\nwant %s", got, hashBefore)
 	}
 }

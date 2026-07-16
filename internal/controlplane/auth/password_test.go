@@ -339,3 +339,50 @@ func TestDummyPasswordHashMatchesCurrentFormat(t *testing.T) {
 		}
 	}
 }
+
+// TestDummyPasswordHashCostsNoDerivationToBuild pins that the unknown-user
+// login path costs EXACTLY the same as a real user's: one derivation, always.
+//
+// The dummy's stored bytes are never compared for equality — only the Argon2id
+// cost of verifying against them matters — so building it must not derive at
+// all. Deriving to build it made the FIRST unknown-user login per process cost
+// two derivations against a real user's one: a one-shot ~2x latency signal on a
+// freshly booted panel, which is the very enumeration oracle the dummy exists
+// to close.
+//
+// Not parallel: it reads the process-global derivation counter.
+func TestDummyPasswordHashCostsNoDerivationToBuild(t *testing.T) {
+	t.Cleanup(func() { _ = kdf.SetActiveProfile("") })
+	for _, profile := range []string{"default", "low-memory"} {
+		if err := kdf.SetActiveProfile(profile); err != nil {
+			t.Fatalf("SetActiveProfile(%s): %v", profile, err)
+		}
+		before := kdf.Derivations()
+		d := dummyPasswordHash()
+		if got := kdf.Derivations() - before; got != 0 {
+			t.Fatalf("%s: building the dummy ran %d derivation(s), want 0", profile, got)
+		}
+		// Still a well-formed active-profile hash that verifies (and fails) on
+		// the same branch as a real one.
+		if needsRehash(d) {
+			t.Fatalf("%s: dummy must carry the active profile's params, got %s", profile, d)
+		}
+		before = kdf.Derivations()
+		if err := verifyPassword(d, "whatever-the-attacker-typed"); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("%s: dummy verify: %v", profile, err)
+		}
+		if got := kdf.Derivations() - before; got != 1 {
+			t.Fatalf("%s: dummy verify ran %d derivations, want exactly 1", profile, got)
+		}
+	}
+}
+
+// Two consecutive dummies must differ: a fixed dummy would let an attacker who
+// somehow learns it recognise the unknown-user path by its stored value.
+func TestDummyPasswordHashIsNotConstant(t *testing.T) {
+	first := dummyPasswordHash()
+	second := dummyPasswordHash()
+	if first == second {
+		t.Fatalf("dummy hashes must be freshly randomised per call, got %s twice", first)
+	}
+}

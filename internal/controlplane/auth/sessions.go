@@ -106,19 +106,13 @@ func (s *Service) effectiveSessionIdleTimeout() time.Duration {
 	return sessionIdleTimeout
 }
 
-// dummyHashCache memoises one dummy hash per kdf profile name. Keyed by
-// profile rather than computed once for the process so the dummy always
-// matches the ACTIVE profile even if the profile is selected after the first
-// use (tests, and any future runtime switch).
-var (
-	dummyHashMu    sync.Mutex
-	dummyHashCache = map[string]string{}
-)
-
 // dummyPasswordHash returns a throwaway hash used to equalise login latency
 // when the supplied username does not exist, so timing does not leak a
-// user-enumeration signal. The derived value is never compared for equality —
-// only the Argon2id CPU cost matters.
+// user-enumeration signal. Its stored bytes are never compared for equality —
+// only the Argon2id cost of VERIFYING against them matters — so it is filled
+// with random bytes rather than derived. Building it therefore costs no
+// derivation, and the unknown-user path costs exactly what a real user's failed
+// login costs: one.
 //
 // CRITICAL: this MUST emit the SAME format and SAME Argon2id params as the
 // current hashPassword in password.go, i.e. the active profile's. Otherwise
@@ -126,33 +120,24 @@ var (
 // parameter set, or a rejected format that derives nothing at all) and the
 // unknown-user path burns measurably less CPU than the real-user path —
 // reopening the user-enumeration timing oracle this dummy exists to close
-// (C-1 follow-up). Pinned by TestDummyPasswordHashMatchesCurrentFormat.
-//
-// It is built per profile at most once; the derivation itself is serialised
-// by kdf.IDKey like every other one.
+// (C-1 follow-up). Pinned by TestDummyPasswordHashMatchesCurrentFormat and
+// TestDummyPasswordHashCostsNoDerivationToBuild.
 func dummyPasswordHash() string {
 	p := kdf.Active()
-	dummyHashMu.Lock()
-	defer dummyHashMu.Unlock()
-	if cached, ok := dummyHashCache[p.Name]; ok {
-		return cached
-	}
 	salt := make([]byte, hashSaltLen)
-	dummyPwd := make([]byte, hashKeyLen)
+	derived := make([]byte, hashKeyLen)
 	if _, err := rand.Read(salt); err != nil {
-		// Fall back to derived bytes — the value is meaningless, we just need
-		// a well-formed input for VerifyPassword to derive on.
+		// The values are meaningless — we only need a well-formed input for
+		// VerifyPassword to derive against — so a dead entropy source must not
+		// take the login path down with it.
 		for i := range salt {
 			salt[i] = byte(i * 17)
 		}
 	}
-	if _, err := rand.Read(dummyPwd); err != nil {
-		copy(dummyPwd, salt)
+	if _, err := rand.Read(derived); err != nil {
+		copy(derived, salt)
 	}
-	derived := kdf.IDKey(dummyPwd, salt, p.Time, p.MemoryKiB, p.Threads, hashKeyLen)
-	hash := formatHashV3(p, salt, derived)
-	dummyHashCache[p.Name] = hash
-	return hash
+	return formatHashV3(p, salt, derived)
 }
 
 // rehashPasswordIfStale rewrites a verified credential with the active KDF
