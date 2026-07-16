@@ -66,10 +66,6 @@ func (a *oapiAdapter) DispatchAgentUpdate(w http.ResponseWriter, r *http.Request
 	a.s.handleAgentUpdate().ServeHTTP(w, r)
 }
 
-func (a *oapiAdapter) CreateAgentInstallCommand(w http.ResponseWriter, r *http.Request, _ string) {
-	a.s.handleAgentInstallCommand().ServeHTTP(w, r)
-}
-
 func (a *oapiAdapter) ProvisionOutboundAgent(w http.ResponseWriter, r *http.Request) {
 	a.s.handleProvisionOutboundAgent().ServeHTTP(w, r)
 }

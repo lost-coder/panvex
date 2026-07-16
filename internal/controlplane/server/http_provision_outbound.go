@@ -22,21 +22,18 @@ import (
 // via Server.SetProvisionOutboundDeps so test fixtures that construct
 // Server directly remain unaffected (nil deps make the handler 503).
 //
-// The struct duplicates fields with bootstrap.InstallCommandConfig
-// deliberately: the install-command handler stores its config inside a
-// closed-over *bootstrap.InstallCommandHandler we cannot peek into, so
-// the provision-outbound handler needs its own typed copy of the same
-// values to build the curl|sudo-bash one-liner.
+// The values live here rather than on Server because they are resolved once
+// at startup from the panel CA, and the handler needs them to build the
+// curl|sudo-bash one-liner.
 type ProvisionOutboundDeps struct {
 	// Queries is the typed sqlc surface for the agents/transport tables.
 	// Required; nil here behaves identically to deps==nil at the route
 	// level (handler returns 503).
 	Queries *dbsqlc.Queries
-	// PanelCAPin / PanelCN replay the install-command flags the agent's
-	// bootstrap subcommand consumes; mirror values used by
-	// InstallCommandHandler. The install-script URL and gRPC endpoint are
-	// no longer frozen here — they are resolved LIVE per request from the
-	// panel settings (Plan 4) via Server.ResolveInstallScriptURL /
+	// PanelCAPin / PanelCN are the flags the agent's bootstrap subcommand
+	// consumes. The install-script URL and gRPC endpoint are NOT frozen
+	// here — they are resolved LIVE per request from the panel settings
+	// (Plan 4) via Server.ResolveInstallScriptURL /
 	// Server.ResolveAgentGRPCEndpoint.
 	PanelCAPin string
 	PanelCN    string
@@ -83,8 +80,7 @@ type provisionOutboundAgentResponse struct {
 
 // SetProvisionOutboundDeps wires the deps the provision-outbound
 // handler needs. Safe to call concurrently with HTTP requests; nil
-// deps cause the route to return 503 until the next call (mirrors
-// SetInstallCommandHandler).
+// deps cause the route to return 503 until the next call.
 func (s *Server) SetProvisionOutboundDeps(d *ProvisionOutboundDeps) {
 	s.provisionOutbound.Store(d)
 }
@@ -266,11 +262,9 @@ func (s *Server) provisionOutboundAgentRow(
 		return "", "", 0, false
 	}
 
-	// Issue a bootstrap token + persist its hash. Same flow as
-	// bootstrap.InstallCommandHandler — we re-use IssueToken directly rather
-	// than the handler so we can apply our chosen script URL when calling
-	// BuildInstallCommand below. The TTL is the bootstrap package's constant,
-	// not a literal, so the S-02 regression test bounds BOTH issue paths.
+	// Issue a bootstrap token + persist its hash. The TTL is the bootstrap
+	// package's constant, not a literal, so the S-02 regression test bounds
+	// this issue path.
 	issued, err := bootstrap.IssueToken(nowT, bootstrap.InstallCommandTTL)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "issue bootstrap token failed", "agent_id", agentID, "error", err)

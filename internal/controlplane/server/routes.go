@@ -68,7 +68,7 @@ func (s *Server) routes() http.Handler {
 	router.Use(s.csrfOriginCheck(s.panelRuntime.HTTPRootPath, s.panelRuntime.AgentHTTPRootPath))
 	router.Get("/healthz", oapi.GetHealthz)
 	router.Get("/readyz", s.handleReadyz())
-	// Q-05: serve the bash installer the install-command points at. Top-level
+	// Q-05: serve the bash installer the provision-outbound command points at. Top-level
 	// path so the generated `curl <panel>/install-agent.sh | bash` works as
 	// pasted, with no /api prefix to remember. Unauthenticated by design — the
 	// per-agent bootstrap token (single-use, 5min TTL) is on the curl arg, not
@@ -148,7 +148,6 @@ func (s *Server) routes() http.Handler {
 				authenticated.Get("/telemetry/servers/{id}", s.handleTelemetryServerDetail())
 				authenticated.Post("/telemetry/servers/{id}/detail-boost", s.handleTelemetryServerDetailBoost())
 				authenticated.Get("/telemetry/servers/{id}/history/load", s.handleServerLoadHistory())
-				authenticated.Get("/telemetry/servers/{id}/history/dc", s.handleDCHealthHistory())
 				authenticated.Get("/clients/{id}/history/ips", s.handleClientIPHistory())
 
 				authenticated.Group(func(operator chi.Router) {
@@ -238,10 +237,6 @@ func (s *Server) routes() http.Handler {
 					admin.With(sensitive).Post("/agents/{id}/certificate-recovery-grants/revoke", oapi.RevokeAgentCertificateRecoveryGrant)
 					admin.With(sensitive).Delete("/agents/{id}", oapi.DeregisterAgent)
 					admin.With(sensitive).Put("/agents/{id}/transport-mode", oapi.UpdateAgentTransportMode)
-					// ScriptURL/PanelCAPin/PanelCN are wired in cmd/control-plane/serve.go
-					// at NewInstallCommandHandler — see install_script.go for the
-					// embedded /install-agent.sh route the URL points to. (Q-05)
-					admin.With(sensitive).Post("/agents/{id}/install-command", oapi.CreateAgentInstallCommand)
 					// PR-2c: one-shot provisioning for outbound (reverse-mode)
 					// agents. Combines the agent-row INSERT and the install-
 					// command issuance into a single round-trip so the wizard's

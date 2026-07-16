@@ -154,7 +154,7 @@ func (s *Store) PoolStats() sql.DBStats {
 
 // Queries returns a *dbsqlc.Queries bound to this store's connection pool.
 // Callers that need transport/bootstrap DB access (agenttransport.Manager,
-// bootstrap.EnrollDriver, bootstrap.InstallCommandHandler) use this instead of
+// bootstrap.EnrollDriver, the provision-outbound handler) use this instead of
 // opening a second sql.DB. Returns nil when the store is tx-bound (no pool).
 func (s *Store) Queries() *dbsqlc.Queries {
 	if s.sqlDB == nil {

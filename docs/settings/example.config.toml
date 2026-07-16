@@ -64,6 +64,6 @@ cert_file = ""
 key_file = ""
 
 [updates]
-# Override default agent install-script URL emitted by /api/agents/{id}/install-command.
+# Override the agent install-script URL embedded in generated install commands.
 install_script_url = ""
 

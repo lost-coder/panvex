@@ -92,47 +92,6 @@ func (s *Server) handleServerLoadHistory() http.HandlerFunc {
 	}
 }
 
-func (s *Server) handleDCHealthHistory() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		_, user, err := s.requireSession(r)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-		scope, ok := s.requireFleetScope(w, r, user)
-		if !ok {
-			return
-		}
-
-		agentID := chi.URLParam(r, "id")
-		if agentID == "" {
-			writeError(w, http.StatusBadRequest, "missing server id")
-			return
-		}
-		if !s.agentVisibleInScope(scope, agentID) {
-			writeError(w, http.StatusNotFound, msgServerNotFound)
-			return
-		}
-
-		from, to, err := s.parseTimeRange(r, defaultHistoryRangeHours)
-		if err != nil {
-			writeErrorLogged(r.Context(), w, http.StatusBadRequest, "invalid time range", err)
-			return
-		}
-		if s.store == nil {
-			writeJSON(w, http.StatusOK, map[string]any{"points": []any{}})
-			return
-		}
-
-		points, err := s.historySvc.DCHealthPoints(r.Context(), agentID, from, to)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, msgInternalError)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"points": points})
-	}
-}
-
 // clientIPRow is the public shape returned by handleClientIPHistory.
 // First/last seen are aggregated across nodes so the same physical IP
 // only shows up once per client even when several agents report it.

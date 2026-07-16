@@ -12,7 +12,6 @@ import { fleetSchema } from "./dashboard.ts";
  * - POST /api/telemetry/servers/{id}/detail-boost
  * - POST /api/telemetry/servers/{id}/refresh-diagnostics
  * - GET /api/telemetry/servers/{id}/history/load
- * - GET /api/telemetry/servers/{id}/history/dc
  *
  * Schemas mirror the runtime types declared in shared/api/telemetry.ts
  * so the api<T>() ZodType<T> overload accepts them.

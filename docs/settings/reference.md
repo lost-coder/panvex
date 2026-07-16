@@ -30,7 +30,7 @@ Bootstrap settings are read once at process start. Edit them via environment var
 | `observability.log_file` | string | _(empty)_ | `PANVEX_LOG_FILE` | `observability.log_file` | Path to log file. Empty = stderr only. |
 | `observability.pprof_addr` | string | _(empty)_ | `PANVEX_PPROF_ADDR` | `observability.pprof_addr` | pprof listener host:port. Empty disables pprof. |
 | `observability.metrics_scrape_token` | string | _(secret, no default)_ | `PANVEX_METRICS_SCRAPE_TOKEN` | — | Bearer token required to scrape /metrics. Env-only. |
-| `updates.install_script_url` | string | _(empty)_ | `PANVEX_INSTALL_SCRIPT_URL` | `updates.install_script_url` | Override default agent install-script URL emitted by /api/agents/{id}/install-command. |
+| `updates.install_script_url` | string | _(empty)_ | `PANVEX_INSTALL_SCRIPT_URL` | `updates.install_script_url` | Override the agent install-script URL embedded in generated install commands. |
 | `agent.client_data_concurrency` | int | `4` | `PANVEX_AGENT_CLIENT_DATA_CONCURRENCY` | `agent.client_data_concurrency` | Per-agent concurrency for the panel-side client-data fetcher. |
 
 ## Operational settings

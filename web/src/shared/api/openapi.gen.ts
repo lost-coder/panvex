@@ -254,8 +254,8 @@ export interface paths {
          *     the agent row, issues a 5-minute bootstrap token, and returns the
          *     pre-baked `curl ... | sudo bash` one-liner the operator pastes on
          *     the agent host. Combines what would otherwise be `POST /agents`
-         *     (no such endpoint today) and `POST /agents/{id}/install-command`
-         *     into a single round-trip, mirroring the simplicity of the inbound
+         *     (no such endpoint today) and the bootstrap-token issuance into a
+         *     single round-trip, mirroring the simplicity of the inbound
          *     `POST /agents/enrollment-tokens` flow.
          *
          *     Cancellation: if the operator backs out of the wizard before
@@ -265,31 +265,6 @@ export interface paths {
          *     elapsed without a first connection.
          */
         post: operations["provisionOutboundAgent"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/agents/{id}/install-command": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Generate a one-line installer for an outbound agent
-         * @description Issues a fresh bootstrap token (replacing any prior token)
-         *     and returns a `curl ... | sudo bash` one-liner the operator
-         *     runs on the agent host. Available only for agents already
-         *     in `outbound` transport mode.
-         */
-        post: operations["createAgentInstallCommand"];
         delete?: never;
         options?: never;
         head?: never;
@@ -810,8 +785,8 @@ export interface components {
             advanced?: components["schemas"]["InstallCommandAdvancedOptions"];
         };
         /**
-         * @description Returned by `POST /api/agents/provision-outbound`. Mirrors
-         *     InstallCommandResponse plus the freshly-minted agent_id so the
+         * @description Returned by `POST /api/agents/provision-outbound`: the install
+         *     one-liner and its expiry, plus the freshly-minted agent_id so the
          *     wizard can poll `GET /api/agents/{id}` for the first connection
          *     and call `DELETE /api/agents/{id}` on cancel.
          */
@@ -826,16 +801,6 @@ export interface components {
              *     wizard can show the operator which source was used.
              */
             script_url: string;
-        };
-        /**
-         * @description Pre-baked `curl ... | sudo bash -s -- ...` one-liner the
-         *     operator runs on the host to install or re-bootstrap a
-         *     reverse-mode agent.
-         */
-        InstallCommandResponse: {
-            command: string;
-            /** Format: int64 */
-            expires_at_unix: number;
         };
         CreateCertificateRecoveryGrantRequest: {
             /**
@@ -1226,40 +1191,6 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Install-command endpoint not configured. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-        };
-    };
-    createAgentInstallCommand: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Install command issued. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InstallCommandResponse"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
             /** @description Install-command endpoint not configured. */
             503: {
                 headers: {
