@@ -66,6 +66,8 @@ graphify-out/
 # Compiled binaries (root-level only)
 /agent
 /control-plane
+# `make build` output
+/bin/
 
 # Editor index files (ctags, etc.)
 /tags
