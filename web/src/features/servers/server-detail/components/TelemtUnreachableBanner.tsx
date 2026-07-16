@@ -46,10 +46,10 @@ export function TelemtUnreachableBanner(
   return (
     <div
       role="alert"
-      className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100"
+      className="rounded-md border border-bad/40 bg-bad-dim px-4 py-3 text-sm text-bad-text"
     >
       <div className="font-semibold">{t("detail.telemtLost")}</div>
-      <div className="text-red-200/80">
+      <div className="text-bad">
         {t("detail.telemtLostDetail", { since: sinceText, elapsed: elapsedText })}
       </div>
     </div>

@@ -184,6 +184,7 @@ export const agentRuntimeSchema = z.object({
   me_writers_summary: meWritersSummarySchema.optional(),
   telemt_unreachable: z.boolean().default(false),
   telemt_unreachable_since_unix: z.number().default(0),
+  user_telemetry_suppressed: z.boolean().default(false),
 }) satisfies z.ZodType<Gen["AgentRuntime"]>;
 
 export const agentCertificateRecoverySchema = z.object({

@@ -121,6 +121,7 @@ export function mockDirectServer(overrides: MockDirectServerOverrides = {}): Ser
     fallbackEnteredAtUnix,
     telemtUnreachable: false,
     telemtUnreachableSinceUnix: 0,
+    userTelemetrySuppressed: false,
     transportDrift: overrides.transportDrift === true,
   };
 }

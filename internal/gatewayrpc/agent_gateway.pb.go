@@ -1583,8 +1583,13 @@ type RuntimeSnapshot struct {
 	// newer Telemt can add classes without an agent or panel upgrade.
 	ConnectionsBadByClass    []*ConnectionsClassCount `protobuf:"bytes,39,rep,name=connections_bad_by_class,json=connectionsBadByClass,proto3" json:"connections_bad_by_class,omitempty"`
 	HandshakeFailuresByClass []*ConnectionsClassCount `protobuf:"bytes,40,rep,name=handshake_failures_by_class,json=handshakeFailuresByClass,proto3" json:"handshake_failures_by_class,omitempty"`
-	unknownFields            protoimpl.UnknownFields
-	sizeCache                protoimpl.SizeCache
+	// True when Telemt is not emitting per-user series (user telemetry switched
+	// off, or the 4096-user labeled-series cap truncated them): per-client
+	// usage/quota numbers shown by the panel are stale or zero. Matches the
+	// telemt_unreachable polarity — proto3 default false is the healthy case.
+	UserTelemetrySuppressed bool `protobuf:"varint,41,opt,name=user_telemetry_suppressed,json=userTelemetrySuppressed,proto3" json:"user_telemetry_suppressed,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *RuntimeSnapshot) Reset() {
@@ -1895,6 +1900,13 @@ func (x *RuntimeSnapshot) GetHandshakeFailuresByClass() []*ConnectionsClassCount
 		return x.HandshakeFailuresByClass
 	}
 	return nil
+}
+
+func (x *RuntimeSnapshot) GetUserTelemetrySuppressed() bool {
+	if x != nil {
+		return x.UserTelemetrySuppressed
+	}
+	return false
 }
 
 // ConnectionsClassCount carries a single (class, total) row from
@@ -4002,7 +4014,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"rtt_ms_max\x18\x05 \x01(\x01R\brttMsMax\x12*\n" +
 	"\x11alive_writers_min\x18\x06 \x01(\x05R\x0faliveWritersMin\x12)\n" +
 	"\x10required_writers\x18\a \x01(\x05R\x0frequiredWriters\x12\x19\n" +
-	"\bload_max\x18\b \x01(\x05R\aloadMax\"\xb1\x12\n" +
+	"\bload_max\x18\b \x01(\x05R\aloadMax\"\xed\x12\n" +
 	"\x0fRuntimeSnapshot\x12:\n" +
 	"\x19accepting_new_connections\x18\x01 \x01(\bR\x17acceptingNewConnections\x12(\n" +
 	"\x10me_runtime_ready\x18\x02 \x01(\bR\x0emeRuntimeReady\x124\n" +
@@ -4046,7 +4058,8 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x12telemt_unreachable\x18% \x01(\bR\x11telemtUnreachable\x12A\n" +
 	"\x1dtelemt_unreachable_since_unix\x18& \x01(\x03R\x1atelemtUnreachableSinceUnix\x12a\n" +
 	"\x18connections_bad_by_class\x18' \x03(\v2(.panvex.gateway.v1.ConnectionsClassCountR\x15connectionsBadByClass\x12g\n" +
-	"\x1bhandshake_failures_by_class\x18( \x03(\v2(.panvex.gateway.v1.ConnectionsClassCountR\x18handshakeFailuresByClass\"C\n" +
+	"\x1bhandshake_failures_by_class\x18( \x03(\v2(.panvex.gateway.v1.ConnectionsClassCountR\x18handshakeFailuresByClass\x12:\n" +
+	"\x19user_telemetry_suppressed\x18) \x01(\bR\x17userTelemetrySuppressed\"C\n" +
 	"\x15ConnectionsClassCount\x12\x14\n" +
 	"\x05class\x18\x01 \x01(\tR\x05class\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x04R\x05total\"}\n" +

@@ -36,3 +36,51 @@ func TestParseMetricsSnapshotIgnoresMalformedUpstreamCounter(t *testing.T) {
 		t.Fatalf("Attempt should remain 0 for unparsable line, got %d", snap.UpstreamCounters.Attempt)
 	}
 }
+
+func TestParseMetricsSnapshotReadsTelemetrySuppressionMarkers(t *testing.T) {
+	text := strings.Join([]string{
+		"# TYPE telemt_telemetry_user_enabled gauge",
+		"telemt_telemetry_user_enabled 0",
+		"# TYPE telemt_telemetry_user_series_suppressed gauge",
+		"telemt_telemetry_user_series_suppressed 1",
+	}, "\n")
+	snap := ParseMetricsSnapshot(text)
+	if snap.UserTelemetryEnabled {
+		t.Fatal("user_enabled 0 must parse as disabled")
+	}
+	if !snap.UserSeriesSuppressed {
+		t.Fatal("series_suppressed 1 must parse as suppressed")
+	}
+}
+
+func TestParseMetricsSnapshotTelemetryMarkersAbsentDefaultsHealthy(t *testing.T) {
+	snap := ParseMetricsSnapshot("telemt_uptime_seconds 5\n")
+	if !snap.UserTelemetryEnabled || snap.UserSeriesSuppressed {
+		t.Fatalf("old Telemt without markers must default healthy: enabled=%v suppressed=%v",
+			snap.UserTelemetryEnabled, snap.UserSeriesSuppressed)
+	}
+}
+
+// TestParseMetricsSnapshotTelemetryMarkersHealthyValues covers the
+// affirmative healthy case: markers present and reporting "all good".
+func TestParseMetricsSnapshotTelemetryMarkersHealthyValues(t *testing.T) {
+	text := strings.Join([]string{
+		"telemt_telemetry_user_enabled 1",
+		"telemt_telemetry_user_series_suppressed 0",
+	}, "\n")
+	snap := ParseMetricsSnapshot(text)
+	if !snap.UserTelemetryEnabled || snap.UserSeriesSuppressed {
+		t.Fatalf("enabled=1 suppressed=0 must be healthy: enabled=%v suppressed=%v",
+			snap.UserTelemetryEnabled, snap.UserSeriesSuppressed)
+	}
+}
+
+// TestParseMetricsSnapshotIgnoresMalformedTelemetryMarker mirrors
+// TestParseMetricsSnapshotIgnoresMalformedUpstreamCounter: the line is
+// consumed as ours, the field keeps its initialised value.
+func TestParseMetricsSnapshotIgnoresMalformedTelemetryMarker(t *testing.T) {
+	snap := ParseMetricsSnapshot("telemt_telemetry_user_enabled notanumber\n")
+	if !snap.UserTelemetryEnabled {
+		t.Fatal("malformed marker must leave UserTelemetryEnabled at its healthy default")
+	}
+}

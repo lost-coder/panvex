@@ -142,6 +142,7 @@ func agentRuntimeFromSnapshot(snapshot *gatewayrpc.RuntimeSnapshot, observedAt t
 		MeWritersSummary:           meWritersSummaryFromSnapshot(snapshot.MeWritersSummary),
 		TelemtUnreachable:          snapshot.TelemtUnreachable,
 		TelemtUnreachableSinceUnix: snapshot.TelemtUnreachableSinceUnix,
+		UserTelemetrySuppressed:    snapshot.GetUserTelemetrySuppressed(),
 		UpdatedAt:                  observedAt.UTC(),
 	}
 }

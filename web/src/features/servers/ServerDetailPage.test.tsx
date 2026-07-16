@@ -67,6 +67,7 @@ function makeProps(): ServerDetailPageProps {
       fallbackEnteredAtUnix: null,
       telemtUnreachable: false,
       telemtUnreachableSinceUnix: 0,
+      userTelemetrySuppressed: false,
       transportDrift: false,
     },
   };
@@ -111,5 +112,26 @@ describe("ServerDetailPage", () => {
   it("renders MeDownHero in me_down state", () => {
     render(<ServerDetailPage {...meDownProps()} />);
     expect(screen.getByText(/ME pool unavailable/i)).toBeInTheDocument();
+  });
+
+  it("does not warn about suppressed per-user telemetry on a healthy node", () => {
+    render(<ServerDetailPage {...makeProps()} />);
+    expect(screen.queryByText(/per-user traffic telemetry is suppressed/i)).not.toBeInTheDocument();
+  });
+
+  it("warns when the node reports suppressed per-user telemetry", () => {
+    const props = makeProps();
+    render(<ServerDetailPage {...props} server={{ ...props.server, userTelemetrySuppressed: true }} />);
+    expect(screen.getByText(/per-user traffic telemetry is suppressed/i)).toBeInTheDocument();
+  });
+
+  it("keeps the page content visible when per-user telemetry is suppressed", () => {
+    // Unlike the Telemt-unreachable banner, this warning is additive: the node
+    // is healthy and the rest of the page must stay rendered.
+    const props = makeProps();
+    const { container } = render(
+      <ServerDetailPage {...props} server={{ ...props.server, userTelemetrySuppressed: true }} />,
+    );
+    expect(container.textContent).toContain("node-a");
   });
 });

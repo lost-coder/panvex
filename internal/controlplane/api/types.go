@@ -171,6 +171,18 @@ type AgentRuntime struct {
 	MeWritersSummary           *RuntimeMeWritersSummary `json:"me_writers_summary,omitempty"`
 	TelemtUnreachable          bool                     `json:"telemt_unreachable"`
 	TelemtUnreachableSinceUnix int64                    `json:"telemt_unreachable_since_unix"`
+	// UserTelemetrySuppressed reports that Telemt on this node is not
+	// emitting per-user series — user telemetry is switched off, or the
+	// 4096-user labeled-series cap truncated them. The per-client traffic
+	// and quota-usage figures the panel shows for this node are therefore
+	// stale or zero, and the UI raises a warning banner.
+	//
+	// Deliberately NOT an input to node status or reason text: unlike
+	// TelemtUnreachable this says nothing about the node's ability to serve
+	// traffic, only about the fidelity of one telemetry view. Polarity
+	// matches TelemtUnreachable — false (the zero value, and the proto3
+	// default) is the healthy case.
+	UserTelemetrySuppressed bool `json:"user_telemetry_suppressed"`
 	// ReportedObservedAt — агентский снапшот-таймстемп, сохраняется ТОЛЬКО
 	// для диагностики clock-skew (P3-3.2, аудит #25b). Все решения о
 	// liveness/freshness принимаются по панельным часам: LastSeenAt,

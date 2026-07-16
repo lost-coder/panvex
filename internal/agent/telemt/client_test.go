@@ -1612,3 +1612,68 @@ func TestClientFetchRuntimeStateParallelism(t *testing.T) {
 		t.Fatalf("FetchRuntimeState() elapsed = %s with parallel fan-out; want < 800ms (sequential would be >= 1s)", elapsed)
 	}
 }
+
+// TestClientFetchClientUsageFromMetricsDerivesUserTelemetrySuppressed pins the
+// derivation UserTelemetrySuppressed = !enabled || seriesSuppressed across the
+// four marker combinations, plus the marker-absent (older Telemt) case which
+// must stay healthy.
+func TestClientFetchClientUsageFromMetricsDerivesUserTelemetrySuppressed(t *testing.T) {
+	tests := []struct {
+		name    string
+		markers string
+		want    bool
+	}{
+		{
+			name:    "markers absent on older telemt stays healthy",
+			markers: "",
+			want:    false,
+		},
+		{
+			name:    "telemetry on and no truncation is healthy",
+			markers: "telemt_telemetry_user_enabled 1\ntelemt_telemetry_user_series_suppressed 0\n",
+			want:    false,
+		},
+		{
+			name:    "user telemetry switched off suppresses",
+			markers: "telemt_telemetry_user_enabled 0\ntelemt_telemetry_user_series_suppressed 1\n",
+			want:    true,
+		},
+		{
+			name:    "series cap truncation suppresses while telemetry is on",
+			markers: "telemt_telemetry_user_enabled 1\ntelemt_telemetry_user_series_suppressed 1\n",
+			want:    true,
+		},
+		{
+			name:    "telemetry off is enough on its own",
+			markers: "telemt_telemetry_user_enabled 0\ntelemt_telemetry_user_series_suppressed 0\n",
+			want:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := "telemt_uptime_seconds 42\n" + tt.markers
+			metricsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+				_, _ = w.Write([]byte(payload))
+			}))
+			defer metricsServer.Close()
+
+			client, err := NewClient(Config{
+				BaseURL:    "http://127.0.0.1:19999",
+				MetricsURL: metricsServer.URL,
+			}, metricsServer.Client())
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+
+			usage, err := client.FetchClientUsageFromMetrics(context.Background())
+			if err != nil {
+				t.Fatalf("FetchClientUsageFromMetrics() error = %v", err)
+			}
+			if usage.UserTelemetrySuppressed != tt.want {
+				t.Fatalf("usage.UserTelemetrySuppressed = %v, want %v", usage.UserTelemetrySuppressed, tt.want)
+			}
+		})
+	}
+}

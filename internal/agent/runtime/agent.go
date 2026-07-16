@@ -118,10 +118,16 @@ type Agent struct {
 	diagnosticsGate contentHashGate
 	securityGate    contentHashGate
 
-	clientNames                        map[string]string
-	lastOctets                         map[string]uint64
-	lastConnections                    map[string]int
-	lastMetricsUptime                  float64
+	clientNames       map[string]string
+	lastOctets        map[string]uint64
+	lastConnections   map[string]int
+	lastMetricsUptime float64
+	// userTelemetrySuppressed remembers the last suppression observation from
+	// the Telemt /metrics scrape. The scrape happens in BuildUsageSnapshot but
+	// the flag ships to the panel on RuntimeSnapshot, so the two snapshot
+	// builders communicate through this field. False (healthy) until the first
+	// usage scrape observes otherwise.
+	userTelemetrySuppressed            bool
 	lastLifecycle                      runtimeLifecycleState
 	runtimeInitializationActive        bool
 	runtimeInitializationCooldownUntil time.Time
@@ -344,7 +350,7 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 	snapshot.Metrics = map[string]uint64{
 		"connections": uint64(state.Connections),
 	}
-	snapshot.Runtime = buildRuntimeSnapshotProto(state, dcs, upstreamRows, recentEvents, wasRestarting)
+	snapshot.Runtime = buildRuntimeSnapshotProto(state, dcs, upstreamRows, recentEvents, wasRestarting, a.userTelemetrySuppressedFlag())
 	diagHash, sendDiagnosticsBody := a.diagnosticsGate.next(
 		state.Diagnostics.State,
 		state.Diagnostics.StateReason,
@@ -498,6 +504,15 @@ func (a *Agent) updateLifecycleState(state telemt.RuntimeState, observedAt time.
 	return wasRestarting
 }
 
+// userTelemetrySuppressedFlag reads the latched suppression marker under the
+// read lock. BuildRuntimeSnapshot itself does not hold a.mu, so the value is
+// snapped through this getter rather than read directly.
+func (a *Agent) userTelemetrySuppressedFlag() bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.userTelemetrySuppressed
+}
+
 // buildRuntimeSnapshotProto assembles the runtime portion of a gateway snapshot.
 func buildRuntimeSnapshotProto(
 	state telemt.RuntimeState,
@@ -505,8 +520,13 @@ func buildRuntimeSnapshotProto(
 	upstreamRows []*gatewayrpc.RuntimeUpstreamRowSnapshot,
 	recentEvents []*gatewayrpc.RuntimeEventSnapshot,
 	wasRestarting bool,
+	userTelemetrySuppressed bool,
 ) *gatewayrpc.RuntimeSnapshot {
 	return &gatewayrpc.RuntimeSnapshot{
+		// UserTelemetrySuppressed is latched from the last Telemt /metrics
+		// scrape (BuildUsageSnapshot). Unlike TelemtUnreachable it is a
+		// warning only — it never influences the node's status or reason.
+		UserTelemetrySuppressed: userTelemetrySuppressed,
 		// TelemtUnreachable is left at its proto3 default (false) on every
 		// snapshot the agent successfully builds from a real telemt.RuntimeState
 		// — by definition we just talked to Telemt to obtain this state. The
@@ -638,6 +658,10 @@ func (a *Agent) BuildUsageSnapshot(ctx context.Context, observedAt time.Time) (*
 	if metricsSnapshot.UptimeSeconds > 0 {
 		a.lastMetricsUptime = metricsSnapshot.UptimeSeconds
 	}
+	// Latch the suppression marker for the next runtime snapshot. Assigned
+	// unconditionally so a recovered node clears the flag on the very next
+	// scrape rather than warning forever.
+	a.userTelemetrySuppressed = metricsSnapshot.UserTelemetrySuppressed
 
 	snapshot := a.baseSnapshot(observedAt)
 	snapshot.Clients = clients

@@ -87,6 +87,13 @@ export interface ServerDetailPageProps {
     /** Unix timestamp (seconds) when telemt became unreachable; 0 when unknown. */
     telemtUnreachableSinceUnix: number;
     /**
+     * true when Telemt is not exporting per-user series — user telemetry is
+     * switched off, or the 4096-user labeled-series cap truncated them. The
+     * per-client traffic and quota-usage figures for this node are stale or
+     * zero. Warning banner only: this never affects node status or severity.
+     */
+    userTelemetrySuppressed: boolean;
+    /**
      * true when the live connection direction disagrees with the persisted
      * transport_mode (R-4): the agent is still dialing IN while the DB says
      * outbound, or vice versa. The panel re-enqueues the switch job to

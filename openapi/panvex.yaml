@@ -612,6 +612,7 @@ components:
         - system_load
         - telemt_unreachable
         - telemt_unreachable_since_unix
+        - user_telemetry_suppressed
         - updated_at
       properties:
         accepting_new_connections: { type: boolean }
@@ -714,6 +715,11 @@ components:
           $ref: '#/components/schemas/RuntimeMeWritersSummary'
         telemt_unreachable: { type: boolean }
         telemt_unreachable_since_unix: { type: integer, format: int64 }
+        # True when Telemt is not emitting per-user series (user telemetry
+        # switched off, or the 4096-user labeled-series cap truncated them):
+        # per-client traffic and quota usage for this node are stale or zero.
+        # Warning only — does not affect node status. False is healthy.
+        user_telemetry_suppressed: { type: boolean }
         updated_at:
           type: string
           format: date-time

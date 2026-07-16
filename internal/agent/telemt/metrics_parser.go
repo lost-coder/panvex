@@ -33,12 +33,27 @@ type MetricsSnapshot struct {
 	Users            map[string]*UserMetrics
 	UptimeSeconds    float64
 	UpstreamCounters UpstreamCounters
+	// UserTelemetryEnabled mirrors the label-less gauge
+	// telemt_telemetry_user_enabled: false means Telemt is configured with
+	// per-user telemetry switched off, so no telemt_user_* series exist at
+	// all. Defaults to true when the marker is absent — an older Telemt that
+	// does not export it is assumed healthy, so upgrading the agent alone
+	// never spuriously warns.
+	UserTelemetryEnabled bool
+	// UserSeriesSuppressed mirrors telemt_telemetry_user_series_suppressed:
+	// true when Telemt stopped emitting per-user series, either because
+	// telemetry is off or because the 4096-user labeled-series cap truncated
+	// them. Defaults to false (healthy) when the marker is absent.
+	UserSeriesSuppressed bool
 }
 
 // ParseMetricsSnapshot parses a Prometheus text-format payload and returns per-user metrics plus process uptime.
 func ParseMetricsSnapshot(text string) MetricsSnapshot {
 	result := MetricsSnapshot{
 		Users: make(map[string]*UserMetrics),
+		// Healthy defaults: absence of the suppression markers means an
+		// older Telemt build, not a suppressed node.
+		UserTelemetryEnabled: true,
 	}
 
 	for _, line := range strings.Split(text, "\n") {
@@ -53,6 +68,18 @@ func ParseMetricsSnapshot(text string) MetricsSnapshot {
 		}
 
 		if tryParseUpstreamCounter(line, &result) {
+			continue
+		}
+
+		if tryParseScalarGauge(line, "telemt_telemetry_user_enabled ", func(v float64) {
+			result.UserTelemetryEnabled = v != 0
+		}) {
+			continue
+		}
+
+		if tryParseScalarGauge(line, "telemt_telemetry_user_series_suppressed ", func(v float64) {
+			result.UserSeriesSuppressed = v != 0
+		}) {
 			continue
 		}
 
@@ -109,6 +136,28 @@ func tryParseUptimeLine(line string, result *MetricsSnapshot) bool {
 	if v, err := strconv.ParseFloat(valuePart, 64); err == nil {
 		result.UptimeSeconds = v
 	}
+	return true
+}
+
+// tryParseScalarGauge applies the value of a label-less gauge line to apply
+// and returns true when line belongs to prefix (which must include the
+// trailing space, so the binding is exact and a longer metric name sharing
+// the prefix cannot match).
+//
+// Malformed values follow the same contract as tryParseUpstreamCounter /
+// tryParseUptimeLine: the line is still reported as consumed, apply is not
+// called, and the field keeps its initialised value until a well-formed
+// scrape arrives. See TestParseMetricsSnapshotIgnoresMalformedTelemetryMarker.
+func tryParseScalarGauge(line, prefix string, apply func(float64)) bool {
+	rest, ok := strings.CutPrefix(line, prefix)
+	if !ok {
+		return false
+	}
+	value, err := strconv.ParseFloat(strings.TrimSpace(rest), 64)
+	if err != nil {
+		return true
+	}
+	apply(value)
 	return true
 }
 

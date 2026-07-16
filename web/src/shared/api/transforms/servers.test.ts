@@ -19,6 +19,7 @@ function makeRuntime(overrides: Partial<AgentRuntime> = {}): AgentRuntime {
     use_middle_proxy: false,
     telemt_unreachable: false,
     telemt_unreachable_since_unix: 0,
+    user_telemetry_suppressed: false,
     startup_status: "ready",
     startup_stage: "done",
     startup_progress_pct: 100,
@@ -343,5 +344,27 @@ describe("transformServerList", () => {
     const [item] = transformServerList(listResponse(makeRuntime({}), 0));
     expect(item!.state).toBe("ok");
     expect(item!.reason).toBe("");
+  });
+
+  it("maps user_telemetry_suppressed onto the detail view model", () => {
+    const result = transformServerDetail(
+      makeDetailResponse(makeRuntime({ user_telemetry_suppressed: true })),
+    );
+    expect(result.userTelemetrySuppressed).toBe(true);
+  });
+
+  it("defaults userTelemetrySuppressed to false when the node is healthy", () => {
+    const result = transformServerDetail(makeDetailResponse(makeRuntime({})));
+    expect(result.userTelemetrySuppressed).toBe(false);
+  });
+
+  it("does not let suppressed per-user telemetry change the node state or reason", () => {
+    // The flag is a warning banner only: it must never leak into severity.
+    const healthy = transformServerDetail(makeDetailResponse(makeRuntime({})));
+    const suppressed = transformServerDetail(
+      makeDetailResponse(makeRuntime({ user_telemetry_suppressed: true })),
+    );
+    expect(suppressed.state).toBe(healthy.state);
+    expect(suppressed.status).toBe(healthy.status);
   });
 });

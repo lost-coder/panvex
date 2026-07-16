@@ -22,6 +22,7 @@ const baseRuntime: AgentRuntime = {
   use_middle_proxy: false,
   telemt_unreachable: false,
   telemt_unreachable_since_unix: 0,
+  user_telemetry_suppressed: false,
   startup_status: "ready",
   startup_stage: "done",
   startup_progress_pct: 100,
