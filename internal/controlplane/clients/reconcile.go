@@ -168,7 +168,34 @@ func (s *Service) ReconcileDeployments(ctx context.Context, agentFilter string) 
 		}
 
 		for action, agentIDs := range pending {
-			if _, err := s.EnqueueClientJob(ctx, actorReconciler, action, client, agentIDs, now); err != nil {
+			// R10-1: the snapshot above may be stale by the time we get here —
+			// an operator rotate/update that committed in between would be
+			// silently undone on the node if this job shipped the snapshot's
+			// payload, because a job created LATER supersedes the operator's
+			// fresher one (supersede is CreatedAt-ordered, keyed by client_id)
+			// and the node then converges on the stale secret with
+			// Status=succeeded. Re-read the client from the mirror immediately
+			// before each enqueue so the payload always carries the newest
+			// committed state. The snapshot still decides WHICH pairs are owed
+			// a re-send; only the payload must be fresh. Lock discipline: Get
+			// takes and releases s.mu internally — s.mu is never held across
+			// EnqueueClientJob (enqueue/publish/audit).
+			freshClient, err := s.Get(ctx, clientID)
+			if err != nil {
+				// The client vanished between snapshot and enqueue: nothing to
+				// describe to the node. Same reasoning as the missing-row skip
+				// at the top of the loop.
+				continue
+			}
+			if freshClient.DeletedAt != nil && client.DeletedAt == nil {
+				// Tombstoned since the snapshot: DeleteFlow already enqueued
+				// the delete job, and shipping the snapshot's stale non-delete
+				// action now would supersede it (resurrecting the client on
+				// the node). The next pass re-sends the delete if the node
+				// leaves it unconfirmed.
+				continue
+			}
+			if _, err := s.EnqueueClientJob(ctx, actorReconciler, action, freshClient, agentIDs, now); err != nil {
 				s.logger.ErrorContext(ctx, "re-enqueue of unconfirmed client job failed",
 					"client_id", string(clientID),
 					"action", string(action),
