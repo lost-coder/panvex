@@ -418,6 +418,12 @@ type UpdateConfigStore interface {
 	// update_config key, independent of the settings/state keys above.
 	PutPanelSelfUpdate(ctx context.Context, raw json.RawMessage) error
 	GetPanelSelfUpdate(ctx context.Context) (json.RawMessage, error)
+	// PutPendingAgentUpdates and GetPendingAgentUpdates persist the
+	// agent-ID -> requested-version map behind the reconcile-on-reconnect
+	// of operator-requested agent self-updates, under its own
+	// update_config key.
+	PutPendingAgentUpdates(ctx context.Context, raw json.RawMessage) error
+	GetPendingAgentUpdates(ctx context.Context) (json.RawMessage, error)
 	PutGeoIPSettings(ctx context.Context, settings json.RawMessage) error
 	GetGeoIPSettings(ctx context.Context) (json.RawMessage, error)
 	PutGeoIPState(ctx context.Context, state json.RawMessage) error

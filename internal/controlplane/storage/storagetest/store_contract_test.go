@@ -58,6 +58,7 @@ type memoryStore struct {
 	updateSettings                 json.RawMessage
 	updateState                    json.RawMessage
 	panelSelfUpdate                json.RawMessage
+	pendingAgentUpdates            json.RawMessage
 	geoipSettings                  json.RawMessage
 	geoipState                     json.RawMessage
 	certificateAuthority           *storage.CertificateAuthorityRecord
@@ -1328,6 +1329,18 @@ func (s *memoryStore) GetPanelSelfUpdate(_ context.Context) (json.RawMessage, er
 	return append(json.RawMessage(nil), s.panelSelfUpdate...), nil
 }
 
+func (s *memoryStore) PutPendingAgentUpdates(_ context.Context, data json.RawMessage) error {
+	s.pendingAgentUpdates = append(json.RawMessage(nil), data...)
+	return nil
+}
+
+func (s *memoryStore) GetPendingAgentUpdates(_ context.Context) (json.RawMessage, error) {
+	if s.pendingAgentUpdates == nil {
+		return nil, nil
+	}
+	return append(json.RawMessage(nil), s.pendingAgentUpdates...), nil
+}
+
 func (s *memoryStore) PutGeoIPSettings(_ context.Context, data json.RawMessage) error {
 	s.geoipSettings = append(json.RawMessage(nil), data...)
 	return nil
@@ -1851,6 +1864,7 @@ type memoryStoreSnapshot struct {
 	updateSettings                 json.RawMessage
 	updateState                    json.RawMessage
 	panelSelfUpdate                json.RawMessage
+	pendingAgentUpdates            json.RawMessage
 	geoipSettings                  json.RawMessage
 	geoipState                     json.RawMessage
 	certificateAuthority           *storage.CertificateAuthorityRecord
@@ -1910,6 +1924,7 @@ func (s *memoryStore) snapshot() memoryStoreSnapshot {
 		updateSettings:                 append(json.RawMessage(nil), s.updateSettings...),
 		updateState:                    append(json.RawMessage(nil), s.updateState...),
 		panelSelfUpdate:                append(json.RawMessage(nil), s.panelSelfUpdate...),
+		pendingAgentUpdates:            append(json.RawMessage(nil), s.pendingAgentUpdates...),
 		geoipSettings:                  append(json.RawMessage(nil), s.geoipSettings...),
 		geoipState:                     append(json.RawMessage(nil), s.geoipState...),
 		cpSecrets:                      copySliceMap(s.cpSecrets),
@@ -1961,6 +1976,7 @@ func (s *memoryStore) restore(snap memoryStoreSnapshot) {
 	s.updateSettings = snap.updateSettings
 	s.updateState = snap.updateState
 	s.panelSelfUpdate = snap.panelSelfUpdate
+	s.pendingAgentUpdates = snap.pendingAgentUpdates
 	s.geoipSettings = snap.geoipSettings
 	s.geoipState = snap.geoipState
 	s.certificateAuthority = snap.certificateAuthority

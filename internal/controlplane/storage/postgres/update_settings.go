@@ -37,6 +37,14 @@ func (s *Store) GetPanelSelfUpdate(ctx context.Context) (json.RawMessage, error)
 	return s.getUpdateConfig(ctx, "self_update")
 }
 
+func (s *Store) PutPendingAgentUpdates(ctx context.Context, data json.RawMessage) error {
+	return s.putUpdateConfig(ctx, "pending_agent_updates", data)
+}
+
+func (s *Store) GetPendingAgentUpdates(ctx context.Context) (json.RawMessage, error) {
+	return s.getUpdateConfig(ctx, "pending_agent_updates")
+}
+
 func (s *Store) putUpdateConfig(ctx context.Context, key string, data json.RawMessage) error {
 	return dbsqlc.New(s.db).UpsertUpdateConfig(ctx, dbsqlc.UpsertUpdateConfigParams{
 		Key:   key,
