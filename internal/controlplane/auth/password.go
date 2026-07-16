@@ -4,10 +4,11 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/argon2"
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
 )
 
 const (
@@ -68,61 +69,139 @@ func validatePassword(password string, operatorMin int) error {
 
 // Hash format constants.
 //
-// The only accepted format is v2: "argon2id$v=2$<b64-salt>$<b64-hash>" —
-// 4 parts, Argon2id with 4 iterations and 96 MiB memory. verifyPassword
-// invokes Argon2id ONCE per call, with a single parameter set, so there
-// is no timing oracle that would let an attacker classify hash age.
+// Two formats are accepted:
+//
+//	v2: "argon2id$v=2$<b64-salt>$<b64-hash>"                — 4 parts, implicit
+//	    params (4 iterations / 96 MiB / 2 threads). Written by every release
+//	    before the KDF profile split; verify-only from here on.
+//	v3: "argon2id$v=3$t=<n>,m=<KiB>,p=<n>$<b64-salt>$<b64-hash>" — 5 parts,
+//	    self-describing. Written with the active kdf profile, so switching
+//	    profiles never orphans existing hashes.
+//
+// verifyPassword invokes Argon2id ONCE per call: the format tag selects the
+// branch and the params come from the hash itself, never from trying both.
+// Running two parameter sets would let an attacker classify a stored hash by
+// response time (C-1).
 const (
 	hashSchemeArgon2id = "argon2id"
 	hashVersionTagV2   = "v=2"
+	hashVersionTagV3   = "v=3"
 
-	hashIterV2 uint32 = 4
-	hashMemV2  uint32 = 96 * 1024
+	// Legacy v2 params. Verify-only: no new hash is written with these.
+	legacyIterV2   uint32 = 4
+	legacyMemV2    uint32 = 96 * 1024
+	legacyThreadV2 uint8  = 2
 
-	hashParallelism uint8  = 2
-	hashKeyLen      uint32 = 32
-	hashSaltLen            = 16
+	hashKeyLen  uint32 = 32
+	hashSaltLen        = 16
 )
 
-// hashPassword derives an Argon2id hash with the project's hardened
-// parameters (4 iters, 96 MiB, 2 threads) and tags the result with the
-// v=2 format marker so verifyPassword can select parameters without
-// running both variants (C-1).
+// Sanity ceilings on params read out of our OWN database. A row corrupted by
+// operator error, a bad restore, or a write we did not expect must not be
+// able to make the panel allocate gigabytes or spin for weeks — reject it as
+// a bad credential instead. The ceilings are far above both profiles
+// (default: t=4, m=96 MiB, p=2) so no legitimate hash is affected.
+const (
+	maxHashIter   uint32 = 16
+	maxHashMemKiB uint32 = 512 * 1024
+	maxHashPar    uint8  = 8
+)
+
+// hashPassword derives an Argon2id hash with the ACTIVE kdf profile and tags
+// the result with the v=3 marker plus the params used, so verifyPassword can
+// select parameters without running several variants (C-1) and a later
+// profile change can still read it.
 func hashPassword(password string) (string, error) {
 	salt := make([]byte, hashSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	derived := argon2.IDKey([]byte(password), salt, hashIterV2, hashMemV2, hashParallelism, hashKeyLen)
-	return fmt.Sprintf(
-		"%s$%s$%s$%s",
-		hashSchemeArgon2id,
-		hashVersionTagV2,
-		base64.RawStdEncoding.EncodeToString(salt),
-		base64.RawStdEncoding.EncodeToString(derived),
-	), nil
+	p := kdf.Active()
+	derived := kdf.IDKey([]byte(password), salt, p.Time, p.MemoryKiB, p.Threads, hashKeyLen)
+	return formatHashV3(p, salt, derived), nil
 }
 
-// verifyPassword validates a plaintext password against an Argon2id
-// hash in the v2 format (argon2id$v=2$salt$hash). Anything else —
-// including the pre-v2 3-part format, dropped in R5 — is rejected.
+// formatHashV3 renders the v3 wire format. Single writer so the format string
+// cannot drift between hashPassword and the login dummy hash.
+func formatHashV3(p kdf.Profile, salt, derived []byte) string {
+	return fmt.Sprintf(
+		"%s$%s$%s$%s$%s",
+		hashSchemeArgon2id,
+		hashVersionTagV3,
+		formatHashParams(p),
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(derived),
+	)
+}
+
+func formatHashParams(p kdf.Profile) string {
+	return fmt.Sprintf("t=%d,m=%d,p=%d", p.Time, p.MemoryKiB, p.Threads)
+}
+
+// verifyPassword validates a plaintext password against an Argon2id hash in
+// the v3 (self-describing) or v2 (legacy, fixed-param) format. Anything
+// else — including the pre-v2 3-part format, dropped in R5 — is rejected.
 // Exactly one Argon2id derivation runs per call (C-1, timing oracle).
 //
-// Malformed base64 is mapped to ErrInvalidCredentials rather than the
-// raw decoding error so the error type does not leak hash-shape
-// information to callers / clients.
+// Malformed base64 and out-of-range params are mapped to
+// ErrInvalidCredentials rather than a descriptive error so the error type
+// does not leak hash-shape information to callers / clients.
 func verifyPassword(hash, password string) error {
 	parts := strings.Split(hash, "$")
-	if len(parts) != 4 || parts[0] != hashSchemeArgon2id || parts[1] != hashVersionTagV2 {
+	switch {
+	case len(parts) == 4 && parts[0] == hashSchemeArgon2id && parts[1] == hashVersionTagV2:
+		return verifyArgon2(parts[2], parts[3], password, legacyIterV2, legacyMemV2, legacyThreadV2)
+	case len(parts) == 5 && parts[0] == hashSchemeArgon2id && parts[1] == hashVersionTagV3:
+		iter, mem, par, err := parseHashParams(parts[2])
+		if err != nil {
+			return ErrInvalidCredentials
+		}
+		return verifyArgon2(parts[3], parts[4], password, iter, mem, par)
+	default:
 		return ErrInvalidCredentials
 	}
-	return verifyArgon2(parts[2], parts[3], password, hashIterV2, hashMemV2)
+}
+
+// errBadHashParams reports a params field that is unparsable or outside the
+// sanity ceilings. Never surfaced to a caller — mapped to
+// ErrInvalidCredentials at the verify boundary.
+var errBadHashParams = errors.New("auth: unusable argon2 parameters in stored hash")
+
+// parseHashParams reads "t=<n>,m=<KiB>,p=<n>" and enforces the sanity
+// ceilings BEFORE any derivation is attempted.
+func parseHashParams(field string) (iter, mem uint32, par uint8, err error) {
+	var t32, m32, p32 uint32
+	// %d into uint32 rejects negatives; Sscanf also rejects trailing junk
+	// only if we anchor it, so compare the re-rendered field below.
+	if _, scanErr := fmt.Sscanf(field, "t=%d,m=%d,p=%d", &t32, &m32, &p32); scanErr != nil {
+		return 0, 0, 0, errBadHashParams
+	}
+	if fmt.Sprintf("t=%d,m=%d,p=%d", t32, m32, p32) != field {
+		return 0, 0, 0, errBadHashParams
+	}
+	if t32 == 0 || t32 > maxHashIter ||
+		m32 == 0 || m32 > maxHashMemKiB ||
+		p32 == 0 || p32 > uint32(maxHashPar) {
+		return 0, 0, 0, errBadHashParams
+	}
+	return t32, m32, uint8(p32), nil
+}
+
+// needsRehash reports whether a stored hash should be rewritten with the
+// active profile: true for the legacy v2 format, for a v3 hash carrying
+// different params, and for anything unreadable.
+func needsRehash(hash string) bool {
+	parts := strings.Split(hash, "$")
+	if len(parts) != 5 || parts[0] != hashSchemeArgon2id || parts[1] != hashVersionTagV3 {
+		return true
+	}
+	return parts[2] != formatHashParams(kdf.Active())
 }
 
 // verifyArgon2 decodes the salt + expected hash, runs a single Argon2id
 // derivation with the supplied params, and constant-time compares. Any
 // failure short of a clean match maps to ErrInvalidCredentials.
-func verifyArgon2(saltB64, expectedB64, password string, iterations, memory uint32) error {
+func verifyArgon2(saltB64, expectedB64, password string, iterations, memory uint32, parallelism uint8) error {
 	salt, err := base64.RawStdEncoding.DecodeString(saltB64)
 	if err != nil {
 		return ErrInvalidCredentials
@@ -131,7 +210,7 @@ func verifyArgon2(saltB64, expectedB64, password string, iterations, memory uint
 	if err != nil {
 		return ErrInvalidCredentials
 	}
-	derived := argon2.IDKey([]byte(password), salt, iterations, memory, hashParallelism, uint32(len(expected)))
+	derived := kdf.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(expected)))
 	if subtle.ConstantTimeCompare(expected, derived) != 1 {
 		return ErrInvalidCredentials
 	}

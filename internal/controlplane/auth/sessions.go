@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
-	"golang.org/x/crypto/argon2"
 )
 
 // restoreConsumedTotp rebuilds the in-memory consumed-TOTP map from
@@ -106,19 +106,37 @@ func (s *Service) effectiveSessionIdleTimeout() time.Duration {
 	return sessionIdleTimeout
 }
 
-// dummyPasswordHash is used to equalise login latency when the supplied
-// username does not exist, so timing does not leak user-enumeration signal.
-// It is computed once on first use; the derived hash value is discarded
-// (it is never compared for equality), only the Argon2id CPU cost matters.
+// dummyHashCache memoises one dummy hash per kdf profile name. Keyed by
+// profile rather than computed once for the process so the dummy always
+// matches the ACTIVE profile even if the profile is selected after the first
+// use (tests, and any future runtime switch).
+var (
+	dummyHashMu    sync.Mutex
+	dummyHashCache = map[string]string{}
+)
+
+// dummyPasswordHash returns a throwaway hash used to equalise login latency
+// when the supplied username does not exist, so timing does not leak a
+// user-enumeration signal. The derived value is never compared for equality —
+// only the Argon2id CPU cost matters.
 //
 // CRITICAL: this MUST emit the SAME format and SAME Argon2id params as the
-// current hashPassword in password.go. Otherwise verifyPassword routes the
-// dummy through a different branch (e.g. legacy 3-part path with 3 iters /
-// 64 MiB) and the unknown-user code path burns measurably less CPU than the
-// real-user path with a v=2 hash (4 iters / 96 MiB) — reopening the
-// user-enumeration timing oracle that this dummy hash exists to close
-// (C-1 follow-up).
-var dummyPasswordHash = sync.OnceValue(func() string {
+// current hashPassword in password.go, i.e. the active profile's. Otherwise
+// verifyPassword routes the dummy through a different branch (a cheaper
+// parameter set, or a rejected format that derives nothing at all) and the
+// unknown-user path burns measurably less CPU than the real-user path —
+// reopening the user-enumeration timing oracle this dummy exists to close
+// (C-1 follow-up). Pinned by TestDummyPasswordHashMatchesCurrentFormat.
+//
+// It is built per profile at most once; the derivation itself is serialised
+// by kdf.IDKey like every other one.
+func dummyPasswordHash() string {
+	p := kdf.Active()
+	dummyHashMu.Lock()
+	defer dummyHashMu.Unlock()
+	if cached, ok := dummyHashCache[p.Name]; ok {
+		return cached
+	}
 	salt := make([]byte, hashSaltLen)
 	dummyPwd := make([]byte, hashKeyLen)
 	if _, err := rand.Read(salt); err != nil {
@@ -131,13 +149,11 @@ var dummyPasswordHash = sync.OnceValue(func() string {
 	if _, err := rand.Read(dummyPwd); err != nil {
 		copy(dummyPwd, salt)
 	}
-	derived := argon2.IDKey(dummyPwd, salt, hashIterV2, hashMemV2, hashParallelism, hashKeyLen)
-	return fmt.Sprintf("%s$%s$%s$%s",
-		hashSchemeArgon2id,
-		hashVersionTagV2,
-		base64.RawStdEncoding.EncodeToString(salt),
-		base64.RawStdEncoding.EncodeToString(derived))
-})
+	derived := kdf.IDKey(dummyPwd, salt, p.Time, p.MemoryKiB, p.Threads, hashKeyLen)
+	hash := formatHashV3(p, salt, derived)
+	dummyHashCache[p.Name] = hash
+	return hash
+}
 
 // SetSessionStore attaches a persistent session store to the auth service.
 // When set, sessions are persisted on creation and loaded on restart.

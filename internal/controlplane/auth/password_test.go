@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -107,18 +108,141 @@ func legacyHash(t *testing.T, password string) string {
 	)
 }
 
-func TestHashPasswordProducesV2Format(t *testing.T) {
+func TestHashPasswordProducesV3Format(t *testing.T) {
 	t.Parallel()
 	hash, err := hashPassword("correct-horse-battery")
 	if err != nil {
 		t.Fatalf("hashPassword: %v", err)
 	}
 	parts := strings.Split(hash, "$")
-	if len(parts) != 4 {
-		t.Fatalf("expected 4 parts (argon2id$v=2$salt$hash), got %d: %s", len(parts), hash)
+	if len(parts) != 5 {
+		t.Fatalf("expected 5 parts (argon2id$v=3$params$salt$hash), got %d: %s", len(parts), hash)
 	}
-	if parts[0] != "argon2id" || parts[1] != "v=2" {
+	if parts[0] != "argon2id" || parts[1] != "v=3" {
 		t.Fatalf("wrong header: %q / %q", parts[0], parts[1])
+	}
+	if parts[2] != "t=4,m=98304,p=2" {
+		t.Fatalf("default profile params: got %q", parts[2])
+	}
+}
+
+// TestHashPasswordEmbedsActiveProfileParams pins that new hashes follow the
+// active profile and stay self-describing, so a profile switch does not
+// orphan previously written hashes.
+func TestHashPasswordEmbedsActiveProfileParams(t *testing.T) {
+	t.Cleanup(func() { _ = kdf.SetActiveProfile("") })
+	if err := kdf.SetActiveProfile("low-memory"); err != nil {
+		t.Fatalf("SetActiveProfile: %v", err)
+	}
+	hash, err := hashPassword("correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(hash, "argon2id$v=3$t=2,m=19456,p=1$") {
+		t.Fatalf("v3 hash must embed params, got %s", hash)
+	}
+	if err := verifyPassword(hash, "correct horse battery"); err != nil {
+		t.Fatalf("roundtrip: %v", err)
+	}
+	if err := verifyPassword(hash, "wrong"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("wrong password: %v", err)
+	}
+}
+
+// TestVerifyPasswordAcceptsLegacyV2 pins backward compatibility: hashes
+// written before the profile split (fixed 4 iters / 96 MiB, no embedded
+// params) must keep verifying, or every existing install is locked out.
+func TestVerifyPasswordAcceptsLegacyV2(t *testing.T) {
+	t.Parallel()
+	salt := []byte("0123456789abcdef")
+	derived := argon2.IDKey([]byte("pw1234567890"), salt, 4, 96*1024, 2, 32)
+	hash := fmt.Sprintf("argon2id$v=2$%s$%s",
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(derived))
+	if err := verifyPassword(hash, "pw1234567890"); err != nil {
+		t.Fatalf("legacy v2 must verify: %v", err)
+	}
+	if err := verifyPassword(hash, "wrong-password"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("legacy v2 wrong password: %v", err)
+	}
+}
+
+// TestVerifyPasswordRejectsOversizedV3Params proves a corrupted or planted
+// row cannot make the panel allocate gigabytes / spin for weeks: the sanity
+// ceilings reject before any derivation runs.
+func TestVerifyPasswordRejectsOversizedV3Params(t *testing.T) {
+	before := kdf.Derivations()
+	cases := []string{
+		"argon2id$v=3$t=2,m=4194304,p=1$AAAA$AAAA",   // 4 GiB memory
+		"argon2id$v=3$t=99999,m=19456,p=1$AAAA$AAAA", // absurd iterations
+		"argon2id$v=3$t=2,m=19456,p=99$AAAA$AAAA",    // absurd parallelism
+		"argon2id$v=3$t=0,m=19456,p=1$AAAA$AAAA",     // zero iterations
+		"argon2id$v=3$t=2,m=0,p=1$AAAA$AAAA",         // zero memory
+		"argon2id$v=3$t=2,m=19456,p=0$AAAA$AAAA",     // zero parallelism
+		"argon2id$v=3$garbage$AAAA$AAAA",             // unparsable params
+	}
+	for _, hash := range cases {
+		if err := verifyPassword(hash, "pw"); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("%s: oversized/invalid params must be rejected, got %v", hash, err)
+		}
+	}
+	if got := kdf.Derivations() - before; got != 0 {
+		t.Fatalf("rejected params must not derive at all, ran %d derivations", got)
+	}
+}
+
+// TestVerifyPasswordRunsExactlyOneDerivation pins C-1: a verify call must
+// never try more than one parameter set, or the response time classifies the
+// hash and reopens a timing oracle.
+func TestVerifyPasswordRunsExactlyOneDerivation(t *testing.T) {
+	v3, err := hashPassword("correct-horse-battery")
+	if err != nil {
+		t.Fatalf("hashPassword: %v", err)
+	}
+	salt := []byte("0123456789abcdef")
+	v2 := fmt.Sprintf("argon2id$v=2$%s$%s",
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(argon2.IDKey([]byte("pw1234567890"), salt, 4, 96*1024, 2, 32)))
+
+	cases := []struct{ name, hash, password string }{
+		{"v3 correct", v3, "correct-horse-battery"},
+		{"v3 wrong", v3, "wrong"},
+		{"v2 correct", v2, "pw1234567890"},
+		{"v2 wrong", v2, "wrong"},
+	}
+	for _, tc := range cases {
+		before := kdf.Derivations()
+		_ = verifyPassword(tc.hash, tc.password)
+		if got := kdf.Derivations() - before; got != 1 {
+			t.Fatalf("%s: want exactly 1 derivation (C-1), got %d", tc.name, got)
+		}
+	}
+}
+
+// TestNeedsRehash pins the trigger for rehash-on-login: anything that is not
+// the active profile in the v3 format needs rewriting.
+func TestNeedsRehash(t *testing.T) {
+	t.Cleanup(func() { _ = kdf.SetActiveProfile("") })
+	if err := kdf.SetActiveProfile("low-memory"); err != nil {
+		t.Fatalf("SetActiveProfile: %v", err)
+	}
+	current, err := hashPassword("correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if needsRehash(current) {
+		t.Fatalf("hash written under the active profile must not need a rehash: %s", current)
+	}
+	stale := []string{
+		"argon2id$v=2$AAAA$AAAA",                 // legacy format
+		"argon2id$v=3$t=4,m=98304,p=2$AAAA$AAAA", // other profile's params
+		"argon2id$v=3$t=2,m=19456,p=2$AAAA$AAAA", // one param off
+		"garbage",                                // unreadable
+	}
+	for _, hash := range stale {
+		if !needsRehash(hash) {
+			t.Fatalf("%s must need a rehash", hash)
+		}
 	}
 }
 
@@ -178,19 +302,40 @@ func TestVerifyPasswordRejectsMalformedHash(t *testing.T) {
 
 // TestDummyPasswordHashMatchesCurrentFormat guards the user-enumeration
 // timing-oracle fix (C-1 follow-up): dummyPasswordHash MUST emit the same
-// 4-part v=2 format as the current hashPassword so verifyPassword routes
-// it through the same Argon2id branch (4 iters / 96 MiB). If a future
-// param bump on hashPassword forgets to update dummyPasswordHash, this
-// test fails before the regression ships.
+// format and params as the current hashPassword so verifyPassword routes it
+// through the same Argon2id branch. If it did not, the unknown-user path
+// would burn measurably different CPU than the real-user path and the
+// enumeration oracle this dummy exists to close would reopen.
+//
+// Not parallel: it switches the active profile.
 func TestDummyPasswordHashMatchesCurrentFormat(t *testing.T) {
-	t.Parallel()
-	d := dummyPasswordHash()
-	parts := strings.Split(d, "$")
-	if len(parts) != 4 {
-		t.Fatalf("dummy hash must be v=2 4-part format, got %d parts: %s", len(parts), d)
-	}
-	if parts[0] != hashSchemeArgon2id || parts[1] != hashVersionTagV2 {
-		t.Fatalf("dummy hash wrong header: %q / %q (want %q / %q)",
-			parts[0], parts[1], hashSchemeArgon2id, hashVersionTagV2)
+	t.Cleanup(func() { _ = kdf.SetActiveProfile("") })
+	for _, profile := range []string{"default", "low-memory"} {
+		if err := kdf.SetActiveProfile(profile); err != nil {
+			t.Fatalf("SetActiveProfile(%s): %v", profile, err)
+		}
+		d := dummyPasswordHash()
+		parts := strings.Split(d, "$")
+		if len(parts) != 5 {
+			t.Fatalf("%s: dummy hash must be v=3 5-part format, got %d parts: %s", profile, len(parts), d)
+		}
+		if parts[0] != hashSchemeArgon2id || parts[1] != hashVersionTagV3 {
+			t.Fatalf("%s: dummy hash wrong header: %q / %q (want %q / %q)",
+				profile, parts[0], parts[1], hashSchemeArgon2id, hashVersionTagV3)
+		}
+		// The whole point: the dummy must cost what a REAL hash of the
+		// active profile costs, so the params must be the active ones.
+		if needsRehash(d) {
+			t.Fatalf("%s: dummy hash params must match the active profile, got %s", profile, d)
+		}
+		// And it must route through the normal v3 verify branch — one
+		// derivation, same as a real user's hash.
+		before := kdf.Derivations()
+		if err := verifyPassword(d, "whatever-the-attacker-typed"); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("%s: dummy verify: %v", profile, err)
+		}
+		if got := kdf.Derivations() - before; got != 1 {
+			t.Fatalf("%s: dummy path must derive exactly once, got %d", profile, got)
+		}
 	}
 }

@@ -86,6 +86,16 @@ var gate = make(chan struct{}, 1)
 // deriveHook replaces the real derivation in tests.
 var deriveHook func()
 
+// derivations counts every derivation admitted through the gate. It exists so
+// callers' tests can pin "exactly one derivation per verify call" (C-1: more
+// than one parameter set per verify is a timing oracle that classifies the
+// stored hash) without reaching into this package's internals.
+var derivations atomic.Uint64
+
+// Derivations returns the number of Argon2id derivations run since process
+// start. Monotonic; intended for tests and diagnostics.
+func Derivations() uint64 { return derivations.Load() }
+
 // IDKey derives a key with Argon2id. It is the only argon2.IDKey call site for
 // password hashes and the CA key: derivations are serialised on gate, and the
 // block array of THIS call is collected before the next waiter allocates its
@@ -100,6 +110,7 @@ func IDKey(password, salt []byte, time, memoryKiB uint32, threads uint8, keyLen 
 	// Released via defer so a panic inside the derivation cannot wedge the
 	// gate and deadlock every subsequent login.
 	defer func() { <-gate }()
+	derivations.Add(1)
 	if hook := deriveHook; hook != nil {
 		hook()
 		return make([]byte, keyLen)
