@@ -203,6 +203,15 @@ func (s *Server) persistAgentDeregister(w http.ResponseWriter, r *http.Request, 
 		// Non-fatal: in-memory revocation below still blocks the
 		// current process. Restart recovery will see this as a gap.
 	}
+	// Drop any outstanding self-update desired-state: the agent is gone, so
+	// nothing will ever satisfy it. The map is persisted, so a leaked key
+	// would outlive the agent row forever.
+	if s.updatesSvc != nil {
+		if err := s.updatesSvc.ClearPendingAgentUpdate(r.Context(), agentID); err != nil {
+			s.logger.WarnContext(r.Context(), "clear pending agent self-update on deregister failed",
+				"agent_id", agentID, "error", err)
+		}
+	}
 	return true
 }
 
@@ -215,6 +224,9 @@ func (s *Server) purgeAgentInMemory(agentID string) {
 	s.live.Remove(agentID)
 	delete(s.detailBoosts, agentID)
 	delete(s.initializationWatchCooldowns, agentID)
+	// The self-update re-enqueue throttle is keyed by agent ID: without this a
+	// re-registered agent inherits the dead one's throttle window.
+	delete(s.selfUpdateReenqueuedAt, agentID)
 	// Drop the agent's usage rows from the clients.Service mirror — the
 	// single owner of usage state. Service.mu is acquired while holding
 	// Server.mu, matching the documented Server.mu -> Service.mu lock ordering.

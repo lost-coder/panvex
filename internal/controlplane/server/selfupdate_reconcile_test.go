@@ -56,6 +56,35 @@ func TestHandleAgentUpdateRecordsPendingTarget(t *testing.T) {
 	}
 }
 
+// TestDeregisterAgentDropsPendingSelfUpdate: deregistering a node must not
+// leave its desired-state entry behind. The pending map is persisted, so a
+// leaked key survives forever — the blob would grow monotonically with
+// tombstones of dead agents, and every reconnect of any agent unmarshals it.
+func TestDeregisterAgentDropsPendingSelfUpdate(t *testing.T) {
+	srv, cookies := setupTransportModeServer(t)
+	ctx := t.Context()
+
+	if err := srv.updatesSvc.SetPendingAgentUpdate(ctx, "agent-tm-1", "1.4.0"); err != nil {
+		t.Fatalf("SetPendingAgentUpdate() error = %v", err)
+	}
+
+	resp := performJSONRequest(t, srv, http.MethodDelete, "/api/agents/agent-tm-1", nil, cookies)
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("DELETE /agents/agent-tm-1 status = %d, want %d (body=%s)",
+			resp.Code, http.StatusNoContent, resp.Body.String())
+	}
+
+	if _, ok, _ := srv.updatesSvc.PendingAgentUpdate(ctx, "agent-tm-1"); ok {
+		t.Fatal("a deregistered agent's pending self-update target must be dropped")
+	}
+	srv.mu.Lock()
+	_, throttled := srv.selfUpdateReenqueuedAt["agent-tm-1"]
+	srv.mu.Unlock()
+	if throttled {
+		t.Fatal("a deregistered agent's throttle entry must be dropped")
+	}
+}
+
 // TestReconcileAgentSelfUpdateReenqueuesForStaleVersion: the operator asked for
 // 1.4.0 while the node was offline, so the original job expired unseen (TTL
 // 10m). On reconnect the agent still reports 1.3.0 — the pending target must be
