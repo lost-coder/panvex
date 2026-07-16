@@ -155,6 +155,35 @@ func dummyPasswordHash() string {
 	return hash
 }
 
+// rehashPasswordIfStale rewrites a verified credential with the active KDF
+// profile when the stored hash does not already use it.
+//
+// Best-effort by design: the caller has already proved possession of the
+// password, so a failure to derive or persist the new hash must not fail the
+// login — the old hash stays valid and the next login retries. Callers MUST
+// only reach this after a successful VerifyPassword.
+//
+// The write goes through storeUserWithContext (whole-record PutUser), the
+// same last-writer-wins path UpdateUser uses; there is no optimistic lock on
+// user rows. A rehash therefore races an admin edit of the same user landing
+// in the same instant. The window is one login, it only fires while a user's
+// hash is stale (i.e. once per user after a profile change), and both writers
+// are already racy today — so this does not add a new class of problem.
+func (s *Service) rehashPasswordIfStale(ctx context.Context, user User, password string) {
+	if !needsRehash(user.PasswordHash) {
+		return
+	}
+	newHash, err := hashPassword(password)
+	if err != nil {
+		slog.WarnContext(ctx, "auth: password rehash failed", "user_id", user.ID, "error", err)
+		return
+	}
+	user.PasswordHash = newHash
+	if err := s.storeUserWithContext(ctx, user); err != nil {
+		slog.WarnContext(ctx, "auth: password rehash persist failed", "user_id", user.ID, "error", err)
+	}
+}
+
 // SetSessionStore attaches a persistent session store to the auth service.
 // When set, sessions are persisted on creation and loaded on restart.
 func (s *Service) SetSessionStore(sessionStore SessionStore) {
@@ -317,6 +346,14 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 	if err := s.VerifyPassword(user.PasswordHash, input.Password); err != nil {
 		return Session{}, ErrInvalidCredentials
 	}
+
+	// Migrate the credential to the active KDF profile now that we hold the
+	// plaintext and know it is correct. Without this, hashes written before
+	// the profile split (or under a previous profile) keep their old
+	// parameters forever and a `low-memory` panel still pays 96 MiB on every
+	// login — the one derivation that repeats. Only successful logins reach
+	// here, so a guesser cannot force the extra work.
+	s.rehashPasswordIfStale(ctx, user, input.Password)
 
 	if user.TotpEnabled && strings.TrimSpace(input.TotpCode) == "" {
 		return Session{}, ErrTotpRequired
