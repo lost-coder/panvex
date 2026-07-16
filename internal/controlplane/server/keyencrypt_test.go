@@ -225,9 +225,10 @@ func parseEnc3Params(t *testing.T, stored string) (iter, mem uint32, par uint8, 
 // TestDecryptPEMRejectsOversizedEnc3Params: a corrupted header must not make
 // the panel allocate gigabytes at startup.
 func TestDecryptPEMRejectsOversizedEnc3Params(t *testing.T) {
-	// t=2, m=4 GiB, p=1 + 16B salt + some bytes.
-	header := []byte{0, 0, 0, 2, 0, 64, 0, 0, 1}
-	blob := append(header, make([]byte, 16+12+16)...)
+	// t=2, m=4 GiB, p=1 + 16B salt + nonce/ciphertext-sized filler.
+	blob := make([]byte, 0, enc3HeaderLen+16+12+16)
+	blob = append(blob, 0, 0, 0, 2, 0, 64, 0, 0, 1)
+	blob = append(blob, make([]byte, 16+12+16)...)
 	stored := encryptedPEMPrefixV3 + base64.StdEncoding.EncodeToString(blob)
 
 	before := kdf.Derivations()

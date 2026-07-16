@@ -93,7 +93,7 @@ const (
 	legacyThreadV2 uint8  = 2
 
 	hashKeyLen  uint32 = 32
-	hashSaltLen        = 16
+	hashSaltLen int    = 16
 )
 
 // Sanity ceilings on params read out of our OWN database. A row corrupted by

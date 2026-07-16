@@ -131,6 +131,32 @@ dialing peer's leaf CN against `PanelClientCN`.
   use `log/slog` with the `*Context` variants (`slog.InfoContext`
   etc.) so `request_id` propagates.
 
+## KDF profile (memory footprint)
+
+Every Argon2id derivation (password hashes, CA-key blob) allocates its
+`m` parameter as a block array. `internal/controlplane/kdf` owns the
+parameters and is the ONLY place that calls `argon2.IDKey` for those two;
+it serialises derivations through a one-slot gate and forces a GC before
+releasing it, so the resident peak is one buffer no matter how many logins
+arrive at once. New Argon2 call sites for panel credentials must go through
+`kdf.IDKey`, not `argon2.IDKey` directly.
+
+```bash
+PANVEX_KDF_PROFILE=default     # (or unset) t=4, m=96 MiB, p=2 — the hardened default
+PANVEX_KDF_PROFILE=low-memory  # t=2, m=19 MiB, p=1 — OWASP low-memory config, for small devices
+```
+
+`serve` reads it at startup; an unknown value fails the boot. The profile
+applies to NEW material only — existing hashes (`argon2id$v=2$…`) and
+`ENC2:` CA blobs carry their own parameters and keep verifying. Password
+hashes are migrated to the active profile on the next successful login
+(v3 format: `argon2id$v=3$t=…,m=…,p=…$salt$hash`, self-describing); the CA
+blob moves to `ENC3:` on the next CA rotation / re-encryption.
+
+For devices with ≤512 MB RAM, also set `GOMEMLIMIT=192MiB` — it caps the
+GC's heap growth and shaves the startup peak. See
+`../docs/2026-07-16-resource-footprint.md` for the measurements.
+
 ## Commands
 
 ```bash
