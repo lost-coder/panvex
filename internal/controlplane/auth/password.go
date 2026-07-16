@@ -210,7 +210,14 @@ func verifyArgon2(saltB64, expectedB64, password string, iterations, memory uint
 	if err != nil {
 		return ErrInvalidCredentials
 	}
-	derived := kdf.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(expected)))
+	// Both formats always store hashKeyLen bytes. Deriving to len(expected)
+	// instead would let a corrupted row dictate the key size: zero-length
+	// panics inside Argon2id's blake2b, and any other length is a value we
+	// never issued. Same threat model as the parameter ceilings above.
+	if len(expected) != int(hashKeyLen) {
+		return ErrInvalidCredentials
+	}
+	derived := kdf.IDKey([]byte(password), salt, iterations, memory, parallelism, hashKeyLen)
 	if subtle.ConstantTimeCompare(expected, derived) != 1 {
 		return ErrInvalidCredentials
 	}
