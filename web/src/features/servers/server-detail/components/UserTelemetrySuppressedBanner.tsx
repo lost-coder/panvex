@@ -17,10 +17,10 @@ export function UserTelemetrySuppressedBanner(): ReactElement {
   return (
     <div
       role="status"
-      className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100"
+      className="rounded-md border border-warn/40 bg-warn-dim px-4 py-3 text-sm text-warn-text"
     >
       <div className="font-semibold">{t("detail.userTelemetrySuppressed")}</div>
-      <div className="text-amber-200/80">{t("detail.userTelemetrySuppressedDetail")}</div>
+      <div className="text-warn">{t("detail.userTelemetrySuppressedDetail")}</div>
     </div>
   );
 }
