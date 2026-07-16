@@ -94,6 +94,10 @@ var derivations atomic.Uint64
 
 // Derivations returns the number of Argon2id derivations run since process
 // start. Monotonic; intended for tests and diagnostics.
+//
+// The counter is process-global, so a test that asserts on a DELTA must not
+// run with t.Parallel() — any concurrent hash in the same binary would be
+// counted too, turning the assertion into a flake.
 func Derivations() uint64 { return derivations.Load() }
 
 // IDKey derives a key with Argon2id. It is the only argon2.IDKey call site in

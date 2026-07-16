@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/argon2"
 )
 
 // setDeriveHookForTest swaps the real Argon2id derivation for f and returns a
@@ -73,12 +75,15 @@ func TestIDKeySerializesDerivations(t *testing.T) {
 func TestIDKeyDerivesRealArgon2(t *testing.T) {
 	salt := []byte("0123456789abcdef")
 	got := IDKey([]byte("pw"), salt, 1, 64, 1, 32)
-	want := IDKey([]byte("pw"), salt, 1, 64, 1, 32)
+	// Compare against the upstream primitive directly, NOT against another
+	// IDKey call: comparing the wrapper with itself would pass even if it
+	// derived something that is not Argon2id at all.
+	want := argon2.IDKey([]byte("pw"), salt, 1, 64, 1, 32)
 	if len(got) != 32 {
 		t.Fatalf("key length = %d, want 32", len(got))
 	}
 	if string(got) != string(want) {
-		t.Fatal("IDKey must be deterministic for identical inputs")
+		t.Fatal("IDKey must return exactly what argon2.IDKey returns for the same inputs")
 	}
 	other := IDKey([]byte("pw2"), salt, 1, 64, 1, 32)
 	if string(got) == string(other) {
