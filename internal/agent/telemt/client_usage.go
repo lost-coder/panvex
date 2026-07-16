@@ -74,6 +74,14 @@ func mergeUserQuotaInfo(rows []ClientUsage, quotas []UserQuotaInfo) {
 type ClientUsageMetricsSnapshot struct {
 	Users         []ClientUsage
 	UptimeSeconds float64
+	// UserTelemetrySuppressed is true when Telemt is not emitting per-user
+	// series — either user telemetry is switched off, or the 4096-user
+	// labeled-series cap truncated them. Either way Users above is empty or
+	// incomplete and the panel's per-client traffic/quota figures go stale,
+	// so the flag is reported upstream to raise a warning banner. Healthy
+	// (false) is the zero value and the default for an older Telemt that
+	// exports neither marker.
+	UserTelemetrySuppressed bool
 }
 
 // FetchClientUsageFromMetrics fetches the Prometheus /metrics endpoint and returns per-client usage.
@@ -149,5 +157,9 @@ func (c *Client) FetchClientUsageFromMetrics(ctx context.Context) (ClientUsageMe
 	return ClientUsageMetricsSnapshot{
 		Users:         result,
 		UptimeSeconds: parsed.UptimeSeconds,
+		// Either marker is sufficient: telemetry switched off means the
+		// series never exist, the suppressed marker means Telemt stopped
+		// emitting them (off, or truncated at the labeled-series cap).
+		UserTelemetrySuppressed: !parsed.UserTelemetryEnabled || parsed.UserSeriesSuppressed,
 	}, nil
 }
