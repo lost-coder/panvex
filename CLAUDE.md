@@ -77,8 +77,9 @@ Workspace-level dirs live one level up: `../scripts/` (dev fleet), `../.tmp/`
 Each agent has a `transport_mode` field in the `agents` table (`inbound` or
 `outbound`). In `inbound` mode the agent dials the panel (default). In
 `outbound` (reverse) mode the panel dials an agent that is already listening.
-To enroll an outbound agent: call `POST /api/agents/{id}/install-command`
-to get a `curl ... | bash` one-liner with a short-lived bootstrap token; the
+To enroll an outbound agent: call `POST /api/agents/provision-outbound`, which
+inserts the agent row and returns a `curl ... | bash` one-liner with a
+short-lived bootstrap token in one round-trip; the
 agent starts with `--mode=reverse`, sends a CSR via the `EnrollOutbound` gRPC
 call, and the panel signs and returns the cert. Switching an existing agent is
 done via `PUT /api/agents/{id}/transport-mode`, which persists the new mode,

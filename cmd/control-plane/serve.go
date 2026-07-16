@@ -203,40 +203,16 @@ func runServe(args []string) error {
 	manager := agenttransport.NewManager(queries, api.RunAgentSession, outboundTLS, logger)
 	api.SetAgentTransportManager(manager)
 
-	// Шов 1: wire the install-command handler so POST /agents/{id}/install-command
-	// returns a curl | bash one-liner instead of 503. PanelURL is the gRPC
-	// endpoint agents dial. ScriptURL and PanelCAPin are derived from the
-	// panel's CA certificate; PanelCN is the protocol-fixed client cert CN.
+	// PR-2c: one-shot provisioning for outbound (reverse-mode) agents.
 	//
-	// Q-05: ScriptURL is the panel's own /install-agent.sh route — see
+	// Q-05: the curl | bash one-liner the handler renders points at the
+	// panel's own /install-agent.sh route — see
 	// internal/controlplane/server/install_script.go. The script is embedded
-	// into the binary, so the curl|bash one-liner the install-command handler
-	// generates works against any reachable panel host. Operators with a
-	// custom domain set PANVEX_INSTALL_SCRIPT_URL to override.
+	// into the binary, so the command works against any reachable panel host.
+	// Operators with a custom domain set PANVEX_INSTALL_SCRIPT_URL to
+	// override. The script URL + gRPC endpoint are resolved live inside the
+	// handler (Plan 4), so only the CA pin / CN / clock are passed here.
 	if queries != nil {
-		installHandler := bootstrap.NewInstallCommandHandler(queries, bootstrap.InstallCommandConfig{
-			// Plan 4: resolve the script URL + gRPC endpoint LIVE per
-			// request from the panel settings (http.public_url /
-			// grpc.public_endpoint) so a saved change takes effect without
-			// a restart. The method values close over the *server.Server.
-			ScriptURLFn: api.ResolveInstallScriptURL,
-			// S-3: bind the install-command to the embedded script body
-			// the panel is serving right now. The shell one-liner verifies
-			// the downloaded body before sudo-bash, and the script self-
-			// checks PANVEX_INSTALL_SCRIPT_SHA256 (T-5). A TLS-MITM that
-			// rewrites /install-agent.sh therefore cannot escalate.
-			ScriptHash: server.InstallScriptSHA256(),
-			PanelCAPin: api.CAPINHex(),
-			PanelCN:    server.PanelClientCN,
-			PanelURLFn: api.ResolveAgentGRPCEndpoint,
-			Now:        time.Now,
-		})
-		api.SetInstallCommandHandler(installHandler)
-
-		// PR-2c: the provision-outbound handler renders the same curl as
-		// POST /agents/{id}/install-command. The script URL + gRPC endpoint
-		// are now resolved live inside the handler (Plan 4), so only the CA
-		// pin / CN / clock are passed here.
 		api.SetProvisionOutboundDeps(&server.ProvisionOutboundDeps{
 			Queries:    queries,
 			PanelCAPin: api.CAPINHex(),

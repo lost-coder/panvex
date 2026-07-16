@@ -340,8 +340,8 @@ paths:
         the agent row, issues a 5-minute bootstrap token, and returns the
         pre-baked `curl ... | sudo bash` one-liner the operator pastes on
         the agent host. Combines what would otherwise be `POST /agents`
-        (no such endpoint today) and `POST /agents/{id}/install-command`
-        into a single round-trip, mirroring the simplicity of the inbound
+        (no such endpoint today) and the bootstrap-token issuance into a
+        single round-trip, mirroring the simplicity of the inbound
         `POST /agents/enrollment-tokens` flow.
 
         Cancellation: if the operator backs out of the wizard before
@@ -369,42 +369,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
-        '503':
-          description: Install-command endpoint not configured.
-          content:
-            text/plain:
-              schema:
-                type: string
-
-  /api/agents/{id}/install-command:
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-    post:
-      operationId: createAgentInstallCommand
-      summary: Generate a one-line installer for an outbound agent
-      description: |
-        Issues a fresh bootstrap token (replacing any prior token)
-        and returns a `curl ... | sudo bash` one-liner the operator
-        runs on the agent host. Available only for agents already
-        in `outbound` transport mode.
-      tags: [agents]
-      responses:
-        '200':
-          description: Install command issued.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/InstallCommandResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '503':
           description: Install-command endpoint not configured.
           content:
@@ -1157,8 +1121,8 @@ components:
     ProvisionOutboundAgentResponse:
       type: object
       description: |
-        Returned by `POST /api/agents/provision-outbound`. Mirrors
-        InstallCommandResponse plus the freshly-minted agent_id so the
+        Returned by `POST /api/agents/provision-outbound`: the install
+        one-liner and its expiry, plus the freshly-minted agent_id so the
         wizard can poll `GET /api/agents/{id}` for the first connection
         and call `DELETE /api/agents/{id}` on cancel.
       required: [agent_id, command, expires_at_unix, script_url]
@@ -1176,20 +1140,6 @@ components:
           description: |
             The URL the curl in the command points at — exposed so the
             wizard can show the operator which source was used.
-
-    InstallCommandResponse:
-      type: object
-      description: |
-        Pre-baked `curl ... | sudo bash -s -- ...` one-liner the
-        operator runs on the host to install or re-bootstrap a
-        reverse-mode agent.
-      required: [command, expires_at_unix]
-      properties:
-        command:
-          type: string
-        expires_at_unix:
-          type: integer
-          format: int64
 
     CreateCertificateRecoveryGrantRequest:
       type: object

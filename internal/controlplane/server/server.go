@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/lost-coder/panvex/internal/controlplane/agents"
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
@@ -446,13 +445,6 @@ type Server struct {
 	usernameHashMu       sync.Mutex
 	usernameHashKeyBytes []byte
 
-	// installCommandHandler issues one-shot curl | bash install commands for
-	// outbound (reverse-mode) agents. Nil until wired in via
-	// SetInstallCommandHandler; the route returns 503 when nil. atomic.Pointer
-	// keeps load/store race-free even though the setter is currently only
-	// called once at startup.
-	installCommandHandler atomic.Pointer[bootstrap.InstallCommandHandler]
-
 	// agentTransportManager owns the lifecycle of outbound (reverse-mode)
 	// supervisors. Nil until wired via SetAgentTransportManager; the
 	// transport-mode change handler notifies it when an agent's mode
@@ -542,13 +534,6 @@ func (s *Server) PanelClientCertificate() tls.Certificate {
 	return s.authority.clientCertificate
 }
 
-// SetInstallCommandHandler wires the bootstrap install-command handler. Safe
-// to call concurrently with HTTP requests. Nil h is accepted — the route
-// returns 503 until a non-nil handler is provided.
-func (s *Server) SetInstallCommandHandler(h *bootstrap.InstallCommandHandler) {
-	s.installCommandHandler.Store(h)
-}
-
 // Gateway returns the agent gRPC gateway, for serve.go registration and
 // tests that exercise the Connect/RenewCertificate/ReportEnrollmentSteps
 // surface via the full Server.
@@ -610,33 +595,6 @@ func (s *Server) SetAgentTransportManager(m *agenttransport.Manager) {
 func (s *Server) notifyTransportManager(ctx context.Context, agentID string) {
 	if m := s.agentTransportManager.Load(); m != nil {
 		m.OnNodeChanged(ctx, agentID)
-	}
-}
-
-// handleAgentInstallCommand returns an http.HandlerFunc that delegates to the
-// install-command handler. Returns 503 if the handler has not been configured.
-// Emits a bootstrap.token_issued audit event on success (HTTP 200).
-func (s *Server) handleAgentInstallCommand() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		session, _, err := s.requireSession(r)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-
-		h := s.installCommandHandler.Load()
-		if h == nil {
-			http.Error(w, "install-command endpoint not configured", http.StatusServiceUnavailable)
-			return
-		}
-		// Wrap the response writer so we can detect a successful response and
-		// emit an audit event without touching the bootstrap package.
-		rw := &installStatusCapture{ResponseWriter: w}
-		h.ServeHTTP(rw, r)
-		if rw.status == 0 || rw.status == http.StatusOK {
-			agentID := chi.URLParam(r, "id")
-			s.appendAuditWithContext(r.Context(), session.UserID, "bootstrap.token_issued", agentID, nil)
-		}
 	}
 }
 

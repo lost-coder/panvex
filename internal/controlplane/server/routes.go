@@ -238,10 +238,6 @@ func (s *Server) routes() http.Handler {
 					admin.With(sensitive).Post("/agents/{id}/certificate-recovery-grants/revoke", oapi.RevokeAgentCertificateRecoveryGrant)
 					admin.With(sensitive).Delete("/agents/{id}", oapi.DeregisterAgent)
 					admin.With(sensitive).Put("/agents/{id}/transport-mode", oapi.UpdateAgentTransportMode)
-					// ScriptURL/PanelCAPin/PanelCN are wired in cmd/control-plane/serve.go
-					// at NewInstallCommandHandler — see install_script.go for the
-					// embedded /install-agent.sh route the URL points to. (Q-05)
-					admin.With(sensitive).Post("/agents/{id}/install-command", oapi.CreateAgentInstallCommand)
 					// PR-2c: one-shot provisioning for outbound (reverse-mode)
 					// agents. Combines the agent-row INSERT and the install-
 					// command issuance into a single round-trip so the wizard's
