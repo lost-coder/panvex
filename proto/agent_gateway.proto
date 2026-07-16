@@ -263,6 +263,12 @@ message RuntimeSnapshot {
   // newer Telemt can add classes without an agent or panel upgrade.
   repeated ConnectionsClassCount connections_bad_by_class = 39;
   repeated ConnectionsClassCount handshake_failures_by_class = 40;
+
+  // True when Telemt is not emitting per-user series (user telemetry switched
+  // off, or the 4096-user labeled-series cap truncated them): per-client
+  // usage/quota numbers shown by the panel are stale or zero. Matches the
+  // telemt_unreachable polarity — proto3 default false is the healthy case.
+  bool user_telemetry_suppressed = 41;
 }
 
 // ConnectionsClassCount carries a single (class, total) row from
