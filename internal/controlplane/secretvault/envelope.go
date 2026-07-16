@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/crypto/argon2"
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
 )
 
 // Envelope encryption (Wave 5.2).
@@ -149,7 +149,9 @@ func NewWithEnvelope(ctx context.Context, passphrase string, domains []string, s
 // existing master derivation in NewWithSalt byte-for-byte so the KEK
 // is identical to what PVS2 used as the master input.
 func deriveKEK(passphrase string) []byte {
-	return argon2.IDKey([]byte(passphrase), []byte(masterSalt), argon2Time, argon2Memory, argon2Threads, keyLen)
+	// Serialised via kdf.IDKey (see NewWithSalt); parameters unchanged so the
+	// KEK stays byte-identical to what PVS2 derived.
+	return kdf.IDKey([]byte(passphrase), []byte(masterSalt), argon2Time, argon2Memory, argon2Threads, keyLen)
 }
 
 // verifyOrStoreKEKFingerprint plants SHA-256(KEK) into cp_secrets on

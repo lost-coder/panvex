@@ -1,9 +1,13 @@
 package secretvault
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
+	"golang.org/x/crypto/argon2"
 )
 
 const (
@@ -198,5 +202,38 @@ func TestNilVaultIsPassthrough(t *testing.T) {
 	}
 	if got != "x" {
 		t.Fatalf("nil Encrypt() = %q, want x", got)
+	}
+}
+
+// TestMasterDerivationGoesThroughKDFGate pins that the vault's Argon2id
+// master derivation is serialised with every other one in the panel. It runs
+// at startup (server lifecycle) next to the CA-key decrypt and the admin
+// bootstrap hash; outside the gate its 64 MiB block array stacks on top of
+// theirs instead of peaking one buffer at a time
+// (see docs/2026-07-16-resource-footprint.md).
+func TestMasterDerivationGoesThroughKDFGate(t *testing.T) {
+	before := kdf.Derivations()
+	v, err := NewWithSalt("test-passphrase", []string{domainClient}, []byte("panvex-test-hkdf-salt-16b"))
+	if err != nil {
+		t.Fatalf("NewWithSalt: %v", err)
+	}
+	if !v.enabled {
+		t.Fatal("vault must be enabled")
+	}
+	if got := kdf.Derivations() - before; got != 1 {
+		t.Fatalf("master derivation must go through kdf.IDKey exactly once, got %d", got)
+	}
+}
+
+// TestMasterDerivationParamsUnchanged is the compatibility guard for routing
+// the derivation through kdf: the key MUST stay byte-identical to the
+// hardcoded 3 / 64 MiB / 2 derivation, or every stored secret becomes
+// undecryptable. The vault's params are deliberately NOT profile-driven —
+// the master key must be reproducible across restarts and installs.
+func TestMasterDerivationParamsUnchanged(t *testing.T) {
+	want := argon2.IDKey([]byte("test-passphrase"), []byte(masterSalt), 3, 64*1024, 2, 32)
+	got := deriveKEK("test-passphrase")
+	if !bytes.Equal(got, want) {
+		t.Fatal("KEK derivation must stay byte-identical to the legacy 3/64MiB/2 parameters")
 	}
 }

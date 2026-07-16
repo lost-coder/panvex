@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/agenttransport"
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
@@ -408,5 +409,126 @@ func TestIssueAgentCertificateFromCSRAcceptsP256Key(t *testing.T) {
 	}
 	if issued.CertificatePEM == "" {
 		t.Fatal("issued.CertificatePEM is empty")
+	}
+}
+
+// TestLoadExistingCAWithCurrentBlobDoesNotReEncrypt pins the anti-loop
+// invariant that needsReEncryption exists to enforce: a CA key already stored
+// in a current format must be left alone. Before this test the check ran
+// against record.PrivateKeyPEM *after* it had been overwritten with the
+// decrypted plaintext, so it was always true — every single startup paid an
+// extra Argon2id derivation (96 MiB on the default profile) and rewrote the
+// CA row. Both are load-bearing for the startup footprint.
+func TestLoadExistingCAWithCurrentBlobDoesNotReEncrypt(t *testing.T) {
+	const encryptionKey = "test-encryption-key-32-bytes!!!!"
+	now := time.Now()
+
+	store := newCAStoreForTest(t)
+	authority, err := newCertificateAuthority(now)
+	if err != nil {
+		t.Fatalf("newCertificateAuthority: %v", err)
+	}
+	rec, err := authority.record(context.Background(), now, encryptionKey)
+	if err != nil {
+		t.Fatalf("authority.record: %v", err)
+	}
+	if err := store.PutCertificateAuthority(context.Background(), rec); err != nil {
+		t.Fatalf("PutCertificateAuthority: %v", err)
+	}
+	seeded, err := store.GetCertificateAuthority(context.Background())
+	if err != nil {
+		t.Fatalf("GetCertificateAuthority: %v", err)
+	}
+
+	derivationsBefore := kdf.Derivations()
+	if _, err := loadOrCreateCertificateAuthority(context.Background(), store, now, encryptionKey); err != nil {
+		t.Fatalf("loadOrCreateCertificateAuthority: %v", err)
+	}
+
+	after, err := store.GetCertificateAuthority(context.Background())
+	if err != nil {
+		t.Fatalf("GetCertificateAuthority after load: %v", err)
+	}
+	if after.PrivateKeyPEM != seeded.PrivateKeyPEM {
+		t.Fatal("a CA key already in the current format must not be re-encrypted on load")
+	}
+	// Exactly one derivation: the decrypt. A re-encrypt would add a second.
+	if got := kdf.Derivations() - derivationsBefore; got != 1 {
+		t.Fatalf("loading a current CA blob must derive exactly once (decrypt), got %d", got)
+	}
+}
+
+// TestLoadExistingCAWithLegacyEnc2BlobIsNotRewritten is the counterpart: an ENC2
+// blob keeps decrypting (no lockout) but is NOT rewritten either — ENC2 is
+// still a current, supported format, so a profile change must not trigger a
+// startup rewrite of the CA row.
+func TestLoadExistingCAWithLegacyEnc2BlobIsNotRewritten(t *testing.T) {
+	const encryptionKey = "test-encryption-key-32-bytes!!!!"
+	now := time.Now()
+
+	store := newCAStoreForTest(t)
+	authority, err := newCertificateAuthority(now)
+	if err != nil {
+		t.Fatalf("newCertificateAuthority: %v", err)
+	}
+	t.Setenv(EnvAllowPlaintextCA, "1")
+	plainRec, err := authority.record(context.Background(), now, "")
+	if err != nil {
+		t.Fatalf("authority.record: %v", err)
+	}
+	plainRec.PrivateKeyPEM = seedLegacyEnc2Blob(t, plainRec.PrivateKeyPEM, encryptionKey)
+	if err := store.PutCertificateAuthority(context.Background(), plainRec); err != nil {
+		t.Fatalf("PutCertificateAuthority: %v", err)
+	}
+
+	if _, err := loadOrCreateCertificateAuthority(context.Background(), store, now, encryptionKey); err != nil {
+		t.Fatalf("legacy ENC2 CA must load: %v", err)
+	}
+	after, err := store.GetCertificateAuthority(context.Background())
+	if err != nil {
+		t.Fatalf("GetCertificateAuthority: %v", err)
+	}
+	if !strings.HasPrefix(after.PrivateKeyPEM, encryptedPEMPrefixV2) {
+		t.Fatalf("ENC2 blob must be left as-is, got prefix %.5q", after.PrivateKeyPEM)
+	}
+}
+
+// TestLoadExistingCAPlaintextWithKeyFailsLoud documents the one remaining
+// input needsReEncryption would fire on: a plaintext key with an encryption
+// key configured. decryptPEM refuses it first, so the opportunistic
+// re-encryption never runs — the operator is told to fix it explicitly rather
+// than having the panel silently rewrite the record. This test exists so the
+// unreachable branch is a deliberate, pinned state and not an accident.
+func TestLoadExistingCAPlaintextWithKeyFailsLoud(t *testing.T) {
+	const encryptionKey = "test-encryption-key-32-bytes!!!!"
+	now := time.Now()
+
+	store := newCAStoreForTest(t)
+	authority, err := newCertificateAuthority(now)
+	if err != nil {
+		t.Fatalf("newCertificateAuthority: %v", err)
+	}
+	t.Setenv(EnvAllowPlaintextCA, "1")
+	plainRec, err := authority.record(context.Background(), now, "")
+	if err != nil {
+		t.Fatalf("authority.record: %v", err)
+	}
+	if err := store.PutCertificateAuthority(context.Background(), plainRec); err != nil {
+		t.Fatalf("PutCertificateAuthority: %v", err)
+	}
+
+	_, err = loadOrCreateCertificateAuthority(context.Background(), store, now, encryptionKey)
+	if err == nil {
+		t.Fatal("plaintext CA with an encryption key configured must fail loud")
+	}
+	if !strings.Contains(err.Error(), "stored without encryption") {
+		t.Fatalf("err = %q, want the plaintext-with-key rejection", err)
+	}
+	after, getErr := store.GetCertificateAuthority(context.Background())
+	if getErr != nil {
+		t.Fatalf("GetCertificateAuthority: %v", getErr)
+	}
+	if after.PrivateKeyPEM != plainRec.PrivateKeyPEM {
+		t.Fatal("a rejected load must not rewrite the stored record")
 	}
 }

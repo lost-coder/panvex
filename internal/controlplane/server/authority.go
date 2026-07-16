@@ -164,9 +164,17 @@ func loadExistingCertificateAuthority(ctx context.Context, store storage.Certifi
 	// encryption key is configured — decryptPEM only runs when encryptionKey
 	// is set, so we must guard here to avoid silently treating the blob as
 	// plaintext PEM (which would produce a confusing decode error).
-	if isEncryptedPEM(record.PrivateKeyPEM) && !strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefixV2) {
+	if isEncryptedPEM(record.PrivateKeyPEM) &&
+		!strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefixV2) &&
+		!strings.HasPrefix(record.PrivateKeyPEM, encryptedPEMPrefixV3) {
 		return nil, errors.New("CA private key: legacy ENC:v1 format is no longer supported (pre-release format removed); delete the stored certificate authority record and re-bootstrap, or restore an ENC2: backup")
 	}
+
+	// Decide on re-encryption from the value AS STORED. Below, decryption
+	// overwrites record.PrivateKeyPEM with the plaintext key; testing that
+	// copy would report "needs re-encryption" unconditionally and rewrite the
+	// CA row — plus burn a second Argon2id derivation — on every startup.
+	storedNeedsReEncryption := needsReEncryption(record.PrivateKeyPEM)
 
 	if encryptionKey != "" {
 		decrypted, decErr := decryptPEM(record.PrivateKeyPEM, encryptionKey)
@@ -185,7 +193,7 @@ func loadExistingCertificateAuthority(ctx context.Context, store storage.Certifi
 		return regenAuth, regenErr
 	}
 
-	if encryptionKey != "" && needsReEncryption(record.PrivateKeyPEM) {
+	if encryptionKey != "" && storedNeedsReEncryption {
 		if err := reEncryptCertificateAuthority(ctx, store, authority, now, encryptionKey); err != nil {
 			return nil, err
 		}

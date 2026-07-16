@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
-	"golang.org/x/crypto/argon2"
 )
 
 // restoreConsumedTotp rebuilds the in-memory consumed-TOTP map from
@@ -106,38 +106,68 @@ func (s *Service) effectiveSessionIdleTimeout() time.Duration {
 	return sessionIdleTimeout
 }
 
-// dummyPasswordHash is used to equalise login latency when the supplied
-// username does not exist, so timing does not leak user-enumeration signal.
-// It is computed once on first use; the derived hash value is discarded
-// (it is never compared for equality), only the Argon2id CPU cost matters.
+// dummyPasswordHash returns a throwaway hash used to equalise login latency
+// when the supplied username does not exist, so timing does not leak a
+// user-enumeration signal. Its stored bytes are never compared for equality —
+// only the Argon2id cost of VERIFYING against them matters — so it is filled
+// with random bytes rather than derived. Building it therefore costs no
+// derivation, and the unknown-user path costs exactly what a real user's failed
+// login costs: one.
 //
 // CRITICAL: this MUST emit the SAME format and SAME Argon2id params as the
-// current hashPassword in password.go. Otherwise verifyPassword routes the
-// dummy through a different branch (e.g. legacy 3-part path with 3 iters /
-// 64 MiB) and the unknown-user code path burns measurably less CPU than the
-// real-user path with a v=2 hash (4 iters / 96 MiB) — reopening the
-// user-enumeration timing oracle that this dummy hash exists to close
-// (C-1 follow-up).
-var dummyPasswordHash = sync.OnceValue(func() string {
+// current hashPassword in password.go, i.e. the active profile's. Otherwise
+// verifyPassword routes the dummy through a different branch (a cheaper
+// parameter set, or a rejected format that derives nothing at all) and the
+// unknown-user path burns measurably less CPU than the real-user path —
+// reopening the user-enumeration timing oracle this dummy exists to close
+// (C-1 follow-up). Pinned by TestDummyPasswordHashMatchesCurrentFormat and
+// TestDummyPasswordHashCostsNoDerivationToBuild.
+func dummyPasswordHash() string {
+	p := kdf.Active()
 	salt := make([]byte, hashSaltLen)
-	dummyPwd := make([]byte, hashKeyLen)
+	derived := make([]byte, hashKeyLen)
 	if _, err := rand.Read(salt); err != nil {
-		// Fall back to derived bytes — the value is meaningless, we just need
-		// a well-formed input for VerifyPassword to derive on.
+		// The values are meaningless — we only need a well-formed input for
+		// VerifyPassword to derive against — so a dead entropy source must not
+		// take the login path down with it.
 		for i := range salt {
 			salt[i] = byte(i * 17)
 		}
 	}
-	if _, err := rand.Read(dummyPwd); err != nil {
-		copy(dummyPwd, salt)
+	if _, err := rand.Read(derived); err != nil {
+		copy(derived, salt)
 	}
-	derived := argon2.IDKey(dummyPwd, salt, hashIterV2, hashMemV2, hashParallelism, hashKeyLen)
-	return fmt.Sprintf("%s$%s$%s$%s",
-		hashSchemeArgon2id,
-		hashVersionTagV2,
-		base64.RawStdEncoding.EncodeToString(salt),
-		base64.RawStdEncoding.EncodeToString(derived))
-})
+	return formatHashV3(p, salt, derived)
+}
+
+// rehashPasswordIfStale rewrites a verified credential with the active KDF
+// profile when the stored hash does not already use it.
+//
+// Best-effort by design: the caller has already proved possession of the
+// password, so a failure to derive or persist the new hash must not fail the
+// login — the old hash stays valid and the next login retries. Callers MUST
+// only reach this after a successful VerifyPassword.
+//
+// The write goes through storeUserWithContext (whole-record PutUser), the
+// same last-writer-wins path UpdateUser uses; there is no optimistic lock on
+// user rows. A rehash therefore races an admin edit of the same user landing
+// in the same instant. The window is one login, it only fires while a user's
+// hash is stale (i.e. once per user after a profile change), and both writers
+// are already racy today — so this does not add a new class of problem.
+func (s *Service) rehashPasswordIfStale(ctx context.Context, user User, password string) {
+	if !needsRehash(user.PasswordHash) {
+		return
+	}
+	newHash, err := hashPassword(password)
+	if err != nil {
+		slog.WarnContext(ctx, "auth: password rehash failed", "user_id", user.ID, "error", err)
+		return
+	}
+	user.PasswordHash = newHash
+	if err := s.storeUserWithContext(ctx, user); err != nil {
+		slog.WarnContext(ctx, "auth: password rehash persist failed", "user_id", user.ID, "error", err)
+	}
+}
 
 // SetSessionStore attaches a persistent session store to the auth service.
 // When set, sessions are persisted on creation and loaded on restart.
@@ -301,6 +331,14 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 	if err := s.VerifyPassword(user.PasswordHash, input.Password); err != nil {
 		return Session{}, ErrInvalidCredentials
 	}
+
+	// Migrate the credential to the active KDF profile now that we hold the
+	// plaintext and know it is correct. Without this, hashes written before
+	// the profile split (or under a previous profile) keep their old
+	// parameters forever and a `low-memory` panel still pays 96 MiB on every
+	// login — the one derivation that repeats. Only successful logins reach
+	// here, so a guesser cannot force the extra work.
+	s.rehashPasswordIfStale(ctx, user, input.Password)
 
 	if user.TotpEnabled && strings.TrimSpace(input.TotpCode) == "" {
 		return Session{}, ErrTotpRequired

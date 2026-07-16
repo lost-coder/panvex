@@ -15,6 +15,7 @@ import (
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/config"
+	"github.com/lost-coder/panvex/internal/controlplane/kdf"
 	"golang.org/x/term"
 )
 
@@ -60,6 +61,16 @@ func runBootstrapAdmin(args []string) error {
 	storageDSN := flags.String(flagStorageDSN, "", helpStorageDSN)
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+
+	// This command writes the first password hash on the box, so it honours
+	// the same profile selection as serve. Without it a low-memory install
+	// gets a default-profile (96 MiB) hash from the CLI and pays that cost on
+	// the operator's first login — on the very hardware the profile exists
+	// for. An unknown value fails the command rather than silently hashing at
+	// a different cost.
+	if err := kdf.SetActiveProfile(strings.TrimSpace(os.Getenv("PANVEX_KDF_PROFILE"))); err != nil {
+		return fmt.Errorf("PANVEX_KDF_PROFILE: %w", err)
 	}
 
 	passwordFlagSet := false
