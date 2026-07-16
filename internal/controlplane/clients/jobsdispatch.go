@@ -74,6 +74,9 @@ type ClientResetQuotaJobPayload struct {
 	Name     string `json:"name"`
 }
 
+// ClientJobPayload mirrors the agent's clientJobPayload
+// (internal/agent/runtime/agent.go). Keep the JSON tags in lockstep — any
+// drift here breaks the agent's payload decode.
 type ClientJobPayload struct {
 	ClientID          string `json:"client_id"`
 	Name              string `json:"name"`
@@ -84,10 +87,31 @@ type ClientJobPayload struct {
 	MaxUniqueIPs      int    `json:"max_unique_ips"`
 	DataQuotaBytes    int64  `json:"data_quota_bytes"`
 	ExpirationRFC3339 string `json:"expiration_rfc3339"`
+
+	// NameOwnerByAgent is set on client.delete ONLY: agentID -> the ID of the
+	// client that, in panel state, currently owns Name on THAT agent. Absent
+	// for every agent where nobody but the client being deleted holds the name
+	// — which is the overwhelmingly common case, so the map is normally
+	// omitted entirely.
+	//
+	// It exists because the agent cannot answer "did this name change hands?"
+	// on its own after a restart: its clientID->name registry is cold, and the
+	// only other local evidence — the secret Telemt holds for the user —
+	// mismatches for TWO indistinguishable reasons (someone took the name, OR
+	// a rotate for this same client never reached the node and was superseded
+	// by this delete). The panel knows which, so it says so.
+	//
+	// PER-AGENT, not global: one delete job fans out to every agent that still
+	// hosts the client with ONE shared payload, and the Telemt user "alice" on
+	// agent-2 belongs to whichever client is deployed to agent-2. A name
+	// re-used on agent-1 must never suppress the delete on agent-2 — that
+	// would strand a live user the panel reports as deleted. Hence a map
+	// rather than a bool or a bare owner ID.
+	NameOwnerByAgent map[string]string `json:"name_owner_by_agent,omitempty"`
 }
 
 func (s *Service) EnqueueClientJob(ctx context.Context, actorID string, action jobs.Action, client Client, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
-	payloadJSON, err := json.Marshal(ClientJobPayload{
+	payload := ClientJobPayload{
 		ClientID:          string(client.ID),
 		Name:              client.Name,
 		Secret:            client.Secret,
@@ -97,7 +121,16 @@ func (s *Service) EnqueueClientJob(ctx context.Context, actorID string, action j
 		MaxUniqueIPs:      client.MaxUniqueIPs,
 		DataQuotaBytes:    client.DataQuotaBytes,
 		ExpirationRFC3339: client.ExpirationRFC3339,
-	})
+	}
+	if action == jobs.ActionClientDelete {
+		// Computed HERE, at every (re-)enqueue, rather than by the callers:
+		// the reconciler re-enqueues an expired delete with a fresh CreatedAt
+		// precisely when the name may have been re-used since, so a value
+		// carried over from the first enqueue would be exactly the stale
+		// answer that reopens the hole.
+		payload.NameOwnerByAgent = s.nameOwnersByAgent(client.Name, client.ID, targetAgentIDs)
+	}
+	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return jobs.Job{}, err
 	}
@@ -120,4 +153,52 @@ func (s *Service) EnqueueClientJob(ctx context.Context, actorID string, action j
 	s.deps.PublishJobCreated(job)
 
 	return job, nil
+}
+
+// nameOwnersByAgent answers, for each of the given agents, which OTHER living
+// client currently owns name on that agent — i.e. which client's Telemt user
+// would be destroyed if an agent there deleted the user by name alone. Returns
+// nil when no agent has such an owner, so the payload key is omitted.
+//
+// A client counts as an owner on an agent when it is (a) not excludeID, (b)
+// living — a tombstoned client's user is itself being torn down, so it never
+// protects the name — and (c) has a deployment row for that agent whose
+// desired operation is not itself a delete. Excluding delete-desired
+// deployments only ever makes the agent MORE willing to delete, and both
+// clients want the user gone in that case; the opposite bias (over-reporting
+// owners) is the one that strands users.
+//
+// Walks mirrorNamesIndex[name], so it is O(clients-with-that-name × agents) —
+// and the panel enforces global name uniqueness among living clients, so in
+// practice that is at most one candidate.
+func (s *Service) nameOwnersByAgent(name string, excludeID ClientID, agentIDs []string) map[string]string {
+	if name == "" || len(agentIDs) == 0 {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var owners map[string]string
+	for id := range s.mirrorNamesIndex[name] {
+		if id == excludeID {
+			continue
+		}
+		c, ok := s.mirrorClients[id]
+		if !ok || c.DeletedAt != nil {
+			continue
+		}
+		byAgent := s.mirrorDeployments[id]
+		for _, agentID := range agentIDs {
+			deployment, ok := byAgent[agentID]
+			if !ok || deployment.DesiredOperation == string(jobs.ActionClientDelete) {
+				continue
+			}
+			if owners == nil {
+				owners = make(map[string]string, 1)
+			}
+			owners[agentID] = string(id)
+		}
+	}
+	return owners
 }

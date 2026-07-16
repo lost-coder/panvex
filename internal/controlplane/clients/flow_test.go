@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -178,7 +179,7 @@ func TestCreateHappyPathPersistsBeforeEnqueueAndPublishes(t *testing.T) {
 		DataQuotaBytes:    1024,
 		ExpirationRFC3339: "2026-06-01T00:00:00Z",
 	}
-	if payload != want {
+	if !reflect.DeepEqual(payload, want) {
 		t.Fatalf("payload = %+v, want %+v", payload, want)
 	}
 

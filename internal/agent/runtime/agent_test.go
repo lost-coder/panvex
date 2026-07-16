@@ -676,8 +676,12 @@ func TestAgentHandleJobDeleteAbsentClientIsIdempotent(t *testing.T) {
 // re-enqueued with a fresh CreatedAt, so it can land AFTER an operator created
 // a new client re-using the freed name. Deleting the Telemt user by name would
 // erase the new client's user, so the agent must skip the superseded delete.
-// The tombstoned client's own stale registry entry is present alongside the new
-// owner's — the guard must look for ANY OTHER owner of the name.
+//
+// This is the WARM-registry source: the agent applied client-new's create
+// itself, so its own registry proves the takeover without any help from the
+// panel. setClientName is last-writer-wins, so seeding both names leaves only
+// client-new->alice — the guard must find that OTHER owner from a payload that
+// names client-old.
 func TestAgentHandleJobDeleteSupersededWhenNameOwnedByOtherClient(t *testing.T) {
 	client := &fakeTelemtClient{}
 	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
@@ -710,33 +714,116 @@ func TestAgentHandleJobDeleteSupersededWhenNameOwnedByOtherClient(t *testing.T) 
 	}
 }
 
-// TestAgentHandleJobDeleteProceedsWhenRegistryWarmAndSecretDiffers pins that the
-// secret probe is a COLD-registry fallback only. A warm entry for the payload's
-// own clientID proves nobody else holds the name (setClientName is
-// last-writer-wins), so a secret mismatch here means the node's Telemt config
-// drifted from the panel — not a takeover. Reachable with no name reuse at all:
-// a rotate that stayed pending on an offline node is superseded by the delete
-// (both key on client_id), so the node keeps the pre-rotate secret while the
-// delete payload carries the post-rotate one. Skipping would leave the user
-// live on the node while the panel reports it deleted.
-func TestAgentHandleJobDeleteProceedsWhenRegistryWarmAndSecretDiffers(t *testing.T) {
+// TestAgentHandleJobDeleteSupersededByPanelNameOwnerAfterRestart is the
+// COLD-registry source: the agent rebooted, so it cannot know locally that the
+// name changed hands. The panel does know, and says so per target agent in
+// name_owner_by_agent. An entry for THIS agent naming a different client is
+// proof of takeover — skip.
+func TestAgentHandleJobDeleteSupersededByPanelNameOwnerAfterRestart(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-panel-owner",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-old","name_owner_by_agent":{"agent-1":"client-new"}}`,
+	}, time.Date(2026, time.July, 16, 10, 5, 0, 0, time.UTC))
+
+	if !result.Success || client.deleteCalls != 0 {
+		t.Fatalf("panel-signalled takeover must be a superseded no-op: success=%v deleteCalls=%d", result.Success, client.deleteCalls)
+	}
+}
+
+// TestAgentHandleJobDeleteProceedsWhenNoPanelNameOwnerAfterRestart pins the
+// cause the secret probe used to get WRONG. Cold registry, no name reuse at
+// all: a client.rotate that stayed pending on an offline node is superseded by
+// this very delete (clients/jobsupersede.go keys on client_id), so the node
+// still holds the pre-rotate secret while the payload carries the post-rotate
+// one. The old probe read that as a takeover and skipped — leaving the user
+// live on the node while the panel reported it deleted. The panel names no
+// other owner, so the delete MUST proceed. discoverCalls==0 pins that the
+// Telemt round-trip is gone from this path.
+func TestAgentHandleJobDeleteProceedsWhenNoPanelNameOwnerAfterRestart(t *testing.T) {
 	client := &fakeTelemtClient{
 		discoveredUsers: []telemt.DiscoveredUser{{Username: "alice", Secret: "s-stale-on-node"}},
 	}
 	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-no-panel-owner",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-rotated"}`,
+	}, time.Date(2026, time.July, 16, 10, 10, 0, 0, time.UTC))
+
+	if !result.Success || client.deletedClientName != "alice" {
+		t.Fatalf("cold registry with no panel-signalled owner must delete despite secret drift: success=%v deleted=%q", result.Success, client.deletedClientName)
+	}
+	if client.discoverCalls != 0 {
+		t.Fatalf("the delete path must not round-trip to Telemt discovery, got %d calls", client.discoverCalls)
+	}
+}
+
+// TestAgentHandleJobDeleteProceedsWhenPanelNameOwnerIsSelf guards the guard:
+// the owner the panel reports is this very client (its tombstone had not been
+// applied to the mirror yet, say). That is not a takeover — deleting is exactly
+// what the job asks for.
+func TestAgentHandleJobDeleteProceedsWhenPanelNameOwnerIsSelf(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-owner-self",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-old","name":"alice","name_owner_by_agent":{"agent-1":"client-old"}}`,
+	}, time.Date(2026, time.July, 16, 10, 15, 0, 0, time.UTC))
+
+	if !result.Success || client.deletedClientName != "alice" {
+		t.Fatalf("an owner entry naming this client is not a takeover and must delete: success=%v deleted=%q", result.Success, client.deletedClientName)
+	}
+}
+
+// TestAgentHandleJobDeleteProceedsWhenPanelNameOwnerTargetsAnotherAgent is the
+// per-agent semantics of the signal, and the reason it is a map rather than a
+// scalar. One delete job fans out to every agent that still hosts the client,
+// with ONE shared payload. "alice" re-used by client-new on agent-2 says
+// nothing about agent-1: the Telemt user "alice" HERE is still client-old's,
+// and skipping would strand it live while the panel reports it deleted.
+func TestAgentHandleJobDeleteProceedsWhenPanelNameOwnerTargetsAnotherAgent(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
+
+	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
+		Id:          "job-delete-owner-other-agent",
+		Action:      "client.delete",
+		PayloadJson: `{"client_id":"client-old","name":"alice","name_owner_by_agent":{"agent-2":"client-new"}}`,
+	}, time.Date(2026, time.July, 16, 10, 20, 0, 0, time.UTC))
+
+	if !result.Success || client.deletedClientName != "alice" {
+		t.Fatalf("an owner on a DIFFERENT agent must not skip this agent's delete: success=%v deleted=%q", result.Success, client.deletedClientName)
+	}
+}
+
+// TestAgentHandleJobDeleteProceedsWhenRegistryWarmAndPanelNamesOtherOwner pins
+// the precedence: agent-local truth beats the panel signal. A warm entry for
+// the payload's OWN clientID means the agent applied this client's create and
+// has not since applied anyone else's create for that name (setClientName is
+// last-writer-wins and evicts) — so the Telemt user "alice" on this node is
+// still client-old's, whatever the panel's mirror says about client-new's
+// (queued, unconfirmed) deployment here. Honouring the signal would strand
+// client-old's user.
+func TestAgentHandleJobDeleteProceedsWhenRegistryWarmAndPanelNamesOtherOwner(t *testing.T) {
+	client := &fakeTelemtClient{}
+	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
 	agent.setClientName("client-old", "alice")
 
 	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		Id:          "job-delete-warm-registry-secret-drift",
+		Id:          "job-delete-warm-registry-vs-panel",
 		Action:      "client.delete",
-		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-rotated"}`,
+		PayloadJson: `{"client_id":"client-old","name":"alice","name_owner_by_agent":{"agent-1":"client-new"}}`,
 	}, time.Date(2026, time.July, 16, 10, 25, 0, 0, time.UTC))
 
 	if !result.Success || client.deletedClientName != "alice" {
-		t.Fatalf("warm registry with no other owner must delete despite secret drift: success=%v deleted=%q", result.Success, client.deletedClientName)
-	}
-	if client.discoverCalls != 0 {
-		t.Fatalf("warm registry must not trigger the Telemt discovery round-trip, got %d calls", client.discoverCalls)
+		t.Fatalf("a warm registry entry for this client outranks the panel signal and must delete: success=%v deleted=%q", result.Success, client.deletedClientName)
 	}
 }
 
@@ -765,89 +852,6 @@ func TestAgentHandleJobDeleteProceedsWhenNameWasReassigned(t *testing.T) {
 
 	if !result.Success || client.deletedClientName != "alice" {
 		t.Fatalf("a stale entry must not strand the new owner's delete: success=%v deleted=%q", result.Success, client.deletedClientName)
-	}
-}
-
-// TestAgentHandleJobDeleteSupersededBySecretMismatchAfterRestart covers the
-// same hole once the agent has restarted and its in-memory name registry is
-// cold: identity then comes from the secret recorded in Telemt's config file.
-func TestAgentHandleJobDeleteSupersededBySecretMismatchAfterRestart(t *testing.T) {
-	client := &fakeTelemtClient{
-		discoveredUsers: []telemt.DiscoveredUser{{Username: "alice", Secret: "s-new"}},
-	}
-	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
-
-	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		Id:          "job-delete-secret-mismatch",
-		Action:      "client.delete",
-		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-old"}`,
-	}, time.Date(2026, time.July, 16, 10, 5, 0, 0, time.UTC))
-
-	if !result.Success || client.deleteCalls != 0 {
-		t.Fatalf("secret mismatch must be a superseded no-op: success=%v deleteCalls=%d", result.Success, client.deleteCalls)
-	}
-}
-
-// TestAgentHandleJobDeleteProceedsWhenSecretMatches proves the guard does not
-// block the ordinary delete: same name, same secret means the payload targets
-// the user actually on the node.
-func TestAgentHandleJobDeleteProceedsWhenSecretMatches(t *testing.T) {
-	client := &fakeTelemtClient{
-		discoveredUsers: []telemt.DiscoveredUser{{Username: "alice", Secret: "s-old"}},
-	}
-	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
-
-	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		Id:          "job-delete-secret-match",
-		Action:      "client.delete",
-		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-old"}`,
-	}, time.Date(2026, time.July, 16, 10, 10, 0, 0, time.UTC))
-
-	if !result.Success || client.deletedClientName != "alice" {
-		t.Fatalf("matching secret must delete: success=%v deleted=%q", result.Success, client.deletedClientName)
-	}
-}
-
-// TestAgentHandleJobDeleteProceedsWhenSecretDiffersOnlyByCase guards against
-// the guard itself stranding a user: MTProto secrets are 32 hex chars and both
-// the panel and Telemt's config accept either case verbatim, so a case-only
-// difference is the SAME secret and must not read as a takeover.
-func TestAgentHandleJobDeleteProceedsWhenSecretDiffersOnlyByCase(t *testing.T) {
-	client := &fakeTelemtClient{
-		discoveredUsers: []telemt.DiscoveredUser{{Username: "alice", Secret: "ABCDEF0123456789ABCDEF0123456789"}},
-	}
-	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
-
-	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		Id:          "job-delete-secret-case",
-		Action:      "client.delete",
-		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"abcdef0123456789abcdef0123456789"}`,
-	}, time.Date(2026, time.July, 16, 10, 20, 0, 0, time.UTC))
-
-	if !result.Success || client.deletedClientName != "alice" {
-		t.Fatalf("case-only secret difference is the same secret and must delete: success=%v deleted=%q", result.Success, client.deletedClientName)
-	}
-}
-
-// TestAgentHandleJobDeleteProceedsWhenDiscoveryFails pins the accepted residual
-// risk: when identity cannot be proven either way the historical delete-by-name
-// behavior is kept, because a wrong skip would strand a user forever.
-// FetchDiscoveredUsers only errors when Telemt's /users API is down — an
-// unreadable Telemt CONFIG is swallowed by discovery (secrets are then derived
-// from the rendered links), so it is not a trigger here. The residual
-// mis-delete window is therefore reuse + agent reboot + Telemt API down.
-func TestAgentHandleJobDeleteProceedsWhenDiscoveryFails(t *testing.T) {
-	client := &fakeTelemtClient{discoverErr: errors.New("telemt /users API unavailable")}
-	agent := New(Config{AgentID: "agent-1", NodeName: "node-a"}, client)
-
-	result := agent.HandleJob(context.Background(), &gatewayrpc.JobCommand{
-		Id:          "job-delete-discovery-down",
-		Action:      "client.delete",
-		PayloadJson: `{"client_id":"client-old","name":"alice","secret":"s-old"}`,
-	}, time.Date(2026, time.July, 16, 10, 15, 0, 0, time.UTC))
-
-	if !result.Success || client.deletedClientName != "alice" {
-		t.Fatalf("unverifiable delete keeps legacy behavior: success=%v deleted=%q", result.Success, client.deletedClientName)
 	}
 }
 

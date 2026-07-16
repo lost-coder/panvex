@@ -905,6 +905,9 @@ func (a *Agent) handleSwitchTransportModeJob(result *gatewayrpc.JobResult, job *
 }
 
 // clientJobPayload mirrors the JSON envelope shared by all client.* jobs.
+// Panel-side mirror: clients.ClientJobPayload
+// (internal/controlplane/clients/jobsdispatch.go). Keep the JSON tags in
+// lockstep — any drift here breaks this decode.
 type clientJobPayload struct {
 	ClientID          string `json:"client_id"`
 	Name              string `json:"name"`
@@ -915,6 +918,12 @@ type clientJobPayload struct {
 	MaxUniqueIPs      int    `json:"max_unique_ips"`
 	DataQuotaBytes    int64  `json:"data_quota_bytes"`
 	ExpirationRFC3339 string `json:"expiration_rfc3339"`
+
+	// NameOwnerByAgent is set on client.delete only: agentID -> the ID of the
+	// client that owns Name on that agent according to panel state at enqueue
+	// time. Read only for THIS agent's own ID — see
+	// deleteSupersededByOtherClient.
+	NameOwnerByAgent map[string]string `json:"name_owner_by_agent,omitempty"`
 }
 
 func (p clientJobPayload) toManagedClient() telemt.ManagedClient {
@@ -1007,7 +1016,7 @@ func (a *Agent) handleClientUpdateJob(ctx context.Context, job *gatewayrpc.JobCo
 }
 
 func (a *Agent) handleClientDeleteJob(ctx context.Context, payload clientJobPayload, managedClient telemt.ManagedClient, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
-	if a.deleteSupersededByOtherClient(ctx, payload) {
+	if a.deleteSupersededByOtherClient(payload) {
 		result.Success = true
 		result.Message = "client name reassigned to another client; delete superseded"
 		a.deleteClientName(payload.ClientID)
@@ -1275,23 +1284,47 @@ func marshalClientJobResult(result telemt.ClientApplyResult) string {
 // idempotent success instead.
 //
 // Two identity sources, in order:
-//  1. the in-memory clientID->name registry, which is authoritative whenever it
-//     is warm for payload.ClientID: setClientName keeps name->clientID
-//     last-writer-wins, so a live entry for this client is proof that nobody
-//     else has taken the name;
-//  2. ONLY when the registry is cold for this client (agent restarted) — fall
-//     back to comparing the payload secret against the secret discovery reads
-//     from Telemt. This probe must never run against a warm registry: a secret
-//     mismatch there means the node's Telemt config drifted from the panel
-//     (e.g. a rotate superseded by this very delete never landed), not a
-//     takeover, and skipping would leave the user live on the node while the
-//     panel reports it deleted.
 //
-// When neither source can prove a takeover (empty secret, Telemt's /users API
-// down, user absent), the historical delete-by-name behavior is kept: a wrong
-// skip would strand a user forever, while the residual mis-delete window now
-// requires name reuse + agent reboot + Telemt's API being down simultaneously.
-func (a *Agent) deleteSupersededByOtherClient(ctx context.Context, payload clientJobPayload) bool {
+//  1. the in-memory clientID->name registry. It is authoritative whenever it
+//     says anything at all: setClientName is last-writer-wins and evicts the
+//     previous holder, so an entry for ANOTHER client is proof of takeover,
+//     and an entry for payload.ClientID is proof that no other client's create
+//     has landed here since — the user on this node is still ours, whatever
+//     the panel believes about a deployment it has not confirmed. Agent-local
+//     truth therefore outranks source 2 in BOTH directions.
+//
+//  2. only when the registry is cold for this client (the agent restarted):
+//     payload.NameOwnerByAgent[a.config.AgentID], computed by the panel at
+//     enqueue time. The agent cannot derive this locally — the node's own
+//     evidence, the secret Telemt holds for the user, mismatches for two
+//     indistinguishable reasons: (a) another client took the name, or (b) a
+//     client.rotate for THIS client never reached the node and was then
+//     superseded by this very delete (clients/jobsupersede.go keys on
+//     client_id), so the payload carries the post-rotate secret while the node
+//     still has the pre-rotate one. Skipping in case (b) is an access hole:
+//     the user stays live with the old secret while the panel reports it
+//     deleted. Only the panel can tell the two apart, so only the panel is
+//     asked.
+//
+// No signal means delete. The bias is deliberate: a wrong delete is repaired
+// by the new client's own create being re-sent, a wrong skip strands live
+// credentials the panel believes are revoked.
+//
+// Residual: the signal is a snapshot of panel state at ENQUEUE time, so a
+// delete whose payload predates the re-use carries no owner. That is not
+// reachable as a mis-delete, though — client_mutation is a single-worker lane
+// delivered CreatedAt-asc, so a delete enqueued BEFORE the new client existed
+// is also delivered before that client's create, and it removes the old user
+// the create then replaces. Any delete that can land after the create was
+// enqueued after it, and so was computed against a mirror that already knew
+// the new owner. What does remain: the panel reports an owner whose create
+// never actually landed on this node and never will (permanently failing
+// deployment). The old client's user is then skipped and stays live — bounded
+// by the fact that the same unconfirmed deployment is re-sent by the
+// reconciler until it lands (at which point it overwrites the user's secret,
+// revoking the old credential anyway) and surfaces to the operator as a
+// failing deployment in the meantime.
+func (a *Agent) deleteSupersededByOtherClient(payload clientJobPayload) bool {
 	if payload.Name == "" || payload.ClientID == "" {
 		return false
 	}
@@ -1299,30 +1332,12 @@ func (a *Agent) deleteSupersededByOtherClient(ctx context.Context, payload clien
 	if a.nameOwnedByOtherClient(payload.ClientID, payload.Name) {
 		return true
 	}
-
-	// Warm registry with no other owner: identity is already proven, so skip
-	// the secret probe and its Telemt round-trip entirely.
 	if a.clientNameKnown(payload.ClientID) {
 		return false
 	}
 
-	if payload.Secret == "" {
-		return false
-	}
-	users, err := a.telemt.FetchDiscoveredUsers(ctx, a.resolveTelemtConfigPath(ctx))
-	if err != nil {
-		return false
-	}
-	for _, user := range users {
-		if user.Username == payload.Name {
-			// Secrets are 32 hex chars and both sides accept either case
-			// verbatim (an operator-supplied uppercase secret is stored as
-			// typed), so compare case-insensitively: a false mismatch here
-			// would skip a legitimate delete and strand the user on the node.
-			return user.Secret != "" && !strings.EqualFold(user.Secret, payload.Secret)
-		}
-	}
-	return false
+	owner := payload.NameOwnerByAgent[a.config.AgentID]
+	return owner != "" && owner != payload.ClientID
 }
 
 // nameOwnedByOtherClient reports whether some clientID other than the given one
