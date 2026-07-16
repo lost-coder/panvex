@@ -91,6 +91,112 @@ func TestPendingAgentUpdateOverwritesPerAgent(t *testing.T) {
 	}
 }
 
+// A pending target the agent can never reach (built without version ldflags,
+// a 404 release asset, a bad checksum) must not be retried forever: after
+// MaxPendingAgentUpdateFailures failed deliveries the panel gives up and drops
+// the desired state, so the reconciler stops re-enqueueing a doomed job on
+// every reconnect.
+func TestRecordPendingAgentUpdateFailureGivesUpAfterMaxAttempts(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&memStore{})
+	ctx := context.Background()
+
+	if err := svc.SetPendingAgentUpdate(ctx, "agent-1", "1.4.0"); err != nil {
+		t.Fatalf("SetPendingAgentUpdate: %v", err)
+	}
+
+	for attempt := 1; attempt < MaxPendingAgentUpdateFailures; attempt++ {
+		failures, gaveUp, err := svc.RecordPendingAgentUpdateFailure(ctx, "agent-1", "1.4.0")
+		if err != nil {
+			t.Fatalf("RecordPendingAgentUpdateFailure(%d): %v", attempt, err)
+		}
+		if gaveUp {
+			t.Fatalf("gave up after %d failures, want it to hold until %d", attempt, MaxPendingAgentUpdateFailures)
+		}
+		if failures != attempt {
+			t.Fatalf("failures = %d, want %d", failures, attempt)
+		}
+		if _, ok, _ := svc.PendingAgentUpdate(ctx, "agent-1"); !ok {
+			t.Fatalf("target must survive failure %d", attempt)
+		}
+	}
+
+	failures, gaveUp, err := svc.RecordPendingAgentUpdateFailure(ctx, "agent-1", "1.4.0")
+	if err != nil {
+		t.Fatalf("final RecordPendingAgentUpdateFailure: %v", err)
+	}
+	if !gaveUp || failures != MaxPendingAgentUpdateFailures {
+		t.Fatalf("failures = %d, gaveUp = %v; want %d/true", failures, gaveUp, MaxPendingAgentUpdateFailures)
+	}
+	if _, ok, _ := svc.PendingAgentUpdate(ctx, "agent-1"); ok {
+		t.Fatal("giving up must drop the pending target")
+	}
+}
+
+// A fresh operator click is a new decision: it resets the failure budget, so a
+// target that failed before gets its full set of attempts again.
+func TestSetPendingAgentUpdateResetsFailureCount(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&memStore{})
+	ctx := context.Background()
+
+	if err := svc.SetPendingAgentUpdate(ctx, "agent-1", "1.4.0"); err != nil {
+		t.Fatalf("SetPendingAgentUpdate: %v", err)
+	}
+	for range MaxPendingAgentUpdateFailures - 1 {
+		if _, _, err := svc.RecordPendingAgentUpdateFailure(ctx, "agent-1", "1.4.0"); err != nil {
+			t.Fatalf("RecordPendingAgentUpdateFailure: %v", err)
+		}
+	}
+	if err := svc.SetPendingAgentUpdate(ctx, "agent-1", "1.5.0"); err != nil {
+		t.Fatalf("SetPendingAgentUpdate (new click): %v", err)
+	}
+
+	failures, gaveUp, err := svc.RecordPendingAgentUpdateFailure(ctx, "agent-1", "1.5.0")
+	if err != nil {
+		t.Fatalf("RecordPendingAgentUpdateFailure after new click: %v", err)
+	}
+	if gaveUp || failures != 1 {
+		t.Fatalf("a new click must restart the budget, got failures=%d gaveUp=%v", failures, gaveUp)
+	}
+}
+
+// A failure reported for a version that is no longer the pending target is
+// stale (the operator re-clicked while the old job was in flight) and must not
+// consume the current target's budget.
+func TestRecordPendingAgentUpdateFailureIgnoresStaleVersion(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&memStore{})
+	ctx := context.Background()
+
+	if err := svc.SetPendingAgentUpdate(ctx, "agent-1", "1.5.0"); err != nil {
+		t.Fatalf("SetPendingAgentUpdate: %v", err)
+	}
+	failures, gaveUp, err := svc.RecordPendingAgentUpdateFailure(ctx, "agent-1", "1.4.0")
+	if err != nil || gaveUp || failures != 0 {
+		t.Fatalf("stale failure must be ignored, got failures=%d gaveUp=%v err=%v", failures, gaveUp, err)
+	}
+	if version, ok, _ := svc.PendingAgentUpdate(ctx, "agent-1"); !ok || version != "1.5.0" {
+		t.Fatalf("current target must be untouched, got %q/%v", version, ok)
+	}
+}
+
+// A failure for an agent with nothing pending is a no-op — the update may have
+// been dispatched before the panel started tracking desired state.
+func TestRecordPendingAgentUpdateFailureWithoutPendingIsNoOp(t *testing.T) {
+	t.Parallel()
+	store := &memStore{}
+	svc := NewService(store)
+
+	failures, gaveUp, err := svc.RecordPendingAgentUpdateFailure(context.Background(), "agent-x", "1.4.0")
+	if err != nil || gaveUp || failures != 0 {
+		t.Fatalf("no-op expected, got failures=%d gaveUp=%v err=%v", failures, gaveUp, err)
+	}
+	if store.pending != nil {
+		t.Fatalf("a no-op failure must not write a blob, got %s", store.pending)
+	}
+}
+
 // Clearing an agent that was never pending is a no-op, not an error: the
 // reconcile path calls Clear whenever the reported version already matches.
 func TestClearPendingAgentUpdateAbsentIsNoOp(t *testing.T) {

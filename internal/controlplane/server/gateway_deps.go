@@ -515,8 +515,11 @@ func (s *Server) AppendAudit(ctx context.Context, actorID, action, targetID stri
 }
 
 // RecordClientJobResult updates client deployment state from a job result.
+// Despite the name it is the gateway's hook for EVERY job result, so the
+// self-update failure budget is counted here too.
 func (s *Server) RecordClientJobResult(ctx context.Context, agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) {
 	s.clientsSvc.RecordJobResult(ctx, agentID, jobID, success, message, resultJSON, observedAt)
+	s.recordSelfUpdateJobOutcome(ctx, agentID, jobID, success)
 }
 
 // ReconcileDiscoveredClients reconciles a full client-list response.

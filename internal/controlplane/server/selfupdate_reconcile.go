@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 )
 
 // selfUpdateReconcileActor attributes re-dispatched self-update jobs to the
@@ -100,6 +103,54 @@ func (s *Server) reconcileAgentSelfUpdate(ctx context.Context, agentID string) {
 		"agent_id", agentID, "target_version", target, "reported_version", agent.Version)
 	s.notifyAgentSessions(job.TargetAgentIDs)
 	s.publishJobCreated(job)
+}
+
+// recordSelfUpdateJobOutcome counts a FAILED agent.self-update delivery against
+// the pending target's budget and gives up once it is spent. Without this a
+// target the node can never reach — an agent built without version ldflags, a
+// 404 release asset, a bad checksum — is re-dispatched on every reconnect
+// forever, and there is no UI to cancel it.
+//
+// Only reported failures count. A job that expires unseen because the node is
+// offline is exactly what reconcile-on-reconnect is for and must not consume
+// the budget: expiry never reaches this path, which fires on a real result.
+//
+// Called for EVERY job result, so it keys off the action and stays cheap for
+// the common client.* case.
+func (s *Server) recordSelfUpdateJobOutcome(ctx context.Context, agentID, jobID string, success bool) {
+	if success || s.updatesSvc == nil || jobID == "" {
+		return
+	}
+	job, ok, err := s.jobs.GetWithContext(ctx, jobID)
+	if err != nil || !ok || job.Action != jobs.ActionAgentSelfUpdate {
+		return
+	}
+	// The target version comes from the job's own payload, so a result for a
+	// superseded click cannot spend the current target's budget.
+	var payload struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil || payload.Version == "" {
+		return
+	}
+
+	failures, gaveUp, err := s.updatesSvc.RecordPendingAgentUpdateFailure(ctx, agentID, payload.Version)
+	if err != nil {
+		s.logger.WarnContext(ctx, "self-update reconcile: record failure failed",
+			"agent_id", agentID, "error", err)
+		return
+	}
+	if gaveUp {
+		s.logger.WarnContext(ctx, "self-update reconcile: giving up on the pending agent update",
+			"agent_id", agentID,
+			"target_version", payload.Version,
+			"failures", failures,
+			"alert", "agent_self_update_abandoned",
+			"remediation", "fix the release asset or the agent build, then dispatch the update again")
+		s.appendAuditWithContext(ctx, selfUpdateReconcileActor, "agents.update.abandoned", agentID, map[string]any{
+			"version": payload.Version, "failures": failures,
+		})
+	}
 }
 
 // versionsEqual compares a reported agent version against a requested target,

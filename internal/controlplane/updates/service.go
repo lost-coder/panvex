@@ -180,11 +180,33 @@ func (s *Service) SaveSelfUpdate(ctx context.Context, st SelfUpdateState) error 
 	return s.store.PutPanelSelfUpdate(ctx, data)
 }
 
-// pendingAgentUpdates maps agent ID -> the agent version an operator asked for
-// and the node has not reported yet. It is the desired state behind the
-// one-shot agent.self-update job: the job itself expires after its TTL, so an
-// offline node would otherwise lose the request silently.
-type pendingAgentUpdates map[string]string
+// MaxPendingAgentUpdateFailures bounds how many times a pending target may be
+// delivered and REPORTED FAILED before the panel gives up and drops it.
+//
+// Without a bound, a target the node can never reach (an agent built without
+// version ldflags, a 404 release asset, a checksum mismatch) is re-enqueued on
+// every reconnect forever, and the operator has no way to cancel it. Five
+// consecutive failures is well past a transient download blip.
+//
+// Only genuine failure REPORTS count. A job that merely expires unseen because
+// the node is offline is exactly the case reconcile-on-reconnect exists for,
+// and must never consume the budget.
+const MaxPendingAgentUpdateFailures = 5
+
+// pendingAgentUpdate is one agent's desired update: the version an operator
+// asked for and the node has not reported yet, plus how many delivered
+// attempts have come back failed.
+type pendingAgentUpdate struct {
+	Version string `json:"version"`
+	// Failures counts consecutive failed deliveries of THIS version. Reset by
+	// a new operator click (a new decision earns a fresh budget).
+	Failures int `json:"failures,omitempty"`
+}
+
+// pendingAgentUpdates maps agent ID -> its desired update. It is the desired
+// state behind the one-shot agent.self-update job: the job itself expires after
+// its TTL, so an offline node would otherwise lose the request silently.
+type pendingAgentUpdates map[string]pendingAgentUpdate
 
 // loadPendingLocked reads the persisted map. An absent blob is an empty map,
 // not an error. Callers must hold pendingMu.
@@ -212,7 +234,8 @@ func (s *Service) savePendingLocked(ctx context.Context, pending pendingAgentUpd
 }
 
 // SetPendingAgentUpdate records that agentID should reach version. A later call
-// for the same agent replaces the older target — the newest operator click wins.
+// for the same agent replaces the older target — the newest operator click wins
+// and restarts the failure budget, because a fresh click is a fresh decision.
 func (s *Service) SetPendingAgentUpdate(ctx context.Context, agentID, version string) error {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
@@ -220,8 +243,40 @@ func (s *Service) SetPendingAgentUpdate(ctx context.Context, agentID, version st
 	if err != nil {
 		return err
 	}
-	pending[agentID] = version
+	pending[agentID] = pendingAgentUpdate{Version: version}
 	return s.savePendingLocked(ctx, pending)
+}
+
+// RecordPendingAgentUpdateFailure counts one FAILED delivery of the pending
+// target and reports the running total plus whether the panel has now given up
+// (target dropped). A failure for a version that is no longer pending is stale
+// — the operator re-clicked while the old job was in flight — and is ignored,
+// as is a failure for an agent with nothing pending.
+func (s *Service) RecordPendingAgentUpdateFailure(ctx context.Context, agentID, version string) (failures int, gaveUp bool, err error) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	pending, err := s.loadPendingLocked(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	entry, ok := pending[agentID]
+	if !ok || entry.Version != version {
+		return 0, false, nil
+	}
+
+	entry.Failures++
+	if entry.Failures >= MaxPendingAgentUpdateFailures {
+		delete(pending, agentID)
+		if err := s.savePendingLocked(ctx, pending); err != nil {
+			return entry.Failures, false, err
+		}
+		return entry.Failures, true, nil
+	}
+	pending[agentID] = entry
+	if err := s.savePendingLocked(ctx, pending); err != nil {
+		return entry.Failures, false, err
+	}
+	return entry.Failures, false, nil
 }
 
 // ClearPendingAgentUpdate drops agentID's pending target. Clearing an agent
@@ -250,6 +305,6 @@ func (s *Service) PendingAgentUpdate(ctx context.Context, agentID string) (strin
 	if err != nil {
 		return "", false, err
 	}
-	version, ok := pending[agentID]
-	return version, ok, nil
+	entry, ok := pending[agentID]
+	return entry.Version, ok, nil
 }

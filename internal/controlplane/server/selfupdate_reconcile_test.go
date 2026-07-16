@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
+	"github.com/lost-coder/panvex/internal/controlplane/updates"
 )
 
 // countSelfUpdateJobs returns how many agent.self-update jobs are queued.
@@ -204,5 +205,110 @@ func TestReconcileAgentSelfUpdateSkipsOfflineAgent(t *testing.T) {
 	}
 	if _, ok, _ := srv.updatesSvc.PendingAgentUpdate(ctx, "agent-gone"); !ok {
 		t.Fatal("an absent agent's pending target must survive for the next reconnect")
+	}
+}
+
+// selfUpdateJobPayload builds the payload the panel sends for a self-update.
+func mustSelfUpdatePayload(t *testing.T, version string) string {
+	t.Helper()
+	payload, err := buildAgentDirectUpdatePayload("lost-coder/panvex", version)
+	if err != nil {
+		t.Fatalf("buildAgentDirectUpdatePayload: %v", err)
+	}
+	return string(payload)
+}
+
+// TestSelfUpdateFailuresGiveUpAndStopReenqueueing: a target the node can never
+// reach (agent built without version ldflags, 404 asset, bad checksum) must not
+// be re-dispatched on every reconnect forever. After the failure budget is
+// spent the panel drops the desired state and the reconciler goes quiet.
+func TestSelfUpdateFailuresGiveUpAndStopReenqueueing(t *testing.T) {
+	srv, _ := setupTransportModeServer(t)
+	ctx := t.Context()
+
+	srv.seedLiveAgentKeyed("agent-su", Agent{ID: "agent-su", NodeName: "su-node", Version: "1.3.0"})
+	if err := srv.updatesSvc.SetPendingAgentUpdate(ctx, "agent-su", "1.4.0"); err != nil {
+		t.Fatalf("SetPendingAgentUpdate: %v", err)
+	}
+
+	for attempt := 1; attempt <= updates.MaxPendingAgentUpdateFailures; attempt++ {
+		job, err := srv.jobs.Enqueue(ctx,
+			agentSelfUpdateJobInput("agent-su", mustSelfUpdatePayload(t, "1.4.0"), selfUpdateReconcileActor), srv.now())
+		if err != nil {
+			t.Fatalf("Enqueue attempt %d: %v", attempt, err)
+		}
+		srv.RecordClientJobResult(ctx, "agent-su", job.ID, false, "download failed: 404", "", srv.now())
+
+		_, stillPending, _ := srv.updatesSvc.PendingAgentUpdate(ctx, "agent-su")
+		wantPending := attempt < updates.MaxPendingAgentUpdateFailures
+		if stillPending != wantPending {
+			t.Fatalf("after failure %d: pending=%v, want %v", attempt, stillPending, wantPending)
+		}
+	}
+
+	// Budget spent: a fresh reconnect must not resurrect the doomed job.
+	before := countSelfUpdateJobs(t, srv)
+	srv.mu.Lock()
+	delete(srv.selfUpdateReenqueuedAt, "agent-su") // ignore the throttle for this assertion
+	srv.mu.Unlock()
+	srv.reconcileAgentSelfUpdate(ctx, "agent-su")
+	if after := countSelfUpdateJobs(t, srv); after != before {
+		t.Fatalf("reconcile after give-up enqueued %d new job(s); want none", after-before)
+	}
+}
+
+// TestSelfUpdateSuccessDoesNotConsumeFailureBudget: only failures count. A
+// successful delivery leaves the target in place (it clears on the reconnect
+// that observes the new version), with its budget untouched.
+func TestSelfUpdateSuccessDoesNotConsumeFailureBudget(t *testing.T) {
+	srv, _ := setupTransportModeServer(t)
+	ctx := t.Context()
+
+	srv.seedLiveAgentKeyed("agent-su", Agent{ID: "agent-su", NodeName: "su-node", Version: "1.3.0"})
+	if err := srv.updatesSvc.SetPendingAgentUpdate(ctx, "agent-su", "1.4.0"); err != nil {
+		t.Fatalf("SetPendingAgentUpdate: %v", err)
+	}
+
+	for range updates.MaxPendingAgentUpdateFailures + 2 {
+		job, err := srv.jobs.Enqueue(ctx,
+			agentSelfUpdateJobInput("agent-su", mustSelfUpdatePayload(t, "1.4.0"), selfUpdateReconcileActor), srv.now())
+		if err != nil {
+			t.Fatalf("Enqueue: %v", err)
+		}
+		srv.RecordClientJobResult(ctx, "agent-su", job.ID, true, "self-update applied", "", srv.now())
+	}
+
+	if _, ok, _ := srv.updatesSvc.PendingAgentUpdate(ctx, "agent-su"); !ok {
+		t.Fatal("successful deliveries must not exhaust the failure budget")
+	}
+}
+
+// TestClientJobFailureDoesNotTouchSelfUpdateBudget: the result hook sees EVERY
+// job result, so it must key off the action — a failing client.delete must not
+// spend the self-update budget.
+func TestClientJobFailureDoesNotTouchSelfUpdateBudget(t *testing.T) {
+	srv, _ := setupTransportModeServer(t)
+	ctx := t.Context()
+
+	srv.seedLiveAgentKeyed("agent-su", Agent{ID: "agent-su", NodeName: "su-node", Version: "1.3.0"})
+	if err := srv.updatesSvc.SetPendingAgentUpdate(ctx, "agent-su", "1.4.0"); err != nil {
+		t.Fatalf("SetPendingAgentUpdate: %v", err)
+	}
+
+	for range updates.MaxPendingAgentUpdateFailures {
+		job, err := srv.jobs.Enqueue(ctx, jobs.CreateJobInput{
+			Action:         jobs.ActionClientDelete,
+			TargetAgentIDs: []string{"agent-su"},
+			PayloadJSON:    `{"client_id":"c1","name":"alice"}`,
+			ActorID:        "user-1",
+		}, srv.now())
+		if err != nil {
+			t.Fatalf("Enqueue client job: %v", err)
+		}
+		srv.RecordClientJobResult(ctx, "agent-su", job.ID, false, "telemt unreachable", "", srv.now())
+	}
+
+	if _, ok, _ := srv.updatesSvc.PendingAgentUpdate(ctx, "agent-su"); !ok {
+		t.Fatal("client-job failures must not consume the self-update budget")
 	}
 }
