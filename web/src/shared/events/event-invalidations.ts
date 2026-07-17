@@ -70,10 +70,10 @@ export function invalidationsForEvent(event: EventEnvelope): EventInvalidation {
     return { keys: [] };
   }
   if (event.type.startsWith("enrollment.")) {
-    // P3-3.3 (аудит #22): шаги энроллмента меняют ТОЛЬКО кэши
-    // enrollment-attempts; раньше неизвестный тип проваливался в
-    // broad-sweep всего живого кэша на каждый шаг. Появление нового
-    // агента покрывает отдельное событие agents.enrolled.
+    // P3-3.3 (audit #22): enrollment steps change ONLY the enrollment-attempts
+    // caches; previously an unknown type fell through to a
+    // broad sweep of the whole live cache on every step. A new agent
+    // appearing is covered by the separate agents.enrolled event.
     return { keys: [enrollmentAttemptsKeys.all] };
   }
   return {
@@ -88,6 +88,6 @@ export function invalidationsForEvent(event: EventEnvelope): EventInvalidation {
   };
 }
 
-// P3-3.3: isKnownEventType теперь живёт в ./event-types (сверяется с
-// EVENT_TYPES — единым контрактом, который парсит check-event-parity.mjs).
+// P3-3.3: isKnownEventType now lives in ./event-types (checked against
+// EVENT_TYPES — the single contract parsed by check-event-parity.mjs).
 export { isKnownEventType } from "./event-types";

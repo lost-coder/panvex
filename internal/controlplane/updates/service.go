@@ -50,12 +50,12 @@ type State struct {
 type SelfUpdatePhase string
 
 const (
-	SelfUpdateIdle           SelfUpdatePhase = "" // нет активного/показуемого обновления
+	SelfUpdateIdle           SelfUpdatePhase = "" // no active/showable update
 	SelfUpdateDownloading    SelfUpdatePhase = "downloading"
 	SelfUpdateInstalling     SelfUpdatePhase = "installing"
-	SelfUpdateRestartPending SelfUpdatePhase = "restart_pending" // бинарь подменён, ждём рестарта
-	SelfUpdateCompleted      SelfUpdatePhase = "completed"       // терминальная
-	SelfUpdateFailed         SelfUpdatePhase = "failed"          // терминальная; Message — причина
+	SelfUpdateRestartPending SelfUpdatePhase = "restart_pending" // binary swapped, waiting for restart
+	SelfUpdateCompleted      SelfUpdatePhase = "completed"       // terminal
+	SelfUpdateFailed         SelfUpdatePhase = "failed"          // terminal; Message is the reason
 )
 
 // Terminal reports whether the phase is a final state for the current

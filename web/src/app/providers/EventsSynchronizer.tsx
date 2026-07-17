@@ -26,11 +26,11 @@ import {
 // surface a reconnection banner and a subtle flash when data arrives via WS.
 export type WsStatus = "connecting" | "open" | "reconnecting" | "closed";
 
-// 7.1 (аудит #web-1): контекст разнесён. Статус меняется редко и живёт в
-// обычном контексте; lastEventAt меняется на КАЖДОЕ событие и живёт во
-// внешнем store с подпиской через useSyncExternalStore — ре-рендерятся
-// только реальные подписчики таймстампа (useWsUpdateFlash), а не все
-// 16+ потребителей useWsStatus().
+// 7.1 (audit #web-1): the context is split apart. Status changes rarely and
+// lives in a regular context; lastEventAt changes on EVERY event and lives
+// in an external store subscribed to via useSyncExternalStore — only the
+// actual timestamp subscribers (useWsUpdateFlash) re-render, not all
+// 16+ consumers of useWsStatus().
 export interface WsStatusValue {
   status: WsStatus;
   /** Attempt count for the current reconnect loop (0 while healthy). */
@@ -68,8 +68,8 @@ const WsStatusContext = createContext<WsStatusValue>({
   reconnectAttempts: 0,
 });
 
-// Default-store: код вне провайдера (тесты, storybook-подобные рендеры)
-// получает рабочий, но «немой» store вместо падения на undefined.
+// Default store: code outside the provider (tests, storybook-like renders)
+// gets a working but "mute" store instead of crashing on undefined.
 const WsLastEventContext = createContext<LastEventStore>(createLastEventStore());
 
 // R-Q-24: provider co-locates the hook by convention; see AppearanceProvider.
@@ -84,15 +84,15 @@ export function useWsLastEventAt(): number | null {
   return useSyncExternalStore(store.subscribe, store.getSnapshot);
 }
 
-// 7.4 (#web-6): подписка на валидные envelope'ы для потребителей вне
-// конвейера инвалидаций (сегодня — useAgentRuntimeEvents). Один сокет
-// на всю панель: /events на сервере не умеет топики (http_events.go
-// шлёт каждому подписчику весь bus), второй сокет только дублировал
-// трафик и ел лимит соединений на пользователя.
+// 7.4 (#web-6): subscription to valid envelopes for consumers outside
+// the invalidation pipeline (today — useAgentRuntimeEvents). One socket
+// for the whole panel: /events on the server doesn't support topics
+// (http_events.go sends the whole bus to every subscriber), a second socket
+// would only duplicate traffic and eat into the per-user connection limit.
 export type WsEnvelopeListener = (envelope: EventEnvelope) => void;
 
 export interface WsEventsValue {
-  /** Подписаться на все валидные envelope'ы. Возвращает unsubscribe. */
+  /** Subscribe to all valid envelopes. Returns an unsubscribe function. */
   subscribe: (listener: WsEnvelopeListener) => () => void;
 }
 
@@ -109,11 +109,11 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
   const { isAuthenticated } = useAuth();
   const [status, setStatus] = useState<WsStatus>("connecting");
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  // Store создаётся один раз на инстанс провайдера (useState-инициализатор
-  // вместо useRef — чистая инициализация без мутаций в рендере).
+  // The store is created once per provider instance (useState initializer
+  // instead of useRef — a clean initialization with no mutations during render).
   const [lastEventStore] = useState<LastEventStore>(createLastEventStore);
-  // Подписчики envelope'ов. Ref, а не state: рассылка не должна
-  // рендерить провайдер. Value контекста стабилен на всю жизнь провайдера.
+  // Envelope subscribers. A ref, not state: broadcasting must not
+  // re-render the provider. The context value is stable for the provider's whole lifetime.
   const envelopeListenersRef = useRef<Set<WsEnvelopeListener>>(new Set());
   const [eventsValue] = useState<WsEventsValue>(() => ({
     subscribe: (listener: WsEnvelopeListener) => {
@@ -161,11 +161,11 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
         void queryClient.invalidateQueries();
       }, 500);
     };
-    // 7.4 (#web-8): шторм однотипных событий (agents.* на N узлов) раньше
-    // давал N немедленных рефетчей одних и тех же ключей. Ключи копятся в
-    // Map (дедуп по JSON-форме) и сбрасываются коалесцером: первое событие
-    // в тихом окне — немедленно (leading, оператор видит результат своего
-    // действия сразу), шторм — одним рефетчем на trailing-краю.
+    // 7.4 (#web-8): a storm of same-type events (agents.* across N nodes) used to
+    // cause N immediate refetches of the same keys. Keys are accumulated in a
+    // Map (dedup by JSON form) and flushed by the coalescer: the first event
+    // in a quiet window fires immediately (leading, the operator sees the
+    // result of their own action right away), a storm collapses to one refetch on the trailing edge.
     const pendingKeys = new Map<string, readonly unknown[]>();
     let pendingClientDetailSweep = false;
     const keyCoalescer = createCoalescer({
@@ -256,8 +256,8 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
           return;
         }
         const event = result.data;
-        // 7.4: доставка живым подписчикам (runtime-лента и т.п.) — до
-        // seq-gap-ветки: текущий кадр валиден, потеряны только предыдущие.
+        // 7.4: delivery to live subscribers (runtime feed, etc.) happens before
+        // the seq-gap branch: the current frame is valid, only earlier ones were lost.
         for (const listener of envelopeListenersRef.current) {
           listener(event);
         }
@@ -276,8 +276,8 @@ export function EventsSynchronizer({ children }: Readonly<{ children?: React.Rea
         if (!isKnownEventType(event.type) && console !== undefined) {
           console.debug("events: unknown event type, falling back to broad sweep", event.type);
         }
-        // 7.1: вместо setState — emit в store; провайдер и статус-подписчики
-        // не ре-рендерятся, подписчики таймстампа получают уведомление.
+        // 7.1: instead of setState — emit into the store; the provider and status
+        // subscribers don't re-render, timestamp subscribers get notified.
         lastEventStore.emit(Date.now());
         applyInvalidation(invalidationsForEvent(event));
       };

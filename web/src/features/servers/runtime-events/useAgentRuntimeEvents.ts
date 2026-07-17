@@ -61,7 +61,7 @@ export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsRes
   // the response would also be present in the new payload.
   useEffect(() => {
     if (!initial.data) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- канонический sync-from-query паттерн, был здесь и до 7.4
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical sync-from-query pattern, was here before 7.4 too
     setEvents(initial.data.items);
   }, [initial.data]);
 
@@ -69,9 +69,9 @@ export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsRes
     if (!agentId) return;
     return subscribe((envelope) => {
       if (envelope.type !== "runtime.events") return;
-      // M13: конверт уже прошёл eventEnvelopeSchema в провайдере, но
-      // data для runtime-кадров читается глубоко (data.events[].ts) —
-      // валидируем полную форму, малформед-кадр дропаем целиком.
+      // M13: the envelope already passed eventEnvelopeSchema in the provider, but
+      // data for runtime frames is read deeply (data.events[].ts) —
+      // validate the full shape, drop a malformed frame entirely.
       const result = runtimeEventsBusFrameSchema.safeParse(envelope);
       if (!result.success) {
         if (
@@ -97,8 +97,8 @@ export function useAgentRuntimeEvents(agentId: string): UseAgentRuntimeEventsRes
     });
   }, [agentId, subscribe]);
 
-  // Reconnect → refetch backlog: кадры, отправленные пока сокет лежал,
-  // потеряны навсегда (bus не реиграет) — их закрывает только HTTP-бэклог.
+  // Reconnect → refetch backlog: frames sent while the socket was down
+  // are lost forever (the bus doesn't replay) — only the HTTP backlog covers them.
   const prevStatusRef = useRef(status);
   useEffect(() => {
     const prev = prevStatusRef.current;

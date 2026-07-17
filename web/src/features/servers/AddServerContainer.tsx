@@ -116,8 +116,8 @@ export function AddServerContainer() {
     EnrollmentWizardProps["connectedAgent"] | undefined
   >();
 
-  // 7.6: терминальный исход пробинга (агент подключился / токен протух /
-  // серия ошибок) выключает соответствующий useQuery через enabled.
+  // 7.6: a terminal probing outcome (agent connected / token expired /
+  // error streak) disables the corresponding useQuery via enabled.
   const [inboundProbeDone, setInboundProbeDone] = useState(false);
   const [outboundProbeDone, setOutboundProbeDone] = useState(false);
 
@@ -135,9 +135,9 @@ export function AddServerContainer() {
   }, []);
 
   useEffect(() => {
-    // R-Q-24: сброс терминальных флагов при явном рестарте поллинга
-    // (pollEpoch бампает обработчик retry) — одноразовый setState на
-    // смену эпохи, каскадный рендер здесь и задуман.
+    // R-Q-24: reset terminal flags on an explicit polling restart
+    // (pollEpoch is bumped by the retry handler) — a one-shot setState on
+    // epoch change, the cascading render here is intentional.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setInboundProbeDone(false);
     setOutboundProbeDone(false);
@@ -338,10 +338,10 @@ export function AddServerContainer() {
   }, []);
 
   // Inbound polling: watches enrollment-tokens + agents for the
-  // freshly-bootstrapped agent. 7.6: ручной while-sleep-цикл заменён на
-  // useQuery({refetchInterval}); queryFn чистый (только фетч), решения —
-  // в эффектах ниже. failureCount у React Query сбрасывается при
-  // успешном фетче — это ровно прежняя семантика consecutiveFailures.
+  // freshly-bootstrapped agent. 7.6: the manual while-sleep loop was replaced with
+  // useQuery({refetchInterval}); queryFn is pure (fetch only), decisions live
+  // in the effects below. React Query's failureCount resets on a
+  // successful fetch — this is exactly the previous consecutiveFailures semantics.
   const inboundProbeEnabled =
     step === 3 && mode === "inbound" && !!tokenValue && !inboundProbeDone;
   const inboundProbe = useQuery({
@@ -366,7 +366,7 @@ export function AddServerContainer() {
     const { agents, tokens } = inboundProbe.data;
     const match = agents.find((a) => a.node_name === nodeName);
     if (match) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- data-driven прогресс-степпер, перенос прежнего probeOnce
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- data-driven progress stepper, carried over from the previous probeOnce
       if (applyAgentStatus(match)) setInboundProbeDone(true);
       return;
     }
@@ -414,7 +414,7 @@ export function AddServerContainer() {
 
   useEffect(() => {
     if (!outboundProbeEnabled) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- одноразовое data-driven семя степпера (было в старом эффекте)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot data-driven stepper seed (was in the old effect)
     setConnectionStatus((prev) =>
       prev.bootstrap === "done" ? prev : { ...prev, bootstrap: "done" },
     );

@@ -1,19 +1,19 @@
-// 7.4 (#web-7/8): trailing-debounce с верхней границей ожидания (maxWait)
-// и опциональным leading-краем. Общий примитив для WS-инвалидаций:
-//   - телеметрия: trailing 2s / maxWait 10s (сглаживание сохраняется,
-//     но постоянный поток больше не откладывает сброс бесконечно);
-//   - не-телеметрийные ключи: leading + trailing 2s / maxWait 10s
-//     (одиночное событие отражается немедленно, шторм — один рефетч).
+// 7.4 (#web-7/8): trailing-debounce with an upper wait bound (maxWait)
+// and an optional leading edge. A shared primitive for WS invalidations:
+//   - telemetry: trailing 2s / maxWait 10s (smoothing is preserved,
+//     but a sustained stream no longer defers the flush forever);
+//   - non-telemetry keys: leading + trailing 2s / maxWait 10s
+//     (a single event is reflected immediately, a storm collapses to one refetch).
 //
-// Без внешних зависимостей — lodash.debounce с maxWait тянул бы пакет
-// ради 40 строк.
+// No external dependencies — lodash.debounce with maxWait would pull in a package
+// for 40 lines' worth of logic.
 
 export interface CoalescerOptions {
-  /** Тихое окно: сброс через trailingMs после последнего schedule. */
+  /** Quiet window: flush trailingMs after the last schedule. */
   trailingMs: number;
-  /** Верхняя граница: сброс не позже maxWaitMs после первого schedule. */
+  /** Upper bound: flush no later than maxWaitMs after the first schedule. */
   maxWaitMs: number;
-  /** Первый schedule в тихом окне сбрасывается немедленно. */
+  /** The first schedule in a quiet window flushes immediately. */
   leading?: boolean;
 }
 
@@ -26,8 +26,8 @@ export function createCoalescer(opts: CoalescerOptions): Coalescer {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let firstPendingAt: number | null = null;
   let pendingFlush: (() => void) | null = null;
-  // Начало «тихого окна» для leading-края: сразу после сброса новые
-  // schedule в течение trailingMs идут на trailing-край, а не leading.
+  // Start of the "quiet window" for the leading edge: right after a flush, new
+  // schedules within trailingMs go to the trailing edge, not the leading one.
   let lastFlushAt = Number.NEGATIVE_INFINITY;
 
   const fireTrailing = () => {

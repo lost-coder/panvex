@@ -286,8 +286,8 @@ func runConfigApplyBatchContract(t *testing.T, open OpenStore) {
 			t.Fatalf("targets = %+v, want single agent-solo", gotTargets)
 		}
 
-		// Agent-scoped батч НЕ должен всплывать как активный батч какой-либо
-		// группы.
+		// An agent-scoped batch must NOT surface as the active batch of any
+		// group.
 		if _, ok, err := st.ActiveConfigApplyBatchForGroup(ctx, testFleetGroupID); err != nil {
 			t.Fatalf("ActiveConfigApplyBatchForGroup() error = %v", err)
 		} else if ok {

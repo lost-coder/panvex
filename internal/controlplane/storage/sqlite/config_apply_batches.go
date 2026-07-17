@@ -190,9 +190,9 @@ func (s *Store) PruneConfigApplyBatches(ctx context.Context, before time.Time) (
 	return result.RowsAffected()
 }
 
-// nullableString отдаёт NULL вместо пустой строки — "" в
-// ConfigApplyBatchRecord.FleetGroupID означает agent-scoped батч без
-// fleet-group-скоупа (P3-3.4); NULL не участвует в FK-проверке.
+// nullableString returns NULL instead of an empty string — "" in
+// ConfigApplyBatchRecord.FleetGroupID means an agent-scoped batch with no
+// fleet-group scope (P3-3.4); NULL does not participate in the FK check.
 func nullableString(v string) any {
 	if v == "" {
 		return nil

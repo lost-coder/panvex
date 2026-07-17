@@ -29,8 +29,8 @@ export class ApiError extends Error {
 }
 
 /**
- * 7.5 (#web-9): опции read-методов api-слоя. queryFn React Query передаёт
- * сюда свой AbortSignal, чтобы быстрая навигация отменяла медленные GET.
+ * 7.5 (#web-9): options for the api layer's read methods. React Query's queryFn passes
+ * its AbortSignal here, so fast navigation cancels slow GETs.
  */
 export interface RequestOpts {
   signal?: AbortSignal | undefined;
@@ -363,11 +363,11 @@ export async function api<T>(
     }
   }
 
-  // 7.5 (#web-10): ...init идёт ДО сборки headers — заголовки мержатся
-  // ПОВЕРХ init.headers, поэтому вызов с собственными заголовками
-  // дополняет, а не затирает Content-Type/X-CSRF-Token. Инвариант:
-  // init.headers у нас всегда plain-object (Headers-инстансы не
-  // используются — их спред дал бы пустой объект).
+  // 7.5 (#web-10): ...init comes BEFORE assembling headers — headers are merged
+  // ON TOP of init.headers, so a call with its own headers
+  // augments rather than clobbers Content-Type/X-CSRF-Token. Invariant:
+  // our init.headers is always a plain object (Headers instances are
+  // never used — spreading one would yield an empty object).
   const response = await fetch(path, {
     credentials: "include",
     ...init,

@@ -1063,7 +1063,7 @@ func (s *Service) ListRecentWithContext(ctx context.Context, limit int) []Job {
 			heap.Fix(&h, 0)
 		}
 	}
-	// Извлечь ключи и отсортировать newest-first.
+	// Extract the keys and sort them newest-first.
 	keys := make([]jobRecency, len(h))
 	copy(keys, h)
 	sort.Slice(keys, func(i, j int) bool { return keys[j].olderThan(keys[i]) })

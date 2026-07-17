@@ -1,4 +1,4 @@
-// Package postgres telemetry bulk helpers (P6-6.1a, аудит #10).
+// Package postgres telemetry bulk helpers (P6-6.1a, audit #10).
 //
 // Multi-row/one-tx variants of the per-agent telemetry writers, mirroring
 // sqlite/bulk_telemetry.go. Dedup helpers are duplicated here because the

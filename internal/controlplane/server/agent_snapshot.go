@@ -44,12 +44,12 @@ func (s *Server) updateAgentRecordFromSnapshot(snapshot gateway.AgentSnapshot) A
 		agent.Version = snap.Version
 		agent.ReadOnly = snap.ReadOnly
 	}
-	// P3-3.2 (аудит #25b): все три "last seen"-величины — панельные часы.
-	// presence.Heartbeat уже штампуется s.now() (M-5, см. applyAgentSnapshot);
-	// LastSeenAt и Runtime.UpdatedAt обязаны использовать ТЕ ЖЕ часы, иначе
-	// при skew агент одновременно "online" (presence), "stale" (freshness)
-	// и "last seen 10 min ago" (LastSeenAt). Агентский ObservedAt остаётся
-	// в Runtime.ReportedObservedAt для диагностики.
+	// P3-3.2 (audit #25b): all three "last seen" values are panel-clock based.
+	// presence.Heartbeat is already stamped with s.now() (M-5, see applyAgentSnapshot);
+	// LastSeenAt and Runtime.UpdatedAt must use the SAME clock, otherwise
+	// under skew the agent is simultaneously "online" (presence), "stale" (freshness),
+	// and "last seen 10 min ago" (LastSeenAt). The agent's own ObservedAt stays
+	// in Runtime.ReportedObservedAt for diagnostics.
 	receivedAt := s.now().UTC()
 	agent.LastSeenAt = receivedAt
 	if snap.Runtime != nil {
@@ -89,8 +89,8 @@ func (s *Server) updateAgentIdentity(id string, mutate func(*Agent)) (Agent, boo
 
 // refreshInitializationWatchCooldown maintains the per-agent cooldown so the
 // "initialization watch" UI signal does not flap on every heartbeat once the
-// agent has finished initializing. Caller must hold s.mu. `now` — панельные
-// часы приёма снапшота (P3-3.2): cooldown сравнивается с ними же.
+// agent has finished initializing. Caller must hold s.mu. `now` is the panel
+// clock time the snapshot was received (P3-3.2): the cooldown is compared against the same clock.
 func (s *Server) refreshInitializationWatchCooldown(snapshot gateway.AgentSnapshot, current, previous AgentRuntime, now time.Time) {
 	currentNeedsWatch := runtimeNeedsInitializationWatch(current)
 	previousNeedsWatch := runtimeNeedsInitializationWatch(previous)

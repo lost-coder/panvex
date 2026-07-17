@@ -113,10 +113,10 @@ export function ClientsPage({
     sel.clear();
   };
 
-  // 7.2 (#web-3): колонки содержат инлайн-рендереры — без useMemo каждый
-  // рендер страницы даёт новый массив и DataTable пересортировывает
-  // sortedData впустую. Хендлеры sel.* стабильны (useCallback в
-  // useClientSelection), поэтому deps ниже честные.
+  // 7.2 (#web-3): the columns contain inline renderers — without useMemo every
+  // page render produces a new array and DataTable re-sorts
+  // sortedData for nothing. The sel.* handlers are stable (useCallback in
+  // useClientSelection), so the deps below are honest.
   const columns = useMemo(
     () =>
       buildClientColumns(nowSec, t, {

@@ -21,7 +21,7 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 		defer store.Close()
 
 		ctx := context.Background()
-		// Пусто — nil без ошибки.
+		// Empty — nil with no error.
 		got, err := store.EarliestAgentCertExpiry(ctx)
 		if err != nil {
 			t.Fatalf("EarliestAgentCertExpiry(empty): %v", err)
@@ -36,7 +36,7 @@ func runAgentsContract(t *testing.T, open OpenStore) {
 		agents := []storage.AgentRecord{
 			{ID: "a-late", NodeName: "late", Version: "v1", LastSeenAt: ts, CertExpiresAt: &late},
 			{ID: "a-early", NodeName: "early", Version: "v1", LastSeenAt: ts, CertExpiresAt: &early},
-			{ID: "a-none", NodeName: "none", Version: "v1", LastSeenAt: ts}, // NULL — игнорируется
+			{ID: "a-none", NodeName: "none", Version: "v1", LastSeenAt: ts}, // NULL — ignored
 		}
 		if err := store.PutAgentsBulk(ctx, agents); err != nil {
 			t.Fatalf("seed agents: %v", err)

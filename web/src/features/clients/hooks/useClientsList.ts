@@ -15,7 +15,7 @@ export function useClientsList() {
     refetchInterval,
   });
 
-  // Q3.U-P-06: memoise derivations on query.data identity (образец —
+  // Q3.U-P-06: memoise derivations on query.data identity (pattern —
   // useServersList/useDashboardData; #web-2).
   const clients: ClientListItem[] = useMemo(
     () => (query.data ? transformClientList(query.data) : []),
