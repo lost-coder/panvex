@@ -54,12 +54,22 @@ type fakeTelemt struct {
 	managedRevision  string
 	managedConfigErr error
 	getManagedCalls  int
+
+	// onPatch, if set, runs during PatchConfig before the fake returns its
+	// canned result. Used to inject a REAL restore failure at exactly the
+	// point production code would hit it (after the backup is taken, before
+	// the ensuing restore/rollback), e.g. by chmod'ing the config's directory
+	// read-only so atomicfile.Write's os.CreateTemp fails for real.
+	onPatch func()
 }
 
 func (f *fakeTelemt) PatchConfig(_ context.Context, patch map[string]any, expectedRevision string) (telemt.PatchConfigResult, error) {
 	f.patchCalls++
 	f.patchedWith = patch
 	f.patchedRev = expectedRevision
+	if f.onPatch != nil {
+		f.onPatch()
+	}
 	return f.patchResult, f.patchErr
 }
 
