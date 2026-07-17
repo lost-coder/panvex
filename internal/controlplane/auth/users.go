@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -132,7 +133,11 @@ func (s *Service) UpdateUser(ctx context.Context, input UpdateUserInput, now tim
 	// target is invalidated.
 	roleChanged := previousRole != input.Role
 	if passwordChanged || roleChanged {
-		_ = s.RevokeSessionsForUserExcept(ctx, user.ID, input.ExceptSessionID)
+		// PVX-002 (V2.1): mechanical adaptation to the new (int, error)
+		// signature only — this call site still discards the result here.
+		// The revoke-before-persist fail-closed behavior for UpdateUser is
+		// Task V2.2 (D2), landed separately.
+		_, _ = s.RevokeSessionsForUserExcept(ctx, user.ID, input.ExceptSessionID)
 	}
 
 	_ = now
@@ -218,7 +223,15 @@ func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 	// Drop the deleted user's active sessions from both the in-memory map and
 	// the persistent session store. Done outside the lock because
 	// RevokeSessionsForUser takes s.mu itself.
-	_ = s.RevokeSessionsForUser(ctx, userID)
+	//
+	// PVX-002 (D3): the user row is already gone at this point, so a
+	// surviving session cannot resolve its user and will fail auth anyway —
+	// but reporting success while sessions provably survive in the store is
+	// exactly the lie this fix closes, so propagate the error rather than
+	// swallow it.
+	if _, err := s.RevokeSessionsForUser(ctx, userID); err != nil {
+		return fmt.Errorf("revoke sessions for deleted user: %w", err)
+	}
 
 	return nil
 }

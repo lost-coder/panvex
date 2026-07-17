@@ -279,7 +279,15 @@ func (s *Service) ResetTotp(ctx context.Context, userID string) (User, error) {
 	// A TOTP reset is typically an account-recovery / "possibly compromised"
 	// action: revoke every existing session so an attacker holding a live
 	// cookie is logged out rather than surviving the reset.
-	s.RevokeSessionsForUser(ctx, user.ID)
+	//
+	// PVX-002 (D3): this is the one path whose entire purpose is kicking out
+	// an attacker holding a live cookie, so a store-delete failure here must
+	// not be swallowed — reporting a successful reset while sessions
+	// provably survive in the store is exactly the dangerous case this fix
+	// closes.
+	if _, err := s.RevokeSessionsForUser(ctx, user.ID); err != nil {
+		return User{}, fmt.Errorf("revoke sessions after totp reset: %w", err)
+	}
 
 	return user, nil
 }

@@ -382,7 +382,10 @@ func TestRevokeSessionsForUserPurgesOnlyTargetUser(t *testing.T) {
 		t.Fatalf("Authenticate(bob) error = %v", err)
 	}
 
-	revoked := service.RevokeSessionsForUser(context.Background(), target.ID)
+	revoked, err := service.RevokeSessionsForUser(context.Background(), target.ID)
+	if err != nil {
+		t.Fatalf("RevokeSessionsForUser() error = %v", err)
+	}
 	if revoked != 2 {
 		t.Fatalf("RevokeSessionsForUser() = %d, want %d", revoked, 2)
 	}

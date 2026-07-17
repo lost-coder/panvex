@@ -1,0 +1,298 @@
+package auth
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
+)
+
+// selectiveFailSessionStore is a minimal in-memory SessionStore fake that
+// actually retains PutSession'd records — unlike brokenSessionStore /
+// failingDeleteStore in session_store_failure_test.go, which are stateless
+// stubs. RevokeSessionsForUserExcept's fail-closed guarantee (D1) is about
+// whether a row SURVIVES in the store after a failed delete, so the fake
+// must model real persistence for that to be provable. DeleteSession fails
+// only for IDs listed in failIDs; everything else behaves like a normal
+// store.
+type selectiveFailSessionStore struct {
+	records     map[string]storage.SessionRecord
+	failIDs     map[string]bool
+	notFoundIDs map[string]bool
+}
+
+func newSelectiveFailSessionStore() *selectiveFailSessionStore {
+	return &selectiveFailSessionStore{
+		records:     make(map[string]storage.SessionRecord),
+		failIDs:     make(map[string]bool),
+		notFoundIDs: make(map[string]bool),
+	}
+}
+
+func (f *selectiveFailSessionStore) PutSession(_ context.Context, session storage.SessionRecord) error {
+	f.records[session.ID] = session
+	return nil
+}
+
+// notFoundIDs, when set, makes DeleteSession report storage.ErrNotFound
+// for that ID instead of actually deleting anything from records — this
+// models a row that is already gone by the time RevokeSessionsForUserExcept
+// asks for it (e.g. a concurrent Logout, or the DeleteUser flow where the
+// user row's ON DELETE CASCADE already removed every session row before
+// RevokeSessionsForUser gets a chance to).
+func (f *selectiveFailSessionStore) DeleteSession(_ context.Context, id string) error {
+	if f.failIDs[id] {
+		return errors.New("injected store failure")
+	}
+	if f.notFoundIDs[id] {
+		return storage.ErrNotFound
+	}
+	delete(f.records, id)
+	return nil
+}
+
+func (f *selectiveFailSessionStore) ListSessions(_ context.Context) ([]storage.SessionRecord, error) {
+	out := make([]storage.SessionRecord, 0, len(f.records))
+	for _, rec := range f.records {
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
+func (f *selectiveFailSessionStore) DeleteExpiredSessions(_ context.Context, _ time.Time) error {
+	return nil
+}
+
+func (f *selectiveFailSessionStore) TouchSession(_ context.Context, _ string, _ time.Time) error {
+	return nil
+}
+
+func (f *selectiveFailSessionStore) hasRecord(id string) bool {
+	_, ok := f.records[id]
+	return ok
+}
+
+// TestRevokeKeepsSessionAliveWhenStoreDeleteFails models the actual threat
+// PVX-002 exists for: a stolen session, an owner rotating credentials, and a
+// store that refuses one of the deletes. The failed session must survive in
+// BOTH the in-memory map (so GetSession still resolves it — proving memory
+// and store did not diverge) and the persistent store (so a restart's
+// ListSessions-based rehydration does not silently lose the only remaining
+// record of it and make a retry a no-op). The other, successfully deleted,
+// session must be gone from both places, and the returned count must reflect
+// only genuine deletions.
+func TestRevokeKeepsSessionAliveWhenStoreDeleteFails(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 9, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	store := newSelectiveFailSessionStore()
+	service.SetSessionStore(store)
+
+	target, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "alice",
+		Password: "Alice1password",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	sessionA, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "alice",
+		Password: "Alice1password",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate(session A) error = %v", err)
+	}
+	sessionB, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "alice",
+		Password: "Alice1password",
+	}, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate(session B) error = %v", err)
+	}
+
+	// The store will refuse to delete session A; session B deletes cleanly.
+	store.failIDs[sessionA.ID] = true
+
+	n, err := service.RevokeSessionsForUserExcept(context.Background(), target.ID, "")
+	if err == nil {
+		t.Fatal("RevokeSessionsForUserExcept() error = nil, want non-nil (store delete failed)")
+	}
+	if n != 1 {
+		t.Fatalf("RevokeSessionsForUserExcept() count = %d, want 1 (only session B deleted)", n)
+	}
+
+	// Session A: the failed delete must leave it resolvable via GetSession
+	// (in-memory map untouched) AND still present in the store (so restart
+	// rehydration does not lose it either).
+	if _, err := service.GetSession(sessionA.ID); err != nil {
+		t.Fatalf("GetSession(sessionA) after failed store delete = %v, want still valid", err)
+	}
+	if !store.hasRecord(sessionA.ID) {
+		t.Fatal("sessionA missing from store after failed delete — a restart's rehydration would lose it and a retry would be a no-op")
+	}
+
+	// Session B: successfully revoked from both memory and store.
+	if _, err := service.GetSession(sessionB.ID); err == nil {
+		t.Fatal("GetSession(sessionB) after successful revoke = nil error, want revoked")
+	}
+	if store.hasRecord(sessionB.ID) {
+		t.Fatal("sessionB still present in store after successful revoke, want deleted")
+	}
+}
+
+// TestRevokeAllSuccessReturnsCountAndNilError is the happy path: every
+// store delete succeeds, both sessions are gone from memory and store, and
+// the error return is nil.
+func TestRevokeAllSuccessReturnsCountAndNilError(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 9, 30, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	store := newSelectiveFailSessionStore()
+	service.SetSessionStore(store)
+
+	target, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "bob",
+		Password: "Bob1password1",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	sessionA, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "bob",
+		Password: "Bob1password1",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate(session A) error = %v", err)
+	}
+	sessionB, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "bob",
+		Password: "Bob1password1",
+	}, now.Add(2*time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate(session B) error = %v", err)
+	}
+
+	n, err := service.RevokeSessionsForUserExcept(context.Background(), target.ID, "")
+	if err != nil {
+		t.Fatalf("RevokeSessionsForUserExcept() error = %v, want nil", err)
+	}
+	if n != 2 {
+		t.Fatalf("RevokeSessionsForUserExcept() count = %d, want 2", n)
+	}
+
+	if _, err := service.GetSession(sessionA.ID); err == nil {
+		t.Fatal("GetSession(sessionA) after revoke = nil error, want revoked")
+	}
+	if _, err := service.GetSession(sessionB.ID); err == nil {
+		t.Fatal("GetSession(sessionB) after revoke = nil error, want revoked")
+	}
+	if store.hasRecord(sessionA.ID) || store.hasRecord(sessionB.ID) {
+		t.Fatal("sessions still present in store after full success, want both deleted")
+	}
+}
+
+// TestRevokeExceptSessionIDIsNeverAttemptedAgainstStore verifies the
+// preserved session is not even offered to the store for deletion — it
+// should never appear in candidates at all, so a store that fails
+// everything cannot accidentally take it down.
+func TestRevokeExceptSessionIDIsNeverAttemptedAgainstStore(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 10, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	store := newSelectiveFailSessionStore()
+	service.SetSessionStore(store)
+
+	target, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "carol",
+		Password: "Carol1password",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	kept, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "carol",
+		Password: "Carol1password",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate(kept) error = %v", err)
+	}
+
+	n, err := service.RevokeSessionsForUserExcept(context.Background(), target.ID, kept.ID)
+	if err != nil {
+		t.Fatalf("RevokeSessionsForUserExcept() error = %v, want nil", err)
+	}
+	if n != 0 {
+		t.Fatalf("RevokeSessionsForUserExcept() count = %d, want 0 (only session excepted)", n)
+	}
+	if _, err := service.GetSession(kept.ID); err != nil {
+		t.Fatalf("GetSession(kept) after revoke-except = %v, want preserved", err)
+	}
+	if !store.hasRecord(kept.ID) {
+		t.Fatal("kept session missing from store, want preserved")
+	}
+}
+
+// TestRevokeTreatsStoreNotFoundAsAlreadyRevoked is a regression test for a
+// real bug this plan's own fail-closed change surfaced: the sessions table
+// has "ON DELETE CASCADE" on user_id, so DeleteUser's user-row delete already
+// removes every session row before RevokeSessionsForUser gets a chance to.
+// The subsequent DeleteSession call legitimately returns storage.ErrNotFound
+// — the row IS gone, which is exactly the invariant this function exists to
+// guarantee — so it must be treated as a successful revocation (counted,
+// dropped from memory, no error), not as a persistence failure. Getting this
+// wrong made DeleteUser fail closed on every call (500 instead of 204),
+// which is a functional regression, not the security fix.
+func TestRevokeTreatsStoreNotFoundAsAlreadyRevoked(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 10, 30, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	store := newSelectiveFailSessionStore()
+	service.SetSessionStore(store)
+
+	target, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "dave",
+		Password: "Dave1password1",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "dave",
+		Password: "Dave1password1",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	// Simulate the row already having been removed (e.g. by an FK cascade
+	// on a just-deleted user row) by the time the store delete runs, without
+	// actually touching store.records — DeleteSession must still report
+	// ErrNotFound rather than silently succeeding, so this exercises the
+	// real code path.
+	store.notFoundIDs[session.ID] = true
+
+	n, err := service.RevokeSessionsForUserExcept(context.Background(), target.ID, "")
+	if err != nil {
+		t.Fatalf("RevokeSessionsForUserExcept() error = %v, want nil (ErrNotFound is not a failure)", err)
+	}
+	if n != 1 {
+		t.Fatalf("RevokeSessionsForUserExcept() count = %d, want 1 (already-gone row still counts as revoked)", n)
+	}
+	if _, err := service.GetSession(session.ID); err == nil {
+		t.Fatal("GetSession(session) after ErrNotFound-revoke = nil error, want revoked from memory too")
+	}
+}
