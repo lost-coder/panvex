@@ -146,11 +146,19 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 	if err != nil {
 		return configApplyResult{message: fmt.Sprintf("config.apply: backup failed: %v", err)}
 	}
-	// .panvex.bak must never leak, on any return path below: success (hot or
-	// restart), or after a rollback has restored it onto the live config.
-	// Safe to defer unconditionally — every restore reads the backup's bytes
-	// into memory before this fires, so removing it after is never a race.
-	defer func() { _ = os.Remove(backup) }()
+	// .panvex.bak must never leak on a path where the live config ends up in a
+	// KNOWN state: success (hot or restart), or a rollback that actually
+	// restored it. On a path where a restore/rollback was attempted and
+	// FAILED, the live config, the running Telemt, and the backup can all
+	// disagree — keepBackup is set to true on every such branch below so the
+	// on-disk backup survives as the only recovery artifact, and that
+	// branch's message names its path and calls out manual recovery.
+	keepBackup := false
+	defer func() {
+		if !keepBackup {
+			_ = os.Remove(backup)
+		}
+	}()
 
 	res, err := d.telemt.PatchConfig(ctx, p.Patch, expectedRevision)
 	if err != nil {
@@ -168,19 +176,24 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 			return configApplyResult{success: true, revision: res.Revision, message: "config applied (hot reload, no restart)"}
 		}
 		if rbErr := hotRollbackConfig(ctx, d, backup); rbErr != nil {
-			return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after hot reload (%s); rollback failed: %v", hotReason, rbErr)}
+			keepBackup = true
+			return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after hot reload (%s); rollback failed: %v; manual recovery required, backup kept at %s", hotReason, rbErr, backup)}
 		}
 		return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after hot reload (%s); rolled back to previous config", hotReason)}
 	}
 
 	if d.restarter == nil {
-		_ = restoreConfigFile(backup, d.configPath)
+		if rErr := restoreConfigFile(backup, d.configPath); rErr != nil {
+			keepBackup = true
+			return configApplyResult{message: fmt.Sprintf("config.apply: change requires restart but no restart strategy is configured; restore failed: %v; manual recovery required, backup kept at %s", rErr, backup)}
+		}
 		return configApplyResult{message: "config.apply: change requires restart but no restart strategy is configured; reverted"}
 	}
 
 	if err := d.restarter.Restart(ctx); err != nil {
 		if rbErr := rollbackConfig(ctx, d, backup); rbErr != nil {
-			return configApplyResult{message: fmt.Sprintf("config.apply: restart failed: %v; %v", err, rbErr)}
+			keepBackup = true
+			return configApplyResult{message: fmt.Sprintf("config.apply: restart failed: %v; %v; manual recovery required, backup kept at %s", err, rbErr, backup)}
 		}
 		return configApplyResult{message: fmt.Sprintf("config.apply: restart failed: %v; rolled back to previous config", err)}
 	}
@@ -191,7 +204,8 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 	}
 
 	if rbErr := rollbackConfig(ctx, d, backup); rbErr != nil {
-		return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after restart (%s); %v", reason, rbErr)}
+		keepBackup = true
+		return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after restart (%s); %v; manual recovery required, backup kept at %s", reason, rbErr, backup)}
 	}
 	return configApplyResult{message: fmt.Sprintf("config.apply: unhealthy after restart (%s); rolled back to previous config", reason)}
 }
