@@ -1,9 +1,9 @@
 import { z } from "zod";
 
-// SYNC: internal/controlplane/server/clients_flow.go (clientNameRegex) и
-// username-ограничение Telemt. 7.6: единый источник правды для формы
-// (ClientFormSheet) и request-валидации (encodeRequest) — раньше форма
-// держала собственную копию, а схема разрешала max(256) без regex.
+// SYNC: internal/controlplane/server/clients_flow.go (clientNameRegex) and
+// Telemt's username constraint. 7.6: single source of truth for the form
+// (ClientFormSheet) and request validation (encodeRequest) — previously the form
+// kept its own copy, and the schema allowed max(256) with no regex.
 export const CLIENT_NAME_REGEX = /^[A-Za-z0-9_.-]{1,64}$/;
 
 export const clientMutationRequestSchema = z.object({

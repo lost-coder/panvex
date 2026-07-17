@@ -8,9 +8,9 @@ import { LimitNumberInput } from "./components/LimitNumberInput";
 import { QuotaInput } from "./components/QuotaInput";
 import { cn } from "@/ui/lib/cn";
 import type { ClientFormSheetProps } from "@/shared/api/types-pages/pages";
-// 7.6: правило имени живёт в Zod request-схеме (единый источник правды,
-// SYNC-комментарий там же); форма только импортирует его для мгновенной
-// подсветки без round-trip'а к гарантированному 400.
+// 7.6: the name rule lives in the Zod request schema (single source of truth,
+// SYNC comment there too); the form only imports it for instant
+// highlighting without a round-trip to the guaranteed 400.
 import { CLIENT_NAME_REGEX } from "@/shared/api/schemas/requests";
 
 export function ClientFormSheet({

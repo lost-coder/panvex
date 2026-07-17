@@ -191,8 +191,8 @@ export function ServerListView({
     },
   ], [selection, t, tc]);
 
-  // 7.2 (#web-3): без useMemo фильтрат пересоздаётся каждый рендер и
-  // обесценивает мемоизацию allColumns (L-20 выше).
+  // 7.2 (#web-3): without useMemo the filtered result is recreated every render and
+  // devalues the allColumns memoisation (L-20 above).
   const columns = useMemo(
     () => allColumns.filter((c) => c.key === "server" || visibleColumns[c.key] !== false),
     [allColumns, visibleColumns],

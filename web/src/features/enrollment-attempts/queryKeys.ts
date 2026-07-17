@@ -1,6 +1,6 @@
-// BP-02: feature-local React-Query key factory для enrollment-attempts.
-// До P3-3.3 ключи были инлайновыми литералами в трёх файлах; фабрика
-// нужна ветке enrollment.* в shared/events/event-invalidations.ts.
+// BP-02: feature-local React-Query key factory for enrollment-attempts.
+// Before P3-3.3 the keys were inline literals in three files; the factory
+// is needed by the enrollment.* branch in shared/events/event-invalidations.ts.
 export const enrollmentAttemptsKeys = {
   all: ["enrollment-attempts"] as const,
   page: (filter: unknown) => [...enrollmentAttemptsKeys.all, "page", filter] as const,

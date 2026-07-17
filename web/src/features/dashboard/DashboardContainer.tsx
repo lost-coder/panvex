@@ -38,9 +38,9 @@ export function DashboardContainer() {
     };
   }, [overview, latestAgentVersion, agentVersions]);
 
-  // 7.3 (#web-14): раньше query-ошибка оставляла дашборд в вечном
-  // скелетоне (isLoading=false, overview=undefined). Ошибка проверяется
-  // ДО скелетон-ветки — образец ServersContainer.
+  // 7.3 (#web-14): previously a query error left the dashboard in an eternal
+  // skeleton (isLoading=false, overview=undefined). The error is checked
+  // BEFORE the skeleton branch — pattern from ServersContainer.
   if (error) {
     return (
       <ErrorState

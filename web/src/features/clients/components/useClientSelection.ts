@@ -2,8 +2,8 @@
 // Owns the selected-set + toggle/toggleAll/clear bookkeeping so the host
 // just consumes the returned helpers and selection config.
 //
-// 7.2 (#web-3): хендлеры обёрнуты в useCallback — колонки таблицы в
-// ClientsPage мемоизируются на их identity.
+// 7.2 (#web-3): the handlers are wrapped in useCallback — the table columns in
+// ClientsPage are memoised on their identity.
 
 import { useCallback, useMemo, useState } from "react";
 

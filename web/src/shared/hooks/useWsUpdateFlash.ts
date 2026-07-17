@@ -15,8 +15,8 @@ import { useWsLastEventAt } from "@/app/providers/EventsSynchronizer";
 const FLASH_DURATION_MS = 1_200;
 
 export function useWsUpdateFlash(): boolean {
-  // 7.1: единственный настоящий подписчик lastEventAt — читает store через
-  // useSyncExternalStore-хук, а не общий контекст.
+  // 7.1: the one true lastEventAt subscriber — reads the store via the
+  // useSyncExternalStore hook, not the shared context.
   const lastEventAt = useWsLastEventAt();
   const [flashing, setFlashing] = useState(false);
 

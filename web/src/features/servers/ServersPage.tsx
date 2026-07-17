@@ -48,9 +48,9 @@ export function ServersPage({
 
   const effectiveMode: ViewMode = viewMode ?? (servers.length <= autoThreshold ? "cards" : "list");
 
-  // Filtering — 7.2 (#web-4): useMemo по образцу ClientsPage:89-98, иначе
-  // каждый рендер (в т.ч. от выбора строк) пересобирает массив и
-  // инвалидирует sortedData в DataTable.
+  // Filtering — 7.2 (#web-4): useMemo following the ClientsPage:89-98 pattern, otherwise
+  // every render (including from row selection) rebuilds the array and
+  // invalidates sortedData in DataTable.
   const filtered = useMemo(
     () =>
       servers.filter((s) => {

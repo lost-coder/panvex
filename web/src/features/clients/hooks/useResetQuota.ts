@@ -151,11 +151,11 @@ export function useResetQuota(
     Map<string, (outcome: ResetOutcome) => void>
   >(new Map());
   // Tracks (jobId, agentId) pairs whose success toast has already fired.
-  // 7.6: side-effect ушёл из queryFn в useEffect(query.data), но дедуп
-  // всё ещё обязателен — StrictMode в dev дважды прогоняет эффекты при
-  // монтировании, и эффект перезапускается при пересоздании processJobs
-  // (deps: watched) с теми же данными. Оба реплея без дедупа тостили бы
-  // повторно.
+  // 7.6: the side-effect moved out of queryFn into useEffect(query.data), but dedup
+  // is still required — StrictMode in dev runs effects twice on
+  // mount, and the effect re-runs when processJobs is recreated
+  // (deps: watched) with the same data. Both replays without dedup would toast
+  // repeatedly.
   const toastedTargetsRef = useRef<Set<string>>(new Set());
   // Fan-out callers wait on the whole job, not individual targets;
   // store one resolver per active fan-out job so we can hand back the
@@ -167,10 +167,10 @@ export function useResetQuota(
     new Map(),
   );
 
-  // 7.6: при анмаунте сеттлим висящие промисы resetOnAgent/resetEverywhere,
-  // иначе await-еры (DeployLinksCard) держат замыкания навсегда. Исход
-  // "cancelled" никем не рендерится (компонент уже размонтирован) — цель
-  // только освободить промисы.
+  // 7.6: on unmount, settle pending resetOnAgent/resetEverywhere promises,
+  // otherwise awaiters (DeployLinksCard) hold their closures forever. The
+  // "cancelled" outcome is never rendered by anyone (the component is already
+  // unmounted) — the only goal is to free the promises.
   useEffect(() => {
     const resolvers = resolversRef.current;
     const fanOutResolvers = fanOutResolversRef.current;
@@ -195,8 +195,8 @@ export function useResetQuota(
   // is not real-time and a tighter loop would hammer the panel without
   // improving the UX (Telemt's reset round-trip is dominated by the
   // gRPC + Telemt-side latency, not panel polling).
-  // 7.6: queryFn чистый — только фетч. Side-effect (processJobs: setState,
-  // тосты, сеттл резолверов) живёт в useEffect по query.data ниже.
+  // 7.6: queryFn is pure — fetch only. The side-effect (processJobs: setState,
+  // toasts, settling resolvers) lives in the useEffect on query.data below.
   const jobsQuery = useQuery({
     queryKey: ["clients", clientId, "reset-quota-jobs"],
     queryFn: ({ signal }) => apiClient.jobs({ signal }),
@@ -308,14 +308,14 @@ export function useResetQuota(
     [watched, qc, clientId, onSuccessToast],
   );
 
-  // 7.6: обработка результатов поллинга. Эффект перезапускается и на новые
-  // данные, и на пересоздание processJobs (deps: watched) — processJobs
-  // идемпотентен по watched/pendingAgentIds, а повтор тостов гасит
-  // toastedTargetsRef (см. комментарий у рефа).
+  // 7.6: processes polling results. The effect re-runs both on new
+  // data and on processJobs recreation (deps: watched) — processJobs
+  // is idempotent over watched/pendingAgentIds, and repeat toasts are suppressed by
+  // toastedTargetsRef (see the comment at the ref).
   useEffect(() => {
     if (!jobsQuery.data) return;
-    // Канонический «прокинуть результат query в состояние» паттерн: сам
-    // processJobs делает setState (тот же случай, что useWsUpdateFlash).
+    // The canonical "pipe query result into state" pattern: processJobs
+    // itself does the setState (same case as useWsUpdateFlash).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     processJobs(jobsQuery.data);
   }, [jobsQuery.data, processJobs]);

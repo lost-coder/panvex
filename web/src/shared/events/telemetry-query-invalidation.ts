@@ -1,13 +1,13 @@
-// Коалесцирует rapid WebSocket-driven инвалидации телеметрии: trailing 2s
-// + maxWait 10s (7.4, #web-7 — раньше плотный поток телеметрии бесконечно
-// сдвигал trailing-край и инвалидация не срабатывала вовсе).
+// Coalesces rapid WebSocket-driven telemetry invalidations: trailing 2s
+// + maxWait 10s (7.4, #web-7 — previously a dense telemetry stream kept
+// pushing back the trailing edge forever and the invalidation never fired).
 //
 // BP-02: telemetry keys come from the servers feature factory so
 // EventsSynchronizer and useTelemetry stay aligned on cache identity.
 //
-// 7.4 (#web-8): состояние — per-QueryClient (WeakMap), а не модульный
-// синглтон: пересозданный клиент (логаут/тесты) не наследует чужие
-// pending-агенты и таймер.
+// 7.4 (#web-8): state is per-QueryClient (WeakMap), not a module-level
+// singleton: a recreated client (logout/tests) does not inherit another
+// client's pending agents and timer.
 
 import { telemetryKeys } from "@/features/servers/queryKeys";
 import { type Coalescer, createCoalescer } from "./invalidation-coalescer";

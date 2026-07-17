@@ -50,11 +50,11 @@ export interface WebhookFormSheetProps {
   error?: string;
 }
 
-// 7.6: on-form валидация ВЫВОДИТСЯ из канонических Zod request-схем
-// (webhookEndpointRequest.ts) вместо ручного зеркала — правило, меняясь
-// в схеме, автоматически подтягивается сюда. Схемы не локализованы,
-// поэтому маппинг issue→сообщение (по полю) остаётся на форме. Бонус к
-// старому зеркалу: клиентски ловятся url≤2048 и синтаксис event_filter.
+// 7.6: on-form validation is DERIVED from the canonical Zod request schemas
+// (webhookEndpointRequest.ts) instead of a hand-kept mirror — a rule change
+// in the schema is automatically picked up here. Schemas are not localized,
+// so the issue→message mapping (per field) stays on the form. A bonus over the
+// old mirror: url≤2048 and event_filter syntax are now caught client-side too.
 function validate(mode: WebhookFormMode, data: WebhookFormData, t: TFunction): string | null {
   const schema =
     mode === "create"
