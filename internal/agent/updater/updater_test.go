@@ -24,7 +24,7 @@ func TestExtractAndReplace(t *testing.T) {
 	createTestArchive(t, archivePath, "panvex-agent-linux-amd64", binaryContent)
 
 	// Extract binary from archive.
-	binaryPath, err := extractBinaryFromArchive(archivePath, "panvex-agent-linux-amd64")
+	binaryPath, err := extractBinaryFromArchive(archivePath, "panvex-agent-linux-amd64", dir)
 	if err != nil {
 		t.Fatalf("extractBinaryFromArchive() error = %v", err)
 	}
@@ -92,6 +92,83 @@ func TestExecute_RequestsPerArchAsset(t *testing.T) {
 	}
 	if len(gotPaths) < 2 || gotPaths[1] != wantArchive+".sha256" {
 		t.Fatalf("second request path = %v, want %q", gotPaths, wantArchive+".sha256")
+	}
+}
+
+func TestReplaceSelfReadOnlyDirFailsWithoutLosingCurrent(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission semantics require non-root")
+	}
+	dir := t.TempDir()
+	current := filepath.Join(dir, "agent")
+	next := filepath.Join(dir, "agent.next")
+	for _, f := range []string{current, next} {
+		if err := os.WriteFile(f, []byte(f), 0o700); err != nil { //nolint:gosec // G306: test fixtures stand in for executable binaries
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(dir, 0o555); err != nil { //nolint:gosec // G302: 0o555 (read-only, no write) is the point of this test
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) //nolint:gosec // G302: restores the temp dir so t.TempDir() cleanup can remove it
+
+	err := replaceSelf(current, next)
+	if err == nil {
+		t.Fatal("want permission error, got nil")
+	}
+	if _, statErr := os.Stat(current); statErr != nil {
+		t.Fatalf("current binary lost after failed swap: %v", statErr)
+	}
+}
+
+func TestReplaceSelfRestoresCurrentWhenSwapFailsMidway(t *testing.T) {
+	dir := t.TempDir()
+	current := filepath.Join(dir, "agent")
+	originalContent := []byte("original-binary-content")
+	if err := os.WriteFile(current, originalContent, 0o700); err != nil { //nolint:gosec // G306: test fixture stands in for an executable binary
+		t.Fatal(err)
+	}
+	// next deliberately does not exist: the first rename (current->backup)
+	// succeeds, then the second rename (next->current) fails with ENOENT,
+	// forcing replaceSelf down its restore path.
+	next := filepath.Join(dir, "agent.next")
+
+	err := replaceSelf(current, next)
+	if err == nil {
+		t.Fatal("want error from missing next binary, got nil")
+	}
+	got, statErr := os.Stat(current)
+	if statErr != nil {
+		t.Fatalf("current binary not restored after failed swap: %v", statErr)
+	}
+	if got.IsDir() {
+		t.Fatalf("current is a directory, want the restored file")
+	}
+	restored, err := os.ReadFile(current)
+	if err != nil {
+		t.Fatalf("read restored current: %v", err)
+	}
+	if string(restored) != string(originalContent) {
+		t.Fatalf("restored content = %q, want %q (original content)", restored, originalContent)
+	}
+}
+
+func TestStageBinaryStagesNextToDestination(t *testing.T) {
+	dir := t.TempDir()
+	path, err := stageBinary(dir, strings.NewReader("fake-binary"))
+	if err != nil {
+		t.Fatalf("stageBinary: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+	if filepath.Dir(path) != dir {
+		t.Fatalf("staged in %s, want %s", filepath.Dir(path), dir)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("perm = %v, want 0700", info.Mode().Perm())
 	}
 }
 

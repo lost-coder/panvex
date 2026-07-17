@@ -211,22 +211,40 @@ summary_box() {
 # ═════════════════════════════════════════════════════════════════════════════
 
 install_agent() {
-  local arch=$1 version=$2 bin_dir=$3 config_dir=$4 data_dir=$5
-  local panel_url=$6 enrollment_token=$7 telemt_url=$8 telemt_auth=$9
-  local telemt_metrics_url=${10} node_name=${11} start_now=${12}
+  local arch=$1 version=$2 config_dir=$3 data_dir=$4
+  local panel_url=$5 enrollment_token=$6 telemt_url=$7 telemt_auth=$8
+  local telemt_metrics_url=$9 node_name=${10} start_now=${11}
 
+  # The agent binary lives under data_dir (not /usr/local/bin) ON PURPOSE:
+  # the unit runs as the unprivileged panvex-agent user with
+  # ProtectSystem=full, which makes /usr/local/bin read-only inside the
+  # unit. data_dir is already in ReadWritePaths, so self-update (which
+  # renames the new binary into place) works without relaxing hardening.
+  local agent_bin="$data_dir/bin/$APP_NAME"
+  local legacy_bin="/usr/local/bin/$APP_NAME"
+  local uninstall_script="/usr/local/bin/${APP_NAME}-uninstall.sh"
   local state_file="$data_dir/agent-state.json"
   local env_file="$config_dir/agent.env"
   local start_script="$config_dir/start-agent.sh"
   local is_upgrade=false
   local current_ver=""
+  local legacy_found=false
 
   # ── Detect existing installation ─────────────────────────────────────
-  if [[ -f "$bin_dir/$APP_NAME" ]]; then
+  # Probe both the new data_dir/bin location and the legacy /usr/local/bin
+  # location so upgrades from the old layout are recognized as upgrades.
+  if [[ -f "$agent_bin" ]]; then
     is_upgrade=true
-    current_ver=$("$bin_dir/$APP_NAME" -version 2>/dev/null | head -1 || echo "unknown")
+    current_ver=$("$agent_bin" -version 2>/dev/null | head -1 || echo "unknown")
     warn "Existing installation detected: $current_ver"
+  elif [[ -f "$legacy_bin" ]]; then
+    is_upgrade=true
+    legacy_found=true
+    current_ver=$("$legacy_bin" -version 2>/dev/null | head -1 || echo "unknown")
+    warn "Existing installation detected at legacy path ($legacy_bin): $current_ver"
+  fi
 
+  if [[ "$is_upgrade" = true ]]; then
     if [[ -f "$env_file" ]]; then
       local backup
       backup="${env_file}.bak.$(date +%s)"
@@ -283,13 +301,13 @@ install_agent() {
   # ── Install binary ─────────────────────────────────────────────────────
   step "Installing"
 
-  mkdir -p "$bin_dir" "$config_dir" "$data_dir"
-  install -m 0755 "$TMP_DIR/$binary_name" "$bin_dir/$APP_NAME"
-  success "Binary installed: $bin_dir/$APP_NAME"
+  mkdir -p "$data_dir/bin" "$config_dir" "$data_dir"
+  install -m 0755 "$TMP_DIR/$binary_name" "$agent_bin"
+  success "Binary installed: $agent_bin"
 
   # Show installed version
   local installed_ver
-  installed_ver=$("$bin_dir/$APP_NAME" -version 2>/dev/null | head -1 || echo "unknown")
+  installed_ver=$("$agent_bin" -version 2>/dev/null | head -1 || echo "unknown")
   info "Version: $installed_ver"
 
   # Create system user if not exists
@@ -298,8 +316,16 @@ install_agent() {
     success "Created system user: panvex-agent"
   fi
 
+  # chown -R here (after the binary is already staged under data_dir/bin)
+  # is what makes data_dir/bin writable by the service user — that write
+  # permission on the directory is what self-update relies on.
   chown -R panvex-agent:panvex-agent "$data_dir"
   chown -R panvex-agent:panvex-agent "$config_dir"
+
+  if [[ "$legacy_found" = true ]]; then
+    rm -f "$legacy_bin" "${legacy_bin}.bak"
+    info "Removed legacy binary: $legacy_bin"
+  fi
 
   # ── Configuration ──────────────────────────────────────────────────────
 
@@ -324,7 +350,7 @@ EOF
 #!/usr/bin/env sh
 set -eu
 . "${env_file}"
-exec "${bin_dir}/${APP_NAME}" \\
+exec "${agent_bin}" \\
   -state-file "\$PANVEX_STATE_FILE" \\
   -node-name "\${PANVEX_NODE_NAME:-\$(hostname)}" \\
   -telemt-url "\${PANVEX_TELEMT_URL:-http://127.0.0.1:9091}" \\
@@ -354,11 +380,11 @@ EOF
       warn "Bootstrapping over insecure transport (private key in cleartext) — only safe on VPN / private-network links."
       _BOOT_ARGS+=(-insecure-transport)
     fi
-    if "$bin_dir/$APP_NAME" bootstrap "${_BOOT_ARGS[@]}" 2>&1; then
+    if "$agent_bin" bootstrap "${_BOOT_ARGS[@]}" 2>&1; then
       success "Agent enrolled successfully"
     else
       error "Enrollment failed — check panel URL and token"
-      warn "Retry: $bin_dir/$APP_NAME bootstrap -panel-url $panel_url -enrollment-token <token> -state-file $state_file -node-name $node_name${PANVEX_INSECURE_TRANSPORT:+ -insecure-transport}"
+      warn "Retry: $agent_bin bootstrap -panel-url $panel_url -enrollment-token <token> -state-file $state_file -node-name $node_name${PANVEX_INSECURE_TRANSPORT:+ -insecure-transport}"
     fi
 
     chown panvex-agent:panvex-agent "$state_file" 2>/dev/null || true
@@ -393,6 +419,8 @@ ProtectSystem=full
 ProtectHome=true
 NoNewPrivileges=true
 PrivateTmp=true
+# The agent binary lives under data_dir (ReadWritePaths) ON PURPOSE: self-update
+# renames the binary in place; /usr/local/bin is read-only under ProtectSystem=full.
 ReadWritePaths=${data_dir} ${config_dir}
 
 [Install]
@@ -404,8 +432,9 @@ EOF
   success "Systemd service installed"
 
   # ── Generate uninstall script ──────────────────────────────────────────
+  # Kept at a fixed /usr/local/bin path (root-managed, on PATH) — unlike the
+  # agent binary, this script is never touched by self-update.
 
-  local uninstall_script="${bin_dir}/${APP_NAME}-uninstall.sh"
   cat >"$uninstall_script" <<UNINSTALL
 #!/usr/bin/env bash
 set -euo pipefail
@@ -414,7 +443,7 @@ systemctl stop ${SERVICE_NAME} 2>/dev/null || true
 systemctl disable ${SERVICE_NAME} 2>/dev/null || true
 rm -f /etc/systemd/system/${SERVICE_NAME}.service
 systemctl daemon-reload
-rm -f "${bin_dir}/${APP_NAME}" "${uninstall_script}"
+rm -f "${agent_bin}" "${agent_bin}.bak" "${uninstall_script}"
 userdel panvex-agent 2>/dev/null || true
 echo ""
 echo "Panvex Agent removed. Data preserved at:"
@@ -514,13 +543,11 @@ run_interactive() {
   fi
 
   # ── Paths ──────────────────────────────────────────────────────────────
-  local bin_dir="/usr/local/bin"
   local config_dir="/etc/panvex-agent"
   local data_dir="/var/lib/panvex-agent"
 
   if [[ "$mode" = "Advanced" ]]; then
     step "Installation Paths"
-    bin_dir=$(ask "Binary directory" "$bin_dir")
     config_dir=$(ask "Config directory" "$config_dir")
     data_dir=$(ask "Data directory" "$data_dir")
   fi
@@ -556,7 +583,7 @@ run_interactive() {
     "Node name:" "${node_name}" \
     "Telemt URL:" "${telemt_url}" \
     "Telemt metrics:" "${telemt_metrics_url}" \
-    "Binary:" "${bin_dir}/${APP_NAME}" \
+    "Binary:" "${data_dir}/bin/${APP_NAME}" \
     "Config:" "${config_dir}" \
     "Data:" "${data_dir}"
 
@@ -571,7 +598,7 @@ run_interactive() {
   fi
 
   # ── Run installation ───────────────────────────────────────────────────
-  install_agent "$arch" "$version" "$bin_dir" "$config_dir" "$data_dir" \
+  install_agent "$arch" "$version" "$config_dir" "$data_dir" \
     "$panel_url" "$enrollment_token" "$telemt_url" "$telemt_auth" \
     "$telemt_metrics_url" "$node_name" "$start_now"
     return 0
@@ -586,7 +613,6 @@ run_noninteractive() {
   arch=$(detect_arch)
 
   local version="${PANVEX_AGENT_VERSION:-latest}"
-  local bin_dir="${PANVEX_BIN_DIR:-/usr/local/bin}"
   local config_dir="${PANVEX_CONFIG_DIR:-/etc/panvex-agent}"
   local data_dir="${PANVEX_DATA_DIR:-/var/lib/panvex-agent}"
   local panel_url="${PANVEX_PANEL_URL:-}"
@@ -602,7 +628,7 @@ run_noninteractive() {
 
   info "Non-interactive install: $version ($arch)"
 
-  install_agent "$arch" "$version" "$bin_dir" "$config_dir" "$data_dir" \
+  install_agent "$arch" "$version" "$config_dir" "$data_dir" \
     "$panel_url" "$enrollment_token" "$telemt_url" "$telemt_auth" \
     "$telemt_metrics_url" "$node_name" "$start_now"
     return 0
@@ -650,7 +676,6 @@ Environment variables (alternative to CLI args):
   PANVEX_INSECURE_TRANSPORT  Set to "1" to pass -insecure-transport to the
                              bootstrap command (see --insecure-transport).
   PANVEX_START_NOW           Start service after install: 0 or 1 (default: 1)
-  PANVEX_BIN_DIR             Binary directory (default: /usr/local/bin)
   PANVEX_CONFIG_DIR          Config directory (default: /etc/panvex-agent)
   PANVEX_DATA_DIR            Data directory (default: /var/lib/panvex-agent)
   PANVEX_REPO                GitHub repo (default: lost-coder/panvex)
@@ -666,7 +691,7 @@ if [[ "${1:-}" = "--dry-run" ]]; then
   echo "  Node: ${PANVEX_NODE_NAME:-$(hostname)}"
   echo "  Telemt API: ${PANVEX_TELEMT_URL:-http://127.0.0.1:9091}"
   echo "  Telemt metrics: ${PANVEX_TELEMT_METRICS_URL:-http://127.0.0.1:9090}"
-  echo "  Bin: ${PANVEX_BIN_DIR:-/usr/local/bin}"
+  echo "  Bin: ${PANVEX_DATA_DIR:-/var/lib/panvex-agent}/bin/${APP_NAME}"
   echo "  Config: ${PANVEX_CONFIG_DIR:-/etc/panvex-agent}"
   echo "  Data: ${PANVEX_DATA_DIR:-/var/lib/panvex-agent}"
   exit 0

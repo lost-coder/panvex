@@ -65,7 +65,7 @@ func TestExtractSkipsLeadingEntriesAndFindsBinary(t *testing.T) {
 		{name: "panvex-agent-test", body: binary},
 	})
 
-	got, err := extractBinaryFromArchive(archive, "panvex-agent-test")
+	got, err := extractBinaryFromArchive(archive, "panvex-agent-test", t.TempDir())
 	if err != nil {
 		t.Fatalf("extract: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestExtractFailsWhenBinaryMissing(t *testing.T) {
 	archive := makeTarGz(t, []tarEntry{
 		{name: "README.md", body: []byte("no binary here")},
 	})
-	_, err := extractBinaryFromArchive(archive, "panvex-agent-test")
+	_, err := extractBinaryFromArchive(archive, "panvex-agent-test", t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "does not contain") {
 		t.Fatalf("err = %v, want 'archive does not contain ...'", err)
 	}
@@ -100,7 +100,7 @@ func TestExtractFailsOnTruncatedBinary(t *testing.T) {
 	archive := makeTarGz(t, []tarEntry{
 		{name: "panvex-agent-test", body: []byte("short"), sizeOverride: 4096},
 	})
-	_, err := extractBinaryFromArchive(archive, "panvex-agent-test")
+	_, err := extractBinaryFromArchive(archive, "panvex-agent-test", t.TempDir())
 	if err == nil {
 		t.Fatal("extract of a truncated entry succeeded, want error")
 	}

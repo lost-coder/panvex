@@ -149,16 +149,21 @@ func executeWith(ctx context.Context, payload Payload, currentVersion string, lo
 		return OutcomeNoop, fmt.Errorf("verify: %w", err)
 	}
 
-	binaryPath, err := extractBinaryFromArchive(archivePath, binaryName)
+	// Resolved before extraction so the downloaded binary can be staged
+	// directly in the destination directory (see stageBinary) instead of
+	// /tmp: the systemd unit isolates /tmp via PrivateTmp=true, and /tmp can
+	// be on a different filesystem than the destination anyway, which would
+	// make the final os.Rename fail with EXDEV.
+	currentPath, err := os.Executable()
+	if err != nil {
+		_ = os.Remove(archivePath)
+		return OutcomeNoop, fmt.Errorf("resolve executable: %w", err)
+	}
+
+	binaryPath, err := extractBinaryFromArchive(archivePath, binaryName, filepath.Dir(currentPath))
 	_ = os.Remove(archivePath)
 	if err != nil {
 		return OutcomeNoop, fmt.Errorf("extract: %w", err)
-	}
-
-	currentPath, err := os.Executable()
-	if err != nil {
-		_ = os.Remove(binaryPath)
-		return OutcomeNoop, fmt.Errorf("resolve executable: %w", err)
 	}
 
 	if err := replaceSelf(currentPath, binaryPath); err != nil {
@@ -223,7 +228,7 @@ func verifyChecksum(path, expected string) error {
 // structural: the wanted entry missing (README-first / repacked
 // archives used to be extracted blindly, audit #9c) and a silently
 // truncated copy.
-func extractBinaryFromArchive(archivePath, wantName string) (string, error) {
+func extractBinaryFromArchive(archivePath, wantName, destDir string) (string, error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return "", fmt.Errorf("open archive: %w", err)
@@ -256,16 +261,40 @@ func extractBinaryFromArchive(archivePath, wantName string) (string, error) {
 		if hdr.Size <= 0 || hdr.Size > maxBinarySize {
 			return "", fmt.Errorf("refusing to extract %q: declared size %d out of bounds (cap %d)", hdr.Name, hdr.Size, int64(maxBinarySize))
 		}
-		return extractTarEntry(tr, hdr)
+		return extractTarEntry(tr, hdr, destDir)
 	}
 }
 
 // extractTarEntry copies exactly hdr.Size bytes of the current tar
-// entry into an executable temp file. Any size mismatch is fatal —
-// a truncated binary must never reach the swap (mirrors the streamed
-// size check in download.go's downloadToTemp).
-func extractTarEntry(tr *tar.Reader, hdr *tar.Header) (string, error) {
-	tmp, err := os.CreateTemp("", "panvex-agent-binary-*")
+// entry into an executable temp file staged in destDir. Any size
+// mismatch is fatal — a truncated binary must never reach the swap
+// (mirrors the streamed size check in download.go's downloadToTemp).
+func extractTarEntry(tr *tar.Reader, hdr *tar.Header, destDir string) (string, error) {
+	path, err := stageBinary(destDir, io.LimitReader(tr, hdr.Size+1))
+	if err != nil {
+		return "", fmt.Errorf("extract binary: %w", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("stat extracted binary: %w", err)
+	}
+	if info.Size() != hdr.Size {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("extract binary: wrote %d bytes, tar header declares %d", info.Size(), hdr.Size)
+	}
+	return path, nil
+}
+
+// stageBinary copies r into a new temp file created in destDir and marks
+// it executable (owner-only). destDir must be the directory that holds
+// the binary this staged file will eventually replace: staging next to
+// the destination (instead of the OS temp dir) guarantees the later
+// os.Rename in replaceSelf is same-filesystem, so it cannot fail with
+// EXDEV, and avoids relying on /tmp, which the systemd unit isolates via
+// PrivateTmp=true.
+func stageBinary(destDir string, r io.Reader) (string, error) {
+	tmp, err := os.CreateTemp(destDir, "panvex-agent-binary-*")
 	if err != nil {
 		return "", fmt.Errorf("create temp binary: %w", err)
 	}
@@ -274,14 +303,9 @@ func extractTarEntry(tr *tar.Reader, hdr *tar.Header) (string, error) {
 		_ = os.Remove(tmp.Name())
 	}
 
-	written, err := io.Copy(tmp, io.LimitReader(tr, hdr.Size+1))
-	if err != nil {
+	if _, err := io.Copy(tmp, r); err != nil {
 		cleanup()
-		return "", fmt.Errorf("extract binary: %w", err)
-	}
-	if written != hdr.Size {
-		cleanup()
-		return "", fmt.Errorf("extract binary: wrote %d bytes, tar header declares %d", written, hdr.Size)
+		return "", fmt.Errorf("stage binary: %w", err)
 	}
 	if err := os.Chmod(tmp.Name(), 0o700); err != nil { //nolint:gosec // G302: 0o700 keeps the binary owner-only but still needs +x to run
 		cleanup()
