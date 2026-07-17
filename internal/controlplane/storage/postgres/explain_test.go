@@ -29,7 +29,6 @@ package postgres
 //      - args: []any with realistic values. Seed fixtures in
 //        seedExplainFixtures (below) if the query needs specific rows.
 //      - assertions: pick from the helper set:
-//          * mustUseIndex("idx_name")        — index appears in plan.
 //          * mustNotSeqScan("table_name")    — Seq Scan on table fails.
 //          * costCeiling(<float>)            — total cost ≤ ceiling
 //                                              (use sparingly; data
@@ -52,8 +51,8 @@ package postgres
 //   shapes use the load harness in internal/loadtest.
 //
 // - Cost regressions (e.g. plan switched from one index to a different
-//   one with worse selectivity). Add an explicit mustUseIndex on the
-//   index you require.
+//   one with worse selectivity). Add an explicit mustNotSeqScan (or a
+//   costCeiling) that pins the index you require.
 //
 // - Lock contention, autovacuum behaviour, or anything observable only
 //   under concurrent load.
@@ -533,29 +532,6 @@ func summarisePlan(root map[string]any) string {
 // and the operation seen — never just "plan mismatch". A future migration
 // that legitimately changes the plan should be able to read the failure
 // and decide whether to update the expectation or back out the change.
-
-// mustUseIndex asserts that some node in the plan is an Index Scan or
-// Index Only Scan whose Index Name equals the supplied name. Use when
-// you know the exact index that should drive the query.
-func mustUseIndex(indexName string) planAssertion {
-	return planAssertion{
-		desc: "must use index " + indexName,
-		check: func(t *testing.T, name string, plan map[string]any) {
-			t.Helper()
-			for _, n := range planNodes(plan) {
-				nt, _ := n["Node Type"].(string)
-				if nt != "Index Scan" && nt != "Index Only Scan" && nt != "Bitmap Index Scan" {
-					continue
-				}
-				if got, _ := n["Index Name"].(string); got == indexName {
-					return
-				}
-			}
-			t.Errorf("query %s: expected to use index %q; plan was: %s",
-				name, indexName, summarisePlan(plan))
-		},
-	}
-}
 
 // mustNotSeqScan asserts that no node in the plan is a Seq Scan against
 // the supplied table. Use when a query is supposed to be index-driven

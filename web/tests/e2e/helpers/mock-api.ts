@@ -22,6 +22,7 @@ export interface ApiMocks {
   fleetGroups?: Array<Record<string, unknown>>;
   appearance?: Record<string, unknown>;
   panel?: Record<string, unknown>;
+  retention?: Record<string, unknown>;
   updates?: Record<string, unknown>;
   version?: Record<string, unknown>;
   dashboard?: Record<string, unknown>;
@@ -30,6 +31,9 @@ export interface ApiMocks {
   jobs?: Array<Record<string, unknown>>;
   audit?: Array<Record<string, unknown>>;
   users?: Array<Record<string, unknown>>;
+  settingsSchema?: Array<Record<string, unknown>>;
+  settingsValues?: Record<string, unknown>;
+  restartStatus?: Record<string, unknown>;
 }
 
 const DEFAULT_ME = {
@@ -50,6 +54,31 @@ const DEFAULT_PANEL = {
   http_public_url: "https://panvex.local",
   grpc_public_endpoint: "grpc.panvex.local:8443",
   bootstrap_complete: true,
+};
+
+// Matches retentionSettingsSchema in src/shared/api/schemas/settings.ts —
+// every field is a required int, so the SettingsPage retention section
+// needs this stub to render without a Zod parse error.
+const DEFAULT_RETENTION = {
+  ts_raw_seconds: 604_800,
+  ts_hourly_seconds: 2_592_000,
+  ts_dc_seconds: 2_592_000,
+  ip_history_seconds: 7_776_000,
+  event_history_seconds: 7_776_000,
+};
+
+// Matches valuesResponseSchema / restartStatusSchema in
+// src/shared/api/schemas/settings.ts — empty-but-schema-valid so the
+// settings registry (schema/values/restart-status) renders with no
+// bootstrap or operational fields.
+const DEFAULT_SETTINGS_VALUES = {
+  bootstrap: {},
+  operational: {},
+};
+
+const DEFAULT_RESTART_STATUS = {
+  pending: false,
+  fields: [],
 };
 
 const DEFAULT_VERSION = {
@@ -122,6 +151,21 @@ function apiPath(prefix: string): RegExp {
 }
 
 export async function mockApi(page: Page, overrides: ApiMocks = {}) {
+  // Catch-all safety net, registered before every specific mock below.
+  // Playwright resolves overlapping page.route() handlers most-recently-
+  // registered-first, so the specific mocks that follow always take
+  // priority for the paths they claim; this one only fires for a
+  // genuinely unmocked `/api/**` request. Previously an unclaimed request
+  // fell through to the real network, hit the Vite dev proxy, and logged
+  // a silent `ECONNREFUSED 127.0.0.1:8080` (no backend runs in this
+  // suite) — a 404 stub would have hidden the same gap just as quietly.
+  // Failing loudly with the offending URL is what actually surfaces it.
+  await page.route(apiPath("/api"), (route) => {
+    throw new Error(
+      `Unmocked API request in E2E smoke suite: ${route.request().method()} ${route.request().url()}`,
+    );
+  });
+
   await page.route(apiPath("/api/auth/me"), (route) =>
     json(route, overrides.me ?? DEFAULT_ME),
   );
@@ -133,6 +177,18 @@ export async function mockApi(page: Page, overrides: ApiMocks = {}) {
   });
   await page.route(apiPath("/api/settings/panel"), (route) =>
     json(route, overrides.panel ?? DEFAULT_PANEL),
+  );
+  await page.route(apiPath("/api/settings/retention"), (route) =>
+    json(route, overrides.retention ?? DEFAULT_RETENTION),
+  );
+  await page.route(apiPath("/api/settings/schema"), (route) =>
+    json(route, overrides.settingsSchema ?? []),
+  );
+  await page.route(apiPath("/api/settings/values"), (route) =>
+    json(route, overrides.settingsValues ?? DEFAULT_SETTINGS_VALUES),
+  );
+  await page.route(apiPath("/api/settings/restart-status"), (route) =>
+    json(route, overrides.restartStatus ?? DEFAULT_RESTART_STATUS),
   );
   await page.route(apiPath("/api/version"), (route) =>
     json(route, overrides.version ?? DEFAULT_VERSION),
@@ -169,11 +225,16 @@ export async function mockApi(page: Page, overrides: ApiMocks = {}) {
   await page.route(apiPath("/api/users"), (route) =>
     json(route, overrides.users ?? []),
   );
-  // Block the events websocket: page.route() does not intercept the
-  // upgrade itself but we can refuse the upgrade attempt so the proxy
-  // does not log a stream of ECONNREFUSED messages. Tests do not rely
-  // on live events; the polling fallback is sufficient.
-  await page.route(/\/api\/events/, (route) => route.abort());
+  // The events WebSocket must be intercepted with routeWebSocket(), not
+  // page.route(): page.route() only ever sees HTTP requests, so it can't
+  // stop the browser's WS upgrade from reaching the Vite dev proxy —
+  // which then dials the (absent) backend and logs
+  // `ECONNREFUSED 127.0.0.1:8080` regardless of the abort() above.
+  // routeWebSocket() intercepts the upgrade itself; without a
+  // connectToServer() call inside the handler, Playwright mocks the
+  // socket end-to-end and never dials out. Tests do not rely on live
+  // events; the polling fallback is sufficient.
+  await page.routeWebSocket(/\/api\/events/, () => {});
   await page.route(apiPath("/api/fleet"), (route) =>
     json(route, overrides.fleet ?? DEFAULT_FLEET),
   );

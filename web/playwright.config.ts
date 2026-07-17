@@ -8,9 +8,14 @@ import { defineConfig, devices } from "@playwright/test";
  * `page.route()` so the suite stays hermetic — no backend, no database,
  * no shared state between runs.
  *
- * Why Chromium only? Operators run either Chrome or Edge on corporate
- * machines; adding Firefox/WebKit doubles the test-matrix cost for a
- * smoke suite. CI can widen once the suite settles.
+ * Why Chromium only in CI? Operators run either Chrome or Edge on
+ * corporate machines; adding Firefox/WebKit doubles the test-matrix
+ * cost for a smoke suite. CI (`.github/workflows/ci.yml`) installs and
+ * runs only the `chromium` project — Firefox/WebKit are declared below
+ * but gated behind `PW_ALL_BROWSERS` so the config stops advertising a
+ * matrix CI never actually exercises. Run the full matrix locally with
+ * `PW_ALL_BROWSERS=1 npx playwright test` (after
+ * `npm run test:e2e:install:all` to fetch Firefox/WebKit).
  */
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -38,18 +43,24 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
-    // 8.ext: widen the matrix once the Chromium smoke stays green.
     // Firefox covers Gecko quirks (form validation, focus-visible);
     // WebKit covers Safari which a subset of operators actually use.
     // Both stay on the same smoke suite — no Safari-only spec needed.
-    {
-      name: "firefox",
-      use: { ...devices["Desktop Firefox"] },
-    },
-    {
-      name: "webkit",
-      use: { ...devices["Desktop Safari"] },
-    },
+    // Neither runs in CI (chromium is the official gate); opt in locally
+    // with `PW_ALL_BROWSERS=1` so the declared matrix matches what's
+    // actually exercised anywhere.
+    ...(process.env.PW_ALL_BROWSERS
+      ? [
+          {
+            name: "firefox",
+            use: { ...devices["Desktop Firefox"] },
+          },
+          {
+            name: "webkit",
+            use: { ...devices["Desktop Safari"] },
+          },
+        ]
+      : []),
   ],
   webServer: {
     command: "npm run dev",
