@@ -102,12 +102,12 @@ type UserAppearanceRecord struct {
 }
 
 // TelemetryRuntimeCurrentRecord stores one node's latest Telemt runtime
-// summary as a canonical JSON blob (P3-3.1, аудит #3). RuntimeJSON — это
-// json.Marshal(server.AgentRuntime) целиком; storage-слой обращается с ним
-// как с непрозрачной строкой и обязан возвращать её байт-в-байт.
-// ObservedAt хранится отдельной колонкой ТОЛЬКО для ORDER BY в List и
-// диагностики; при чтении сервер перезаписывает updated_at рантайма из
-// этой колонки (единственный источник истины для часов — см. P3-3.2).
+// summary as a canonical JSON blob (P3-3.1, audit #3). RuntimeJSON is
+// the whole json.Marshal(server.AgentRuntime); the storage layer treats it
+// as an opaque string and must return it byte-for-byte.
+// ObservedAt is stored in a separate column ONLY for ORDER BY in List and
+// for diagnostics; on read the server overwrites the runtime's updated_at from
+// this column (the single source of truth for the clock — see P3-3.2).
 type TelemetryRuntimeCurrentRecord struct {
 	AgentID     string
 	ObservedAt  time.Time

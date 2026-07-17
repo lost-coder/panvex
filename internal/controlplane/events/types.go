@@ -1,11 +1,11 @@
-// Package events закрепляет событийную таксономию панели как compile-time
-// контракт (P3-3.3, аудит #22). Каждый публикуемый на eventbus тип обязан
-// быть константой отсюда — строковые литералы в публикаторах запрещены.
+// Package events pins the panel's event taxonomy as a compile-time
+// contract (P3-3.3, audit #22). Every type published on the eventbus must
+// be a constant from here — string literals in publishers are forbidden.
 //
-// SYNC: web/src/shared/events/event-types.ts — зеркальный TS-список.
-// Сверку делает web/scripts/check-event-parity.mjs (CI, npm run
-// check:events): он парсит const-блок ниже регэкспом
-// `Type\w+\s*=\s*"…"`, поэтому формат блока менять нельзя.
+// SYNC: web/src/shared/events/event-types.ts — mirror TS list.
+// The check is done by web/scripts/check-event-parity.mjs (CI, npm run
+// check:events): it parses the const block below with the regex
+// `Type\w+\s*=\s*"…"`, so the block's format must not change.
 package events
 
 const (
@@ -20,8 +20,8 @@ const (
 	TypeRuntimeEvents       = "runtime.events"
 )
 
-// All перечисляет каждый публикуемый тип; используется тестами и
-// потенциально рантайм-валидацией. Держи в лексикографическом порядке.
+// All lists every published type; used by tests and
+// potentially by runtime validation. Keep it in lexicographic order.
 var All = []string{
 	TypeAgentsEnrolled,
 	TypeAgentsUpdated,

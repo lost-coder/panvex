@@ -1,4 +1,4 @@
-// Package sqlite telemetry bulk helpers (P6-6.1a, аудит #10).
+// Package sqlite telemetry bulk helpers (P6-6.1a, audit #10).
 //
 // The server batch writer used to issue up to 6 sequential single-row
 // store calls per telemetryWriteUnit — ~200 round-trips/s at a 2000-agent

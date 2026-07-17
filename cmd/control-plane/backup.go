@@ -369,11 +369,11 @@ func verifyRestoreArchive(ctx context.Context, archivePath, storageDriver, stora
 		if err != nil {
 			return err
 		}
-		// NB: после P9-squash свежие БД несут goose-версию 1, а архивы,
-		// снятые до squash, — версии <= 58: для такой пары сравнение
-		// "ahead/older" инвертируется, хотя схемы бит-эквивалентны.
-		// Pre-prod: принято, восстановление до-squash архивов не
-		// поддерживается (пересоздать стенд).
+		// NB: after the P9 squash, fresh DBs carry goose version 1, while archives
+		// taken before the squash carry versions <= 58: for such a pair the
+		// "ahead/older" comparison is inverted, even though the schemas are bit-equivalent.
+		// Pre-prod: accepted, restoring pre-squash archives is not
+		// supported (recreate the stand instead).
 		switch {
 		case meta.SchemaVersion > targetVersion:
 			fmt.Printf("  schema: archive (v%d) is AHEAD of target (v%d) — run migrate-schema after restoring\n", meta.SchemaVersion, targetVersion)

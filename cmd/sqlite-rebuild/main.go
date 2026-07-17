@@ -1,8 +1,8 @@
-// Command sqlite-rebuild печатает готовый goose-файл пересборки SQLite-таблицы
-// (create/copy/drop/rename/index в crash-safe транзакционных рамках).
+// Command sqlite-rebuild prints a ready-made goose file for rebuilding an SQLite table
+// (create/copy/drop/rename/index within crash-safe transactional bounds).
 //
-// Использование (одна таблица за вызов; для нескольких таблиц в одной
-// миграции — объединить блоки между PRAGMA-строками вручную):
+// Usage (one table per invocation; for several tables in a single
+// migration, merge the blocks between the PRAGMA lines by hand):
 //
 //	go run ./cmd/sqlite-rebuild \
 //	    -table jobs \
@@ -11,7 +11,7 @@
 //	    -index 'CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status);' \
 //	    > db/migrations/sqlite/0059_jobs_add_check.sql
 //
-// Флаг -copy file.sql заменяет дефолтный INSERT..SELECT кастомным (backfill).
+// The -copy file.sql flag replaces the default INSERT..SELECT with a custom one (backfill).
 package main
 
 import (

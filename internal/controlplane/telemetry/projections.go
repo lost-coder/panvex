@@ -102,13 +102,13 @@ func DetailBoostState(expiresAt, now time.Time) DetailBoost {
 	}
 }
 
-// Reason-строки статусов узла — контракт Go↔TS по ТОЧНОМУ литералу:
-// web/src/ui/lib/reason-text.ts (REASON_KEYS + TELEMT_PREFIX) локализует
-// их по этим строкам. SYNC guard: web/scripts/check-event-parity.mjs
-// (CI, npm run check:events) парсит этот блок регэкспом
-// `Reason\w+\s*=\s*"…"` — формат блока не менять.
-// Динамические композиты (обёртки ME→Direct fallback) в контракт не
-// входят — TS пропускает их verbatim by design.
+// Reason strings for node statuses — Go↔TS contract on the EXACT literal:
+// web/src/ui/lib/reason-text.ts (REASON_KEYS + TELEMT_PREFIX) localizes
+// them based on these strings. SYNC guard: web/scripts/check-event-parity.mjs
+// (CI, npm run check:events) parses this block with the regex
+// `Reason\w+\s*=\s*"…"` — do not change the block's format.
+// Dynamic composites (ME→Direct fallback wrappers) are not part of the
+// contract — TS skips them verbatim by design.
 const (
 	ReasonOffline                 = "Agent heartbeat is offline"
 	ReasonStale                   = "Telemetry is stale"

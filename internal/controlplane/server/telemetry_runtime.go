@@ -149,11 +149,11 @@ type telemetrySecurityInventoryResponse struct {
 func runtimeCurrentRecordFromAgent(agent Agent) storage.TelemetryRuntimeCurrentRecord {
 	blob, err := json.Marshal(agent.Runtime)
 	if err != nil {
-		// AgentRuntime состоит только из JSON-кодируемых типов; Marshal
-		// может упасть лишь на программной ошибке (например, NaN во float
-		// из будущего поля). Пустой blob вместо паники снапшот-пути:
-		// runtimeFromCurrentRecord вернёт zero-runtime, что эквивалентно
-		// "нет персистентного состояния".
+		// AgentRuntime consists only of JSON-encodable types; Marshal
+		// can only fail on a programming error (e.g. NaN in a float
+		// from a future field). An empty blob instead of panicking the snapshot path:
+		// runtimeFromCurrentRecord will return a zero-runtime, which is equivalent to
+		// "no persistent state".
 		blob = []byte("{}")
 	}
 	return storage.TelemetryRuntimeCurrentRecord{
@@ -234,13 +234,13 @@ func runtimeFromCurrentRecord(record storage.TelemetryRuntimeCurrentRecord) Agen
 	var runtime AgentRuntime
 	if record.RuntimeJSON != "" {
 		if err := json.Unmarshal([]byte(record.RuntimeJSON), &runtime); err != nil {
-			// Повреждённый blob = отсутствие персистентного состояния;
-			// следующий снапшот агента перезапишет строку целиком.
+			// A corrupted blob = no persistent state;
+			// the next agent snapshot will overwrite the row entirely.
 			runtime = AgentRuntime{}
 		}
 	}
-	// Колонка — источник истины для часов наблюдения (по ней ORDER BY);
-	// updated_at из blob'а перезаписывается на неё.
+	// The column is the source of truth for the observation clock (ORDER BY uses it);
+	// updated_at from the blob gets overwritten with it.
 	runtime.UpdatedAt = record.ObservedAt.UTC()
 	return runtime
 }

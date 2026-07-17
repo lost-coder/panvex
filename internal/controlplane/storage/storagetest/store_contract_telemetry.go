@@ -442,9 +442,9 @@ func runTelemetryContract(t *testing.T, open OpenStore) {
 		}
 	})
 
-	// runtimeJSONFixture — нетривиальный JSON-документ: вложенные объекты,
-	// массивы, юникод, спецсимволы. Хранилище обязано вернуть его байт-в-байт:
-	// колонка runtime_json — непрозрачная строка для storage-слоя.
+	// runtimeJSONFixture — a non-trivial JSON document: nested objects,
+	// arrays, unicode, special characters. The store must return it byte-for-byte:
+	// the runtime_json column is an opaque string as far as the storage layer is concerned.
 	const runtimeJSONFixture = `{"route_mode":"me→direct","system_load":{"cpu_usage_pct":42.5,"load_1m":1.25},` +
 		`"connections_bad_by_class":[{"class":"тайм-аут","total":7}],"fail_rate_pct_5m":0.031,` +
 		`"quote":"a\"b\\c","updated_at":"2026-07-02T03:04:05.123456789Z"}`

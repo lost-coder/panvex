@@ -173,8 +173,8 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		bootstrap:        options.Bootstrap,
 		bootstrapSources: options.BootstrapSources,
 	}
-	// P8.1: клиентское правило supersession живёт в clients-слое; jobs.Service
-	// получает его инъекцией и сам домена клиентов не знает.
+	// P8.1: the client supersession rule lives in the clients layer; jobs.Service
+	// receives it via injection and does not know about the clients domain itself.
 	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
 	// R10b: surface expired client jobs as awaiting_node. Same injection style —
 	// jobs stays free of the clients/server domains. The hook resolves

@@ -6,22 +6,22 @@ import (
 	"strings"
 )
 
-// Spec описывает пересборку одной таблицы по рецепту
-// create/copy/drop/rename/index.
+// Spec describes the rebuild of one table following the
+// create/copy/drop/rename/index recipe.
 type Spec struct {
-	// Table — имя пересобираемой таблицы (например "jobs").
+	// Table — the name of the table being rebuilt (e.g. "jobs").
 	Table string
-	// CreateSQL — полный CREATE TABLE <Table>_new (...) с новой схемой.
+	// CreateSQL — the full CREATE TABLE <Table>_new (...) with the new schema.
 	CreateSQL string
-	// Columns — общие колонки для дефолтного копирования
+	// Columns — the shared columns for the default copy
 	// INSERT INTO <Table>_new (cols) SELECT cols FROM <Table>.
-	// Игнорируется, если задан CopySQL.
+	// Ignored if CopySQL is set.
 	Columns []string
-	// CopySQL — полный кастомный INSERT ... SELECT ... (с backfill'ом,
-	// CASE-преобразованиями и т.п.), когда прямого копирования мало.
+	// CopySQL — the full custom INSERT ... SELECT ... (with backfill,
+	// CASE conversions, etc.) when a direct copy is not enough.
 	CopySQL string
-	// Indexes — CREATE INDEX statements, воссоздаваемые после RENAME
-	// (DROP TABLE уносит индексы старой таблицы вместе с ней).
+	// Indexes — CREATE INDEX statements, recreated after RENAME
+	// (DROP TABLE takes the old table's indexes down with it).
 	Indexes []string
 }
 
@@ -47,7 +47,7 @@ PRAGMA foreign_keys = ON;
 SELECT 1;
 `
 
-// Script собирает готовый goose-файл из одной или нескольких пересборок.
+// Script assembles a ready-made goose file from one or several rebuilds.
 func Script(specs []Spec) (string, error) {
 	if len(specs) == 0 {
 		return "", errors.New("at least one Spec is required")

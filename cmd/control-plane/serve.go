@@ -233,7 +233,7 @@ func runServe(args []string) error {
 		})
 	}
 
-	// Шов 2: wire the enrollment pre-flight into the outbound supervisor pool.
+	// Seam 2: wire the enrollment pre-flight into the outbound supervisor pool.
 	// EnrollDriver.Run is called before the mTLS dial when bootstrap_state=pending.
 	//
 	// S-2: the bootstrap TLS dialer used to set bare InsecureSkipVerify, which
