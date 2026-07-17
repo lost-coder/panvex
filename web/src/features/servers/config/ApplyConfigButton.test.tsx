@@ -67,6 +67,71 @@ describe("ApplyConfigButton", () => {
     expect(onApply).not.toHaveBeenCalled();
   });
 
+  it("warns about drifted fields before applying and can be cancelled", async () => {
+    const onApply = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ApplyConfigButton
+        changedPaths={["general.log_level"]}
+        driftedFields={["censorship.tls_domain"]}
+        onApply={onApply}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /apply/i }));
+    expect(screen.getByText(/censorship\.tls_domain/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(onApply).not.toHaveBeenCalled();
+  });
+
+  it("applies when the drift warning is confirmed", async () => {
+    const onApply = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ApplyConfigButton
+        changedPaths={["general.log_level"]}
+        driftedFields={["censorship.tls_domain"]}
+        onApply={onApply}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /apply/i }));
+    expect(screen.getByText(/censorship\.tls_domain/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not warn when there is no drift", async () => {
+    const onApply = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ApplyConfigButton
+        changedPaths={["general.log_level"]}
+        driftedFields={[]}
+        onApply={onApply}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /apply/i }));
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a single combined dialog with both drift and restart warnings", async () => {
+    const onApply = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ApplyConfigButton
+        changedPaths={["censorship.tls_domain"]}
+        driftedFields={["censorship.tls_domain"]}
+        onApply={onApply}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Apply to node" }));
+    // Only one dialog, carrying both the drift and the restart message.
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.getByText(/censorship\.tls_domain/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/restarting Telemt|Restart required/i, { selector: "p" }),
+    ).toBeInTheDocument();
+    expect(onApply).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+  });
+
   it("disables the button while the kickoff request is in flight", async () => {
     // A never-resolving kickoff keeps the in-flight state latched so the
     // button stays disabled.

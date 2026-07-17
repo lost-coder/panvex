@@ -432,6 +432,8 @@
       "buttonGroup": "Apply to group",
       "restartWarningTitle": "Restart required",
       "restartWarning": "Some changes require restarting Telemt, briefly dropping connections. Continue?",
+      "driftWarningTitle": "Node has drifted",
+      "driftWarning": "The node's live config differs from the target for: {{fields}}. Applying will overwrite these values on the node.",
       "confirm": "Apply",
       "cancel": "Cancel",
       "applied": "Applied to {{count}} node(s)",

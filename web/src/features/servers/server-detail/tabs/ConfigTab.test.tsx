@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentConfig } from "@/shared/api/schemas/config";
@@ -115,10 +115,30 @@ describe("ConfigTab", () => {
     expect(screen.getByText("Request failed")).toBeInTheDocument();
   });
 
-  it("applies the persisted override on confirm (restart field → warning dialog)", async () => {
+  it("applies the persisted override on confirm (restart field + drift → combined warning dialog)", async () => {
     render(<ConfigTab server={server} />);
-    // The override holds a restart-only field (censorship.tls_domain), so
-    // Apply opens the restart-warning confirm before pushing.
+    // The override holds a restart-only field (censorship.tls_domain) AND
+    // the fixture's drift status is "drifted" on that same field, so Apply
+    // must show a SINGLE dialog carrying both the drift and restart
+    // warnings — not two dialogs in sequence.
+    fireEvent.click(screen.getByRole("button", { name: "Apply to node" }));
+    const dialogs = screen.getAllByRole("dialog");
+    expect(dialogs).toHaveLength(1);
+    const dialog = within(dialogs[0]!);
+    expect(dialog.getByText("Node has drifted")).toBeInTheDocument();
+    expect(dialog.getByText(/censorship\.tls_domain/)).toBeInTheDocument();
+    expect(dialog.getByText(/restarting Telemt/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(applyMutateAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows only the restart warning when Apply is not drifted", async () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({ drift: { status: "in_sync", fields: [] } }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
     fireEvent.click(screen.getByRole("button", { name: "Apply to node" }));
     expect(screen.getByText("Restart required")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
