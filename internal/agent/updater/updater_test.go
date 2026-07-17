@@ -121,6 +121,38 @@ func TestReplaceSelfReadOnlyDirFailsWithoutLosingCurrent(t *testing.T) {
 	}
 }
 
+func TestReplaceSelfRestoresCurrentWhenSwapFailsMidway(t *testing.T) {
+	dir := t.TempDir()
+	current := filepath.Join(dir, "agent")
+	originalContent := []byte("original-binary-content")
+	if err := os.WriteFile(current, originalContent, 0o700); err != nil { //nolint:gosec // G306: test fixture stands in for an executable binary
+		t.Fatal(err)
+	}
+	// next deliberately does not exist: the first rename (current->backup)
+	// succeeds, then the second rename (next->current) fails with ENOENT,
+	// forcing replaceSelf down its restore path.
+	next := filepath.Join(dir, "agent.next")
+
+	err := replaceSelf(current, next)
+	if err == nil {
+		t.Fatal("want error from missing next binary, got nil")
+	}
+	got, statErr := os.Stat(current)
+	if statErr != nil {
+		t.Fatalf("current binary not restored after failed swap: %v", statErr)
+	}
+	if got.IsDir() {
+		t.Fatalf("current is a directory, want the restored file")
+	}
+	restored, err := os.ReadFile(current)
+	if err != nil {
+		t.Fatalf("read restored current: %v", err)
+	}
+	if string(restored) != string(originalContent) {
+		t.Fatalf("restored content = %q, want %q (original content)", restored, originalContent)
+	}
+}
+
 func TestStageBinaryStagesNextToDestination(t *testing.T) {
 	dir := t.TempDir()
 	path, err := stageBinary(dir, strings.NewReader("fake-binary"))
