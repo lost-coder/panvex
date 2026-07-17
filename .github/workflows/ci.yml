@@ -667,6 +667,12 @@ jobs:
           ignore_paths: >-
             web/node_modules
             node_modules
+      # Regression test for is_ip_address() in deploy/install.sh: it used
+      # to `grep` and then unconditionally `return 0`, classifying every
+      # hostname as an IP address. Dependency-free bash so it runs on the
+      # stock runner.
+      - name: Test deploy/install.sh is_ip_address()
+        run: bash deploy/tests/test_is_ip_address.sh
 
   # Per-PR supply-chain check: refuses any new dependency with a known
   # vuln (>= moderate) or a license outside the allow-list. CodeQL +
