@@ -300,10 +300,21 @@ install_acme_sh() {
   return 0
 }
 
-# is_ip_address returns 0 if the argument looks like an IPv4 address.
+# is_ip_address returns 0 when the argument is an IPv4 or IPv6 literal.
 is_ip_address() {
   local addr="$1"
-  echo "$addr" | grep -qP '^\d+\.\d+\.\d+\.\d+$'
+  [[ -n "$addr" ]] || return 1
+  if [[ "$addr" == *:* ]]; then
+    # IPv6 literal: hex groups and colons only (plus optional zone-less
+    # compressed form). Good enough to route to the shortlived profile.
+    [[ "$addr" =~ ^[0-9a-fA-F:]+$ ]] && return 0
+    return 1
+  fi
+  [[ "$addr" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+  local o
+  for o in "${BASH_REMATCH[@]:1:4}"; do
+    (( 10#$o <= 255 )) || return 1
+  done
   return 0
 }
 
