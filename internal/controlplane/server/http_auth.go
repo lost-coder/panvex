@@ -336,7 +336,22 @@ func (s *Server) handleLogout() http.HandlerFunc {
 		}
 
 		if err := s.auth.Logout(r.Context(), session.ID); err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
+			if errors.Is(err, auth.ErrSessionNotFound) {
+				writeError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			// PVX-002: a store outage during logout is not "unauthorized" —
+			// the session is still valid in memory (Logout leaves it there
+			// on a genuine store failure, D1) and the client should retry
+			// rather than treat this as a successful/rejected logout.
+			// Mirrors the audit_persist_unavailable precedent above.
+			s.logger.ErrorContext(r.Context(), "logout failed to persist session revocation",
+				"user_id", session.UserID, "session_hash", s.logSessionID(session.ID), "error", err)
+			writeErrorWithCode(w,
+				http.StatusServiceUnavailable,
+				"session store unavailable, please retry",
+				"session_store_unavailable",
+			)
 			return
 		}
 

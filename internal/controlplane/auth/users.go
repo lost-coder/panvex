@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -113,17 +114,26 @@ func (s *Service) UpdateUser(ctx context.Context, input UpdateUserInput, now tim
 		return User{}, err
 	}
 
-	if err := s.persistManagedUserCtx(ctx, user); err != nil {
-		return User{}, err
-	}
-
-	// P2-SEC-01: revoke all active sessions whenever the password changes or
-	// the role changes in either direction. Previously only role demotions
+	// P2-SEC-01 / PVX-002 (D2): revoke all active sessions whenever the
+	// password changes or the role changes in either direction, BEFORE the
+	// new credential/role is persisted. Previously only role demotions
 	// triggered revocation; promotions now rotate too so that any outstanding
 	// session tied to the prior privilege level is forced to re-authenticate
 	// under the new one. RevokeSessionsForUserExcept also clears the
 	// persistent session store so a control-plane restart does not resurrect
 	// the old sessions.
+	//
+	// Ordering is load-bearing, not cosmetic. The old order (persist, then
+	// revoke, discarding the result) was unfixable by retry: once the
+	// credential was stored, a retry computed passwordChanged == false and
+	// never re-attempted the revoke, so a session whose revoke failed the
+	// first time could never be revoked at all. Revoking first means a
+	// failed revoke aborts the whole update — the credential is never
+	// written, so the caller's retry recomputes passwordChanged == true and
+	// genuinely retries the revoke. The inverse failure (revoke succeeds,
+	// persist then fails) is intentionally left unguarded: it just logs the
+	// user out of other sessions without changing their credential, which is
+	// harmless and not worth a compensating rollback.
 	//
 	// S-5: ExceptSessionID lets a self-edit preserve the caller's own
 	// session — the user is not logged out of the browser tab they just
@@ -132,7 +142,13 @@ func (s *Service) UpdateUser(ctx context.Context, input UpdateUserInput, now tim
 	// target is invalidated.
 	roleChanged := previousRole != input.Role
 	if passwordChanged || roleChanged {
-		_ = s.RevokeSessionsForUserExcept(ctx, user.ID, input.ExceptSessionID)
+		if _, err := s.RevokeSessionsForUserExcept(ctx, user.ID, input.ExceptSessionID); err != nil {
+			return User{}, fmt.Errorf("revoke sessions before credential change: %w", err)
+		}
+	}
+
+	if err := s.persistManagedUserCtx(ctx, user); err != nil {
+		return User{}, err
 	}
 
 	_ = now
@@ -218,7 +234,15 @@ func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 	// Drop the deleted user's active sessions from both the in-memory map and
 	// the persistent session store. Done outside the lock because
 	// RevokeSessionsForUser takes s.mu itself.
-	_ = s.RevokeSessionsForUser(ctx, userID)
+	//
+	// PVX-002 (D3): the user row is already gone at this point, so a
+	// surviving session cannot resolve its user and will fail auth anyway —
+	// but reporting success while sessions provably survive in the store is
+	// exactly the lie this fix closes, so propagate the error rather than
+	// swallow it.
+	if _, err := s.RevokeSessionsForUser(ctx, userID); err != nil {
+		return fmt.Errorf("revoke sessions for deleted user: %w", err)
+	}
 
 	return nil
 }
