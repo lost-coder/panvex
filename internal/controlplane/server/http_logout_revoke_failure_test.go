@@ -64,7 +64,7 @@ func TestHTTPLogoutReturns503WhenSessionStoreDeleteFails(t *testing.T) {
 	// still valid (kept in memory, D1) and the client should retry the same
 	// logout with the same cookie, not treat itself as already logged out.
 	for _, c := range logoutResp.Result().Cookies() {
-		if c.Name == sessionCookieName && c.MaxAge < 0 {
+		if (c.Name == sessionCookieName || c.Name == sessionCookieNameHostPrefix) && c.MaxAge < 0 {
 			t.Fatalf("logout 503 response cleared cookie %q (MaxAge=%d), want untouched — the session is still valid and the client must retry with it", c.Name, c.MaxAge)
 		}
 	}

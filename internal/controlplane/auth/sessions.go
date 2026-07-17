@@ -292,15 +292,16 @@ func (s *Service) cleanupExpiredSessionsLocked(now time.Time) {
 //
 // Fail-closed (PVX-002 / D1): a genuine failure to delete the prior session
 // from the store now REJECTS the login, following the same shape as the
-// PutSession failure below. At the point this runs, the caller
-// (Authenticate) has not yet touched the in-memory map for either the
-// prior or the new session, so rejecting here leaves state exactly as it
-// was before the attempt — the prior session, if it was ever valid, is
-// still valid in both memory and the store, and no new session exists
-// anywhere. Proceeding instead would issue a fresh session to the victim
-// while an attacker-planted or stolen cookie keeps working — exactly the
-// session-fixation exposure this code exists to close, just reached via a
-// failed purge instead of a skipped one.
+// PutSession failure below. On a DeleteSession failure, rejecting leaves
+// state exactly as it was — the prior session untouched in both memory and
+// store. However, if DeleteSession succeeds but PutSession then fails, the
+// prior session is already gone from the store while memory retains it;
+// rejecting still succeeds fail-closed: the login is rejected and the prior
+// session dies on the next restart, resurrecting nothing. Proceeding instead
+// would issue a fresh session to the victim while an attacker-planted or
+// stolen cookie keeps working — exactly the session-fixation exposure this
+// code exists to close, just reached via a failed purge instead of a skipped
+// one.
 //
 // storage.ErrNotFound is deliberately NOT a failure here, and this is the
 // ordinary case rather than an edge case: a browser routinely presents a
