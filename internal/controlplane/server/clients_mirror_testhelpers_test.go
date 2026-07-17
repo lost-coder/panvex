@@ -48,55 +48,6 @@ func seedMirrorClient(t *testing.T, s *Server, client managedClient, assignments
 	s.clientsSvc.MirrorReplaceInMemory(client, assignments, deployments)
 }
 
-// seedMirrorDeployment inserts a single deployment for (clientID, agentID)
-// into the mirror, preserving any existing deployments for the client.
-func seedMirrorDeployment(t *testing.T, s *Server, clientID string, deployment managedClientDeployment) {
-	t.Helper()
-	client, err := s.clientsSvc.Get(context.Background(), clients.ClientID(clientID))
-	if err != nil {
-		client = managedClient{ID: clients.ClientID(clientID)}
-	}
-	assignments, deployments := s.clientsSvc.MirrorAssignmentsAndDeployments(clientID)
-	replaced := false
-	for i := range deployments {
-		if deployments[i].AgentID == deployment.AgentID {
-			deployments[i] = deployment
-			replaced = true
-		}
-	}
-	if !replaced {
-		deployments = append(deployments, deployment)
-	}
-	s.clientsSvc.MirrorReplaceInMemory(client, assignments, deployments)
-}
-
-// seedMirrorUsage writes a usage row for (clientID, agentID) into the mirror
-// (and the DB, since these tests use a repo-backed Service). Requires the
-// Service to be wired with a Repository.
-func seedMirrorUsage(t *testing.T, s *Server, clientID, agentID string, usage clients.MirrorUsageEntry) {
-	t.Helper()
-	if err := s.clientsSvc.UpsertUsage(context.Background(), clients.Usage{
-		ClientID:           clients.ClientID(clientID),
-		AgentID:            agentID,
-		TrafficUsedBytes:   usage.TrafficUsedBytes,
-		UniqueIPsUsed:      usage.UniqueIPsUsed,
-		ActiveTCPConns:     usage.ActiveTCPConns,
-		ActiveUniqueIPs:    usage.ActiveUniqueIPs,
-		QuotaUsedBytes:     usage.QuotaUsedBytes,
-		QuotaLastResetUnix: usage.QuotaLastResetUnix,
-		ObservedAt:         tsOrNow(usage.ObservedAt),
-	}); err != nil {
-		t.Fatalf("seedMirrorUsage: %v", err)
-	}
-}
-
-func tsOrNow(ts time.Time) time.Time {
-	if ts.IsZero() {
-		return time.Now().UTC()
-	}
-	return ts
-}
-
 // mirrorUsage reads the usage entry (with P4 watermark) for
 // (clientID, agentID) from the mirror.
 func mirrorUsage(s *Server, clientID, agentID string) clients.MirrorUsageEntry {

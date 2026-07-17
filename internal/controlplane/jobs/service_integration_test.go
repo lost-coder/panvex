@@ -974,12 +974,6 @@ func (r *recordingJobMetricsSink) count() int {
 	return r.failures
 }
 
-func (r *recordingJobMetricsSink) failedCount() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.jobsFailed
-}
-
 // TestServicePersistFailureNotifiesMetricsSink (C3): a write-behind
 // persist failure must increment the injected metrics sink — slog-only
 // surfacing leaves a wedged DB invisible to operators.

@@ -29,28 +29,6 @@ func seedGroupConfigTarget(t *testing.T, srv *Server, groupID string, sections m
 	}
 }
 
-// waitForAgentJob polls the job store until a job of the given action targeting
-// agentID appears, returning its id. Fails the test if none shows up in time.
-func waitForAgentJob(t *testing.T, srv *Server, agentID string, action jobs.Action) string {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		for _, job := range srv.jobs.ListWithContext(context.Background()) {
-			if job.Action != action {
-				continue
-			}
-			for _, tgt := range job.Targets {
-				if tgt.AgentID == agentID {
-					return job.ID
-				}
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("no %s job targeting %s appeared within deadline", action, agentID)
-	return ""
-}
-
 // TestApplyConfigGroupOutOfScope: a fleet-scoped operator whose scope excludes
 // the target group gets the same 404 the sibling endpoints return.
 func TestApplyConfigGroupOutOfScope(t *testing.T) {

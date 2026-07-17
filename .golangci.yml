@@ -91,9 +91,6 @@ linters:
           - errcheck
         text: "conn.CloseNow"
       - linters:
-          - unused
-        text: "func.*is unused"
-      - linters:
           - staticcheck
         text: "S1016"
       - linters:
