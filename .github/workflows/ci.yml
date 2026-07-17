@@ -60,7 +60,15 @@ jobs:
       # so every Go-touching CI step sees the embedded file.
       - name: Mirror install-agent.sh for //go:embed
         run: go generate ./internal/controlplane/server/...
-      - run: go test -count=1 ./...
+      - name: Go tests (web/node_modules excluded)
+        # H7: web/node_modules/flatted/golang/ has no go.mod, so a plain
+        # `./...` swallows it into this module once `npm ci` has run
+        # anywhere in the checkout. Filter it the same way the pre-push
+        # hook and the race job below do, so the backend test set does
+        # not depend on whether npm install happened first.
+        run: |
+          PKGS=$(go list ./... | grep -v node_modules)
+          go test -count=1 $PKGS
       # Loadtest correctness gate: the Test* variants of the realistic
       # concurrency scenarios (agent burst, login storm, job fan-out)
       # assert no errors / no audit drops / no missed lockouts under
@@ -120,7 +128,7 @@ jobs:
       # loadtest correctness on every PR.
       - name: Go race + coverage (loadtest excluded)
         run: |
-          PKGS=$(go list ./... | grep -v '^github.com/lost-coder/panvex/internal/loadtest$')
+          PKGS=$(go list ./... | grep -vE 'node_modules|^github.com/lost-coder/panvex/internal/loadtest$')
           go test -race -coverprofile=coverage.out -covermode=atomic $PKGS
       - name: Go tests (loadtest, no -race)
         run: go test -count=1 ./internal/loadtest/...
@@ -178,7 +186,10 @@ jobs:
           check-latest: true
       - name: Mirror install-agent.sh for //go:embed
         run: go generate ./internal/controlplane/server/...
-      - run: go test -count=1 ./...
+      - name: Go tests (web/node_modules excluded)
+        run: |
+          PKGS=$(go list ./... | grep -v node_modules)
+          go test -count=1 $PKGS
 
   schema-sync:
     # C9 + A6: verify the PostgreSQL and SQLite migration bundles stay in
