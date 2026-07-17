@@ -114,17 +114,26 @@ func (s *Service) UpdateUser(ctx context.Context, input UpdateUserInput, now tim
 		return User{}, err
 	}
 
-	if err := s.persistManagedUserCtx(ctx, user); err != nil {
-		return User{}, err
-	}
-
-	// P2-SEC-01: revoke all active sessions whenever the password changes or
-	// the role changes in either direction. Previously only role demotions
+	// P2-SEC-01 / PVX-002 (D2): revoke all active sessions whenever the
+	// password changes or the role changes in either direction, BEFORE the
+	// new credential/role is persisted. Previously only role demotions
 	// triggered revocation; promotions now rotate too so that any outstanding
 	// session tied to the prior privilege level is forced to re-authenticate
 	// under the new one. RevokeSessionsForUserExcept also clears the
 	// persistent session store so a control-plane restart does not resurrect
 	// the old sessions.
+	//
+	// Ordering is load-bearing, not cosmetic. The old order (persist, then
+	// revoke, discarding the result) was unfixable by retry: once the
+	// credential was stored, a retry computed passwordChanged == false and
+	// never re-attempted the revoke, so a session whose revoke failed the
+	// first time could never be revoked at all. Revoking first means a
+	// failed revoke aborts the whole update — the credential is never
+	// written, so the caller's retry recomputes passwordChanged == true and
+	// genuinely retries the revoke. The inverse failure (revoke succeeds,
+	// persist then fails) is intentionally left unguarded: it just logs the
+	// user out of other sessions without changing their credential, which is
+	// harmless and not worth a compensating rollback.
 	//
 	// S-5: ExceptSessionID lets a self-edit preserve the caller's own
 	// session — the user is not logged out of the browser tab they just
@@ -133,11 +142,13 @@ func (s *Service) UpdateUser(ctx context.Context, input UpdateUserInput, now tim
 	// target is invalidated.
 	roleChanged := previousRole != input.Role
 	if passwordChanged || roleChanged {
-		// PVX-002 (V2.1): mechanical adaptation to the new (int, error)
-		// signature only — this call site still discards the result here.
-		// The revoke-before-persist fail-closed behavior for UpdateUser is
-		// Task V2.2 (D2), landed separately.
-		_, _ = s.RevokeSessionsForUserExcept(ctx, user.ID, input.ExceptSessionID)
+		if _, err := s.RevokeSessionsForUserExcept(ctx, user.ID, input.ExceptSessionID); err != nil {
+			return User{}, fmt.Errorf("revoke sessions before credential change: %w", err)
+		}
+	}
+
+	if err := s.persistManagedUserCtx(ctx, user); err != nil {
+		return User{}, err
 	}
 
 	_ = now
