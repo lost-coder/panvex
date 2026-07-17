@@ -503,7 +503,7 @@ func (s *Service) RevokeSessionsForUserExcept(ctx context.Context, userID, excep
 				// that, so treating it as an error would fail DeleteUser
 				// (and any other caller racing a legitimate concurrent
 				// deletion) for a condition that is actually success.
-				slog.Error("session revocation persistence failed",
+				slog.ErrorContext(ctx, "session revocation persistence failed",
 					"alert", "session_revoke_persist_failed",
 					"user_id", userID,
 					"session_id", sessionID,
@@ -605,25 +605,61 @@ func (s *Service) TouchSession(ctx context.Context, sessionID string) {
 }
 
 // Logout revokes a session so it can no longer authenticate requests.
+//
+// Fail-closed consistency (PVX-002 / D1), same shape as
+// RevokeSessionsForUserExcept: the session is dropped from the in-memory map
+// ONLY after the persistent-store delete is confirmed (or the store reports
+// storage.ErrNotFound, which is positive proof — a DELETE by primary key
+// with zero rows affected — that the row is already gone, not a race). A
+// genuine store failure leaves the session in memory and returns the error,
+// so a caller can retry and actually find it again, instead of the previous
+// unconditional-drop behavior making a retry a no-op.
+//
+// P2-SEC-07 (rewritten): the old comment here claimed a failed store delete
+// was safe because "the periodic expiry sweeper will eventually reclaim the
+// row." That does not hold: DeleteExpiredSessions is `DELETE FROM sessions
+// WHERE created_at_unix < ?` — it only reclaims rows past the ABSOLUTE
+// session lifetime, not "sometime soon." So a row that survives a failed
+// logout delete stays resurrectable for up to the full session lifetime
+// (sessionMaxLifetime), which is exactly the exposure window this fix
+// closes. Composed with the rest of PVX-002: if this function still dropped
+// the session from memory unconditionally, a later password rotation on the
+// same user would see zero in-memory candidates for that session,
+// RevokeSessionsForUserExcept would report success trivially, and the
+// surviving row would authenticate again after a control-plane restart
+// despite the rotation — the same class of bug this whole plan exists to
+// close, just reached through Logout instead of RevokeSessionsForUserExcept
+// directly.
 func (s *Service) Logout(ctx context.Context, sessionID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// D5: only the membership check happens under the lock; store I/O runs
+	// outside it, and the map entry is dropped in a second, separate locked
+	// pass — mirrors RevokeSessionsForUserExcept's lock discipline instead
+	// of holding s.mu across the DeleteSession round-trip as the previous
+	// implementation (a single `defer s.mu.Unlock()` spanning the store
+	// call) did.
+	s.mu.RLock()
+	_, ok := s.sessions[sessionID]
+	store := s.sessionStore
+	s.mu.RUnlock()
 
-	if _, ok := s.sessions[sessionID]; !ok {
+	if !ok {
 		return ErrSessionNotFound
 	}
 
-	delete(s.sessions, sessionID)
-
-	if s.sessionStore != nil {
-		// P2-SEC-07: logout deletes the session from memory unconditionally;
-		// a store failure here is not fatal because the periodic expiry
-		// sweeper (DeleteExpiredSessions) will eventually reclaim the row.
-		// We still surface it in logs so persistent failures are visible.
-		if err := s.sessionStore.DeleteSession(ctx, sessionID); err != nil {
-			slog.Warn("auth: failed to delete session from store on logout", "session_id", sessionID, "error", err)
+	if store != nil {
+		if err := store.DeleteSession(ctx, sessionID); err != nil && !errors.Is(err, storage.ErrNotFound) {
+			slog.ErrorContext(ctx, "session revocation persistence failed",
+				"alert", "session_revoke_persist_failed",
+				"session_id", sessionID,
+				"error", err,
+			)
+			return fmt.Errorf("delete session %s: %w", sessionID, err)
 		}
 	}
+
+	s.mu.Lock()
+	delete(s.sessions, sessionID)
+	s.mu.Unlock()
 
 	return nil
 }

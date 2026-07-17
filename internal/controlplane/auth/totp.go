@@ -266,6 +266,24 @@ func (s *Service) ResetTotp(ctx context.Context, userID string) (User, error) {
 		return User{}, err
 	}
 
+	// A TOTP reset is typically an account-recovery / "possibly compromised"
+	// action: revoke every existing session BEFORE clearing the secret, so
+	// an attacker holding a live cookie is logged out rather than surviving
+	// the reset (D2 mirror: revoke-before-persist, not persist-then-revoke).
+	//
+	// PVX-002 (D3): this is the one path whose entire purpose is kicking out
+	// an attacker holding a live cookie, so a store-delete failure here must
+	// not be swallowed — reporting a successful reset while sessions
+	// provably survive in the store is exactly the dangerous case this fix
+	// closes. Revoking first also makes the failure retry-safe: if the
+	// revoke fails, the secret is left intact and untouched, so a retry
+	// re-attempts the revoke instead of finding the secret already cleared
+	// with no way to re-trigger it (the same retry-hole D2 closes for
+	// UpdateUser).
+	if _, err := s.RevokeSessionsForUser(ctx, user.ID); err != nil {
+		return User{}, fmt.Errorf("revoke sessions before totp reset: %w", err)
+	}
+
 	user.TotpEnabled = false
 	user.TotpSecret = ""
 	if err := s.storeUserWithContext(ctx, user); err != nil {
@@ -275,19 +293,6 @@ func (s *Service) ResetTotp(ctx context.Context, userID string) (User, error) {
 	s.mu.Lock()
 	delete(s.pendingTotpSetup, userID)
 	s.mu.Unlock()
-
-	// A TOTP reset is typically an account-recovery / "possibly compromised"
-	// action: revoke every existing session so an attacker holding a live
-	// cookie is logged out rather than surviving the reset.
-	//
-	// PVX-002 (D3): this is the one path whose entire purpose is kicking out
-	// an attacker holding a live cookie, so a store-delete failure here must
-	// not be swallowed — reporting a successful reset while sessions
-	// provably survive in the store is exactly the dangerous case this fix
-	// closes.
-	if _, err := s.RevokeSessionsForUser(ctx, user.ID); err != nil {
-		return User{}, fmt.Errorf("revoke sessions after totp reset: %w", err)
-	}
 
 	return user, nil
 }

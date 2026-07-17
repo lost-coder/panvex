@@ -296,3 +296,168 @@ func TestRevokeTreatsStoreNotFoundAsAlreadyRevoked(t *testing.T) {
 		t.Fatal("GetSession(session) after ErrNotFound-revoke = nil error, want revoked from memory too")
 	}
 }
+
+// TestLogoutKeepsSessionAliveWhenStoreDeleteFails is Logout's analogue of
+// TestRevokeKeepsSessionAliveWhenStoreDeleteFails: a failed store delete
+// during logout must leave the session resolvable via GetSession (memory)
+// AND still present in the store (ListSessions) — the previous
+// unconditional-memory-drop behavior would have made GetSession report
+// "revoked" while the row silently survived in the store, resurrecting on
+// the next restart. Logout must also return the store's error rather than
+// swallowing it into a log-only warning.
+func TestLogoutKeepsSessionAliveWhenStoreDeleteFails(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 15, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	store := newSelectiveFailSessionStore()
+	service.SetSessionStore(store)
+
+	if _, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "erin",
+		Password: "Erin1password1",
+		Role:     RoleOperator,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "erin",
+		Password: "Erin1password1",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	store.failIDs[session.ID] = true
+
+	if err := service.Logout(context.Background(), session.ID); err == nil {
+		t.Fatal("Logout() error = nil, want the injected store failure surfaced")
+	}
+
+	if _, err := service.GetSession(session.ID); err != nil {
+		t.Fatalf("GetSession(session) after failed Logout = %v, want still valid (kept in memory)", err)
+	}
+	if !store.hasRecord(session.ID) {
+		t.Fatal("session missing from store after failed Logout — a restart's rehydration would lose it and a retry would be a no-op")
+	}
+}
+
+// TestLogoutSucceedsAndRevokesOnHealthyStore is Logout's happy path,
+// confirming the D5 lock-discipline rewrite (RUnlock, store I/O, re-Lock to
+// drop) still produces ordinary successful logout behavior.
+func TestLogoutSucceedsAndRevokesOnHealthyStore(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 15, 5, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	store := newSelectiveFailSessionStore()
+	service.SetSessionStore(store)
+
+	if _, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "frank",
+		Password: "Frank1password1",
+		Role:     RoleOperator,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "frank",
+		Password: "Frank1password1",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	if err := service.Logout(context.Background(), session.ID); err != nil {
+		t.Fatalf("Logout() error = %v, want nil", err)
+	}
+	if _, err := service.GetSession(session.ID); err == nil {
+		t.Fatal("GetSession(session) after successful Logout = nil error, want revoked")
+	}
+	if store.hasRecord(session.ID) {
+		t.Fatal("session still present in store after successful Logout, want deleted")
+	}
+}
+
+// TestLogoutFailureLeavesSessionForSubsequentRevoke is the composed
+// regression this whole follow-up exists for: Logout's store delete fails,
+// and a LATER password change on that same user must not see zero
+// candidates and silently report success while the session row still
+// exists in the store. Before the D1 fix, Logout dropped the session from
+// memory unconditionally, so RevokeSessionsForUserExcept (called from
+// UpdateUser) would find nothing to revoke, report (0, nil), and UpdateUser
+// would happily persist the new password — while the orphaned row in the
+// store kept authenticating the old cookie until natural absolute expiry.
+// This test asserts the real, end-to-end outcome (UpdateUser must fail
+// closed), not just the intermediate fact that Logout returned an error.
+func TestLogoutFailureLeavesSessionForSubsequentRevoke(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 15, 10, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	store := newSelectiveFailSessionStore()
+	service.SetSessionStore(store)
+
+	target, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "grace",
+		Password: "Grace1password1",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "grace",
+		Password: "Grace1password1",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+
+	// The store refuses the delete both now (Logout) and later (the
+	// password-change revoke pass) — modeling a store outage that outlives
+	// a single request, so the composed scenario is genuinely exercised
+	// rather than incidentally fixed by a lucky retry.
+	store.failIDs[session.ID] = true
+
+	if err := service.Logout(context.Background(), session.ID); err == nil {
+		t.Fatal("Logout() error = nil, want store-delete failure surfaced")
+	}
+
+	// Sanity precondition: the row must have survived the failed logout —
+	// otherwise this test would not be exercising the composed scenario at
+	// all (it would degrade to "zero candidates, nothing to check").
+	if !store.hasRecord(session.ID) {
+		t.Fatal("session missing from store after failed Logout — composed scenario cannot be exercised")
+	}
+
+	_, err = service.UpdateUser(context.Background(), UpdateUserInput{
+		UserID:      target.ID,
+		Username:    target.Username,
+		Role:        target.Role,
+		NewPassword: "NewGrace1password",
+	}, now.Add(5*time.Minute))
+	if err == nil {
+		t.Fatal("UpdateUser() error = nil, want fail-closed: the still-surviving session row must block a silent success")
+	}
+
+	// The real outcome, not an intermediate: the credential must be
+	// unchanged (old password still verifies), and the never-actually-
+	// revoked session must still resolve — nothing was silently lost.
+	stored, err := service.GetUserByID(context.Background(), target.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID() error = %v", err)
+	}
+	if err := service.VerifyPassword(stored.PasswordHash, "Grace1password1"); err != nil {
+		t.Fatalf("VerifyPassword(original password) after failed UpdateUser = %v, want still valid", err)
+	}
+	if _, err := service.GetSession(session.ID); err != nil {
+		t.Fatalf("GetSession(session) after failed UpdateUser = %v, want still valid", err)
+	}
+	if !store.hasRecord(session.ID) {
+		t.Fatal("session missing from store after the composed failure sequence — it must still survive, never having been genuinely revoked")
+	}
+}

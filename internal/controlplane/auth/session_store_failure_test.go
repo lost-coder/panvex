@@ -90,10 +90,14 @@ func TestLoginFailsWhenSessionStoreBroken(t *testing.T) {
 	}
 }
 
-// TestLogoutToleratesBrokenSessionStore verifies that a DeleteSession error
-// does not block logout — the in-memory session is still revoked and the
-// error is only logged (P2-SEC-07).
-func TestLogoutToleratesBrokenSessionStore(t *testing.T) {
+// TestLogoutFailsClosedWhenStoreDeleteBroken verifies PVX-002/D1: a
+// DeleteSession error during logout must NOT be swallowed into a
+// tolerated-success path any more. Logout now returns the error and leaves
+// the in-memory session in place, mirroring RevokeSessionsForUserExcept —
+// see the rewritten P2-SEC-07 comment on Logout for why the old "the
+// sweeper will eventually reclaim it" justification did not hold (the
+// sweeper only reclaims rows past the ABSOLUTE session lifetime).
+func TestLogoutFailsClosedWhenStoreDeleteBroken(t *testing.T) {
 	now := time.Date(2026, time.April, 17, 10, 0, 0, 0, time.UTC)
 	service := NewService()
 	// Pin the service clock so the Logout path's internal expiry sweep uses
@@ -123,18 +127,19 @@ func TestLogoutToleratesBrokenSessionStore(t *testing.T) {
 		t.Fatalf("Authenticate: %v", err)
 	}
 
-	// Now swap in a store that fails DeleteSession. The in-memory map still
-	// drops the session and the caller sees success.
+	// Now swap in a store that fails DeleteSession. Logout must fail closed:
+	// report the error and keep the in-memory entry so a retry (or a later
+	// RevokeSessionsForUserExcept pass) can still find and re-attempt it.
 	service.SetSessionStore(&failingDeleteStore{delErr: errors.New("delete broken")})
-	if err := service.Logout(context.Background(), session.ID); err != nil {
-		t.Fatalf("Logout() error = %v, want nil (tolerated)", err)
+	if err := service.Logout(context.Background(), session.ID); err == nil {
+		t.Fatal("Logout() error = nil, want the store failure surfaced (no longer tolerated)")
 	}
 
 	service.mu.RLock()
 	_, stillThere := service.sessions[session.ID]
 	service.mu.RUnlock()
-	if stillThere {
-		t.Fatal("session still present after Logout() with broken delete")
+	if !stillThere {
+		t.Fatal("session dropped from memory after Logout() with broken delete, want kept (fail-closed, D1)")
 	}
 }
 
