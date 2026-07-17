@@ -24,7 +24,7 @@ func TestExtractAndReplace(t *testing.T) {
 	createTestArchive(t, archivePath, "panvex-agent-linux-amd64", binaryContent)
 
 	// Extract binary from archive.
-	binaryPath, err := extractBinaryFromArchive(archivePath, "panvex-agent-linux-amd64")
+	binaryPath, err := extractBinaryFromArchive(archivePath, "panvex-agent-linux-amd64", dir)
 	if err != nil {
 		t.Fatalf("extractBinaryFromArchive() error = %v", err)
 	}
@@ -92,6 +92,25 @@ func TestExecute_RequestsPerArchAsset(t *testing.T) {
 	}
 	if len(gotPaths) < 2 || gotPaths[1] != wantArchive+".sha256" {
 		t.Fatalf("second request path = %v, want %q", gotPaths, wantArchive+".sha256")
+	}
+}
+
+func TestStageBinaryStagesNextToDestination(t *testing.T) {
+	dir := t.TempDir()
+	path, err := stageBinary(dir, strings.NewReader("fake-binary"))
+	if err != nil {
+		t.Fatalf("stageBinary: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+	if filepath.Dir(path) != dir {
+		t.Fatalf("staged in %s, want %s", filepath.Dir(path), dir)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("perm = %v, want 0700", info.Mode().Perm())
 	}
 }
 
