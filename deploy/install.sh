@@ -14,6 +14,13 @@ readonly STORAGE_SQLITE="sqlite"
 readonly TLS_MODE_DIRECT="direct"
 readonly AWK_FIRST_FIELD='{print $1}'
 
+# Pinned acme.sh release. GitHub ships no release assets for acme.sh (only
+# the auto-generated source tarball), so we pin that archive URL + its
+# digest rather than a release asset. Bump both together after verifying
+# the new tarball's checksum against the upstream release.
+readonly ACME_SH_VERSION="3.1.4"   # renovate: github-release acmesh-official/acme.sh
+readonly ACME_SH_SHA256="e5f8e187bbf5251e0cd8891f2622daab9850366bd17bea9f92c2fe2ee091fd32"
+
 # Opt-in escape hatch for self-signed/loopback TLS during initial bring-up.
 # Defaults to verifying TLS. Operators must explicitly set
 # PANVEX_INSTALL_INSECURE_TLS=1 to disable verification (audit-visible).
@@ -291,8 +298,25 @@ generate_random_path() {
 }
 
 install_acme_sh() {
-  info "Installing acme.sh..."
-  curl -fsSL https://get.acme.sh | sh -s -- >/dev/null 2>&1
+  info "Installing acme.sh v${ACME_SH_VERSION} (pinned)..."
+
+  # Pinned tarball + checksum instead of `curl | sh` from a live URL: a
+  # compromised origin/CDN/DNS for get.acme.sh would otherwise execute
+  # arbitrary code as root.
+  TMP_DIR=$(mktemp -d)
+  local tarball="$TMP_DIR/acme.sh.tar.gz"
+  download_file "https://github.com/acmesh-official/acme.sh/archive/refs/tags/${ACME_SH_VERSION}.tar.gz" "$tarball"
+
+  echo "${ACME_SH_SHA256}  ${tarball}" | sha256sum -c - >/dev/null \
+    || die "acme.sh tarball checksum mismatch (expected ${ACME_SH_SHA256}) — refusing to run an unverified installer. This means either tampering in transit or an upstream re-packaging of the pinned ${ACME_SH_VERSION} release archive; verify the release yourself and update ACME_SH_SHA256 in this script before retrying."
+
+  tar -xzf "$tarball" -C "$TMP_DIR"
+  ( cd "$TMP_DIR/acme.sh-${ACME_SH_VERSION}" && ./acme.sh --install >/dev/null 2>&1 ) \
+    || die "acme.sh installation failed"
+
+  rm -rf "$TMP_DIR"
+  TMP_DIR=""
+
   if [[ ! -f "$HOME/.acme.sh/acme.sh" ]]; then
     die "acme.sh installation failed"
   fi
@@ -300,10 +324,21 @@ install_acme_sh() {
   return 0
 }
 
-# is_ip_address returns 0 if the argument looks like an IPv4 address.
+# is_ip_address returns 0 when the argument is an IPv4 or IPv6 literal.
 is_ip_address() {
   local addr="$1"
-  echo "$addr" | grep -qP '^\d+\.\d+\.\d+\.\d+$'
+  [[ -n "$addr" ]] || return 1
+  if [[ "$addr" == *:* ]]; then
+    # IPv6 literal: hex groups and colons only (plus optional zone-less
+    # compressed form). Good enough to route to the shortlived profile.
+    [[ "$addr" =~ ^[0-9a-fA-F:]+$ ]] && return 0
+    return 1
+  fi
+  [[ "$addr" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+  local o
+  for o in "${BASH_REMATCH[@]:1:4}"; do
+    (( 10#$o <= 255 )) || return 1
+  done
   return 0
 }
 
