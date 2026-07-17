@@ -95,6 +95,32 @@ func TestExecute_RequestsPerArchAsset(t *testing.T) {
 	}
 }
 
+func TestReplaceSelfReadOnlyDirFailsWithoutLosingCurrent(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission semantics require non-root")
+	}
+	dir := t.TempDir()
+	current := filepath.Join(dir, "agent")
+	next := filepath.Join(dir, "agent.next")
+	for _, f := range []string{current, next} {
+		if err := os.WriteFile(f, []byte(f), 0o700); err != nil { //nolint:gosec // G306: test fixtures stand in for executable binaries
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(dir, 0o555); err != nil { //nolint:gosec // G302: 0o555 (read-only, no write) is the point of this test
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) //nolint:gosec // G302: restores the temp dir so t.TempDir() cleanup can remove it
+
+	err := replaceSelf(current, next)
+	if err == nil {
+		t.Fatal("want permission error, got nil")
+	}
+	if _, statErr := os.Stat(current); statErr != nil {
+		t.Fatalf("current binary lost after failed swap: %v", statErr)
+	}
+}
+
 func TestStageBinaryStagesNextToDestination(t *testing.T) {
 	dir := t.TempDir()
 	path, err := stageBinary(dir, strings.NewReader("fake-binary"))
