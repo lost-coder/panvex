@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -59,12 +60,92 @@ func TestHTTPLogoutReturns503WhenSessionStoreDeleteFails(t *testing.T) {
 		t.Fatalf("logout status = %d, want %d (store outage must be retry-able, not unauthorized)", logoutResp.Code, http.StatusServiceUnavailable)
 	}
 
+	// The 503 response must NOT clear the session cookie: the session is
+	// still valid (kept in memory, D1) and the client should retry the same
+	// logout with the same cookie, not treat itself as already logged out.
+	for _, c := range logoutResp.Result().Cookies() {
+		if c.Name == sessionCookieName && c.MaxAge < 0 {
+			t.Fatalf("logout 503 response cleared cookie %q (MaxAge=%d), want untouched — the session is still valid and the client must retry with it", c.Name, c.MaxAge)
+		}
+	}
+
 	// The session must still be valid — Logout kept it in memory on the
 	// failed store delete, so /me should still succeed with the same
 	// cookies, and the client can retry the logout.
 	meResp := performJSONRequest(t, server, http.MethodGet, "/api/auth/me", nil, cookies)
 	if meResp.Code != http.StatusOK {
 		t.Fatalf("GET /api/auth/me after failed logout status = %d, want %d (session must survive a failed logout)", meResp.Code, http.StatusOK)
+	}
+}
+
+// TestHTTPLogoutReturns401WhenSessionAlreadyGoneAtLogoutCall reaches the
+// specific errors.Is(err, auth.ErrSessionNotFound) branch inside
+// handleLogout's error path, which the outer "no cookie at all" test
+// (TestHTTPLogoutReturns401ForUnknownSession) never touches — that one
+// trips requireSession's own 401 before handleLogout ever calls
+// s.auth.Logout. /api/auth/logout runs behind requireAuthenticatedSession
+// middleware, which resolves the session ONCE and caches it in the request
+// context; requireSession inside the handler then reads that cache instead
+// of re-querying the live map (authz_middleware.go: requestAuthContext).
+// So we manufacture the exact "requireSession still has it cached, but the
+// live session is already gone" state deterministically: authenticate for
+// real, revoke that same session out from under it via a direct auth.Logout
+// call (simulating a concurrent second tab's logout, or the cleanup worker
+// winning a race), then invoke the handler directly with a request whose
+// context already carries the now-stale session — exactly what the
+// middleware would have handed it had the race gone the other way.
+func TestHTTPLogoutReturns401WhenSessionAlreadyGoneAtLogoutCall(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 16, 10, 0, 0, time.UTC)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "panvex.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := mustNew(t, Options{
+		LoginTimingFloor: -1,
+		Now:              func() time.Time { return now },
+		Store:            store,
+	})
+	defer server.Close()
+
+	if _, _, err := server.auth.BootstrapUser(context.Background(), auth.BootstrapInput{
+		Username: "operator",
+		Password: "Operator1password",
+		Role:     auth.RoleOperator,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	session, err := server.auth.Authenticate(context.Background(), auth.LoginInput{
+		Username: "operator",
+		Password: "Operator1password",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v", err)
+	}
+	user, err := server.auth.GetUserByID(context.Background(), session.UserID)
+	if err != nil {
+		t.Fatalf("GetUserByID() error = %v", err)
+	}
+
+	// The session is genuinely revoked already — as if a concurrent request
+	// (another tab, or the cleanup worker) won the race and logged it out
+	// first. This is a real, successful Logout on a healthy store.
+	if err := server.auth.Logout(context.Background(), session.ID); err != nil {
+		t.Fatalf("Logout() (setup) error = %v, want nil", err)
+	}
+
+	// Invoke handleLogout directly with a request whose context already
+	// carries the now-stale session, bypassing the middleware chain (which
+	// would otherwise re-resolve from the live map and fail earlier, at the
+	// OUTER 401 check this test is not targeting).
+	req := withRequestAuthContext(httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/auth/logout", nil), session, user)
+	w := httptest.NewRecorder()
+	server.handleLogout()(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("handleLogout() with already-revoked session status = %d, want %d (errors.Is(..., ErrSessionNotFound) branch)", w.Code, http.StatusUnauthorized)
 	}
 }
 

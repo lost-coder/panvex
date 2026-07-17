@@ -42,11 +42,20 @@ func (f *selectiveFailSessionStore) PutSession(_ context.Context, session storag
 // asks for it (e.g. a concurrent Logout, or the DeleteUser flow where the
 // user row's ON DELETE CASCADE already removed every session row before
 // RevokeSessionsForUser gets a chance to).
+//
+// Deleting an ID that was never PutSession'd also reports storage.ErrNotFound
+// (mirroring the real sqlite/postgres stores, which check RowsAffected == 0
+// on `DELETE ... WHERE id = ?`) — this is the ordinary "browser presents a
+// stale/bogus cookie" case at login, not merely an edge case, so the fake
+// must not silently no-op it.
 func (f *selectiveFailSessionStore) DeleteSession(_ context.Context, id string) error {
 	if f.failIDs[id] {
 		return errors.New("injected store failure")
 	}
 	if f.notFoundIDs[id] {
+		return storage.ErrNotFound
+	}
+	if _, ok := f.records[id]; !ok {
 		return storage.ErrNotFound
 	}
 	delete(f.records, id)
@@ -459,5 +468,194 @@ func TestLogoutFailureLeavesSessionForSubsequentRevoke(t *testing.T) {
 	}
 	if !store.hasRecord(session.ID) {
 		t.Fatal("session missing from store after the composed failure sequence — it must still survive, never having been genuinely revoked")
+	}
+}
+
+// TestAuthenticateRejectsLoginWhenPriorSessionStoreDeleteFails covers the
+// prior-session-purge fail-closed fix in persistAuthenticatedSession: when
+// the browser carries a prior session cookie (P) into a login and the store
+// refuses to delete P's row, the login must be REJECTED — not proceed to
+// issue a fresh session while P's row survives in the store. Before this
+// fix, Authenticate dropped P from the in-memory map BEFORE the store
+// delete was attempted, so a store failure here left P alive in the store
+// but forgotten in memory (invisible to any later revoke pass).
+func TestAuthenticateRejectsLoginWhenPriorSessionStoreDeleteFails(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 17, 0, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	store := newSelectiveFailSessionStore()
+	service.SetSessionStore(store)
+
+	if _, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "heidi",
+		Password: "Heidi1password1",
+		Role:     RoleOperator,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	// P: the victim's real (or attacker-planted/stolen) session.
+	priorSession, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "heidi",
+		Password: "Heidi1password1",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate(prior) error = %v", err)
+	}
+
+	// The store now refuses to delete P.
+	store.failIDs[priorSession.ID] = true
+
+	// The browser carries P's cookie into a second login attempt.
+	_, err = service.Authenticate(context.Background(), LoginInput{
+		Username:       "heidi",
+		Password:       "Heidi1password1",
+		PriorSessionID: priorSession.Cookie,
+	}, now.Add(2*time.Minute))
+	if err == nil {
+		t.Fatal("Authenticate() error = nil, want rejected login when the prior-session store purge fails")
+	}
+	if !errors.Is(err, ErrSessionStoreUnavailable) {
+		t.Fatalf("Authenticate() error = %v, want wrapping ErrSessionStoreUnavailable", err)
+	}
+
+	// P must be untouched by the rejected attempt: still valid in memory
+	// and still present in the store.
+	if _, err := service.GetSession(priorSession.ID); err != nil {
+		t.Fatalf("GetSession(P) after rejected login = %v, want still valid", err)
+	}
+	if !store.hasRecord(priorSession.ID) {
+		t.Fatal("P missing from store after rejected login")
+	}
+
+	// No new session was issued for the rejected attempt.
+	service.mu.RLock()
+	count := len(service.sessions)
+	service.mu.RUnlock()
+	if count != 1 {
+		t.Fatalf("in-memory session count = %d, want 1 (only P; no new session issued on rejection)", count)
+	}
+}
+
+// TestPriorSessionPurgeFailureThenPasswordChangeDoesNotResurrect is the
+// composed regression: after a login attempt fails to purge a prior
+// session P from the store, a LATER password change on that user must not
+// see zero candidates and silently report success while P still survives.
+// This is the real end-to-end threat traced by the coordinator: a stolen
+// cookie P, a re-login attempt that fails to purge it from the store, and
+// a subsequent password rotation that the victim believes killed every
+// other session. Asserts the real outcome (UpdateUser must fail closed),
+// not just that Authenticate returned an error.
+func TestPriorSessionPurgeFailureThenPasswordChangeDoesNotResurrect(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 17, 10, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	store := newSelectiveFailSessionStore()
+	service.SetSessionStore(store)
+
+	target, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "ivan",
+		Password: "Ivan1password1",
+		Role:     RoleOperator,
+	}, now)
+	if err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	priorSession, err := service.Authenticate(context.Background(), LoginInput{
+		Username: "ivan",
+		Password: "Ivan1password1",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate(prior) error = %v", err)
+	}
+
+	// The store refuses to delete P both during the re-login attempt and
+	// later during the password-change revoke pass, modeling an outage
+	// that outlives a single request.
+	store.failIDs[priorSession.ID] = true
+
+	if _, err := service.Authenticate(context.Background(), LoginInput{
+		Username:       "ivan",
+		Password:       "Ivan1password1",
+		PriorSessionID: priorSession.Cookie,
+	}, now.Add(2*time.Minute)); err == nil {
+		t.Fatal("Authenticate() error = nil, want rejected login when the prior-session store purge fails")
+	}
+
+	// Sanity precondition: P must have survived the failed login attempt.
+	if !store.hasRecord(priorSession.ID) {
+		t.Fatal("P missing from store after rejected login — composed scenario cannot be exercised")
+	}
+
+	// The victim now rotates their password, believing every other
+	// session (including the possibly-attacker-held P) is dead. Because
+	// the rejected login never touched memory, P is still a genuine
+	// candidate for revocation here — and the store still refuses to
+	// delete it — so this must fail closed, not report success.
+	_, err = service.UpdateUser(context.Background(), UpdateUserInput{
+		UserID:      target.ID,
+		Username:    target.Username,
+		Role:        target.Role,
+		NewPassword: "NewIvan1password",
+	}, now.Add(5*time.Minute))
+	if err == nil {
+		t.Fatal("UpdateUser() error = nil, want fail-closed: P must still block a silent success")
+	}
+
+	// The real outcome: credential unchanged, P still resolves, still in
+	// the store — nothing was silently lost or resurrected.
+	stored, err := service.GetUserByID(context.Background(), target.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID() error = %v", err)
+	}
+	if err := service.VerifyPassword(stored.PasswordHash, "Ivan1password1"); err != nil {
+		t.Fatalf("VerifyPassword(original password) after failed UpdateUser = %v, want still valid", err)
+	}
+	if _, err := service.GetSession(priorSession.ID); err != nil {
+		t.Fatalf("GetSession(P) after failed UpdateUser = %v, want still valid", err)
+	}
+	if !store.hasRecord(priorSession.ID) {
+		t.Fatal("P missing from store after the composed failure sequence — it must still survive, never having been genuinely revoked")
+	}
+}
+
+// TestAuthenticateSucceedsWhenPriorSessionAlreadyGoneFromStore is the
+// CRITICAL normal-case coverage the coordinator flagged: a browser
+// routinely presents a stale, expired, or bogus cookie at login, whose row
+// was never in the store (or was already reaped). storage.ErrNotFound from
+// the prior-session purge must be treated as success, not a login-blocking
+// failure — otherwise every login carrying a stale cookie would break.
+func TestAuthenticateSucceedsWhenPriorSessionAlreadyGoneFromStore(t *testing.T) {
+	now := time.Date(2026, time.July, 17, 17, 20, 0, 0, time.UTC)
+	service := NewService()
+	service.SetNow(func() time.Time { return now })
+
+	store := newSelectiveFailSessionStore()
+	service.SetSessionStore(store)
+
+	if _, _, err := service.BootstrapUser(context.Background(), BootstrapInput{
+		Username: "judy",
+		Password: "Judy1password1",
+		Role:     RoleOperator,
+	}, now); err != nil {
+		t.Fatalf("BootstrapUser() error = %v", err)
+	}
+
+	// A cookie the store has never heard of — never PutSession'd, so
+	// DeleteSession reports storage.ErrNotFound (see the fake's doc
+	// comment: this mirrors the real stores' RowsAffected == 0 behavior).
+	session, err := service.Authenticate(context.Background(), LoginInput{
+		Username:       "judy",
+		Password:       "Judy1password1",
+		PriorSessionID: "stale-cookie-never-issued-by-this-service",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("Authenticate() error = %v, want success — a stale prior-session cookie must not block login", err)
+	}
+	if _, err := service.GetSession(session.ID); err != nil {
+		t.Fatalf("GetSession(new session) error = %v, want valid", err)
 	}
 }

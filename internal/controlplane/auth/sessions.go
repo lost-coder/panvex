@@ -287,20 +287,38 @@ func (s *Service) cleanupExpiredSessionsLocked(now time.Time) {
 }
 
 // persistAuthenticatedSession writes the new session to the persistent
-// store (when configured) and atomically deletes any prior session ID so
-// a planted pre-auth cookie cannot resurrect on RestoreSessions.
+// store (when configured) and purges any prior session ID so a planted
+// pre-auth cookie cannot resurrect on RestoreSessions.
+//
+// Fail-closed (PVX-002 / D1): a genuine failure to delete the prior session
+// from the store now REJECTS the login, following the same shape as the
+// PutSession failure below. At the point this runs, the caller
+// (Authenticate) has not yet touched the in-memory map for either the
+// prior or the new session, so rejecting here leaves state exactly as it
+// was before the attempt — the prior session, if it was ever valid, is
+// still valid in both memory and the store, and no new session exists
+// anywhere. Proceeding instead would issue a fresh session to the victim
+// while an attacker-planted or stolen cookie keeps working — exactly the
+// session-fixation exposure this code exists to close, just reached via a
+// failed purge instead of a skipped one.
+//
+// storage.ErrNotFound is deliberately NOT a failure here, and this is the
+// ordinary case rather than an edge case: a browser routinely presents a
+// stale, expired, or already-reaped cookie at login whose row was never in
+// the store (or is simply gone). Treating that as a failure would reject
+// every login that carries a stale cookie.
 func (s *Service) persistAuthenticatedSession(ctx context.Context, session Session, priorSessionID string) error {
 	if s.sessionStore == nil {
 		return nil
 	}
-	// Always purge the prior session ID from the persistent store when
-	// supplied, independent of whether it was present in the in-memory
-	// map. After a CP restart, s.sessions can be empty while the store
-	// still holds the prior ID; skipping the store delete would let the
-	// attacker-planted session resurrect on the next RestoreSessions.
 	if priorSessionID != "" {
-		if err := s.sessionStore.DeleteSession(ctx, priorSessionID); err != nil {
-			slog.Warn("auth: failed to delete prior session from store", "error", err)
+		if err := s.sessionStore.DeleteSession(ctx, priorSessionID); err != nil && !errors.Is(err, storage.ErrNotFound) {
+			slog.ErrorContext(ctx, "session revocation persistence failed",
+				"alert", "session_revoke_persist_failed",
+				"session_id", priorSessionID,
+				"error", err,
+			)
+			return fmt.Errorf("%w: delete prior session %s: %w", ErrSessionStoreUnavailable, priorSessionID, err)
 		}
 	}
 	if err := s.sessionStore.PutSession(ctx, storage.SessionRecord{
@@ -309,7 +327,7 @@ func (s *Service) persistAuthenticatedSession(ctx context.Context, session Sessi
 		CreatedAt:  session.CreatedAt,
 		LastSeenAt: session.LastSeenAt,
 	}); err != nil {
-		slog.Error("auth: failed to persist session; rejecting login", "user_id", session.UserID, "error", err)
+		slog.ErrorContext(ctx, "auth: failed to persist session; rejecting login", "user_id", session.UserID, "error", err)
 		return fmt.Errorf("%w: %w", ErrSessionStoreUnavailable, err)
 	}
 	return nil
@@ -362,18 +380,24 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 	// after the victim successfully authenticates — classic session fixation.
 	// The new cookie issued to the victim does not by itself revoke the old
 	// one; we must explicitly drop it from the session map and persistent
-	// store. Done here (under the lock) so the invalidation is atomic with
-	// the issuance of the replacement session.
+	// store.
 	//
-	// PriorSessionID, when supplied, is the *opaque cookie token* the
-	// browser carried in. The in-memory map and persistent store are keyed
-	// on its HMAC, not on the token itself (S22 Task 5), so we hash before
-	// the delete on both layers.
+	// PVX-002 (D1): the in-memory drop is deferred until AFTER the store
+	// delete is confirmed (below, outside the lock) — it no longer happens
+	// here. Dropping it eagerly, before the store confirms, would let a
+	// genuine store failure leave memory and store disagreeing: the prior
+	// session gone from memory but still alive in the store, invisible to
+	// any later RevokeSessionsForUserExcept pass (zero candidates, reports
+	// success) yet resurrectable on the next restart — the same class of
+	// bug this whole plan closes elsewhere, reachable here too if the drop
+	// ran ahead of confirmation. Only the hash is computed under the lock;
+	// PriorSessionID is the *opaque cookie token* the browser carried in,
+	// and the in-memory map / persistent store are keyed on its HMAC, not
+	// on the token itself (S22 Task 5).
 	priorCookie := strings.TrimSpace(input.PriorSessionID)
 	priorLookupID := ""
 	if priorCookie != "" {
 		priorLookupID = s.hashSessionTokenLocked(priorCookie)
-		delete(s.sessions, priorLookupID)
 	}
 
 	cookieToken, sessionID, err := s.issueSessionIdentityLocked()
@@ -394,10 +418,13 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 	// authenticated request in flight — for the duration of a login's disk I/O.
 	//
 	// Dropping the lock here is safe because nothing can reach the new session
-	// yet: its cookie has not left this function. The prior session, if any, is
-	// already gone from the map (deleted above, under the lock), so a failed
-	// persist leaves exactly the state it left before — no prior session, no
-	// new one — and the login is rejected.
+	// yet: its cookie has not left this function, and the prior session (if
+	// any) is UNTOUCHED in memory until the store confirms its deletion just
+	// below — so a failed persist leaves exactly the state it left before:
+	// the prior session, if it was ever valid, is still valid everywhere, no
+	// new session exists anywhere, and the login is rejected (fail-closed,
+	// D1) rather than silently proceeding with a fresh session while the
+	// stolen/planted one keeps working.
 	//
 	// P2-SEC-07: persist BEFORE publishing the session in memory. If the store
 	// rejects the write we must NOT create the session at all — an
@@ -407,7 +434,14 @@ func (s *Service) Authenticate(ctx context.Context, input LoginInput, now time.T
 		return Session{}, err
 	}
 
+	// Atomic with issuance: the prior session's invalidation and the new
+	// session's installation land under the same lock acquisition, so no
+	// observer of s.sessions ever sees a state with both present, or with
+	// the new one present but the old one not yet gone.
 	s.mu.Lock()
+	if priorLookupID != "" {
+		delete(s.sessions, priorLookupID)
+	}
 	s.sessions[session.ID] = session
 	s.mu.Unlock()
 
@@ -599,7 +633,7 @@ func (s *Service) TouchSession(ctx context.Context, sessionID string) {
 	// logged but do not fail the request the touch was triggered from.
 	if store != nil {
 		if err := store.TouchSession(ctx, sessionID, now); err != nil {
-			slog.Warn("auth: persist session last_seen_at failed", "session_id", sessionID, "error", err)
+			slog.WarnContext(ctx, "auth: persist session last_seen_at failed", "session_id", sessionID, "error", err)
 		}
 	}
 }
