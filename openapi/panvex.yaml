@@ -1,4 +1,4 @@
-# Panvex control-plane public API — OpenAPI 3.1 source of truth.
+# Panvex control-plane public API — OpenAPI 3.0.3 source of truth.
 #
 # Wave 3.3 — see docs/superpowers/plans/2026-05-08-api-codegen.md
 # for the migration plan. Currently covers the trivial pilots
@@ -13,7 +13,7 @@
 #   - oapi-codegen v2 (chi-server mode)
 #   - openapi-typescript
 
-openapi: 3.1.0
+openapi: 3.0.3
 
 info:
   title: Panvex Control Plane API
