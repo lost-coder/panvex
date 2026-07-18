@@ -16,6 +16,7 @@ import (
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/agent/telemtrestart"
 	"github.com/lost-coder/panvex/internal/agent/updater"
+	"github.com/lost-coder/panvex/internal/clientjob"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -928,29 +929,14 @@ func (a *Agent) handleSwitchTransportModeJob(result *gatewayrpc.JobResult, job *
 	return result
 }
 
-// clientJobPayload mirrors the JSON envelope shared by all client.* jobs.
-// Panel-side mirror: clients.ClientJobPayload
-// (internal/controlplane/clients/jobsdispatch.go). Keep the JSON tags in
-// lockstep — any drift here breaks this decode.
-type clientJobPayload struct {
-	ClientID          string `json:"client_id"`
-	Name              string `json:"name"`
-	Secret            string `json:"secret"`
-	UserADTag         string `json:"user_ad_tag"`
-	Enabled           bool   `json:"enabled"`
-	MaxTCPConns       int    `json:"max_tcp_conns"`
-	MaxUniqueIPs      int    `json:"max_unique_ips"`
-	DataQuotaBytes    int64  `json:"data_quota_bytes"`
-	ExpirationRFC3339 string `json:"expiration_rfc3339"`
+// clientJobPayload is the agent-side name for the client-job wire contract.
+// It is an alias of clientjob.Payload — the single-sourced struct the panel
+// marshals from the same package — so the JSON envelope cannot drift between
+// producer and consumer (a field/tag rename is a compile error, not a silent
+// runtime decode mismatch). See package clientjob for the full field docs.
+type clientJobPayload = clientjob.Payload
 
-	// NameOwnerByAgent is set on client.delete only: agentID -> the ID of the
-	// client that owns Name on that agent according to panel state at enqueue
-	// time. Read only for THIS agent's own ID — see
-	// deleteSupersededByOtherClient.
-	NameOwnerByAgent map[string]string `json:"name_owner_by_agent,omitempty"`
-}
-
-func (p clientJobPayload) toManagedClient() telemt.ManagedClient {
+func toManagedClient(p clientJobPayload) telemt.ManagedClient {
 	return telemt.ManagedClient{
 		Name:              p.Name,
 		Secret:            p.Secret,
@@ -970,7 +956,7 @@ func (a *Agent) handleClientJob(ctx context.Context, job *gatewayrpc.JobCommand,
 		result.Message = fmt.Sprintf("invalid client payload: %v", err)
 		return result
 	}
-	managedClient := payload.toManagedClient()
+	managedClient := toManagedClient(payload)
 
 	switch job.GetAction() {
 	case "client.create":
@@ -1061,13 +1047,10 @@ func (a *Agent) handleClientDeleteJob(ctx context.Context, payload clientJobPayl
 	return result
 }
 
-// clientResetQuotaJobPayload is the JSON envelope panel→agent for a
-// client.reset_quota job. Only the Telemt username is needed; the
-// panel resolves it from the client's centrally-stored Name.
-type clientResetQuotaJobPayload struct {
-	ClientID string `json:"client_id"`
-	Name     string `json:"name"`
-}
+// clientResetQuotaJobPayload is the agent-side name for the reset_quota wire
+// contract — an alias of clientjob.ResetQuotaPayload, the single-sourced struct
+// the panel marshals from the same package (see clientJobPayload for why).
+type clientResetQuotaJobPayload = clientjob.ResetQuotaPayload
 
 // clientResetQuotaJobResult is the JSON envelope agent→panel inside
 // JobResult.result_json. UnsupportedTelemt / ReadOnlyTelemt let the

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/clientjob"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 )
 
@@ -73,50 +74,16 @@ func (s *Service) enqueueClientJobAndPublish(ctx context.Context, actorID string
 	return job, nil
 }
 
-// ClientResetQuotaJobPayload mirrors the same-named struct on the
-// agent side (internal/agent/runtime/agent.go). Keep the JSON tags
-// in lockstep — any drift here breaks the agent's payload decode and
-// the job will fail with "invalid reset_quota payload".
-type ClientResetQuotaJobPayload struct {
-	ClientID string `json:"client_id"`
-	Name     string `json:"name"`
-}
-
-// ClientJobPayload mirrors the agent's clientJobPayload
-// (internal/agent/runtime/agent.go). Keep the JSON tags in lockstep — any
-// drift here breaks the agent's payload decode.
-type ClientJobPayload struct {
-	ClientID          string `json:"client_id"`
-	Name              string `json:"name"`
-	Secret            string `json:"secret"`
-	UserADTag         string `json:"user_ad_tag"`
-	Enabled           bool   `json:"enabled"`
-	MaxTCPConns       int    `json:"max_tcp_conns"`
-	MaxUniqueIPs      int    `json:"max_unique_ips"`
-	DataQuotaBytes    int64  `json:"data_quota_bytes"`
-	ExpirationRFC3339 string `json:"expiration_rfc3339"`
-
-	// NameOwnerByAgent is set on client.delete ONLY: agentID -> the ID of the
-	// client that, in panel state, currently owns Name on THAT agent. Absent
-	// for every agent where nobody but the client being deleted holds the name
-	// — which is the overwhelmingly common case, so the map is normally
-	// omitted entirely.
-	//
-	// It exists because the agent cannot answer "did this name change hands?"
-	// on its own after a restart: its clientID->name registry is cold, and the
-	// only other local evidence — the secret Telemt holds for the user —
-	// mismatches for TWO indistinguishable reasons (someone took the name, OR
-	// a rotate for this same client never reached the node and was superseded
-	// by this delete). The panel knows which, so it says so.
-	//
-	// PER-AGENT, not global: one delete job fans out to every agent that still
-	// hosts the client with ONE shared payload, and the Telemt user "alice" on
-	// agent-2 belongs to whichever client is deployed to agent-2. A name
-	// re-used on agent-1 must never suppress the delete on agent-2 — that
-	// would strand a live user the panel reports as deleted. Hence a map
-	// rather than a bool or a bare owner ID.
-	NameOwnerByAgent map[string]string `json:"name_owner_by_agent,omitempty"`
-}
+// ClientResetQuotaJobPayload and ClientJobPayload are the panel-side names for
+// the client-job wire contract. Both are aliases of the single-sourced structs
+// in internal/clientjob, which the agent decodes from the same package — so the
+// field set and JSON tags cannot drift between producer and consumer (a rename
+// is a compile error on whichever side misses it, not a silent runtime decode
+// mismatch). See package clientjob for the full contract and the per-field docs.
+type (
+	ClientResetQuotaJobPayload = clientjob.ResetQuotaPayload
+	ClientJobPayload           = clientjob.Payload
+)
 
 func (s *Service) EnqueueClientJob(ctx context.Context, actorID string, action jobs.Action, client Client, targetAgentIDs []string, observedAt time.Time) (jobs.Job, error) {
 	payload := ClientJobPayload{
