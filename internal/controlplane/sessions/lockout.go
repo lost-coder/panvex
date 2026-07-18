@@ -184,7 +184,7 @@ func (t *LockoutTracker) persistEntry(ctx context.Context, username string, entr
 		record.LockedAt = &lockedAt
 	}
 	if err := store.UpsertLoginLockout(ctx, record); err != nil {
-		slog.Warn("sessions: failed to persist login lockout", "username_hash", redact(username), "error", err)
+		slog.WarnContext(ctx, "sessions: failed to persist login lockout", "username_hash", redact(username), "error", err)
 	}
 }
 
@@ -196,6 +196,6 @@ func (t *LockoutTracker) deletePersisted(ctx context.Context, username string) {
 		return
 	}
 	if err := store.DeleteLoginLockout(ctx, username); err != nil {
-		slog.Warn("sessions: failed to delete login lockout", "username_hash", redact(username), "error", err)
+		slog.WarnContext(ctx, "sessions: failed to delete login lockout", "username_hash", redact(username), "error", err)
 	}
 }

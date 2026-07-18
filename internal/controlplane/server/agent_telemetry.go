@@ -436,7 +436,25 @@ func (s *Server) enqueueAgentSnapshotBatchWrites(ctx context.Context, agent Agen
 	if s.batchWriter == nil {
 		return
 	}
-	s.batchWriter.EnqueueAgent(agentToRecord(agent))
+	// Buffer the agent upsert under s.mu with a fresh revocation-guard check.
+	// applyAgentSnapshot already checked the guard, but released s.mu before
+	// this enqueue runs, so a concurrent handleDeregisterAgent could have
+	// revoked + deleted the agent in the meantime. Holding s.mu across the
+	// guard check AND the EnqueueAgent makes the pair atomic against the
+	// deregister's (markAgentRevoked -> RemovePendingAgent) ordering: we either
+	// observe the guard and skip, or we enqueue first and RemovePendingAgent
+	// cancels the buffered write. Without this, a snapshot that slipped past the
+	// first guard check would flush a PutAgent after DeleteAgent and resurrect
+	// the row (R9b).
+	s.mu.Lock()
+	_, revoked := s.revokedAgentIDs[snapshot.AgentID]
+	if !revoked {
+		s.batchWriter.EnqueueAgent(agentToRecord(agent))
+	}
+	s.mu.Unlock()
+	if revoked {
+		return
+	}
 	for _, instance := range instances {
 		s.batchWriter.EnqueueInstance(instanceToRecord(instance))
 	}

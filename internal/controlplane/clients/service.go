@@ -853,6 +853,33 @@ func (s *Service) MirrorSnapshot() MirrorState {
 	}
 }
 
+// mirrorDeploymentsSnapshot deep-copies only the client and deployment maps —
+// the sole mirror state ReconcileDeployments reads. It skips the Assignments
+// and Usage clones that MirrorSnapshot also performs, so the per-agent
+// reconnect trigger (OnAgentConnected -> ReconcileDeployments, which can fire
+// in a restart storm) does not pay an O(clients) copy of two maps it never
+// touches. Safe from any goroutine; acquires the read lock internally.
+func (s *Service) mirrorDeploymentsSnapshot() (map[ClientID]Client, map[ClientID]map[string]Deployment) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	clients := make(map[ClientID]Client, len(s.mirrorClients))
+	for k, v := range s.mirrorClients {
+		clients[k] = v
+	}
+
+	deployments := make(map[ClientID]map[string]Deployment, len(s.mirrorDeployments))
+	for k, byAgent := range s.mirrorDeployments {
+		cp := make(map[string]Deployment, len(byAgent))
+		for agentID, d := range byAgent {
+			cp[agentID] = d
+		}
+		deployments[k] = cp
+	}
+
+	return clients, deployments
+}
+
 // HasRepo reports whether the service was wired with a Repository
 // (i.e. constructed via NewService). Used by the server to decide
 // whether to delegate persistence operations to the service.

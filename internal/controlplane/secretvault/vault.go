@@ -230,9 +230,35 @@ func (v *Vault) Decrypt(domain, value string) (string, error) {
 		return v.decryptEnvelope(domain, strings.TrimPrefix(value, Prefix3))
 	case strings.HasPrefix(value, Prefix2):
 		return v.decryptWithKey(domain, strings.TrimPrefix(value, Prefix2))
+	case hasVaultPrefix(value):
+		// Carries a "PVSn:" marker we no longer recognise (e.g. a legacy
+		// PVS1 row whose decrypt path was dropped). Returning it verbatim
+		// would ship raw ciphertext to Telemt / use it as a TOTP secret —
+		// a silent corruption. Fail loudly instead so the operator sees it.
+		return "", fmt.Errorf("%w: unrecognised vault format", ErrCorrupted)
 	default:
 		return value, nil
 	}
+}
+
+// hasVaultPrefix reports whether value carries a "PVS<digits>:" marker,
+// i.e. it was produced by some version of this vault even if the current
+// build cannot decrypt that particular format. Genuine plaintext rows
+// (which the vault passes through unchanged) never match this shape.
+func hasVaultPrefix(value string) bool {
+	rest, ok := strings.CutPrefix(value, "PVS")
+	if !ok {
+		return false
+	}
+	digits := 0
+	for i := 0; i < len(rest); i++ {
+		if rest[i] >= '0' && rest[i] <= '9' {
+			digits++
+			continue
+		}
+		return rest[i] == ':' && digits > 0
+	}
+	return false
 }
 
 // decryptWithKey performs the AES-GCM open under the active per-domain

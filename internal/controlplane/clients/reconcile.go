@@ -127,11 +127,11 @@ func (s *Service) StartReconcileWorker(ctx context.Context, interval time.Durati
 // Returns the number of jobs enqueued (used by tests).
 func (s *Service) ReconcileDeployments(ctx context.Context, agentFilter string) int {
 	now := s.now().UTC()
-	mirror := s.MirrorSnapshot()
+	clients, deployments := s.mirrorDeploymentsSnapshot()
 
 	enqueued := 0
-	for clientID, byAgent := range mirror.Deployments {
-		client, ok := mirror.Clients[clientID]
+	for clientID, byAgent := range deployments {
+		client, ok := clients[clientID]
 		if !ok {
 			// A deployment with no client row at all: nothing to send. The
 			// discovery path is what surfaces an orphan like this to the

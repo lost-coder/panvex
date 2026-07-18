@@ -215,6 +215,17 @@ func (s *Server) persistAgentDeregister(w http.ResponseWriter, r *http.Request, 
 	return true
 }
 
+// markAgentRevoked arms the resurrection guard for agentID under s.mu. Called
+// before the storage delete in handleDeregisterAgent so the guard is already
+// active when RemovePendingAgent/DeleteAgent run and when a concurrent
+// snapshot's enqueue path re-checks it. Idempotent — purgeAgentInMemory sets
+// the same key again as part of the full in-memory teardown.
+func (s *Server) markAgentRevoked(agentID string) {
+	s.mu.Lock()
+	s.revokedAgentIDs[agentID] = struct{}{}
+	s.mu.Unlock()
+}
+
 // purgeAgentInMemory clears every in-memory map associated with the agent.
 // Lock ordering: mu -> Service.mu (client usage lives in clients.Service).
 func (s *Server) purgeAgentInMemory(agentID string) {
@@ -275,18 +286,27 @@ func (s *Server) handleDeregisterAgent() http.HandlerFunc {
 			return
 		}
 
-		// 3. Persist deletion to storage first so a failure does not leave
-		//    the agent absent from memory but present in the database.
+		// 3. Arm the resurrection guard BEFORE the storage delete. Ordered this
+		//    way so persistAgentDeregister's RemovePendingAgent/DeleteAgent run
+		//    with the guard already active: a concurrent heartbeat is either
+		//    dropped at the guard check in applyAgentSnapshot, or — if it already
+		//    slipped past that check — has its buffered PutAgent re-checked
+		//    against the guard under s.mu in enqueueAgentSnapshotBatchWrites, so
+		//    it can never flush a PutAgent after the DeleteAgent below (R9b).
+		s.markAgentRevoked(agentID)
+
+		// 4. Persist deletion to storage so a failure does not leave the agent
+		//    absent from memory but present in the database.
 		if !s.persistAgentDeregister(w, r, agentID, agent) {
 			return
 		}
 
-		// 4. Clean up in-memory state, including the revocation flag so a
-		//    reconnect attempt with still-valid mTLS material is rejected
-		//    at Connect.
+		// 5. Clean up the remaining in-memory state (mirror, per-agent rings,
+		//    usage). The revocation flag was already set in step 3; setting it
+		//    again here is idempotent.
 		s.purgeAgentInMemory(agentID)
 
-		// 5. Remove from presence tracker.
+		// 6. Remove from presence tracker.
 		s.presence.Remove(agentID)
 
 		s.appendAuditWithContext(r.Context(), session.UserID, "agents.deregister", agentID, map[string]any{})
