@@ -417,6 +417,9 @@ func NewCollectors() *Collectors {
 	for _, result := range certPinResultLabels {
 		mc.AgentCertPinTotal.WithLabelValues(result).Add(0)
 	}
+	for _, reason := range agentConnectRejectReasons {
+		mc.AgentConnectRejectedTotal.WithLabelValues(reason).Add(0)
+	}
 
 	return mc
 }
@@ -437,6 +440,12 @@ var bootstrapResultLabels = []string{
 // panvex_agent_cert_pin_total. Pre-initialised to zero at startup so
 // PromQL rate() alerts never see an absent series on a fresh panel. (S-02)
 var certPinResultLabels = []string{"ok", "mismatch", "missing"}
+
+// agentConnectRejectReasons is the bounded enum of reason label values for
+// panvex_agent_connect_rejected_total (emitted from gateway_deps.go).
+// Pre-initialised to zero at startup so PromQL alerts and absent() checks
+// never see a missing series before the first rejection ever happens (R11).
+var agentConnectRejectReasons = []string{"revoked", "serial_mismatch", "serial_lookup_failed"}
 
 // ObserveBootstrapAttempt increments the bootstrap attempt counter for the
 // given result label. Safe to call on a nil receiver (metrics disabled).

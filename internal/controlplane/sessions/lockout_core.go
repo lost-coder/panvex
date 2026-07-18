@@ -222,11 +222,10 @@ func (t *counterLockout) ActiveCount(now time.Time) int {
 	return count
 }
 
-// cleanupLocked drops entries whose lockout has expired. Cheap (one map
+// cleanupLocked drops entries whose lockout has expired and returns their keys
+// so the caller can unpersist them AFTER releasing the lock. Cheap (one map
 // iteration) but only run past a soft size threshold so steady-state traffic
 // does not pay the cost. Caller holds mu.
-// cleanupLocked drops entries whose lockout has expired and returns their keys
-// so the caller can unpersist them AFTER releasing the lock. Caller holds mu.
 func (t *counterLockout) cleanupLocked(now time.Time) []string {
 	if len(t.entries) < 64 {
 		return nil

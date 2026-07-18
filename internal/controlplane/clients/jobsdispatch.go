@@ -45,17 +45,25 @@ func (s *Service) EnqueueClientResetQuotaJob(ctx context.Context, actorID string
 	if err != nil {
 		return jobs.Job{}, err
 	}
+	return s.enqueueClientJobAndPublish(ctx, actorID, jobs.ActionClientResetQuota, client.ID, targetAgentIDs, string(payloadJSON), observedAt)
+}
 
+// enqueueClientJobAndPublish enqueues a client-scoped job with the shared
+// idempotency-key shape (action:clientID:observedAtNanos), then notifies the
+// target agents and publishes the job-created event. Both client job dispatch
+// paths funnel through here so the post-enqueue notify/publish sequence stays
+// single-sourced — a future change (extra metric, second notify) lands once.
+func (s *Service) enqueueClientJobAndPublish(ctx context.Context, actorID string, action jobs.Action, clientID ClientID, targetAgentIDs []string, payloadJSON string, observedAt time.Time) (jobs.Job, error) {
 	readOnlyAgents := s.deps.ReadOnlyAgents(targetAgentIDs)
 
 	job, err := s.jobQueue.Enqueue(ctx, jobs.CreateJobInput{
-		Action:         jobs.ActionClientResetQuota,
+		Action:         action,
 		TargetAgentIDs: targetAgentIDs,
 		TTL:            s.deps.ClientJobTTL(),
-		IdempotencyKey: fmt.Sprintf("%s:%s:%d", jobs.ActionClientResetQuota, client.ID, observedAt.UnixNano()),
+		IdempotencyKey: fmt.Sprintf("%s:%s:%d", action, clientID, observedAt.UnixNano()),
 		ActorID:        actorID,
 		ReadOnlyAgents: readOnlyAgents,
-		PayloadJSON:    string(payloadJSON),
+		PayloadJSON:    payloadJSON,
 	}, observedAt)
 	if err != nil {
 		return jobs.Job{}, err
@@ -134,25 +142,7 @@ func (s *Service) EnqueueClientJob(ctx context.Context, actorID string, action j
 	if err != nil {
 		return jobs.Job{}, err
 	}
-
-	readOnlyAgents := s.deps.ReadOnlyAgents(targetAgentIDs)
-
-	job, err := s.jobQueue.Enqueue(ctx, jobs.CreateJobInput{
-		Action:         action,
-		TargetAgentIDs: targetAgentIDs,
-		TTL:            s.deps.ClientJobTTL(),
-		IdempotencyKey: fmt.Sprintf("%s:%s:%d", action, client.ID, observedAt.UnixNano()),
-		ActorID:        actorID,
-		ReadOnlyAgents: readOnlyAgents,
-		PayloadJSON:    string(payloadJSON),
-	}, observedAt)
-	if err != nil {
-		return jobs.Job{}, err
-	}
-	s.deps.NotifyAgentSessions(job.TargetAgentIDs)
-	s.deps.PublishJobCreated(job)
-
-	return job, nil
+	return s.enqueueClientJobAndPublish(ctx, actorID, action, client.ID, targetAgentIDs, string(payloadJSON), observedAt)
 }
 
 // nameOwnersByAgent answers, for each of the given agents, which OTHER living

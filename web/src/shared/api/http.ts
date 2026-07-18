@@ -308,10 +308,9 @@ function parseWithSchema<T>(path: string, schema: ZodType<T>, json: unknown): T 
  *    apiClient object for the opt-in migration list.
  * 2. Schema provided — response JSON is fed through schema.parse(). On
  *    failure we:
- *      a. console.error the ZodError for dev visibility,
- *      b. dispatch `panvex:api-schema-mismatch` on window so any UI
- *         boundary (ToastProvider, sentry bridge, etc.) can surface it,
- *      c. throw an ApiSchemaError so React Query's isError surfaces.
+ *      a. console.error the ZodError for dev visibility (non-prod only),
+ *      b. throw an ApiSchemaError so React Query's isError surfaces it on
+ *         every consumer. There is no separate event bus for the mismatch.
  *    Importantly we DO NOT fall back to the raw payload — a mismatch
  *    means the UI was about to read a field it can't trust, and silent
  *    `undefined` propagation is the exact DF-10 failure mode we're

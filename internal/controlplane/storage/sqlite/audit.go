@@ -99,7 +99,7 @@ func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.Audit
 			return nil, err
 		}
 		event.CreatedAt = fromUnix(createdAt)
-		if err := decodeJSON(detailsJSON, &event.Details); err != nil {
+		if err := decodeAuditDetails(detailsJSON, &event.Details); err != nil {
 			return nil, err
 		}
 		result = append(result, event)
@@ -148,7 +148,7 @@ func (s *Store) ListAuditEventsCursor(ctx context.Context, params storage.ListAu
 			return nil, storage.ListAuditEventsCursorParams{}, err
 		}
 		event.CreatedAt = fromUnix(createdAt)
-		if err := decodeJSON(detailsJSON, &event.Details); err != nil {
+		if err := decodeAuditDetails(detailsJSON, &event.Details); err != nil {
 			return nil, storage.ListAuditEventsCursorParams{}, err
 		}
 		result = append(result, event)

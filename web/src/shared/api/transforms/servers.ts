@@ -452,6 +452,7 @@ export function transformServerDetail(
       presenceState: agent?.presence_state ?? "online",
       telemtUnreachable: runtime?.telemt_unreachable ?? false,
       reason: raw.server?.reason ?? "",
+      bootstrapState: agent?.bootstrap_state,
     }),
     systemInfo,
     gates,

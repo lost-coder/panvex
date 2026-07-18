@@ -60,7 +60,7 @@ func (s *Store) ListAuditEvents(ctx context.Context, limit int) ([]storage.Audit
 			PrevHash:  row.PrevHash,
 			EventHash: row.EventHash,
 		}
-		if err := decodeJSON(row.Details, &event.Details); err != nil {
+		if err := decodeAuditDetails(row.Details, &event.Details); err != nil {
 			return nil, err
 		}
 		result = append(result, event)
@@ -106,7 +106,7 @@ func (s *Store) ListAuditEventsCursor(ctx context.Context, params storage.ListAu
 			return nil, storage.ListAuditEventsCursorParams{}, err
 		}
 		event.CreatedAt = event.CreatedAt.UTC()
-		if err := decodeJSON(detailsJSON, &event.Details); err != nil {
+		if err := decodeAuditDetails(detailsJSON, &event.Details); err != nil {
 			return nil, storage.ListAuditEventsCursorParams{}, err
 		}
 		result = append(result, event)

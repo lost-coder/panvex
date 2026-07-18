@@ -329,6 +329,7 @@ func countUpdateConfigSingletons(ctx context.Context, store storage.MigrationSto
 		store.GetGeoIPSettings,
 		store.GetGeoIPState,
 		store.GetPanelSelfUpdate,
+		store.GetPendingAgentUpdates,
 	}
 	count := 0
 	for _, get := range getters {

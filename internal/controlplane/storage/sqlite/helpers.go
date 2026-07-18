@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -40,4 +41,20 @@ func decodeJSON[T any](value string, target *T) error {
 	}
 
 	return json.Unmarshal([]byte(value), target)
+}
+
+// decodeAuditDetails decodes an audit event's details JSON with UseNumber so
+// integer values survive the round-trip as their exact literal (json.Number)
+// instead of being coerced to float64. The audit hash verifier re-hashes
+// Details (hashchain.canonicaliseJSONValue handles json.Number), while the
+// producer hashes native ints as exact decimals — coercing to float64 here
+// would make any integer >= 2^53 recompute to a different hash and false-flag
+// the tamper chain as broken.
+func decodeAuditDetails(value string, target *map[string]any) error {
+	if value == "" {
+		value = "{}"
+	}
+	dec := json.NewDecoder(strings.NewReader(value))
+	dec.UseNumber()
+	return dec.Decode(target)
 }
