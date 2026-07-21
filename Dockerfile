@@ -135,7 +135,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 
 ENTRYPOINT ["./panvex-control-plane"]
 
-FROM nginx:1.31-alpine@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa AS web
+FROM nginx:1.31-alpine@sha256:4a73073bd557c65b759505da037898b61f1be6cbcc3c2c3aeac22d2a470c1752 AS web
 
 # BP-Medium: switch the nginx stage from the default root-PID-1 entrypoint
 # to running as the built-in unprivileged `nginx` user (UID 101). The
