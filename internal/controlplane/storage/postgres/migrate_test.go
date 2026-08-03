@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"strings"
 	"testing"
 
 	// register the pgx driver under "pgx" for database/sql
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	pgmigrations "github.com/lost-coder/panvex/db/migrations/postgres"
 )
 
 // TestMigrateGoosePostgres is the PG twin of the sqlite migrate_test. It
@@ -44,15 +47,19 @@ func TestMigrateGoosePostgres(t *testing.T) {
 		if err != nil || !exists {
 			t.Fatalf("goose_db_version table missing: err=%v exists=%v", err, exists)
 		}
-		// Exactly one embedded migration after the P9 squash: 0001_init.sql.
-		// Pre-squash DBs carry versions 1..58, but this test migrates a fresh
-		// schema, so the ledger must contain exactly version 1.
+		// One ledger row per embedded migration. Derived from the embed.FS
+		// rather than hard-coded: the P9 squash left exactly 0001_init.sql,
+		// but every migration added since (0059, 0060, ...) legitimately adds
+		// a row, and a literal here would fail on each one. Pre-squash DBs
+		// carry versions 1..58; this test migrates a fresh schema, so the
+		// ledger matches the embedded tree exactly. Mirrors the SQLite twin.
+		want := countEmbeddedMigrations(t)
 		var count int
 		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE is_applied = TRUE AND version_id > 0`).Scan(&count); err != nil {
 			t.Fatalf("count applied versions: %v", err)
 		}
-		if count != 1 {
-			t.Fatalf("expected exactly 1 applied goose version (0001_init), got %d", count)
+		if count != want {
+			t.Fatalf("applied goose versions = %d, want %d (one per embedded migration)", count, want)
 		}
 	})
 
@@ -92,4 +99,22 @@ func TestMigrateGoosePostgres(t *testing.T) {
 			t.Fatalf("Status() error = %v", err)
 		}
 	})
+}
+
+// countEmbeddedMigrations returns the number of .sql files goose will apply
+// from the embedded PostgreSQL tree. Twin of the SQLite helper of the same
+// name; kept per-package because each embeds its own dialect's tree.
+func countEmbeddedMigrations(t *testing.T) int {
+	t.Helper()
+	entries, err := pgmigrations.FS.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			count++
+		}
+	}
+	return count
 }
