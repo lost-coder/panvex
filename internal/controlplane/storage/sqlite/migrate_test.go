@@ -44,6 +44,35 @@ func TestMigrateCreatesGooseVersionTable(t *testing.T) {
 	}
 }
 
+// TestAgentsSPKILengthChecks pins both SPKI-length CHECK constraints on the
+// agents table. Narrow by design: the general PG-vs-SQLite parity guard is
+// TestSchemaSyncPostgresMatchesSQLite, but that one needs a live PostgreSQL
+// and therefore only ever runs in CI. 0059 shipped without the _prev CHECK on
+// the SQLite side — on the false premise that SQLite cannot add a CHECK via
+// ALTER TABLE (it can; the constraint is stored in the table DDL and enforced
+// on write) — and nothing caught it locally. This is the cheap local canary
+// for that specific regression.
+func TestAgentsSPKILengthChecks(t *testing.T) {
+	db := openEmptySQLite(t)
+	if err := MigrateContext(t.Context(), db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	var ddl string
+	if err := db.QueryRowContext(t.Context(),
+		`SELECT sql FROM sqlite_master WHERE type='table' AND name='agents'`).Scan(&ddl); err != nil {
+		t.Fatalf("read agents DDL: %v", err)
+	}
+	normalized := strings.ToLower(strings.Join(strings.Fields(ddl), " "))
+	for _, want := range []string{
+		"check (length(cert_spki_sha256) in (0, 32))",
+		"check (length(cert_spki_sha256_prev) in (0, 32))",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Errorf("agents DDL is missing %q\nDDL: %s", want, normalized)
+		}
+	}
+}
+
 // TestMigrateCreatesMissingFKIndexes verifies that the squashed 0001_init
 // carries the four FK/status indexes required by remediation task P2-DB-02
 // (historically added by migration 0008; audit finding DF-22).
