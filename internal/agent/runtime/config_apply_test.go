@@ -61,6 +61,35 @@ type fakeTelemt struct {
 	// the ensuing restore/rollback), e.g. by chmod'ing the config's directory
 	// read-only so atomicfile.Write's os.CreateTemp fails for real.
 	onPatch func()
+
+	submitErr      error
+	submitAccepted telemt.ReloadAccepted
+	// submitFn, if set, is called instead of returning submitAccepted/submitErr
+	// — gives tests per-call control (e.g. fail once, then succeed).
+	submitFn    func() (telemt.ReloadAccepted, error)
+	statusSeq   []telemt.ReloadStatus // successive GetReloadStatus results
+	submitCalls int
+	statusCalls int
+}
+
+func (f *fakeTelemt) SubmitReload(_ context.Context, mode string, timeoutSecs int, failurePolicy, ifMatch string) (telemt.ReloadAccepted, error) {
+	f.submitCalls++
+	if f.submitFn != nil {
+		return f.submitFn()
+	}
+	if f.submitErr != nil {
+		return telemt.ReloadAccepted{}, f.submitErr
+	}
+	return f.submitAccepted, nil
+}
+
+func (f *fakeTelemt) GetReloadStatus(_ context.Context, _ uint64) (telemt.ReloadStatus, error) {
+	i := f.statusCalls
+	f.statusCalls++
+	if i >= len(f.statusSeq) {
+		i = len(f.statusSeq) - 1
+	}
+	return f.statusSeq[i], nil
 }
 
 func (f *fakeTelemt) PatchConfig(_ context.Context, patch map[string]any, expectedRevision string) (telemt.PatchConfigResult, error) {
@@ -122,61 +151,17 @@ func writeTempConfig(t *testing.T) string {
 func TestConfigApplyHotChangeNoRestart(t *testing.T) {
 	path := writeTempConfig(t)
 	tc := &fakeTelemt{patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: false, Changed: []string{"general"}}}
-	rest := &fakeRestarter{}
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path},
 		configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
 	if !res.success {
 		t.Fatalf("expected success, got %q", res.message)
-	}
-	if rest.restarts != 0 {
-		t.Fatalf("hot change must not restart, got %d", rest.restarts)
-	}
-}
-
-func TestConfigApplyRestartHealthy(t *testing.T) {
-	path := writeTempConfig(t)
-	tc := &fakeTelemt{patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true}, healthSeq: []bool{true}}
-	rest := &fakeRestarter{}
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
-		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
-	if !res.success {
-		t.Fatalf("expected success, got %q", res.message)
-	}
-	if rest.restarts != 1 {
-		t.Fatalf("expected 1 restart, got %d", rest.restarts)
-	}
-}
-
-func TestConfigApplyRestartUnhealthyRollsBack(t *testing.T) {
-	path := writeTempConfig(t)
-	tc := &fakeTelemt{patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true}, healthSeq: []bool{true /*preflight*/, false, false}}
-	rest := &fakeRestarter{}
-	res := runConfigApply(context.Background(), configApplyDeps{
-		telemt: tc, restarter: rest, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond,
-	}, configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
-	if res.success {
-		t.Fatalf("expected failure on unhealthy restart")
-	}
-	if rest.restarts < 2 {
-		t.Fatalf("expected restart + rollback restart (>=2), got %d", rest.restarts)
-	}
-}
-
-func TestConfigApplyRestartRequiredButNoRestarter(t *testing.T) {
-	path := writeTempConfig(t)
-	tc := &fakeTelemt{patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true}}
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: nil, configPath: path},
-		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
-	if res.success {
-		t.Fatalf("expected failure when restart required but no restarter")
 	}
 }
 
 func TestConfigApplyPreflightUnhealthyAborts(t *testing.T) {
 	path := writeTempConfig(t)
 	tc := &fakeTelemt{healthSeq: []bool{false}} // preflight sees unhealthy
-	rest := &fakeRestarter{}
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path},
 		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
 	if res.success {
 		t.Fatalf("expected failure when Telemt is unhealthy at preflight")
@@ -184,22 +169,15 @@ func TestConfigApplyPreflightUnhealthyAborts(t *testing.T) {
 	if tc.patchedWith != nil {
 		t.Fatalf("patch must NOT be attempted when preflight fails")
 	}
-	if rest.restarts != 0 {
-		t.Fatalf("no restart expected, got %d", rest.restarts)
-	}
 }
 
 func TestConfigApplyRevisionConflictNoRestart(t *testing.T) {
 	path := writeTempConfig(t)
 	tc := &fakeTelemt{patchErr: telemt.ErrConfigRevisionConflict, healthSeq: []bool{true}}
-	rest := &fakeRestarter{}
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path},
 		configApplyPayload{ExpectedRevision: "stale", Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
 	if res.success {
 		t.Fatalf("expected failure on revision conflict")
-	}
-	if rest.restarts != 0 {
-		t.Fatalf("no restart on patch error, got %d", rest.restarts)
 	}
 	if !strings.Contains(res.message, "revision conflict") {
 		t.Fatalf("message = %q, want it to mention revision conflict", res.message)
@@ -231,8 +209,7 @@ func TestConfigApplyEmptyRevisionFetchesCurrentForCAS(t *testing.T) {
 		managedRevision: "r1",
 		healthSeq:       []bool{true, true},
 	}
-	rest := &fakeRestarter{}
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path},
 		configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
 
 	if !res.success {
@@ -260,8 +237,7 @@ func TestConfigApplyEmptyRevisionDuplicateIsConflictNotDoubleApply(t *testing.T)
 		patchErr:        telemt.ErrConfigRevisionConflict, // ...but Telemt has already moved past it.
 		healthSeq:       []bool{true},
 	}
-	rest := &fakeRestarter{}
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path},
 		configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
 
 	if res.success {
@@ -269,9 +245,6 @@ func TestConfigApplyEmptyRevisionDuplicateIsConflictNotDoubleApply(t *testing.T)
 	}
 	if tc.patchCalls != 1 {
 		t.Fatalf("expected exactly 1 PatchConfig attempt (no blind retry/double-apply), got %d", tc.patchCalls)
-	}
-	if rest.restarts != 0 {
-		t.Fatalf("no restart expected on a conflicted duplicate apply, got %d", rest.restarts)
 	}
 	if !strings.Contains(res.message, "revision conflict") {
 		t.Fatalf("message = %q, want it to surface the revision conflict clearly", res.message)
@@ -346,16 +319,12 @@ func TestConfigApplyHotReloadUnhealthyRollsBack(t *testing.T) {
 		// again once the rollback restores the backup.
 		healthSeq: []bool{true, false, false, true},
 	}
-	rest := &fakeRestarter{}
 	res := runConfigApply(context.Background(), configApplyDeps{
-		telemt: tc, restarter: rest, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond,
+		telemt: tc, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond,
 	}, configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
 
 	if res.success {
 		t.Fatalf("expected failure on unhealthy hot reload, got success: %q", res.message)
-	}
-	if rest.restarts != 0 {
-		t.Fatalf("hot rollback must not restart Telemt, got %d restarts", rest.restarts)
 	}
 	got, _ := os.ReadFile(path)
 	if string(got) != "tls_domain=\"orig\"\n" {
@@ -375,79 +344,176 @@ func TestConfigApplyHotReloadHealthy(t *testing.T) {
 		patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: false},
 		healthSeq:   []bool{true, true},
 	}
-	rest := &fakeRestarter{}
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path},
 		configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
 
 	if !res.success {
 		t.Fatalf("expected success, got %q", res.message)
-	}
-	if rest.restarts != 0 {
-		t.Fatalf("hot change must not restart, got %d", rest.restarts)
 	}
 	if _, err := os.Stat(path + ".panvex.bak"); !os.IsNotExist(err) {
 		t.Fatal("expected .panvex.bak cleaned up on hot success path")
 	}
 }
 
-// TestConfigApplyRollbackSurvivesExpiredJobContext guards A5: when the job
-// ctx dies mid-health-poll, the rollback (restore + restart) must still run
-// to completion on a detached context — otherwise the config file is
-// restored on disk while Telemt keeps running the unverified config.
-func TestConfigApplyRollbackSurvivesExpiredJobContext(t *testing.T) {
+// TestConfigApplyReloadRollbackSurvivesExpiredJobContext guards the reload-era
+// successor of A5: when the job ctx dies mid-health-poll (post-reload), the
+// hot rollback (restore + rollback reload, submitted with keep_new) must
+// still run to completion on a detached context — otherwise the config file
+// is restored on disk while Telemt's running generation is left on the
+// broken config.
+func TestConfigApplyReloadRollbackSurvivesExpiredJobContext(t *testing.T) {
 	path := writeTempConfig(t)
 	tc := &fakeTelemt{
-		patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true},
-		healthSeq:   []bool{true /* preflight */, false, false},
+		patchResult:     telemt.PatchConfigResult{Revision: "r2", RuntimeReloadRequired: ptrBool(true)},
+		submitAccepted:  telemt.ReloadAccepted{ReloadID: 7},
+		statusSeq:       []telemt.ReloadStatus{{State: "draining"}}, // both the forward and rollback poll read this (clamped)
+		healthSeq:       []bool{true /* preflight */, false, false /* post-reload unhealthy */},
+		managedRevision: "r1", // read back by rollbackReload after restoring the file
 	}
-	rest := &fakeRestarter{}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // the job deadline is already gone when the apply runs
+	cancel() // the job deadline is already gone by the time the post-reload health check runs
 
 	res := runConfigApply(ctx, configApplyDeps{
-		telemt: tc, restarter: rest, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond,
-	}, configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
+		telemt: tc, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond, reloadPoll: time.Millisecond,
+	}, configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}, ReloadMode: "instant"})
 
 	if res.success {
 		t.Fatalf("expected failure, got success: %q", res.message)
 	}
-	if rest.restarts != 2 {
-		t.Fatalf("expected forward restart + rollback restart, got %d", rest.restarts)
+	if !strings.Contains(res.message, "rolled back") {
+		t.Fatalf("message = %q, want it to confirm rollback", res.message)
 	}
-	// Forward restart saw the dead job ctx; the rollback restart must have
-	// received a LIVE detached ctx.
-	if rest.restartCtxErrs[0] == nil {
-		t.Fatal("test setup broken: forward restart should observe the cancelled job ctx")
-	}
-	if rest.restartCtxErrs[1] != nil {
-		t.Fatalf("rollback restart ctx must be alive (detached), observed err: %v", rest.restartCtxErrs[1])
+	// Forward submit + rollback's own keep_new submit.
+	if tc.submitCalls != 2 {
+		t.Fatalf("submitCalls = %d, want 2 (forward reload + rollback keep_new reload)", tc.submitCalls)
 	}
 	got, _ := os.ReadFile(path)
 	if string(got) != "tls_domain=\"orig\"\n" {
 		t.Fatalf("config not rolled back on disk: %q", got)
 	}
+	if _, err := os.Stat(path + ".panvex.bak"); !os.IsNotExist(err) {
+		t.Fatal("expected .panvex.bak cleaned up once the rollback-reload succeeded")
+	}
 }
 
-// TestConfigApplyFailedRestartRollsBackAndRestarts guards A5: a failed
-// forward restart must restore the previous config AND restart Telemt on it
-// — previously only the file was restored, leaving the process down or on
-// stale state.
-func TestConfigApplyFailedRestartRollsBackAndRestarts(t *testing.T) {
+func ptrBool(b bool) *bool { return &b }
+
+// reload not needed -> hot path, no SubmitReload call
+func TestConfigApplyReloadNotRequiredIsHot(t *testing.T) {
 	path := writeTempConfig(t)
-	tc := &fakeTelemt{patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true}}
-	rest := &fakeRestarter{restartErrSeq: []error{errors.New("unit failed"), nil}}
+	tc := &fakeTelemt{
+		patchResult: telemt.PatchConfigResult{Revision: "r2", RuntimeReloadRequired: ptrBool(false)},
+		healthSeq:   []bool{true /*preflight*/, true /*post*/},
+	}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path,
+		healthAttempts: 1, healthInterval: time.Millisecond}, configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "info"}}})
+	if !res.success {
+		t.Fatalf("want success, got %q", res.message)
+	}
+	if tc.submitCalls != 0 {
+		t.Fatalf("SubmitReload called %d times, want 0 on a hot change", tc.submitCalls)
+	}
+}
 
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
-		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
+// reload needed, draining reached -> success WITHOUT waiting for succeeded
+func TestConfigApplyReloadSucceedsAtDraining(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		patchResult:    telemt.PatchConfigResult{Revision: "r2", RuntimeReloadRequired: ptrBool(true)},
+		submitAccepted: telemt.ReloadAccepted{ReloadID: 7, State: "accepted"},
+		statusSeq:      []telemt.ReloadStatus{{State: "preparing"}, {State: "activating"}, {State: "draining"}},
+		healthSeq:      []bool{true /*preflight*/, true /*post-activation*/},
+	}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path,
+		healthAttempts: 1, healthInterval: time.Millisecond, reloadPoll: time.Millisecond},
+		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "x"}}, ReloadMode: "drain", ReloadTimeoutSecs: 30})
+	if !res.success {
+		t.Fatalf("want success at draining, got %q", res.message)
+	}
+}
 
+// reload failed -> file restored, job failed
+func TestConfigApplyReloadFailedRestoresBackup(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		patchResult:    telemt.PatchConfigResult{Revision: "r2", RuntimeReloadRequired: ptrBool(true)},
+		submitAccepted: telemt.ReloadAccepted{ReloadID: 7},
+		statusSeq:      []telemt.ReloadStatus{{State: "preparing"}, {State: "failed", Error: "tls-front not ready"}},
+		healthSeq:      []bool{true},
+	}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path,
+		reloadPoll: time.Millisecond}, configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "x"}}, ReloadMode: "instant"})
 	if res.success {
-		t.Fatalf("expected failure, got success: %q", res.message)
+		t.Fatalf("want failure on reload failed")
 	}
-	if rest.restarts != 2 {
-		t.Fatalf("expected failed forward restart + rollback restart, got %d", rest.restarts)
+	got, _ := os.ReadFile(path)
+	if string(got) != "tls_domain=\"orig\"\n" {
+		t.Fatalf("config not restored: %q", got)
 	}
-	if !strings.Contains(res.message, "rolled back") {
-		t.Fatalf("message = %q, want it to confirm rollback", res.message)
+}
+
+// 409 reload_in_progress -> retried -> succeeds
+func TestConfigApplyReloadBusyRetries(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		patchResult: telemt.PatchConfigResult{Revision: "r2", RuntimeReloadRequired: ptrBool(true)},
+		statusSeq:   []telemt.ReloadStatus{{State: "draining"}},
+		healthSeq:   []bool{true, true},
+	}
+	// first submit busy, second accepted
+	calls := 0
+	tc.submitFn = func() (telemt.ReloadAccepted, error) {
+		calls++
+		if calls == 1 {
+			return telemt.ReloadAccepted{}, telemt.ErrReloadInProgress
+		}
+		return telemt.ReloadAccepted{ReloadID: 7}, nil
+	}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path,
+		healthAttempts: 1, healthInterval: time.Millisecond, reloadPoll: time.Millisecond,
+		reloadBackoff: []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}},
+		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "x"}}, ReloadMode: "instant"})
+	if !res.success {
+		t.Fatalf("want success after one busy retry, got %q", res.message)
+	}
+	if calls != 2 {
+		t.Fatalf("submit calls = %d, want 2", calls)
+	}
+}
+
+// old Telemt, restart_required true -> restore + fail with upgrade hint
+func TestConfigApplyOldTelemtRestartRequiredFails(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true, RuntimeReloadRequired: nil},
+		healthSeq:   []bool{true},
+	}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path},
+		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "x"}}})
+	if res.success {
+		t.Fatalf("want failure on old Telemt restart-required")
+	}
+	if !strings.Contains(res.message, "3.4.25") {
+		t.Fatalf("message should name the version floor: %q", res.message)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != "tls_domain=\"orig\"\n" {
+		t.Fatalf("config not restored: %q", got)
+	}
+}
+
+// old Telemt, restart_required false -> hot success + note
+func TestConfigApplyOldTelemtHotIsSuccessWithNote(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: false, RuntimeReloadRequired: nil},
+		healthSeq:   []bool{true, true},
+	}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path,
+		healthAttempts: 1, healthInterval: time.Millisecond},
+		configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "info"}}})
+	if !res.success {
+		t.Fatalf("want success, got %q", res.message)
 	}
 }

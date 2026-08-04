@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +12,10 @@ import (
 )
 
 // TestConfigApplyRestartRequiredNoRestarterRestoreFails guards D1/D2#1: the
-// audit-named branch where a restart-required change lands with no restart
-// strategy configured, so the agent must revert the config file itself. The
-// old code discarded restoreConfigFile's error (`_ = restoreConfigFile(...)`)
+// audit-named branch where a restart-required change lands on an old Telemt
+// with no in-process reload support (RuntimeReloadRequired absent), so the
+// agent must revert the config file itself. The old code discarded
+// restoreConfigFile's error (`_ = restoreConfigFile(...)`)
 // and unconditionally reported "reverted" while an unconditional defer
 // deleted the backup regardless — a failed restore left the live config
 // modified, the backup gone, and the control-plane told the rollback
@@ -51,7 +51,7 @@ func TestConfigApplyRestartRequiredNoRestarterRestoreFails(t *testing.T) {
 		},
 	}
 
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: nil, configPath: path},
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path},
 		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
 
 	if res.success {
@@ -78,11 +78,11 @@ func TestConfigApplyRestartRequiredNoRestarterRestoreOK(t *testing.T) {
 	path := writeTempConfig(t)
 	tc := &fakeTelemt{patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true}}
 
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: nil, configPath: path},
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path},
 		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
 
 	if res.success {
-		t.Fatalf("expected failure (restart required, no restarter configured), got success: %q", res.message)
+		t.Fatalf("expected failure (restart required, old Telemt with no in-process reload support), got success: %q", res.message)
 	}
 	if !strings.Contains(res.message, "reverted") {
 		t.Fatalf("message = %q, want it to say reverted", res.message)
@@ -128,10 +128,8 @@ func TestConfigApplyHotReloadUnhealthyRollbackFails(t *testing.T) {
 			}
 		},
 	}
-	rest := &fakeRestarter{}
-
 	res := runConfigApply(context.Background(), configApplyDeps{
-		telemt: tc, restarter: rest, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond,
+		telemt: tc, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond,
 	}, configApplyPayload{Patch: map[string]any{"general": map[string]any{"log_level": "debug"}}})
 
 	if res.success {
@@ -150,17 +148,16 @@ func TestConfigApplyHotReloadUnhealthyRollbackFails(t *testing.T) {
 	if _, err := os.Stat(backup); err != nil {
 		t.Fatalf("expected the backup to survive a failed rollback, stat error: %v", err)
 	}
-	if rest.restarts != 0 {
-		t.Fatalf("hot rollback must not restart Telemt, got %d restarts", rest.restarts)
-	}
 }
 
-// TestConfigApplyPostRestartUnhealthyRollbackFails guards D2#3: the
-// post-restart-unhealthy path already reported the rollback failure in its
-// message, but the unconditional defer still deleted the backup. Restart
-// succeeds, health stays down, and the ensuing rollbackConfig's restore is
-// failed for real via the directory-chmod technique.
-func TestConfigApplyPostRestartUnhealthyRollbackFails(t *testing.T) {
+// TestConfigApplyReloadRollbackRestoreFails is the reload-era successor of
+// D2#3: a reload is submitted and reaches draining (the new generation is
+// live), the post-reload health check then finds Telemt unhealthy, and the
+// ensuing rollbackReload's file restore is failed for real via the
+// directory-chmod technique. The rollback-reload's own SubmitReload must
+// never be attempted once the restore itself has failed, and the backup must
+// survive as the only recovery artifact.
+func TestConfigApplyReloadRollbackRestoreFails(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: chmod 0o555 does not block root writes, skipping fault-injection test")
 	}
@@ -173,19 +170,23 @@ func TestConfigApplyPostRestartUnhealthyRollbackFails(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) //nolint:gosec // G302: dir must stay traversable (+x); restoring test fixture perms, not production data
 
 	tc := &fakeTelemt{
-		patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true},
-		healthSeq:   []bool{true /* preflight */, false, false},
+		patchResult:    telemt.PatchConfigResult{Revision: "r2", RuntimeReloadRequired: ptrBool(true)},
+		submitAccepted: telemt.ReloadAccepted{ReloadID: 7},
+		statusSeq:      []telemt.ReloadStatus{{State: "draining"}},
+		// preflight healthy, then unhealthy after the reload (both attempts
+		// exhausted) — the ensuing rollbackReload then tries to restore the
+		// backup and must fail because the directory is now read-only.
+		healthSeq: []bool{true, false, false},
 		onPatch: func() {
 			if err := os.Chmod(dir, 0o555); err != nil { //nolint:gosec // G302: intentional fault injection — makes the dir read-only+traversable so the restore write fails for real
 				t.Fatalf("chmod dir read-only: %v", err)
 			}
 		},
 	}
-	rest := &fakeRestarter{}
 
 	res := runConfigApply(context.Background(), configApplyDeps{
-		telemt: tc, restarter: rest, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond,
-	}, configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
+		telemt: tc, configPath: path, healthAttempts: 2, healthInterval: time.Millisecond, reloadPoll: time.Millisecond,
+	}, configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}, ReloadMode: "instant"})
 
 	if res.success {
 		t.Fatalf("expected failure, got success: %q", res.message)
@@ -200,17 +201,19 @@ func TestConfigApplyPostRestartUnhealthyRollbackFails(t *testing.T) {
 	if _, err := os.Stat(backup); err != nil {
 		t.Fatalf("expected the backup to survive a failed rollback, stat error: %v", err)
 	}
-	if rest.restarts != 1 {
-		t.Fatalf("expected exactly the forward restart (rollback's own restart never reached since restore failed first), got %d", rest.restarts)
+	if tc.submitCalls != 1 {
+		t.Fatalf("expected exactly the forward reload submit (rollback's own submit never reached since restore failed first), got %d", tc.submitCalls)
 	}
 }
 
-// TestConfigApplyRestartFailedRollbackFails guards the remaining rbErr branch
-// covered by the same "keep backup on any failed rollback" rule as D2#3: the
-// forward restart itself fails, and the ensuing rollbackConfig's restore also
-// fails for real. Both the restart failure and the rollback failure are
-// already reported in the message; the backup must still be kept.
-func TestConfigApplyRestartFailedRollbackFails(t *testing.T) {
+// TestConfigApplyReloadFailedRestoreFails is the reload-era successor of the
+// "forward action fails, then the plain restore also fails" scenario: the
+// forward reload itself fails (Telemt reports state=failed), and the ensuing
+// plain restoreConfigFile (not rollbackReload — Telemt never activated the
+// new generation, so there is nothing to reload away from) also fails for
+// real via the directory-chmod technique. Both failures are already reported
+// in the message; the backup must still be kept.
+func TestConfigApplyReloadFailedRestoreFails(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("running as root: chmod 0o555 does not block root writes, skipping fault-injection test")
 	}
@@ -223,17 +226,19 @@ func TestConfigApplyRestartFailedRollbackFails(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) //nolint:gosec // G302: dir must stay traversable (+x); restoring test fixture perms, not production data
 
 	tc := &fakeTelemt{
-		patchResult: telemt.PatchConfigResult{Revision: "r2", RestartRequired: true},
+		patchResult:    telemt.PatchConfigResult{Revision: "r2", RuntimeReloadRequired: ptrBool(true)},
+		submitAccepted: telemt.ReloadAccepted{ReloadID: 7},
+		statusSeq:      []telemt.ReloadStatus{{State: "failed", Error: "tls-front not ready"}},
+		healthSeq:      []bool{true},
 		onPatch: func() {
 			if err := os.Chmod(dir, 0o555); err != nil { //nolint:gosec // G302: intentional fault injection — makes the dir read-only+traversable so the restore write fails for real
 				t.Fatalf("chmod dir read-only: %v", err)
 			}
 		},
 	}
-	rest := &fakeRestarter{restartErrSeq: []error{errors.New("unit failed")}}
 
-	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, restarter: rest, configPath: path},
-		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}})
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path, reloadPoll: time.Millisecond},
+		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "b"}}, ReloadMode: "instant"})
 
 	if res.success {
 		t.Fatalf("expected failure, got success: %q", res.message)
@@ -248,7 +253,7 @@ func TestConfigApplyRestartFailedRollbackFails(t *testing.T) {
 	if _, err := os.Stat(backup); err != nil {
 		t.Fatalf("expected the backup to survive a failed rollback, stat error: %v", err)
 	}
-	if rest.restarts != 1 {
-		t.Fatalf("expected exactly 1 restart attempt (the failed forward one), got %d", rest.restarts)
+	if tc.submitCalls != 1 {
+		t.Fatalf("expected exactly 1 reload submit attempt (the failed forward one), got %d", tc.submitCalls)
 	}
 }

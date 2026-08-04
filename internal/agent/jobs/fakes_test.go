@@ -48,6 +48,12 @@ func (failingTelemt) GetManagedConfig(context.Context) (map[string]any, string, 
 func (failingTelemt) HealthReady(context.Context) (bool, string, error) {
 	return true, "", nil
 }
+func (failingTelemt) SubmitReload(context.Context, string, int, string, string) (telemt.ReloadAccepted, error) {
+	return telemt.ReloadAccepted{}, nil
+}
+func (failingTelemt) GetReloadStatus(context.Context, uint64) (telemt.ReloadStatus, error) {
+	return telemt.ReloadStatus{}, nil
+}
 
 type fakeDiagnosticsRefreshTelemtClient struct {
 	state                     telemt.RuntimeState
@@ -108,4 +114,12 @@ func (c *fakeDiagnosticsRefreshTelemtClient) GetManagedConfig(context.Context) (
 
 func (c *fakeDiagnosticsRefreshTelemtClient) HealthReady(context.Context) (bool, string, error) {
 	return true, "", nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) SubmitReload(context.Context, string, int, string, string) (telemt.ReloadAccepted, error) {
+	return telemt.ReloadAccepted{}, nil
+}
+
+func (c *fakeDiagnosticsRefreshTelemtClient) GetReloadStatus(context.Context, uint64) (telemt.ReloadStatus, error) {
+	return telemt.ReloadStatus{}, nil
 }

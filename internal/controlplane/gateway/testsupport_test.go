@@ -174,6 +174,14 @@ func (c *fakeAgentTelemtClient) HealthReady(context.Context) (bool, string, erro
 	return true, "", nil
 }
 
+func (c *fakeAgentTelemtClient) SubmitReload(context.Context, string, int, string, string) (telemt.ReloadAccepted, error) {
+	return telemt.ReloadAccepted{}, nil
+}
+
+func (c *fakeAgentTelemtClient) GetReloadStatus(context.Context, uint64) (telemt.ReloadStatus, error) {
+	return telemt.ReloadStatus{}, nil
+}
+
 func (c *fakeAgentTelemtClient) FetchClientUsageFromMetrics(context.Context) (telemt.ClientUsageMetricsSnapshot, error) {
 	return telemt.ClientUsageMetricsSnapshot{}, nil
 }

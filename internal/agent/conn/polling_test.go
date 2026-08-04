@@ -50,6 +50,12 @@ func (failingTelemt) GetManagedConfig(context.Context) (map[string]any, string, 
 func (failingTelemt) HealthReady(context.Context) (bool, string, error) {
 	return true, "", nil
 }
+func (failingTelemt) SubmitReload(context.Context, string, int, string, string) (telemt.ReloadAccepted, error) {
+	return telemt.ReloadAccepted{}, nil
+}
+func (failingTelemt) GetReloadStatus(context.Context, uint64) (telemt.ReloadStatus, error) {
+	return telemt.ReloadStatus{}, nil
+}
 
 func TestRuntimePollEmitsUnreachableAfterThreshold(t *testing.T) {
 	agent := runtime.New(runtime.Config{AgentID: "agent-1", NodeName: "n"}, failingTelemt{})
@@ -180,6 +186,12 @@ func (r *recoveringTelemt) GetManagedConfig(context.Context) (map[string]any, st
 }
 func (r *recoveringTelemt) HealthReady(context.Context) (bool, string, error) {
 	return true, "", nil
+}
+func (r *recoveringTelemt) SubmitReload(context.Context, string, int, string, string) (telemt.ReloadAccepted, error) {
+	return telemt.ReloadAccepted{}, nil
+}
+func (r *recoveringTelemt) GetReloadStatus(context.Context, uint64) (telemt.ReloadStatus, error) {
+	return telemt.ReloadStatus{}, nil
 }
 
 // TestStartPollingWorkersRoutesHeartbeatToCriticalChannel guards D2:

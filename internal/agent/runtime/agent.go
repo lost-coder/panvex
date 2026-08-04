@@ -53,6 +53,8 @@ type telemtClient interface {
 	PatchConfig(ctx context.Context, patch map[string]any, expectedRevision string) (telemt.PatchConfigResult, error)
 	GetManagedConfig(ctx context.Context) (map[string]any, string, error)
 	HealthReady(ctx context.Context) (bool, string, error)
+	SubmitReload(ctx context.Context, mode string, timeoutSecs int, failurePolicy, ifMatchRevision string) (telemt.ReloadAccepted, error)
+	GetReloadStatus(ctx context.Context, reloadID uint64) (telemt.ReloadStatus, error)
 }
 
 // Config describes the control-plane identity reported by the agent.

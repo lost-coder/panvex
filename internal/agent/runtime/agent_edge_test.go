@@ -69,6 +69,12 @@ func (e *errTelemt) GetManagedConfig(context.Context) (map[string]any, string, e
 func (e *errTelemt) HealthReady(context.Context) (bool, string, error) {
 	return true, "", nil
 }
+func (e *errTelemt) SubmitReload(context.Context, string, int, string, string) (telemt.ReloadAccepted, error) {
+	return telemt.ReloadAccepted{}, nil
+}
+func (e *errTelemt) GetReloadStatus(context.Context, uint64) (telemt.ReloadStatus, error) {
+	return telemt.ReloadStatus{}, nil
+}
 
 // TestBuildUsageSnapshotPropagatesTelemtError verifies that when Telemt
 // is unreachable the usage path returns the error WITHOUT advancing the

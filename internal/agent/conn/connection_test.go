@@ -492,3 +492,11 @@ func (c *fakeInitialSyncTelemtClient) GetManagedConfig(context.Context) (map[str
 func (c *fakeInitialSyncTelemtClient) HealthReady(context.Context) (bool, string, error) {
 	return true, "", nil
 }
+
+func (c *fakeInitialSyncTelemtClient) SubmitReload(context.Context, string, int, string, string) (telemt.ReloadAccepted, error) {
+	return telemt.ReloadAccepted{}, nil
+}
+
+func (c *fakeInitialSyncTelemtClient) GetReloadStatus(context.Context, uint64) (telemt.ReloadStatus, error) {
+	return telemt.ReloadStatus{}, nil
+}
