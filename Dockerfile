@@ -10,7 +10,7 @@
 # (or `docker buildx imagetools inspect <image>:<tag>` once docker is
 # new enough on the operator's box).
 
-FROM node:26-alpine@sha256:725aeba2364a9b16beae49e180d83bd597dbd0b15c47f1f28875c290bfd255b9 AS web-builder
+FROM node:26-alpine@sha256:233761595746769ebfdb6090f44fc7cdf818ae0ce62d2b37e0367723b9823e36 AS web-builder
 WORKDIR /src/web
 
 # .npmrc carries `legacy-peer-deps=true` — eslint-plugin-jsx-a11y@6.10.2
@@ -135,7 +135,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 
 ENTRYPOINT ["./panvex-control-plane"]
 
-FROM nginx:1.31-alpine@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa AS web
+FROM nginx:1.31-alpine@sha256:4a73073bd557c65b759505da037898b61f1be6cbcc3c2c3aeac22d2a470c1752 AS web
 
 # BP-Medium: switch the nginx stage from the default root-PID-1 entrypoint
 # to running as the built-in unprivileged `nginx` user (UID 101). The
