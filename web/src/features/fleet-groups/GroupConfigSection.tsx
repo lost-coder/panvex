@@ -24,6 +24,7 @@ import { useToast } from "@/app/providers/ToastProvider";
 import { useUnsavedChangesGuard } from "@/shared/hooks";
 import { useServersList } from "@/features/servers/hooks/useServersList";
 import type { GroupApplyAgentStatus } from "@/shared/api/schemas/config";
+import type { ApplyConfigRequest } from "@/shared/api/schemas/requests/applyConfigRequest";
 
 import {
   useActiveGroupConfigApplyBatch,
@@ -130,8 +131,8 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
   const applyStatus = useGroupConfigApplyBatch(groupId, batchId);
 
   // Kick off the async apply and remember the batch so polling can start.
-  async function startApply() {
-    const accepted = await applyMutation.mutateAsync();
+  async function startApply(policy: ApplyConfigRequest) {
+    const accepted = await applyMutation.mutateAsync(policy);
     setStartedBatchId(accepted.batch_id);
   }
 

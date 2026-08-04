@@ -220,8 +220,8 @@ export function ConfigTab({
         <ApplyConfigButton
           changedPaths={overridePaths}
           driftedFields={drift.status === "drifted" ? drift.fields : []}
-          onApply={async () => {
-            const accepted = await applyMutation.mutateAsync();
+          onApply={async (policy) => {
+            const accepted = await applyMutation.mutateAsync(policy);
             setApplyBatchId(accepted.batch_id);
           }}
           disabled={

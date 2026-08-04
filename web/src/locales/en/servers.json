@@ -449,10 +449,16 @@
     "apply": {
       "button": "Apply to node",
       "buttonGroup": "Apply to group",
-      "restartWarningTitle": "Restart required",
-      "restartWarning": "Some changes require restarting Telemt, briefly dropping connections. Continue?",
       "driftWarningTitle": "Node has drifted",
       "driftWarning": "The node's live config differs from the target for: {{fields}}. Applying will overwrite these values on the node.",
+      "sessionPolicy": {
+        "title": "Reload required",
+        "description": "This change requires Telemt to reload its configuration. Choose what happens to sessions already connected.",
+        "drainLabel": "Drain sessions (default)",
+        "drainHint": "Let existing sessions finish naturally, then reload within 30s.",
+        "instantLabel": "Reload instantly",
+        "instantHint": "Drop existing sessions immediately and reload now."
+      },
       "confirm": "Apply",
       "cancel": "Cancel",
       "applied": "Applied to {{count}} node(s)",
