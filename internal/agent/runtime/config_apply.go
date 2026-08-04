@@ -216,6 +216,13 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 	mode := p.ReloadMode
 	timeout := p.ReloadTimeoutSecs
 	if mode == "" {
+		// Defense-in-depth fallback, not the normal path: the control-plane's
+		// parseReloadPolicy already normalizes mode/timeout before a payload
+		// reaches the agent, so this branch is for a payload that bypasses
+		// the panel (e.g. a hand-crafted job or a future caller). Duplicated
+		// deliberately — the two defaults can't share a const across
+		// packages, and letting the agent enforce its own sane default here
+		// is cheap insurance against an empty mode being submitted directly.
 		mode = "drain"
 		timeout = DefaultReloadDrainSecs
 	}

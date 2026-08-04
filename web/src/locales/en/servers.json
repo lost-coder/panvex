@@ -434,7 +434,7 @@
       "hot": "Live",
       "reload": "Reload",
       "hotHint": "Applied immediately",
-      "reloadHint": "Applied via a Telemt config reload (no connection drop)"
+      "reloadHint": "Applied via an in-process Telemt reload (no process restart)"
     },
     "drift": {
       "in_sync": "In sync",

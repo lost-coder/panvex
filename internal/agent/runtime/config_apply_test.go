@@ -84,6 +84,13 @@ func (f *fakeTelemt) SubmitReload(_ context.Context, mode string, timeoutSecs in
 }
 
 func (f *fakeTelemt) GetReloadStatus(_ context.Context, _ uint64) (telemt.ReloadStatus, error) {
+	if len(f.statusSeq) == 0 {
+		// No statusSeq configured (e.g. a forgotten test fixture): return a
+		// controlled non-terminal default instead of indexing into an empty
+		// slice, so the caller's poll loop runs out its deadline and the
+		// test fails cleanly rather than panicking on an out-of-range index.
+		return telemt.ReloadStatus{State: "preparing"}, nil
+	}
 	i := f.statusCalls
 	f.statusCalls++
 	if i >= len(f.statusSeq) {

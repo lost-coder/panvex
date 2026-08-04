@@ -91,10 +91,10 @@ func (s *Server) effectiveConfigForAgent(ctx context.Context, agentID string) ma
 // enqueueConfigApplyJob resolves the agent's effective config target and
 // enqueues a config.apply job for it WITHOUT blocking on the result. Returns
 // the enqueued job id, or an empty id when the effective config is empty (a
-// no-op — the agent is already in sync). The non-blocking half of the apply
-// flow: applyConfigToAgent wraps this with a terminal-status wait for the
-// synchronous single-agent path, while the async group fan-out returns the
-// job ids to the client for polling.
+// no-op — the agent is already in sync). Used by createConfigApplyBatch for
+// both the single-agent batch-of-one path and the group fan-out; neither
+// blocks on the job's terminal status — progress is observed via the batch
+// status views instead.
 func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID string, policy reloadPolicy) (string, error) {
 	effective := s.effectiveConfigForAgent(ctx, agentID)
 	if len(effective) == 0 {
@@ -125,11 +125,6 @@ func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID str
 	return job.ID, nil
 }
 
-// applyConfigToAgent resolves the agent's effective config target and applies
-// it by enqueueing a config.apply job, then BLOCKS until that job's target
-// reaches a terminal status. Returns nil on success, an error on
-// failure/timeout. A no-op (nil) when the effective config is empty. Used by
-// the SYNCHRONOUS single-agent apply path, which blocks on exactly one job.
 // handleApplyGroupConfig applies the effective config target to every in-scope
 // agent in a fleet group ASYNCHRONOUSLY. It enqueues one config.apply job per
 // agent and returns 202 Accepted immediately with a batch id + the per-agent
