@@ -220,6 +220,15 @@ func runConfigApply(ctx context.Context, d configApplyDeps, p configApplyPayload
 		timeout = DefaultReloadDrainSecs
 	}
 	if ok, reason, submitErr := submitAndAwaitReload(ctx, d, mode, timeout, "rollback", res.Revision); !ok {
+		if errors.Is(submitErr, errReloadStateUnknown) {
+			// The poll deadline tripped before we observed a terminal or
+			// draining state — Telemt's own state is UNKNOWN, it may still
+			// activate the new generation moments later. Restoring the file
+			// here could contradict that: keep the backup and surface the
+			// ambiguity instead of claiming a (possibly false) "reverted".
+			keepBackup = true
+			return configApplyResult{message: fmt.Sprintf("config.apply: reload status unknown (%s); config NOT reverted to avoid contradicting a reload that may still complete; manual verification required, backup kept at %s", reason, backup), keepBackup: true}
+		}
 		if rErr := restoreConfigFile(backup, d.configPath); rErr != nil {
 			keepBackup = true
 			return configApplyResult{message: fmt.Sprintf("config.apply: reload failed (%s); restore failed: %v; manual recovery required, backup kept at %s", reason, rErr, backup), keepBackup: true}
@@ -258,13 +267,23 @@ func afterHotApply(ctx context.Context, d configApplyDeps, backup, revision, suc
 	return configApplyResult{success: true, revision: revision, message: successMsg}
 }
 
+// errReloadStateUnknown is returned by submitAndAwaitReload (as the error
+// return, distinguishable via errors.Is) when the poll deadline trips before
+// a terminal-or-draining state is observed. Telemt's actual state is UNKNOWN
+// in that case — the reload may still complete (successfully or not) after
+// polling stops — so callers MUST NOT treat it like a definite failure
+// (spec §7): the on-disk config must not be restored, since that could
+// contradict a reload that finishes later.
+var errReloadStateUnknown = errors.New("reload status poll deadline exceeded (state unknown)")
+
 // submitAndAwaitReload submits a reload (retrying 409 reload_in_progress with
 // backoff) and polls to a terminal-or-draining state. Returns ok=true once the
 // new generation is active (draining or succeeded) — it deliberately does NOT
 // wait for succeeded, since draining can legitimately last up to the reload's
 // own drain timeout (up to 3600s) after the generation switch already
 // happened. failurePolicy is "rollback" for a forward apply and "keep_new"
-// for the rollback-reload.
+// for the rollback-reload. On !ok, callers should check errors.Is(err,
+// errReloadStateUnknown) before deciding whether to restore the config file.
 func submitAndAwaitReload(ctx context.Context, d configApplyDeps, mode string, timeoutSecs int, failurePolicy, revision string) (bool, string, error) {
 	backoff := d.reloadBackoff
 	if backoff == nil {
@@ -319,7 +338,7 @@ func submitAndAwaitReload(ctx context.Context, d configApplyDeps, mode string, t
 			// still finish (successfully or not) after we stop watching. The
 			// caller must NOT restore the on-disk file here: doing so could
 			// contradict a reload that completes after the deadline.
-			return false, "reload status poll deadline exceeded (state unknown)", pollCtx.Err()
+			return false, errReloadStateUnknown.Error(), errReloadStateUnknown
 		case <-time.After(poll):
 		}
 	}

@@ -453,6 +453,51 @@ func TestConfigApplyReloadFailedRestoresBackup(t *testing.T) {
 	}
 }
 
+// TestConfigApplyReloadPollDeadlineKeepsBackupUnrestored guards spec §7: when
+// GetReloadStatus never reaches a terminal-or-draining state before the poll
+// deadline, Telemt's own state is UNKNOWN — the reload may still activate the
+// new generation moments later. The agent must NOT restore the on-disk file
+// in that case (that would contradict a reload that finishes after we stop
+// watching); it must keep the backup and say so.
+func TestConfigApplyReloadPollDeadlineKeepsBackupUnrestored(t *testing.T) {
+	path := writeTempConfig(t)
+	tc := &fakeTelemt{
+		patchResult:    telemt.PatchConfigResult{Revision: "r2", RuntimeReloadRequired: ptrBool(true)},
+		submitAccepted: telemt.ReloadAccepted{ReloadID: 7},
+		// Stays "preparing" forever — never reaches draining/succeeded/failed/
+		// rolled_back, so the poll loop only ever exits via the deadline.
+		statusSeq: []telemt.ReloadStatus{{State: "preparing"}},
+		healthSeq: []bool{true},
+		// Simulate Telemt having already written the patched config to disk
+		// (as a real PATCH /v1/config would) so a wrongful restore is
+		// observable: if the fix regresses, this test would see the file
+		// bytes flip back to the pre-patch content.
+		onPatch: func() {
+			if err := os.WriteFile(path, []byte("tls_domain=\"patched\"\n"), 0o600); err != nil {
+				t.Fatalf("simulate patched config write: %v", err)
+			}
+		},
+	}
+	res := runConfigApply(context.Background(), configApplyDeps{telemt: tc, configPath: path,
+		reloadPoll: time.Millisecond, reloadDeadline: 5 * time.Millisecond},
+		configApplyPayload{Patch: map[string]any{"censorship": map[string]any{"tls_domain": "x"}}, ReloadMode: "instant"})
+
+	if res.success {
+		t.Fatalf("want failure on poll-deadline-exceeded, got success: %q", res.message)
+	}
+	backup := path + ".panvex.bak"
+	if !strings.Contains(res.message, backup) {
+		t.Fatalf("message = %q, want it to name the backup path %q", res.message, backup)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != "tls_domain=\"patched\"\n" {
+		t.Fatalf("config was wrongly restored: %q, want it left untouched at the patched content", got)
+	}
+	if _, err := os.Stat(backup); err != nil {
+		t.Fatalf("expected the backup to survive (state unknown, not restored), stat error: %v", err)
+	}
+}
+
 // 409 reload_in_progress -> retried -> succeeds
 func TestConfigApplyReloadBusyRetries(t *testing.T) {
 	path := writeTempConfig(t)
