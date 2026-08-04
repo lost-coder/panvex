@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 )
 
@@ -243,52 +242,6 @@ func TestApplyConfigGroupPersistsBatch(t *testing.T) {
 	}
 }
 
-// TestWaitJobTargetTerminalSucceeded enqueues a config.apply job, records a
-// success, and asserts waitJobTargetTerminal returns nil.
-func TestWaitJobTargetTerminalSucceeded(t *testing.T) {
-	srv, _ := newConfigTargetTestServer(t)
-	const agentID = "wait-ok-agent"
-	job, err := srv.jobs.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionConfigApply,
-		TargetAgentIDs: []string{agentID},
-		TTL:            configApplyJobTTL,
-		ActorID:        "tester",
-		PayloadJSON:    `{"patch":{},"health_timeout_s":30}`,
-	}, time.Now())
-	if err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
-	if !srv.jobs.RecordResult(context.Background(), agentID, job.ID, true, "applied", "", time.Now()) {
-		t.Fatalf("RecordResult(success) returned false")
-	}
-	if err := srv.waitJobTargetTerminal(context.Background(), job.ID, agentID, "config.apply"); err != nil {
-		t.Fatalf("waitJobTargetTerminal after success = %v, want nil", err)
-	}
-}
-
-// TestWaitJobTargetTerminalFailed enqueues a config.apply job, records a
-// failure, and asserts waitJobTargetTerminal returns a non-nil error.
-func TestWaitJobTargetTerminalFailed(t *testing.T) {
-	srv, _ := newConfigTargetTestServer(t)
-	const agentID = "wait-fail-agent"
-	job, err := srv.jobs.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionConfigApply,
-		TargetAgentIDs: []string{agentID},
-		TTL:            configApplyJobTTL,
-		ActorID:        "tester",
-		PayloadJSON:    `{"patch":{},"health_timeout_s":30}`,
-	}, time.Now())
-	if err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
-	if !srv.jobs.RecordResult(context.Background(), agentID, job.ID, false, "health check failed", "", time.Now()) {
-		t.Fatalf("RecordResult(failure) returned false")
-	}
-	if err := srv.waitJobTargetTerminal(context.Background(), job.ID, agentID, "config.apply"); err == nil {
-		t.Fatalf("waitJobTargetTerminal after failure = nil, want error")
-	}
-}
-
 // failOnAgentStore wraps a storage.Store and returns injectedErr from
 // SetConfigApplyBatchTargetJob the first time it is called for failAgentID,
 // leaving every other call (and every other method) to pass through to the
@@ -413,28 +366,6 @@ func TestApplyConfigGroupEmptyScopeNoBatchViaHTTP(t *testing.T) {
 		if b.FleetGroupID == groupID {
 			t.Fatalf("found a batch row for empty-scope group %s, want none: %+v", groupID, b)
 		}
-	}
-}
-
-// TestWaitJobTargetTerminalCtxCancel asserts a cancelled context aborts the
-// wait with the context error rather than blocking until the deadline.
-func TestWaitJobTargetTerminalCtxCancel(t *testing.T) {
-	srv, _ := newConfigTargetTestServer(t)
-	const agentID = "wait-cancel-agent"
-	job, err := srv.jobs.Enqueue(context.Background(), jobs.CreateJobInput{
-		Action:         jobs.ActionConfigApply,
-		TargetAgentIDs: []string{agentID},
-		TTL:            configApplyJobTTL,
-		ActorID:        "tester",
-		PayloadJSON:    `{"patch":{},"health_timeout_s":30}`,
-	}, time.Now())
-	if err != nil {
-		t.Fatalf("Enqueue: %v", err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := srv.waitJobTargetTerminal(ctx, job.ID, agentID, "config.apply"); err == nil {
-		t.Fatalf("waitJobTargetTerminal with cancelled ctx = nil, want error")
 	}
 }
 

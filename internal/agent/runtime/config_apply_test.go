@@ -121,24 +121,6 @@ func (f *fakeTelemt) HealthReady(context.Context) (bool, string, error) {
 	return v, "", nil
 }
 
-type fakeRestarter struct {
-	restartErr     error
-	restartErrSeq  []error // successive Restart results; consumed before restartErr
-	restarts       int
-	restartCtxErrs []error // ctx.Err() observed at each Restart call
-}
-
-func (f *fakeRestarter) Restart(ctx context.Context) error {
-	f.restarts++
-	f.restartCtxErrs = append(f.restartCtxErrs, ctx.Err())
-	if len(f.restartErrSeq) > 0 {
-		err := f.restartErrSeq[0]
-		f.restartErrSeq = f.restartErrSeq[1:]
-		return err
-	}
-	return f.restartErr
-}
-
 func writeTempConfig(t *testing.T) string {
 	t.Helper()
 	p := t.TempDir() + "/config.toml"

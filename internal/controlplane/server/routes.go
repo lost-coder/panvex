@@ -208,7 +208,6 @@ func (s *Server) routes() http.Handler {
 					operator.Put("/agents/{id}/config", s.handlePutAgentConfigTarget())
 					operator.With(sensitive).Post("/agents/{id}/config/apply", s.handleApplyAgentConfig())
 					operator.Get("/agents/{id}/config/apply/batches/{batchId}", s.handleGetAgentApplyBatchStatus())
-					operator.With(sensitive).Post("/agents/{id}/restart", s.handleRestartAgent())
 					operator.With(sensitive).Put("/agents/{id}/fleet-group", oapi.UpdateAgentFleetGroup)
 					operator.Get("/agents/enrollment-tokens", oapi.ListEnrollmentTokens)
 					operator.With(sensitive).Post("/agents/enrollment-tokens", oapi.CreateEnrollmentToken)

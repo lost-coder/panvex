@@ -21,18 +21,11 @@ const (
 	configApplyHealthTimeoutSec = 30
 	// configApplyJobTTL bounds how long a single config.apply job may stay
 	// outstanding before the target is expired.
-	//
-	// P3-3.4: config apply itself is now async (batch-of-one); the three
-	// poll-* constants below survive only for waitJobTargetTerminal, whose
-	// sole remaining caller is the synchronous runtime.restart wait
-	// (http_agent_restart.go). config.apply no longer polls in-handler.
 	configApplyJobTTL = 5 * time.Minute
-	// configApplyPollInterval is how often waitJobTargetTerminal polls the job
-	// store for the target's terminal status.
+	// configApplyPollInterval is how often the config-apply batch worker
+	// (startConfigApplyBatchWorker, lifecycle.go) polls outstanding batch
+	// targets for terminal status.
 	configApplyPollInterval = 500 * time.Millisecond
-	// configApplyPollGrace is added to the job TTL to form the wait deadline,
-	// so a target that expires at the TTL boundary is observed before we bail.
-	configApplyPollGrace = 30 * time.Second
 )
 
 // groupApplyAcceptedResponse is the 202 body returned by the ASYNC apply

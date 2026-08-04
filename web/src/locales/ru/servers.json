@@ -123,10 +123,6 @@
     "elapsedHourMin": "{{hours}} ч {{minutes}} мин",
     "actions": {
       "title": "Действия с сервером",
-      "restart": "Перезапустить Telemt",
-      "restartDone": "Запрошен перезапуск Telemt",
-      "restartConfirmTitle": "Перезапустить Telemt?",
-      "restartConfirmBody": "Будет перезапущен процесс Telemt на «{{name}}» — активные подключения кратко прервутся.",
       "refreshDiagnostics": "Обновить диагностику",
       "rename": "Переименовать сервер",
       "changeFleetGroup": "Сменить группу",

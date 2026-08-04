@@ -102,8 +102,6 @@ export interface ServerDetailPageProps {
     transportDrift: boolean;
   };
   onBack?: (() => void) | undefined;
-  /** Restart the node's Telemt process. */
-  onRestart?: (() => void) | undefined;
   onBoostDetail?: (() => void) | undefined;
   agentConnection?: AgentConnectionData | undefined;
   initState?: InitCardProps | undefined;

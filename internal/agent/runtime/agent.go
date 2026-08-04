@@ -14,7 +14,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
-	"github.com/lost-coder/panvex/internal/agent/telemtrestart"
 	"github.com/lost-coder/panvex/internal/agent/updater"
 	"github.com/lost-coder/panvex/internal/clientjob"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -31,13 +30,6 @@ const jobActionRotateSecret = "client.rotate_secret"
 // payload (only the username) and its Telemt endpoint may be absent on
 // older Telemt builds — see handleClientResetQuotaJob.
 const jobActionResetQuota = "client.reset_quota"
-
-// configRestarter restarts the local Telemt process. Implemented by
-// *telemtrestart.Restarter; nil when no (valid) strategy is configured, in which
-// case restart-required config changes are refused.
-type configRestarter interface {
-	Restart(ctx context.Context) error
-}
 
 type telemtClient interface {
 	FetchRuntimeState(context.Context) (telemt.RuntimeState, error)
@@ -64,10 +56,6 @@ type Config struct {
 	FleetGroupID     string
 	Version          string
 	TelemtConfigPath string
-	// TelemtRestart is the restart strategy for the local Telemt process,
-	// e.g. "systemd:telemt.service", "docker:telemt", or "command:<argv>".
-	// Empty means restart-required config changes are refused on this node.
-	TelemtRestart string
 	// UpdateTransport, if non-nil, is called when a switch_transport_mode job
 	// is processed. It is responsible for persisting the new transport state and
 	// signalling the outer reconnect loop to pick up the change on next iteration.
@@ -112,10 +100,9 @@ type completedJobRecord struct {
 
 // Agent builds snapshots and executes control-plane commands against local Telemt.
 type Agent struct {
-	config    Config
-	telemt    telemtClient
-	restarter configRestarter
-	mu        sync.RWMutex
+	config Config
+	telemt telemtClient
+	mu     sync.RWMutex
 
 	observedConfig  observedConfigReporter
 	diagnosticsGate contentHashGate
@@ -175,24 +162,7 @@ func New(config Config, client telemtClient) *Agent {
 		bootID:                uuid.NewString(),
 		usageTotals:           make(map[string]uint64),
 	}
-	a.restarter = buildRestarter(config.TelemtRestart)
 	return a
-}
-
-// buildRestarter parses the restart strategy. Returns nil (an untyped nil
-// interface, so `restarter == nil` holds) when unset or invalid; an invalid
-// strategy is logged so the operator can fix it.
-func buildRestarter(spec string) configRestarter {
-	if strings.TrimSpace(spec) == "" {
-		return nil
-	}
-	r, err := telemtrestart.Parse(spec, telemtrestart.ExecRunner{})
-	if err != nil {
-		slog.Warn("invalid telemt restart strategy; restart-required config changes will be refused",
-			"strategy", spec, "error", err)
-		return nil
-	}
-	return r
 }
 
 // AgentID returns the persistent control-plane identity of the agent.
@@ -852,8 +822,6 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 	defer a.rememberCompletedJobResult(job.GetId(), result, observedAt)
 
 	switch job.GetAction() {
-	case "runtime.restart":
-		return a.handleRuntimeRestartJob(ctx, result)
 	case "telemetry.refresh_diagnostics":
 		a.telemt.InvalidateSlowDataCache()
 		result.Success = true
@@ -873,24 +841,6 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 		result.Message = fmt.Sprintf("unsupported action %s", job.GetAction())
 		return result
 	}
-}
-
-// handleRuntimeRestartJob restarts the local Telemt process via the agent's
-// configured restart strategy. When no strategy is configured the restarter
-// is nil; we report a typed failure so the panel can surface "restart not
-// available on this node" instead of silently succeeding.
-func (a *Agent) handleRuntimeRestartJob(ctx context.Context, result *gatewayrpc.JobResult) *gatewayrpc.JobResult {
-	if a.restarter == nil {
-		result.Message = "restart not available: no restart strategy configured on this agent"
-		return result
-	}
-	if err := a.restarter.Restart(ctx); err != nil {
-		result.Message = fmt.Sprintf("telemt restart failed: %v", err)
-		return result
-	}
-	result.Success = true
-	result.Message = "telemt restarted"
-	return result
 }
 
 // handleSwitchTransportModeJob processes a switch_transport_mode job.

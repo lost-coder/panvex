@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { MoreVertical } from "lucide-react";
 
 export interface ServerActionsDropdownProps {
-  onRestart?: (() => void) | undefined;
   onBoostDetail?: (() => void) | undefined;
   onRename?: (() => void) | undefined;
   onChangeFleetGroup?: (() => void) | undefined;
@@ -11,7 +10,6 @@ export interface ServerActionsDropdownProps {
 }
 
 export function ServerActionsDropdown({
-  onRestart,
   onBoostDetail,
   onRename,
   onChangeFleetGroup,
@@ -49,17 +47,6 @@ export function ServerActionsDropdown({
             onClick={() => setOpen(false)}
           />
           <div className="absolute right-0 top-full mt-1 z-50 min-w-[180px] rounded-xs bg-bg-card border border-border shadow-lg py-1 flex flex-col">
-            {onRestart && (
-              <button
-                onClick={() => {
-                  onRestart();
-                  setOpen(false);
-                }}
-                className="px-3 py-2 text-left text-sm text-status-warn hover:bg-bg-card-hover transition-colors"
-              >
-                {t("detail.actions.restart")}
-              </button>
-            )}
             {onBoostDetail && (
               <button
                 onClick={() => {
