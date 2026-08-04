@@ -39,7 +39,7 @@ import (
 // pre-existing concurrent-fan-out semantics documented on
 // handleApplyGroupConfig — the operator sees each agent's own outcome via the
 // batch/status views rather than the whole request failing atomically.
-func (s *Server) createConfigApplyBatch(ctx context.Context, actorID, fleetGroupID string, agentIDs []string) (string, error) {
+func (s *Server) createConfigApplyBatch(ctx context.Context, actorID, fleetGroupID string, agentIDs []string, policy reloadPolicy) (string, error) {
 	if len(agentIDs) == 0 {
 		return "", nil
 	}
@@ -68,7 +68,7 @@ func (s *Server) createConfigApplyBatch(ctx context.Context, actorID, fleetGroup
 	}
 
 	for _, agentID := range agentIDs {
-		jobID, err := s.enqueueConfigApplyJob(ctx, actorID, agentID)
+		jobID, err := s.enqueueConfigApplyJob(ctx, actorID, agentID, policy)
 		if err != nil {
 			slog.ErrorContext(ctx, "config-apply batch: enqueue failed",
 				"batch_id", batchID, "fleet_group_id", fleetGroupID, "agent_id", agentID, "error", err)

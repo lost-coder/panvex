@@ -55,10 +55,14 @@ const (
 )
 
 // configApplyJobPayload is the config.apply job body the agent decodes: the
-// effective config patch plus the per-apply health-probe timeout.
+// effective config patch, the per-apply health-probe timeout, and the
+// operator's chosen reload session policy. ReloadMode/ReloadTimeoutSecs json
+// names MUST match the agent's configApplyPayload fields (Task 3) exactly.
 type configApplyJobPayload struct {
-	Patch          map[string]any `json:"patch"`
-	HealthTimeoutS int            `json:"health_timeout_s"`
+	Patch             map[string]any `json:"patch"`
+	HealthTimeoutS    int            `json:"health_timeout_s"`
+	ReloadMode        string         `json:"reload_mode,omitempty"`
+	ReloadTimeoutSecs int            `json:"reload_timeout_secs,omitempty"`
 }
 
 // targetAgentID returns the agent id a JobTarget belongs to.
@@ -91,14 +95,16 @@ func (s *Server) effectiveConfigForAgent(ctx context.Context, agentID string) ma
 // flow: applyConfigToAgent wraps this with a terminal-status wait for the
 // synchronous single-agent path, while the async group fan-out returns the
 // job ids to the client for polling.
-func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID string) (string, error) {
+func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID string, policy reloadPolicy) (string, error) {
 	effective := s.effectiveConfigForAgent(ctx, agentID)
 	if len(effective) == 0 {
 		return "", nil
 	}
 	payload, err := json.Marshal(configApplyJobPayload{
-		Patch:          effective,
-		HealthTimeoutS: configApplyHealthTimeoutSec,
+		Patch:             effective,
+		HealthTimeoutS:    configApplyHealthTimeoutSec,
+		ReloadMode:        policy.Mode,
+		ReloadTimeoutSecs: policy.TimeoutSecs,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal config.apply payload: %w", err)
@@ -159,13 +165,18 @@ func (s *Server) handleApplyGroupConfig() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 			return
 		}
+		policy, err := decodeReloadPolicyBody(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		agentIDs := []string{}
 		for _, agent := range s.live.List() {
 			if agent.FleetGroupID == id {
 				agentIDs = append(agentIDs, agent.ID)
 			}
 		}
-		batchID, err := s.createConfigApplyBatch(ctx, user.ID, id, agentIDs)
+		batchID, err := s.createConfigApplyBatch(ctx, user.ID, id, agentIDs, policy)
 		if err != nil {
 			writeErrorLogged(ctx, w, http.StatusInternalServerError,
 				"failed to enqueue config apply", err)
@@ -421,9 +432,14 @@ func (s *Server) handleApplyAgentConfig() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
+		policy, err := decodeReloadPolicyBody(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		// fleetGroupID intentionally empty: the batch is agent-scoped and must
 		// not surface as the group's "active batch" on the fleet-group page.
-		batchID, err := s.createConfigApplyBatch(ctx, user.ID, "", []string{id})
+		batchID, err := s.createConfigApplyBatch(ctx, user.ID, "", []string{id}, policy)
 		if err != nil {
 			writeErrorLogged(ctx, w, http.StatusInternalServerError,
 				"failed to enqueue config apply", err)

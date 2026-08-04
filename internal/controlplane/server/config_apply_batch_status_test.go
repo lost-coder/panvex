@@ -229,7 +229,7 @@ func TestAdvanceConfigApplyBatchPersistsMessageForStatusEndpoint(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{failAgent})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{failAgent}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
