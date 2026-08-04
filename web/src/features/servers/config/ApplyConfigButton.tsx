@@ -1,7 +1,7 @@
 // P5-T5: the "Apply" action for the Config tab.
 //
 // Wraps a @/ui Button + ConfirmDialog. If any of the changed paths maps
-// to a restart-only field (requiresRestart), or the caller reports that
+// to a reload-only field (requiresReload), or the caller reports that
 // the node's live config has drifted from the target (driftedFields),
 // clicking opens a confirm dialog before the apply proceeds. Hot-only,
 // non-drifted changes apply immediately.
@@ -24,7 +24,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button, ConfirmDialog } from "@/ui";
 
-import { requiresRestart } from "./fieldRegistry";
+import { requiresReload } from "./fieldRegistry";
 
 export interface ApplyConfigButtonProps {
   changedPaths: string[];
@@ -51,10 +51,10 @@ export function ApplyConfigButton({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [inFlight, setInFlight] = useState(false);
 
-  const needsRestart = requiresRestart(changedPaths);
+  const needsReload = requiresReload(changedPaths);
   const drifted = driftedFields ?? [];
   const hasDrift = drifted.length > 0;
-  const needsConfirm = needsRestart || hasDrift;
+  const needsConfirm = needsReload || hasDrift;
 
   const dialogTitle = hasDrift
     ? t("config.apply.driftWarningTitle")
@@ -63,7 +63,7 @@ export function ApplyConfigButton({
     hasDrift
       ? t("config.apply.driftWarning", { fields: drifted.join(", ") })
       : null,
-    needsRestart ? t("config.apply.restartWarning") : null,
+    needsReload ? t("config.apply.restartWarning") : null,
   ]
     .filter(Boolean)
     .join(" ");

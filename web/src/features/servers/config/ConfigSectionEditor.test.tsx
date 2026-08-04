@@ -16,12 +16,12 @@ describe("ConfigSectionEditor", () => {
     expect(screen.getByText("SNI domain")).toBeInTheDocument();
   });
 
-  it("renders a Live badge for hot fields and a Restart badge for restart fields", () => {
+  it("renders a Live badge for hot fields and a Reload badge for reload fields", () => {
     render(<ConfigSectionEditor values={{}} onChange={() => {}} />);
     // hot fields (log_level, update_every) -> "Live"
     expect(screen.getAllByText("Live").length).toBeGreaterThan(0);
-    // restart fields (modes, tls_domain, tls_domains, client_handshake) -> "Restart"
-    expect(screen.getAllByText("Restart").length).toBeGreaterThan(0);
+    // reload fields (modes, tls_domain, tls_domains, client_handshake) -> "Reload"
+    expect(screen.getAllByText("Reload").length).toBeGreaterThan(0);
   });
 
   // The editor is fully controlled (it holds no state), so the rendered

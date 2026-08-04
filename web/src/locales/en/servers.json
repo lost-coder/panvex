@@ -402,16 +402,39 @@
     "field": {
       "log_level": "Log level",
       "update_every": "ME update interval",
+      "ad_tag": "Ad tag (MTProxybot)",
+      "desync_all_full": "Full desync forensic logging",
+      "hardswap": "ME pool hard-swap",
+      "me_reinit_every_secs": "ME pool reinit interval (s)",
       "modes": "Modes",
+      "prefer_ipv6": "Prefer IPv6",
+      "fast_mode": "Fast mode",
+      "use_middle_proxy": "Use middle proxy (ME)",
+      "ntp_check": "NTP drift check at startup",
+      "auto_degradation_enabled": "Auto-degrade ME to direct DC",
+      "rst_on_close": "RST on close",
+      "client_first_byte_idle_secs": "First-byte idle timeout (s)",
       "tls_domain": "SNI domain",
       "tls_domains": "Additional SNI domains",
-      "client_handshake": "Client handshake timeout"
+      "client_handshake": "Client handshake timeout",
+      "relay_client_idle_soft_secs": "Relay idle soft threshold (s)",
+      "relay_client_idle_hard_secs": "Relay idle hard threshold (s)",
+      "client_keepalive": "Client keepalive (s)",
+      "client_ack": "Client ack timeout (s)",
+      "unknown_sni_action": "Unknown SNI action",
+      "mask": "Enable TLS masking",
+      "mask_host": "Mask backend host",
+      "mask_port": "Mask backend port",
+      "tls_emulation": "TLS certificate emulation",
+      "server_hello_delay_min_ms": "ServerHello delay min (ms)",
+      "server_hello_delay_max_ms": "ServerHello delay max (ms)",
+      "alpn_enforce": "Enforce ALPN echo"
     },
     "badge": {
       "hot": "Live",
-      "restart": "Restart",
+      "reload": "Reload",
       "hotHint": "Applied immediately",
-      "restartHint": "Requires a Telemt restart (brief connection drop)"
+      "reloadHint": "Applied via a Telemt config reload (no connection drop)"
     },
     "drift": {
       "in_sync": "In sync",
