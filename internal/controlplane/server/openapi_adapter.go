@@ -89,3 +89,11 @@ func (a *oapiAdapter) CreateAgentCertificateRecoveryGrant(w http.ResponseWriter,
 func (a *oapiAdapter) RevokeAgentCertificateRecoveryGrant(w http.ResponseWriter, r *http.Request, _ string) {
 	a.s.handleRevokeAgentCertificateRecoveryGrant().ServeHTTP(w, r)
 }
+
+func (a *oapiAdapter) ApplyAgentConfig(w http.ResponseWriter, r *http.Request, _ string) {
+	a.s.handleApplyAgentConfig().ServeHTTP(w, r)
+}
+
+func (a *oapiAdapter) ApplyGroupConfig(w http.ResponseWriter, r *http.Request, _ string) {
+	a.s.handleApplyGroupConfig().ServeHTTP(w, r)
+}

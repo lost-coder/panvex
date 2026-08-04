@@ -131,12 +131,12 @@ describe("GroupConfigSection", () => {
     expect(screen.getByRole("button", { name: "Apply to group" })).toBeInTheDocument();
   });
 
-  it("rolls out the saved target on confirm (restart field → warning dialog)", async () => {
+  it("rolls out the saved target on confirm (reload field → session-policy dialog)", async () => {
     render(<GroupConfigSection groupId="fg-1" />);
-    // The target holds a restart-only field (censorship.tls_domain), so Apply
-    // opens the restart-warning confirm before rolling out.
+    // The target holds a reload-only field (censorship.tls_domain), so Apply
+    // opens the session-policy confirm before rolling out.
     fireEvent.click(screen.getByRole("button", { name: "Apply to group" }));
-    expect(screen.getByText("Restart required")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Reload required" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(applyMutateAsync).toHaveBeenCalledTimes(1));
   });

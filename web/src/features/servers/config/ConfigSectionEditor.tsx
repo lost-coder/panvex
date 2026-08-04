@@ -1,7 +1,7 @@
 // P5-T5: presentational, fully-controlled editor for the curated Telemt
 // config fields. It renders the CONFIG_FIELDS registry grouped by
 // section, with the right @/ui input for each field type and a small
-// hot/restart apply-mode badge next to every label.
+// hot/reload apply-mode badge next to every label.
 //
 // It is intentionally dumb: it holds no state and does no data fetching.
 // The parent owns the dotted-path → value map and feeds changes back in
@@ -18,6 +18,7 @@ import {
   type ConfigField,
   fieldsBySection,
 } from "./fieldRegistry";
+import { isProcessOwned } from "./guard";
 
 export interface ConfigSectionEditorProps {
   /** dotted-path → current value (typically from flattenSections). */
@@ -40,13 +41,13 @@ function placeholderFor(v: unknown): string | undefined {
   return String(v);
 }
 
-/** Apply-mode badge — "Live" (hot) vs "Restart" with an explanatory tooltip. */
+/** Apply-mode badge — "Live" (hot) vs "Reload" with an explanatory tooltip. */
 function ApplyModeBadge({ field }: Readonly<{ field: ConfigField }>) {
   const { t } = useTranslation("servers");
-  const isRestart = field.applyMode === "restart";
-  const variant: NonNullable<BadgeProps["variant"]> = isRestart ? "warn" : "ok";
-  const label = t(isRestart ? "config.badge.restart" : "config.badge.hot");
-  const hint = t(isRestart ? "config.badge.restartHint" : "config.badge.hotHint");
+  const isReload = field.applyMode === "reload";
+  const variant: NonNullable<BadgeProps["variant"]> = isReload ? "warn" : "ok";
+  const label = t(isReload ? "config.badge.reload" : "config.badge.hot");
+  const hint = t(isReload ? "config.badge.reloadHint" : "config.badge.hotHint");
   return (
     <Badge variant={variant} title={hint}>
       {label}
@@ -152,6 +153,15 @@ export function ConfigSectionEditor({
   const { t } = useTranslation("servers");
   const bySection = fieldsBySection();
 
+  // Defensive guard: CONFIG_FIELDS never lists the three process-owned
+  // paths (fieldRegistry.ts), so this branch is normally dead. It exists
+  // so a future registry mistake can't make them editable — the read-only
+  // ObservedConfigViewer is the only place they may ever be shown.
+  function handleChange(path: string, value: unknown) {
+    if (isProcessOwned(path)) return;
+    onChange(path, value);
+  }
+
   return (
     <div className="flex flex-col gap-8">
       {Object.entries(bySection).map(([section, fields]) => (
@@ -174,7 +184,7 @@ export function ConfigSectionEditor({
                   field={field}
                   value={values[field.path]}
                   placeholder={placeholderFor(effective?.[field.path])}
-                  onChange={onChange}
+                  onChange={handleChange}
                   disabled={disabled}
                 />
               </FormField>

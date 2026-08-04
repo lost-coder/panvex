@@ -27,11 +27,6 @@ var (
 type Action string
 
 const (
-	// ActionRuntimeRestart restarts the local Telemt process on the target
-	// node via the agent's configured restart strategy (e.g. `systemctl
-	// restart`). Heavier than a reload — used to recover a degraded node.
-	// No-ops with a typed failure when the agent has no restart strategy.
-	ActionRuntimeRestart Action = "runtime.restart"
 	// ActionClientCreate creates one centrally managed Telemt client on the target node.
 	ActionClientCreate Action = "client.create"
 	// ActionClientUpdate updates one centrally managed Telemt client on the target node.
@@ -68,8 +63,7 @@ const (
 // IsValidAction reports whether the action is a recognized job type.
 func IsValidAction(a Action) bool {
 	switch a {
-	case ActionRuntimeRestart,
-		ActionClientCreate,
+	case ActionClientCreate,
 		ActionClientUpdate,
 		ActionClientDelete,
 		ActionClientRotateSecret,

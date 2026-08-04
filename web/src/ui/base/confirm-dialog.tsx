@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { cn } from "@/ui/lib/cn";
 import { Button } from "./button";
 
@@ -11,6 +11,13 @@ export interface ConfirmDialogProps {
   variant?: "default" | "danger" | undefined;
   onConfirm: () => void;
   onCancel: () => void;
+  /**
+   * Extra content rendered between the description and the action
+   * buttons — e.g. a session-policy choice. Keeps callers that need more
+   * than a plain description to a SINGLE dialog rather than stacking a
+   * second modal on top of this one.
+   */
+  children?: ReactNode | undefined;
 }
 
 export function ConfirmDialog({
@@ -22,6 +29,7 @@ export function ConfirmDialog({
   variant = "default",
   onConfirm,
   onCancel,
+  children,
 }: Readonly<ConfirmDialogProps>) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -64,6 +72,7 @@ export function ConfirmDialog({
             {description}
           </p>
         </div>
+        {children}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={onCancel}>
             {cancelLabel}

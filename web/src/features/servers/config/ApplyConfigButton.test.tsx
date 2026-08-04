@@ -35,29 +35,56 @@ describe("ApplyConfigButton", () => {
       <ApplyConfigButton changedPaths={["general.log_level"]} onApply={onApply} />,
     );
     await userEvent.click(screen.getByRole("button", { name: "Apply to node" }));
-    expect(onApply).toHaveBeenCalledTimes(1);
+    // Hot-only changes apply immediately with an empty policy — the panel
+    // defaults it server-side — and no confirm dialog.
+    expect(onApply).toHaveBeenCalledWith({});
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // The button is kickoff-only now — outcome surfacing lives in the caller,
     // so it must not toast success/error itself.
     expect(toastApi.success).not.toHaveBeenCalled();
     expect(toastApi.error).not.toHaveBeenCalled();
   });
 
-  it("opens the restart-warning dialog for restart changes and applies on confirm", async () => {
+  it("offers a session-policy choice for reload changes, defaulting to drain, and applies on confirm", async () => {
     const onApply = vi.fn().mockResolvedValue(undefined);
     render(
       <ApplyConfigButton changedPaths={["censorship.tls_domain"]} onApply={onApply} />,
     );
     await userEvent.click(screen.getByRole("button", { name: "Apply to node" }));
-    // Warning dialog is shown; onApply not yet called.
-    expect(screen.getByText("Restart required")).toBeInTheDocument();
+    // The dialog no longer talks about a restart, and it offers the
+    // drain/instant choice with the default set to drain.
+    expect(screen.queryByText("Restart required")).not.toBeInTheDocument();
+    expect(screen.queryByText(/restart/i)).not.toBeInTheDocument();
+    const drainRadio = screen.getByRole("radio", { name: /drain/i });
+    const instantRadio = screen.getByRole("radio", { name: /instant/i });
+    expect(drainRadio).toBeChecked();
+    expect(instantRadio).not.toBeChecked();
     expect(onApply).not.toHaveBeenCalled();
 
-    // Confirm -> apply fires.
+    // Confirm -> apply fires with the default drain policy.
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
-    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(onApply).toHaveBeenCalledWith({
+        reload_mode: "drain",
+        reload_timeout_secs: 30,
+      }),
+    );
   });
 
-  it("does not apply when the restart dialog is cancelled", async () => {
+  it("applies with instant policy when the operator picks instant", async () => {
+    const onApply = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ApplyConfigButton changedPaths={["censorship.tls_domain"]} onApply={onApply} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Apply to node" }));
+    await userEvent.click(screen.getByRole("radio", { name: /instant/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(onApply).toHaveBeenCalledWith({ reload_mode: "instant" }),
+    );
+  });
+
+  it("does not apply when the reload dialog is cancelled", async () => {
     const onApply = vi.fn().mockResolvedValue(undefined);
     render(
       <ApplyConfigButton changedPaths={["censorship.tls_domain"]} onApply={onApply} />,
@@ -110,7 +137,7 @@ describe("ApplyConfigButton", () => {
     expect(onApply).toHaveBeenCalledTimes(1);
   });
 
-  it("shows a single combined dialog with both drift and restart warnings", async () => {
+  it("shows a single combined dialog with both drift warning and the session-policy choice", async () => {
     const onApply = vi.fn().mockResolvedValue(undefined);
     render(
       <ApplyConfigButton
@@ -120,16 +147,21 @@ describe("ApplyConfigButton", () => {
       />,
     );
     await userEvent.click(screen.getByRole("button", { name: "Apply to node" }));
-    // Only one dialog, carrying both the drift and the restart message.
+    // Only one dialog, carrying both the drift message and the drain/instant
+    // choice — two stacked modals is exactly what the drift warning avoids.
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(screen.getByText(/censorship\.tls_domain/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/restarting Telemt|Restart required/i, { selector: "p" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /drain/i })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /instant/i })).toBeInTheDocument();
     expect(onApply).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
-    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(onApply).toHaveBeenCalledWith({
+        reload_mode: "drain",
+        reload_timeout_secs: 30,
+      }),
+    );
   });
 
   it("disables the button while the kickoff request is in flight", async () => {

@@ -208,8 +208,8 @@ func (s *Server) readOnlyAgents(targetIDs []string) map[string]bool {
 // accepted here, dispatched, and then failed on EVERY agent with a JSON
 // decode error — nothing warned at enqueue time.
 //
-//   - runtime.restart / telemetry.refresh_diagnostics: payload-free on the
-//     agent (agent.go HandleJob decodes nothing) → dispatchable as-is.
+//   - telemetry.refresh_diagnostics: payload-free on the agent (agent.go
+//     HandleJob decodes nothing) → dispatchable as-is.
 //   - agent.self-update: REQUIRES {version, release_base_url}; the panel
 //     builds it server-side (selfUpdateJobPayloadForCreate) so the
 //     dashboard's bulk self-update button keeps working.
@@ -219,8 +219,7 @@ func (s *Server) readOnlyAgents(targetIDs []string) map[string]bool {
 //     payload (clients flow, config-apply handler, transport-mode PUT).
 func createJobActionAllowed(action jobs.Action) bool {
 	switch action {
-	case jobs.ActionRuntimeRestart,
-		jobs.ActionTelemetryRefreshDiagnostics,
+	case jobs.ActionTelemetryRefreshDiagnostics,
 		jobs.ActionAgentSelfUpdate:
 		return true
 	default:

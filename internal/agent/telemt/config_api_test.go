@@ -2,7 +2,9 @@ package telemt
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -136,5 +138,173 @@ func TestPatchConfigReadOnly403(t *testing.T) {
 	_, err = c.PatchConfig(context.Background(), map[string]any{"censorship": map[string]any{}}, "")
 	if !errors.Is(err, ErrConfigEditReadOnly) {
 		t.Fatalf("want ErrConfigEditReadOnly, got %v", err)
+	}
+}
+
+func TestPatchConfigParsesReloadDecisionFields(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,` +
+			`"runtime_reload_required":true,"process_restart_required":false,` +
+			`"deferred_process_fields":[],"changed":["censorship"]}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	res, err := c.PatchConfig(context.Background(), map[string]any{"censorship": map[string]any{"tls_domain": "x"}}, "")
+	if err != nil {
+		t.Fatalf("PatchConfig: %v", err)
+	}
+	if res.RuntimeReloadRequired == nil || !*res.RuntimeReloadRequired {
+		t.Fatalf("RuntimeReloadRequired = %v, want ptr(true)", res.RuntimeReloadRequired)
+	}
+	if res.ProcessRestartRequired {
+		t.Fatalf("ProcessRestartRequired = true, want false")
+	}
+}
+
+func TestPatchConfigOldTelemtLeavesReloadFieldNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,"changed":["censorship"]}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	res, err := c.PatchConfig(context.Background(), map[string]any{"censorship": map[string]any{"tls_domain": "x"}}, "")
+	if err != nil {
+		t.Fatalf("PatchConfig: %v", err)
+	}
+	if res.RuntimeReloadRequired != nil {
+		t.Fatalf("RuntimeReloadRequired = %v, want nil (old Telemt sends no such field)", res.RuntimeReloadRequired)
+	}
+}
+
+func TestPatchConfigParsesProcessRestartRequiredTrue(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,` +
+			`"runtime_reload_required":false,"process_restart_required":true,` +
+			`"deferred_process_fields":["listen_port"],"changed":["censorship"]}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	res, err := c.PatchConfig(context.Background(), map[string]any{"censorship": map[string]any{"tls_domain": "x"}}, "")
+	if err != nil {
+		t.Fatalf("PatchConfig: %v", err)
+	}
+	if !res.ProcessRestartRequired {
+		t.Fatalf("ProcessRestartRequired = false, want true")
+	}
+	if len(res.DeferredProcessFields) != 1 || res.DeferredProcessFields[0] != "listen_port" {
+		t.Fatalf("DeferredProcessFields = %+v", res.DeferredProcessFields)
+	}
+}
+
+func TestSubmitReloadDrainSendsJSONBodyAndIfMatch(t *testing.T) {
+	var gotBody []byte
+	var gotIfMatch string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		gotIfMatch = r.Header.Get("If-Match")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"reload_id":7,"target_generation":2,` +
+			`"config_revision":"r2","state":"accepted","mode":"drain","failure_policy":"rollback"}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	acc, err := c.SubmitReload(context.Background(), "drain", 30, "rollback", "r2")
+	if err != nil {
+		t.Fatalf("SubmitReload: %v", err)
+	}
+	if acc.ReloadID != 7 || acc.State != "accepted" {
+		t.Fatalf("acc = %+v", acc)
+	}
+	if gotIfMatch != "r2" {
+		t.Fatalf("If-Match = %q, want r2", gotIfMatch)
+	}
+	var decoded struct {
+		Mode          string `json:"mode"`
+		TimeoutSecs   int    `json:"timeout_secs"`
+		FailurePolicy string `json:"failure_policy"`
+	}
+	if err := json.Unmarshal(gotBody, &decoded); err != nil {
+		t.Fatalf("body %s not valid JSON: %v", gotBody, err)
+	}
+	if decoded.Mode != "drain" || decoded.TimeoutSecs != 30 || decoded.FailurePolicy != "rollback" {
+		t.Fatalf("body decoded = %+v, want mode=drain timeout_secs=30 failure_policy=rollback", decoded)
+	}
+}
+
+func TestSubmitReloadInstantOmitsTimeoutSecs(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"reload_id":8,"target_generation":3,` +
+			`"config_revision":"r3","state":"accepted","mode":"instant","failure_policy":"rollback"}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if _, err := c.SubmitReload(context.Background(), "instant", 0, "rollback", "r3"); err != nil {
+		t.Fatalf("SubmitReload: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(gotBody, &decoded); err != nil {
+		t.Fatalf("body %s not valid JSON: %v", gotBody, err)
+	}
+	if decoded["mode"] != "instant" || decoded["failure_policy"] != "rollback" {
+		t.Fatalf("body decoded = %+v, want mode=instant failure_policy=rollback", decoded)
+	}
+	if _, present := decoded["timeout_secs"]; present {
+		t.Fatalf("body decoded = %+v, timeout_secs must be absent for instant mode", decoded)
+	}
+}
+
+func TestSubmitReloadInProgressMapsToSentinel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"ok":false,"error":{"code":"reload_in_progress","message":"Reload 3 is already in progress"}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_, err = c.SubmitReload(context.Background(), "instant", 0, "rollback", "r2")
+	if !errors.Is(err, ErrReloadInProgress) {
+		t.Fatalf("err = %v, want ErrReloadInProgress", err)
+	}
+}
+
+func TestGetReloadStatusParsesTerminal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/system/reload/7" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"reload_id":7,"state":"succeeded",` +
+			`"finished_at_epoch_secs":100,"deferred_process_fields":[],"warnings":["x"],"error":null}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	st, err := c.GetReloadStatus(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetReloadStatus: %v", err)
+	}
+	if st.State != "succeeded" || len(st.Warnings) != 1 {
+		t.Fatalf("st = %+v", st)
 	}
 }

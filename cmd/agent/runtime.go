@@ -39,7 +39,6 @@ type runtimeFlags struct {
 	telemtMetricsURL      string
 	telemtAuth            string
 	telemtConfigPath      string
-	telemtRestart         string
 	heartbeat             time.Duration
 	runtimePoll           time.Duration
 	runtimeUpload         time.Duration
@@ -66,8 +65,6 @@ func parseRuntimeFlags(args []string) (runtimeFlags, error) {
 	flags.StringVar(&cfg.telemtMetricsURL, "telemt-metrics-url", "http://127.0.0.1:9090", "Local Telemt metrics URL")
 	flags.StringVar(&cfg.telemtAuth, "telemt-auth", "", "Local Telemt authorization value")
 	flags.StringVar(&cfg.telemtConfigPath, "telemt-config-path", "", "Path to Telemt config file (optional, auto-detected via API if empty)")
-	flags.StringVar(&cfg.telemtRestart, "telemt-restart", os.Getenv("PANVEX_TELEMT_RESTART"),
-		"How the agent restarts Telemt for restart-required config changes: systemd:<unit> | docker:<container> | command:<argv>")
 	flags.DurationVar(&cfg.heartbeat, "heartbeat-interval", 15*time.Second, "Heartbeat interval")
 	flags.DurationVar(&cfg.runtimePoll, "runtime-poll-interval", 15*time.Second, "How often the agent polls Telemt for runtime data")
 	flags.DurationVar(&cfg.runtimeUpload, "runtime-upload-interval", time.Minute, "How often aggregated runtime snapshots are sent to the control-plane")
@@ -166,7 +163,6 @@ func runRuntime(args []string) error {
 		FleetGroupID:     cfg.fleetGroupID,
 		Version:          cfg.version,
 		TelemtConfigPath: cfg.telemtConfigPath,
-		TelemtRestart:    cfg.telemtRestart,
 		UpdateTransport: func(mode, listenAddr, panelURL string) error {
 			// Patch transport fields onto fresh disk state under the state
 			// package's write lock (audit #7) — a concurrent usage-seq tick

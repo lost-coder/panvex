@@ -44,3 +44,22 @@ func TestResolveEffectiveConfigDoesNotMutateInputs(t *testing.T) {
 		t.Fatalf("override input was mutated")
 	}
 }
+
+func TestValidateNoProcessOwnedFieldsRejectsDataPath(t *testing.T) {
+	sections := map[string]any{
+		"general": map[string]any{"data_path": "/var/lib/telemt/data"},
+	}
+	err := validateNoProcessOwnedFields(sections)
+	if err == nil {
+		t.Fatal("expected error for general.data_path, got nil")
+	}
+}
+
+func TestValidateNoProcessOwnedFieldsAcceptsNormalGeneralField(t *testing.T) {
+	sections := map[string]any{
+		"general": map[string]any{"log_level": "info"},
+	}
+	if err := validateNoProcessOwnedFields(sections); err != nil {
+		t.Fatalf("unexpected error for normal general field: %v", err)
+	}
+}

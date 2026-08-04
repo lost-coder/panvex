@@ -1,6 +1,9 @@
 package server
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // editableConfigSections is the allowlist of top-level Telemt config
 // sections an operator may store via the config-target endpoints. It
@@ -19,6 +22,35 @@ func validateEditableSections(sections map[string]any) error {
 	for k := range sections {
 		if _, ok := editableConfigSections[k]; !ok {
 			return fmt.Errorf("section not editable: %s", k)
+		}
+	}
+	return nil
+}
+
+// processOwnedPaths mirrors web/src/features/servers/config/guard.ts
+// PROCESS_OWNED_PATHS: fields Telemt reads only at process start. The
+// in-process Maestro reload cannot apply changes to them — only a real
+// process restart can, and that machinery was removed. The web editor
+// already keeps these out of CONFIG_FIELDS, but a config target can also
+// be written directly against the API, so the server enforces the same
+// invariant rather than reporting a false success.
+var processOwnedPaths = map[string]struct{}{
+	"general.data_path":        {},
+	"general.quota_state_path": {},
+	"general.disable_colors":   {},
+}
+
+// validateNoProcessOwnedFields returns an error if sections contains any of
+// the process-owned dotted paths in processOwnedPaths.
+func validateNoProcessOwnedFields(sections map[string]any) error {
+	for path := range processOwnedPaths {
+		section, field, _ := strings.Cut(path, ".")
+		sub, ok := sections[section].(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, present := sub[field]; present {
+			return fmt.Errorf("field %s requires a process restart, which is not supported by in-process reload", path)
 		}
 	}
 	return nil

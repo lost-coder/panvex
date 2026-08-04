@@ -396,6 +396,10 @@ Panvex supports **two transport modes** per agent:
 The **Add Server wizard** (Dashboard → Servers → Add) generates the
 install command for either mode in one click.
 
+> Config editing requires Telemt 3.4.25+ (in-process Maestro reload). On
+> older nodes, changes needing a runtime reload are refused with an
+> upgrade prompt; hot fields still apply.
+
 ### Inbound (the agent dials the panel)
 
 1. Create an enrollment token: **Settings → Enrollment Tokens**, or the

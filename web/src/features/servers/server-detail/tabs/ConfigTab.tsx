@@ -9,9 +9,14 @@
 //
 // The editor is fully controlled, so this tab owns the dotted-path → value
 // map. We track which paths the user touched (changedPaths) against the
-// initial flatten so the Apply gate only lights up — and the restart-warning
-// only fires — for genuinely-changed fields, surviving a Save→refetch round
-// trip via the data-keyed reset effect.
+// initial flatten so the Apply gate only lights up — and the reload
+// confirmation only fires — for genuinely-changed fields, surviving a
+// Save→refetch round trip via the data-keyed reset effect.
+//
+// Below the editor, ObservedConfigViewer (Task 9) renders the rest of the
+// node's live config read-only — everything Telemt reports that isn't in
+// the curated CONFIG_FIELDS set. Agent-scope only (fleet groups have no
+// single node's observed config).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -28,6 +33,7 @@ import {
   usePutAgentConfig,
 } from "@/features/servers/config/configHooks";
 import { ConfigSectionEditor } from "@/features/servers/config/ConfigSectionEditor";
+import { ObservedConfigViewer } from "@/features/servers/config/ObservedConfigViewer";
 import { DriftBadge } from "@/features/servers/config/DriftBadge";
 import { ApplyConfigButton } from "@/features/servers/config/ApplyConfigButton";
 import {
@@ -37,7 +43,7 @@ import {
 
 // Compute the set of dotted paths whose current value differs from the
 // initial (override-seeded) flatten. Used both for the Apply gate and the
-// restart-warning decision inside ApplyConfigButton.
+// reload-confirmation decision inside ApplyConfigButton.
 function diffPaths(
   initial: Record<string, unknown>,
   current: Record<string, unknown>,
@@ -132,8 +138,8 @@ export function ConfigTab({
   }, [agentId, initialValues]);
 
   // What Apply will push: the persisted override's own paths. Feeding these
-  // to ApplyConfigButton lets it decide whether a restart-warning confirm is
-  // needed (e.g. a restart-only field like censorship.tls_domain is set),
+  // to ApplyConfigButton lets it decide whether a reload-confirmation dialog
+  // is needed (e.g. a reload-mode field like censorship.tls_domain is set),
   // independent of the unsaved-edit diff above.
   const overridePaths = useMemo(
     () => Object.keys(initialValues),
@@ -209,7 +215,7 @@ export function ConfigTab({
 
       {/* Actions — Save persists the override, Apply pushes it to the node.
           Apply is gated on there being changed paths; ApplyConfigButton
-          itself decides whether a restart-warning confirm is required. */}
+          itself decides whether a reload-confirmation dialog is required. */}
       <div className="flex flex-wrap items-center gap-3 border-t border-divider pt-4">
         <Button onClick={handleSave} disabled={putMutation.isPending}>
           {t("config.save")}
@@ -220,8 +226,8 @@ export function ConfigTab({
         <ApplyConfigButton
           changedPaths={overridePaths}
           driftedFields={drift.status === "drifted" ? drift.fields : []}
-          onApply={async () => {
-            const accepted = await applyMutation.mutateAsync();
+          onApply={async (policy) => {
+            const accepted = await applyMutation.mutateAsync(policy);
             setApplyBatchId(accepted.batch_id);
           }}
           disabled={
@@ -238,6 +244,12 @@ export function ConfigTab({
           </span>
         )}
       </div>
+
+      {/* Task 9: read-only view of everything else Telemt reports running
+          on this node — the ~97% of fields not in the curated editor
+          above. Agent-scope only; no per-node observed config exists at
+          the group level. */}
+      <ObservedConfigViewer observed={data.observed ?? {}} />
     </div>
   );
 }

@@ -18,8 +18,8 @@ import (
 // config.apply, switch_transport_mode) that were accepted, dispatched, and
 // then failed on EVERY agent with a JSON decode error — nothing warned at
 // enqueue time. The endpoint now accepts only actions it can dispatch
-// correctly: the payload-free runtime.restart / telemetry.refresh_diagnostics,
-// plus agent.self-update whose payload the panel builds server-side (the
+// correctly: the payload-free telemetry.refresh_diagnostics, plus
+// agent.self-update whose payload the panel builds server-side (the
 // dashboard's bulk self-update button posts here).
 
 func newCreateJobTestServer(t *testing.T) (*Server, []*http.Cookie) {
@@ -84,7 +84,7 @@ func TestCreateJobRejectsPayloadCarryingActions(t *testing.T) {
 func TestCreateJobAcceptsPayloadFreeActions(t *testing.T) {
 	server, cookies := newCreateJobTestServer(t)
 
-	for _, action := range []string{"runtime.restart", "telemetry.refresh_diagnostics"} {
+	for _, action := range []string{"telemetry.refresh_diagnostics"} {
 		resp := postJob(t, server, cookies, action, "key-"+action)
 		if resp.Code != http.StatusAccepted {
 			t.Fatalf("POST /api/jobs action=%s status = %d, want %d (body %q)", action, resp.Code, http.StatusAccepted, resp.Body.String())

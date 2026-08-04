@@ -117,22 +117,22 @@ describe("ConfigTab", () => {
 
   it("applies the persisted override on confirm (restart field + drift → combined warning dialog)", async () => {
     render(<ConfigTab server={server} />);
-    // The override holds a restart-only field (censorship.tls_domain) AND
+    // The override holds a reload-only field (censorship.tls_domain) AND
     // the fixture's drift status is "drifted" on that same field, so Apply
-    // must show a SINGLE dialog carrying both the drift and restart
-    // warnings — not two dialogs in sequence.
+    // must show a SINGLE dialog carrying both the drift warning and the
+    // session-policy choice — not two dialogs in sequence.
     fireEvent.click(screen.getByRole("button", { name: "Apply to node" }));
     const dialogs = screen.getAllByRole("dialog");
     expect(dialogs).toHaveLength(1);
     const dialog = within(dialogs[0]!);
     expect(dialog.getByText("Node has drifted")).toBeInTheDocument();
     expect(dialog.getByText(/censorship\.tls_domain/)).toBeInTheDocument();
-    expect(dialog.getByText(/restarting Telemt/)).toBeInTheDocument();
+    expect(dialog.getByRole("radio", { name: /drain/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(applyMutateAsync).toHaveBeenCalledTimes(1));
   });
 
-  it("shows only the restart warning when Apply is not drifted", async () => {
+  it("shows only the session-policy choice when Apply is not drifted", async () => {
     useAgentConfig.mockReturnValue({
       data: makeConfig({ drift: { status: "in_sync", fields: [] } }),
       isLoading: false,
@@ -140,7 +140,7 @@ describe("ConfigTab", () => {
     });
     render(<ConfigTab server={server} />);
     fireEvent.click(screen.getByRole("button", { name: "Apply to node" }));
-    expect(screen.getByText("Restart required")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Reload required" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(applyMutateAsync).toHaveBeenCalledTimes(1));
   });

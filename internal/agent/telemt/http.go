@@ -142,6 +142,23 @@ func decodeAPIError(body io.Reader, fallback string) error {
 	return errors.New(fallback)
 }
 
+// apiErrorCode returns just the error `code` from a Telemt error envelope,
+// or "" if absent/unparseable. Shares decodeAPIErrorDetails with decodeAPIError.
+func apiErrorCode(body io.Reader) string {
+	payload, err := io.ReadAll(io.LimitReader(body, maxResponseBodySize))
+	if err != nil {
+		return ""
+	}
+	var envelope struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return ""
+	}
+	code, _ := decodeAPIErrorDetails(envelope.Error)
+	return code
+}
+
 func decodeAPIErrorDetails(raw json.RawMessage) (string, string) {
 	if len(raw) == 0 {
 		return "", ""

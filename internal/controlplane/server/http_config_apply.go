@@ -21,18 +21,11 @@ const (
 	configApplyHealthTimeoutSec = 30
 	// configApplyJobTTL bounds how long a single config.apply job may stay
 	// outstanding before the target is expired.
-	//
-	// P3-3.4: config apply itself is now async (batch-of-one); the three
-	// poll-* constants below survive only for waitJobTargetTerminal, whose
-	// sole remaining caller is the synchronous runtime.restart wait
-	// (http_agent_restart.go). config.apply no longer polls in-handler.
 	configApplyJobTTL = 5 * time.Minute
-	// configApplyPollInterval is how often waitJobTargetTerminal polls the job
-	// store for the target's terminal status.
+	// configApplyPollInterval is how often the config-apply batch worker
+	// (startConfigApplyBatchWorker, lifecycle.go) polls outstanding batch
+	// targets for terminal status.
 	configApplyPollInterval = 500 * time.Millisecond
-	// configApplyPollGrace is added to the job TTL to form the wait deadline,
-	// so a target that expires at the TTL boundary is observed before we bail.
-	configApplyPollGrace = 30 * time.Second
 )
 
 // groupApplyAcceptedResponse is the 202 body returned by the ASYNC apply
@@ -62,10 +55,14 @@ const (
 )
 
 // configApplyJobPayload is the config.apply job body the agent decodes: the
-// effective config patch plus the per-apply health-probe timeout.
+// effective config patch, the per-apply health-probe timeout, and the
+// operator's chosen reload session policy. ReloadMode/ReloadTimeoutSecs json
+// names MUST match the agent's configApplyPayload fields (Task 3) exactly.
 type configApplyJobPayload struct {
-	Patch          map[string]any `json:"patch"`
-	HealthTimeoutS int            `json:"health_timeout_s"`
+	Patch             map[string]any `json:"patch"`
+	HealthTimeoutS    int            `json:"health_timeout_s"`
+	ReloadMode        string         `json:"reload_mode,omitempty"`
+	ReloadTimeoutSecs int            `json:"reload_timeout_secs,omitempty"`
 }
 
 // targetAgentID returns the agent id a JobTarget belongs to.
@@ -94,18 +91,20 @@ func (s *Server) effectiveConfigForAgent(ctx context.Context, agentID string) ma
 // enqueueConfigApplyJob resolves the agent's effective config target and
 // enqueues a config.apply job for it WITHOUT blocking on the result. Returns
 // the enqueued job id, or an empty id when the effective config is empty (a
-// no-op — the agent is already in sync). The non-blocking half of the apply
-// flow: applyConfigToAgent wraps this with a terminal-status wait for the
-// synchronous single-agent path, while the async group fan-out returns the
-// job ids to the client for polling.
-func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID string) (string, error) {
+// no-op — the agent is already in sync). Used by createConfigApplyBatch for
+// both the single-agent batch-of-one path and the group fan-out; neither
+// blocks on the job's terminal status — progress is observed via the batch
+// status views instead.
+func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID string, policy reloadPolicy) (string, error) {
 	effective := s.effectiveConfigForAgent(ctx, agentID)
 	if len(effective) == 0 {
 		return "", nil
 	}
 	payload, err := json.Marshal(configApplyJobPayload{
-		Patch:          effective,
-		HealthTimeoutS: configApplyHealthTimeoutSec,
+		Patch:             effective,
+		HealthTimeoutS:    configApplyHealthTimeoutSec,
+		ReloadMode:        policy.Mode,
+		ReloadTimeoutSecs: policy.TimeoutSecs,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal config.apply payload: %w", err)
@@ -126,11 +125,6 @@ func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID str
 	return job.ID, nil
 }
 
-// applyConfigToAgent resolves the agent's effective config target and applies
-// it by enqueueing a config.apply job, then BLOCKS until that job's target
-// reaches a terminal status. Returns nil on success, an error on
-// failure/timeout. A no-op (nil) when the effective config is empty. Used by
-// the SYNCHRONOUS single-agent apply path, which blocks on exactly one job.
 // handleApplyGroupConfig applies the effective config target to every in-scope
 // agent in a fleet group ASYNCHRONOUSLY. It enqueues one config.apply job per
 // agent and returns 202 Accepted immediately with a batch id + the per-agent
@@ -166,13 +160,18 @@ func (s *Server) handleApplyGroupConfig() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 			return
 		}
+		policy, err := decodeReloadPolicyBody(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		agentIDs := []string{}
 		for _, agent := range s.live.List() {
 			if agent.FleetGroupID == id {
 				agentIDs = append(agentIDs, agent.ID)
 			}
 		}
-		batchID, err := s.createConfigApplyBatch(ctx, user.ID, id, agentIDs)
+		batchID, err := s.createConfigApplyBatch(ctx, user.ID, id, agentIDs, policy)
 		if err != nil {
 			writeErrorLogged(ctx, w, http.StatusInternalServerError,
 				"failed to enqueue config apply", err)
@@ -428,9 +427,14 @@ func (s *Server) handleApplyAgentConfig() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
+		policy, err := decodeReloadPolicyBody(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		// fleetGroupID intentionally empty: the batch is agent-scoped and must
 		// not surface as the group's "active batch" on the fleet-group page.
-		batchID, err := s.createConfigApplyBatch(ctx, user.ID, "", []string{id})
+		batchID, err := s.createConfigApplyBatch(ctx, user.ID, "", []string{id}, policy)
 		if err != nil {
 			writeErrorLogged(ctx, w, http.StatusInternalServerError,
 				"failed to enqueue config apply", err)

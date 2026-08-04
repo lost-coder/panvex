@@ -9,6 +9,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { configApi } from "@/shared/api/config";
 import type { ConfigSections } from "@/shared/api/schemas/config";
+import type { ApplyConfigRequest } from "@/shared/api/schemas/requests/applyConfigRequest";
 import { configKeys } from "@/features/servers/queryKeys";
 import { useToast } from "@/app/providers/ToastProvider";
 
@@ -51,7 +52,7 @@ export function useApplyAgentConfig(agentId: string) {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation({
-    mutationFn: () => configApi.applyAgentConfig(agentId),
+    mutationFn: (policy?: ApplyConfigRequest) => configApi.applyAgentConfig(agentId, policy),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: configKeys.agent(agentId) });
     },
@@ -84,7 +85,7 @@ export function useApplyGroupConfig(groupId: string) {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation({
-    mutationFn: () => configApi.applyGroupConfig(groupId),
+    mutationFn: (policy?: ApplyConfigRequest) => configApi.applyGroupConfig(groupId, policy),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: configKeys.group(groupId) });
     },

@@ -1040,6 +1040,14 @@ func (c *fakeTelemtClient) ResetUserQuota(_ context.Context, username string) (t
 	return c.resetQuotaResult, nil
 }
 
+func (c *fakeTelemtClient) SubmitReload(context.Context, string, int, string, string) (telemt.ReloadAccepted, error) {
+	return telemt.ReloadAccepted{}, nil
+}
+
+func (c *fakeTelemtClient) GetReloadStatus(context.Context, uint64) (telemt.ReloadStatus, error) {
+	return telemt.ReloadStatus{}, nil
+}
+
 // TestAgentUsageTotalsAreCumulative verifies the P4 wire contract: every
 // emitted ClientUsageSnapshot carries the process-cumulative total
 // (traffic counted by this agent process since start), alongside the

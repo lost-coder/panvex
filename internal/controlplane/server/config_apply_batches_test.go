@@ -27,7 +27,7 @@ func TestConfigApplyBatchAdvanceAllSucceededFinalizesBatch(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA, agentB})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA, agentB}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestConfigApplyBatchAdvanceOneFailedFinalizesBatchFailed(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{okAgent, failAgent})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{okAgent, failAgent}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -145,7 +145,7 @@ func TestConfigApplyBatchAdvanceNonTerminalStaysRunning(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -196,7 +196,7 @@ func TestConfigApplyBatchAdvanceJobEvictedBeforePersistFinalizesFailed(t *testin
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -273,7 +273,7 @@ func TestConfigApplyJobStatusReadsEvictedJobFromStore(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -318,7 +318,7 @@ func TestConfigApplyBatchFinalizesAfterRestartMidRollout(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA, agentB})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA, agentB}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -387,7 +387,7 @@ func TestConfigApplyBatchAdoptsOrphanedJobIDAfterRestart(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
