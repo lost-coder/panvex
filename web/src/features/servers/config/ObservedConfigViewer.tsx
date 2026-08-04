@@ -33,8 +33,8 @@ const MANAGED_PATHS: ReadonlySet<string> = new Set(CONFIG_FIELDS.map((f) => f.pa
  * Flattens the observed sections object into "section.key"-style dotted
  * paths, in the order the API returned them (which mirrors Telemt's TOML
  * section/key order). Plain nested objects (e.g. a dc_overrides map keyed
- * by DC id) recurse one level further into "section.subkey.field"; arrays
- * and scalars are leaves.
+ * by DC id) recurse to any depth into "section.subkey.field..."; arrays
+ * and scalars (and empty objects) are leaves.
  */
 function flattenObserved(sections: Record<string, unknown>): ObservedRow[] {
   const rows: ObservedRow[] = [];
@@ -57,9 +57,16 @@ function flattenObserved(sections: Record<string, unknown>): ObservedRow[] {
 function formatValue(value: unknown): string {
   if (value === undefined || value === null) return "—";
   if (Array.isArray(value)) {
-    return value.length === 0 ? "[]" : value.map(String).join(", ");
+    if (value.length === 0) return "[]";
+    // Array-of-tables (e.g. `upstreams`) — a plain comma-join would call
+    // String() on each element and render "[object Object]". Fall back to
+    // JSON for any array containing an object; keep the readable
+    // comma-join for arrays of scalars (e.g. `tls_domains`).
+    const hasObjectElement = value.some((v) => v !== null && typeof v === "object");
+    return hasObjectElement ? JSON.stringify(value) : value.map(String).join(", ");
   }
   if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
 

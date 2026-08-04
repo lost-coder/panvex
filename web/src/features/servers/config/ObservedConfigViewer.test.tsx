@@ -32,6 +32,25 @@ describe("ObservedConfigViewer", () => {
     expect(screen.getByText("upstreams")).toBeInTheDocument();
   });
 
+  it("renders an array-of-objects leaf (e.g. upstreams) as readable JSON, not [object Object]", () => {
+    render(
+      <ObservedConfigViewer
+        observed={{ upstreams: [{ dc: 1, host: "1.2.3.4" }] }}
+      />,
+    );
+    const value = screen.getByText(/1\.2\.3\.4/);
+    expect(value).toBeInTheDocument();
+    expect(value.textContent).not.toContain("[object Object]");
+    expect(value.textContent).toContain("1.2.3.4");
+  });
+
+  it("renders a bare scalar leaf without JSON quoting", () => {
+    render(<ObservedConfigViewer observed={{ access: { max_clients: 10 } }} />);
+    // Exact text node "10", not '"10"' (which JSON.stringify would produce).
+    expect(screen.getByText("10")).toBeInTheDocument();
+    expect(screen.queryByText('"10"')).not.toBeInTheDocument();
+  });
+
   it("shows an empty state when nothing is left to display", () => {
     render(<ObservedConfigViewer observed={{ general: { log_level: "info" } }} />);
     expect(
