@@ -318,6 +318,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{id}/config/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the effective config target to a single agent
+         * @description Enqueues a config.apply job for the agent's effective config
+         *     target (fleet-group sections deep-merged with its own
+         *     override) as a persistent batch-of-one and returns immediately
+         *     with a batch id to poll. The optional body lets the operator
+         *     choose the reload session policy (instant vs. drain) the
+         *     agent's Maestro reload uses; an absent body defaults to a 30s
+         *     drain window.
+         */
+        post: operations["applyAgentConfig"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleet-groups/{id}/config/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply the effective config target to every in-scope agent in a fleet group
+         * @description Enqueues one config.apply job per in-scope agent and returns
+         *     immediately with a batch id to poll (progress is observed via
+         *     the batch-status endpoint, not blocked on here). The optional
+         *     body lets the operator choose the reload session policy
+         *     (instant vs. drain) each agent's Maestro reload uses; an
+         *     absent body defaults to a 30s drain window.
+         */
+        post: operations["applyGroupConfig"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -832,6 +887,17 @@ export interface components {
              */
             updated_at?: number;
         };
+        /**
+         * @description 202 body returned by the async config-apply handlers (single
+         *     agent and group fan-out). Mirrors the Go
+         *     `groupApplyAcceptedResponse` struct
+         *     (`internal/controlplane/server/http_config_apply.go`). Poll the
+         *     corresponding `.../config/apply/batches/{batchId}` endpoint for
+         *     status.
+         */
+        ApplyAccepted: {
+            batch_id: string;
+        };
     };
     responses: {
         /** @description Validation error. */
@@ -1255,6 +1321,72 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    applyAgentConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    reload_mode?: "instant" | "drain";
+                    reload_timeout_secs?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Apply accepted; poll the batch endpoint for status. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyAccepted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    applyGroupConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    reload_mode?: "instant" | "drain";
+                    reload_timeout_secs?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Apply accepted; poll the batch endpoint for status. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyAccepted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
         };
     };

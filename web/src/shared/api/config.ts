@@ -2,12 +2,14 @@ import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
   agentConfigSchema,
   applyAcceptedSchema,
+  applyConfigRequestSchema,
   configSectionsRequestSchema,
   groupApplyActiveBatchSchema,
   groupApplyBatchStatusSchema,
   groupConfigSchema,
   type AgentConfig,
   type ApplyAccepted,
+  type ApplyConfigRequest,
   type ConfigSections,
   type GroupApplyActiveBatch,
   type GroupApplyBatchStatus,
@@ -17,6 +19,7 @@ import {
 export type {
   AgentConfig,
   ApplyAccepted,
+  ApplyConfigRequest,
   ConfigSections,
   GroupApplyActiveBatch,
   GroupApplyBatchStatus,
@@ -40,11 +43,20 @@ export const configApi = {
     }),
 
   // P3-3.4: single apply is a persistent batch-of-one; 202 + batch_id, progress
-  // polled via getAgentConfigApplyBatch.
-  applyAgentConfig: (id: string) =>
+  // polled via getAgentConfigApplyBatch. `policy` is the optional reload
+  // session policy (instant vs. drain); an absent policy sends an empty
+  // body, which the panel resolves to its own default (drain/30s).
+  applyAgentConfig: (id: string, policy?: ApplyConfigRequest) =>
     api<ApplyAccepted>(
       `${apiBasePath}/agents/${id}/config/apply`,
-      { method: "POST" },
+      {
+        method: "POST",
+        body: encodeRequest(
+          `${apiBasePath}/agents/${id}/config/apply`,
+          applyConfigRequestSchema,
+          policy ?? {},
+        ),
+      },
       applyAcceptedSchema,
     ),
 
@@ -72,10 +84,20 @@ export const configApi = {
 
   // Async group apply: returns 202 with a batch id. Progress is polled via
   // getGroupConfigApplyBatch, built from the persisted batch + target rows.
-  applyGroupConfig: (id: string) =>
+  // `policy` is the optional reload session policy (instant vs. drain); an
+  // absent policy sends an empty body, which the panel resolves to its own
+  // default (drain/30s).
+  applyGroupConfig: (id: string, policy?: ApplyConfigRequest) =>
     api<ApplyAccepted>(
       `${apiBasePath}/fleet-groups/${id}/config/apply`,
-      { method: "POST" },
+      {
+        method: "POST",
+        body: encodeRequest(
+          `${apiBasePath}/fleet-groups/${id}/config/apply`,
+          applyConfigRequestSchema,
+          policy ?? {},
+        ),
+      },
       applyAcceptedSchema,
     ),
 

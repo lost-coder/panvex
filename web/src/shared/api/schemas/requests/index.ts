@@ -24,3 +24,4 @@ export * from "./createFleetGroupRequest";
 export * from "./updateFleetGroupRequest";
 export * from "./fleetGroupIntegrationRequest";
 export * from "./webhookEndpointRequest";
+export * from "./applyConfigRequest";

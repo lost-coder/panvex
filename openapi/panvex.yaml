@@ -441,6 +441,99 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/agents/{id}/config/apply:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: applyAgentConfig
+      summary: Apply the effective config target to a single agent
+      description: |
+        Enqueues a config.apply job for the agent's effective config
+        target (fleet-group sections deep-merged with its own
+        override) as a persistent batch-of-one and returns immediately
+        with a batch id to poll. The optional body lets the operator
+        choose the reload session policy (instant vs. drain) the
+        agent's Maestro reload uses; an absent body defaults to a 30s
+        drain window.
+      tags: [agents]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reload_mode:
+                  type: string
+                  enum: [instant, drain]
+                reload_timeout_secs:
+                  type: integer
+                  minimum: 1
+                  maximum: 3600
+      responses:
+        '202':
+          description: Apply accepted; poll the batch endpoint for status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/fleet-groups/{id}/config/apply:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: applyGroupConfig
+      summary: Apply the effective config target to every in-scope agent in a fleet group
+      description: |
+        Enqueues one config.apply job per in-scope agent and returns
+        immediately with a batch id to poll (progress is observed via
+        the batch-status endpoint, not blocked on here). The optional
+        body lets the operator choose the reload session policy
+        (instant vs. drain) each agent's Maestro reload uses; an
+        absent body defaults to a 30s drain window.
+      tags: [fleet-groups]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reload_mode:
+                  type: string
+                  enum: [instant, drain]
+                reload_timeout_secs:
+                  type: integer
+                  minimum: 1
+                  maximum: 3600
+      responses:
+        '202':
+          description: Apply accepted; poll the batch endpoint for status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyAccepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
 components:
   schemas:
     VersionResponse:
@@ -1183,6 +1276,20 @@ components:
           type: integer
           format: int64
           description: Unix seconds of the last phase transition.
+
+    ApplyAccepted:
+      type: object
+      description: |
+        202 body returned by the async config-apply handlers (single
+        agent and group fan-out). Mirrors the Go
+        `groupApplyAcceptedResponse` struct
+        (`internal/controlplane/server/http_config_apply.go`). Poll the
+        corresponding `.../config/apply/batches/{batchId}` endpoint for
+        status.
+      required: [batch_id]
+      properties:
+        batch_id:
+          type: string
 
   responses:
     BadRequest:
