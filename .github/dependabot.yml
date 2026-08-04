@@ -31,6 +31,18 @@ updates:
       interval: weekly
     labels:
       - enhancement
+    # codeql-action's init/autobuild/analyze must move in lockstep — the action
+    # rejects a version skew between its own steps, and codeql.yml pins all
+    # three to one SHA. Ungrouped, Dependabot opens three PRs that each bump a
+    # single step, so every one of them fails its own CodeQL run and merging
+    # any single one leaves CodeQL broken on main until the other two land.
+    # Observed on 2026-08-04 with PRs #185/#182/#174 (v4.36.3); resolved by
+    # bumping all three in one commit. Same failure class as the react group
+    # above.
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   # Phase-3 §3.3: track Dockerfile base images so a CVE in
   # node/golang/alpine/nginx surfaces as a Dependabot PR within a
