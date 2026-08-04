@@ -446,6 +446,12 @@
     "saved": "Configuration saved",
     "overrideHint": "These are per-node overrides. Leave a field empty to inherit the effective value shown as its placeholder.",
     "unsavedHint": "Save before applying",
+    "observed": {
+      "title": "Live configuration",
+      "hint": "Everything Telemt reports running on this node, beyond the fields editable above. Read-only.",
+      "emptyState": "No additional fields reported.",
+      "processOwnedNote": "Set at process start. Changing this on the server needs a Telemt restart to take effect."
+    },
     "apply": {
       "button": "Apply to node",
       "buttonGroup": "Apply to group",

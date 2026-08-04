@@ -9,7 +9,7 @@
 // The editor is fully controlled, so this section owns the dotted-path →
 // value map. We track which paths the user touched (changedPaths) against
 // the initial flatten so the Apply gate only lights up — and the
-// restart-warning only fires — for genuinely-changed fields, surviving a
+// reload-confirmation only fires — for genuinely-changed fields, surviving a
 // Save→refetch round trip via the data-keyed reset effect.
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -46,7 +46,7 @@ import {
 
 // Compute the set of dotted paths whose current value differs from the
 // initial (target-seeded) flatten. Used both for the Apply gate and the
-// restart-warning decision inside ApplyConfigButton.
+// reload-confirmation decision inside ApplyConfigButton.
 function diffPaths(
   initial: Record<string, unknown>,
   current: Record<string, unknown>,
@@ -210,9 +210,9 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
   useUnsavedChangesGuard(changedPaths.length > 0);
 
   // What Apply will roll out: the persisted target's own paths. Feeding these
-  // to ApplyConfigButton lets it decide whether a restart-warning confirm is
-  // needed (e.g. a restart-only field like censorship.tls_domain is set),
-  // independent of the unsaved-edit diff above.
+  // to ApplyConfigButton lets it decide whether a reload-confirmation
+  // dialog is needed (e.g. a reload-mode field like censorship.tls_domain
+  // is set), independent of the unsaved-edit diff above.
   const targetPaths = useMemo(() => Object.keys(initialValues), [initialValues]);
 
   if (isLoading) {

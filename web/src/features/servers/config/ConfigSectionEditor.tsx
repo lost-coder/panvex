@@ -18,6 +18,7 @@ import {
   type ConfigField,
   fieldsBySection,
 } from "./fieldRegistry";
+import { isProcessOwned } from "./guard";
 
 export interface ConfigSectionEditorProps {
   /** dotted-path → current value (typically from flattenSections). */
@@ -152,6 +153,15 @@ export function ConfigSectionEditor({
   const { t } = useTranslation("servers");
   const bySection = fieldsBySection();
 
+  // Defensive guard: CONFIG_FIELDS never lists the three process-owned
+  // paths (fieldRegistry.ts), so this branch is normally dead. It exists
+  // so a future registry mistake can't make them editable — the read-only
+  // ObservedConfigViewer is the only place they may ever be shown.
+  function handleChange(path: string, value: unknown) {
+    if (isProcessOwned(path)) return;
+    onChange(path, value);
+  }
+
   return (
     <div className="flex flex-col gap-8">
       {Object.entries(bySection).map(([section, fields]) => (
@@ -174,7 +184,7 @@ export function ConfigSectionEditor({
                   field={field}
                   value={values[field.path]}
                   placeholder={placeholderFor(effective?.[field.path])}
-                  onChange={onChange}
+                  onChange={handleChange}
                   disabled={disabled}
                 />
               </FormField>
