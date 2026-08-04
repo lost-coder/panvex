@@ -138,3 +138,44 @@ func TestPatchConfigReadOnly403(t *testing.T) {
 		t.Fatalf("want ErrConfigEditReadOnly, got %v", err)
 	}
 }
+
+func TestPatchConfigParsesReloadDecisionFields(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,` +
+			`"runtime_reload_required":true,"process_restart_required":false,` +
+			`"deferred_process_fields":[],"changed":["censorship"]}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	res, err := c.PatchConfig(context.Background(), map[string]any{"censorship": map[string]any{"tls_domain": "x"}}, "")
+	if err != nil {
+		t.Fatalf("PatchConfig: %v", err)
+	}
+	if res.RuntimeReloadRequired == nil || !*res.RuntimeReloadRequired {
+		t.Fatalf("RuntimeReloadRequired = %v, want ptr(true)", res.RuntimeReloadRequired)
+	}
+	if res.ProcessRestartRequired {
+		t.Fatalf("ProcessRestartRequired = true, want false")
+	}
+}
+
+func TestPatchConfigOldTelemtLeavesReloadFieldNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,"changed":["censorship"]}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	res, err := c.PatchConfig(context.Background(), map[string]any{"censorship": map[string]any{"tls_domain": "x"}}, "")
+	if err != nil {
+		t.Fatalf("PatchConfig: %v", err)
+	}
+	if res.RuntimeReloadRequired != nil {
+		t.Fatalf("RuntimeReloadRequired = %v, want nil (old Telemt sends no such field)", res.RuntimeReloadRequired)
+	}
+}

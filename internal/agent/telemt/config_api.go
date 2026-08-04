@@ -22,8 +22,14 @@ var ErrConfigRevisionConflict = errors.New("telemt: config revision conflict")
 // PatchConfigResult is Telemt's response to PATCH /v1/config.
 type PatchConfigResult struct {
 	Revision        string   `json:"revision"`
-	RestartRequired bool     `json:"restart_required"`
+	RestartRequired bool     `json:"restart_required"` // legacy: only used to detect an old Telemt
 	Changed         []string `json:"changed"`
+	// RuntimeReloadRequired is a pointer on purpose: false is a valid value,
+	// and a plain bool cannot tell "field absent" (old Telemt) from "field
+	// present and false". The whole old-Telemt detection hangs on that.
+	RuntimeReloadRequired  *bool    `json:"runtime_reload_required"`
+	ProcessRestartRequired bool     `json:"process_restart_required"`
+	DeferredProcessFields  []string `json:"deferred_process_fields"`
 }
 
 // PatchConfig applies a sparse config patch via Telemt's PATCH /v1/config.
