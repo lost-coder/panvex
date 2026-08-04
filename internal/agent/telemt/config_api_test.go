@@ -2,10 +2,11 @@ package telemt
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -204,10 +205,11 @@ func TestPatchConfigParsesProcessRestartRequiredTrue(t *testing.T) {
 	}
 }
 
-func TestSubmitReloadDrainSendsQueryAndIfMatch(t *testing.T) {
-	var gotQuery, gotIfMatch string
+func TestSubmitReloadDrainSendsJSONBodyAndIfMatch(t *testing.T) {
+	var gotBody []byte
+	var gotIfMatch string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
+		gotBody, _ = io.ReadAll(r.Body)
 		gotIfMatch = r.Header.Get("If-Match")
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"ok":true,"data":{"reload_id":7,"target_generation":2,` +
@@ -228,11 +230,44 @@ func TestSubmitReloadDrainSendsQueryAndIfMatch(t *testing.T) {
 	if gotIfMatch != "r2" {
 		t.Fatalf("If-Match = %q, want r2", gotIfMatch)
 	}
-	// query must carry reload=drain, timeout_secs=30, failure_policy=rollback
-	for _, want := range []string{"reload=drain", "timeout_secs=30", "failure_policy=rollback"} {
-		if !strings.Contains(gotQuery, want) {
-			t.Fatalf("query %q missing %q", gotQuery, want)
-		}
+	var decoded struct {
+		Mode          string `json:"mode"`
+		TimeoutSecs   int    `json:"timeout_secs"`
+		FailurePolicy string `json:"failure_policy"`
+	}
+	if err := json.Unmarshal(gotBody, &decoded); err != nil {
+		t.Fatalf("body %s not valid JSON: %v", gotBody, err)
+	}
+	if decoded.Mode != "drain" || decoded.TimeoutSecs != 30 || decoded.FailurePolicy != "rollback" {
+		t.Fatalf("body decoded = %+v, want mode=drain timeout_secs=30 failure_policy=rollback", decoded)
+	}
+}
+
+func TestSubmitReloadInstantOmitsTimeoutSecs(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"reload_id":8,"target_generation":3,` +
+			`"config_revision":"r3","state":"accepted","mode":"instant","failure_policy":"rollback"}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if _, err := c.SubmitReload(context.Background(), "instant", 0, "rollback", "r3"); err != nil {
+		t.Fatalf("SubmitReload: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(gotBody, &decoded); err != nil {
+		t.Fatalf("body %s not valid JSON: %v", gotBody, err)
+	}
+	if decoded["mode"] != "instant" || decoded["failure_policy"] != "rollback" {
+		t.Fatalf("body decoded = %+v, want mode=instant failure_policy=rollback", decoded)
+	}
+	if _, present := decoded["timeout_secs"]; present {
+		t.Fatalf("body decoded = %+v, timeout_secs must be absent for instant mode", decoded)
 	}
 }
 

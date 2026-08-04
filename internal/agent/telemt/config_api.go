@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strconv"
 )
 
 // ErrConfigEditUnsupported is returned when the local Telemt build predates the
@@ -105,24 +103,38 @@ func (c *Client) PatchConfig(ctx context.Context, patch map[string]any, expected
 	return result, nil
 }
 
+// reloadRequestBody is the JSON body of POST /v1/system/reload (Telemt's
+// maestro::reload::ReloadRequest). TimeoutSecs is only valid (and only
+// serialized) for drain mode — Telemt rejects instant+timeout_secs.
+type reloadRequestBody struct {
+	Mode          string `json:"mode"`
+	TimeoutSecs   *int   `json:"timeout_secs,omitempty"`
+	FailurePolicy string `json:"failure_policy"`
+}
+
 // SubmitReload submits an in-process Maestro reload via POST /v1/system/reload.
 // mode is "instant" or "drain"; timeoutSecs is required (and only valid) for
 // drain. failurePolicy is "rollback" for a forward apply or "keep_new" for the
 // rollback-reload. ifMatchRevision is the revision the caller just wrote, sent
 // as If-Match.
 func (c *Client) SubmitReload(ctx context.Context, mode string, timeoutSecs int, failurePolicy, ifMatchRevision string) (ReloadAccepted, error) {
-	request, err := c.newRequest(ctx, http.MethodPost, "/v1/system/reload", nil)
+	// Telemt's POST /v1/system/reload reads the ReloadRequest ONLY from the
+	// JSON body (read_optional_json::<ReloadRequest>) — it never consults the
+	// query string for this endpoint (that's PATCH /v1/config?reload=... via
+	// from_query, a different contract). An empty/nil body silently decodes to
+	// ReloadRequest::default() = {mode: Instant, failure_policy: KeepNew}, so
+	// every reload would run instant+keep_new regardless of what was requested.
+	body := reloadRequestBody{
+		Mode:          mode,
+		FailurePolicy: failurePolicy,
+	}
+	if mode == "drain" {
+		body.TimeoutSecs = &timeoutSecs
+	}
+	request, err := c.newRequest(ctx, http.MethodPost, "/v1/system/reload", body)
 	if err != nil {
 		return ReloadAccepted{}, err
 	}
-	// newRequest sets endpoint.Path only — attach the query here so it survives.
-	q := url.Values{}
-	q.Set("reload", mode)
-	if mode == "drain" {
-		q.Set("timeout_secs", strconv.Itoa(timeoutSecs))
-	}
-	q.Set("failure_policy", failurePolicy)
-	request.URL.RawQuery = q.Encode()
 	if ifMatchRevision != "" {
 		request.Header.Set("If-Match", ifMatchRevision)
 	}
