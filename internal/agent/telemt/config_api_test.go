@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -177,5 +178,98 @@ func TestPatchConfigOldTelemtLeavesReloadFieldNil(t *testing.T) {
 	}
 	if res.RuntimeReloadRequired != nil {
 		t.Fatalf("RuntimeReloadRequired = %v, want nil (old Telemt sends no such field)", res.RuntimeReloadRequired)
+	}
+}
+
+func TestPatchConfigParsesProcessRestartRequiredTrue(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,` +
+			`"runtime_reload_required":false,"process_restart_required":true,` +
+			`"deferred_process_fields":["listen_port"],"changed":["censorship"]}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	res, err := c.PatchConfig(context.Background(), map[string]any{"censorship": map[string]any{"tls_domain": "x"}}, "")
+	if err != nil {
+		t.Fatalf("PatchConfig: %v", err)
+	}
+	if !res.ProcessRestartRequired {
+		t.Fatalf("ProcessRestartRequired = false, want true")
+	}
+	if len(res.DeferredProcessFields) != 1 || res.DeferredProcessFields[0] != "listen_port" {
+		t.Fatalf("DeferredProcessFields = %+v", res.DeferredProcessFields)
+	}
+}
+
+func TestSubmitReloadDrainSendsQueryAndIfMatch(t *testing.T) {
+	var gotQuery, gotIfMatch string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		gotIfMatch = r.Header.Get("If-Match")
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte(`{"ok":true,"data":{"reload_id":7,"target_generation":2,` +
+			`"config_revision":"r2","state":"accepted","mode":"drain","failure_policy":"rollback"}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	acc, err := c.SubmitReload(context.Background(), "drain", 30, "rollback", "r2")
+	if err != nil {
+		t.Fatalf("SubmitReload: %v", err)
+	}
+	if acc.ReloadID != 7 || acc.State != "accepted" {
+		t.Fatalf("acc = %+v", acc)
+	}
+	if gotIfMatch != "r2" {
+		t.Fatalf("If-Match = %q, want r2", gotIfMatch)
+	}
+	// query must carry reload=drain, timeout_secs=30, failure_policy=rollback
+	for _, want := range []string{"reload=drain", "timeout_secs=30", "failure_policy=rollback"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Fatalf("query %q missing %q", gotQuery, want)
+		}
+	}
+}
+
+func TestSubmitReloadInProgressMapsToSentinel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"ok":false,"error":{"code":"reload_in_progress","message":"Reload 3 is already in progress"}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_, err = c.SubmitReload(context.Background(), "instant", 0, "rollback", "r2")
+	if !errors.Is(err, ErrReloadInProgress) {
+		t.Fatalf("err = %v, want ErrReloadInProgress", err)
+	}
+}
+
+func TestGetReloadStatusParsesTerminal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/system/reload/7" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		w.Write([]byte(`{"ok":true,"data":{"reload_id":7,"state":"succeeded",` +
+			`"finished_at_epoch_secs":100,"deferred_process_fields":[],"warnings":["x"],"error":null}}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	st, err := c.GetReloadStatus(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetReloadStatus: %v", err)
+	}
+	if st.State != "succeeded" || len(st.Warnings) != 1 {
+		t.Fatalf("st = %+v", st)
 	}
 }
