@@ -142,7 +142,7 @@ func TestPatchConfigReadOnly403(t *testing.T) {
 
 func TestPatchConfigParsesReloadDecisionFields(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,` +
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,` +
 			`"runtime_reload_required":true,"process_restart_required":false,` +
 			`"deferred_process_fields":[],"changed":["censorship"]}}`))
 	}))
@@ -165,7 +165,7 @@ func TestPatchConfigParsesReloadDecisionFields(t *testing.T) {
 
 func TestPatchConfigOldTelemtLeavesReloadFieldNil(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,"changed":["censorship"]}}`))
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,"changed":["censorship"]}}`))
 	}))
 	defer srv.Close()
 	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
@@ -183,7 +183,7 @@ func TestPatchConfigOldTelemtLeavesReloadFieldNil(t *testing.T) {
 
 func TestPatchConfigParsesProcessRestartRequiredTrue(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,` +
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"revision":"r2","restart_required":true,` +
 			`"runtime_reload_required":false,"process_restart_required":true,` +
 			`"deferred_process_fields":["listen_port"],"changed":["censorship"]}}`))
 	}))
@@ -210,7 +210,7 @@ func TestSubmitReloadDrainSendsQueryAndIfMatch(t *testing.T) {
 		gotQuery = r.URL.RawQuery
 		gotIfMatch = r.Header.Get("If-Match")
 		w.WriteHeader(http.StatusAccepted)
-		w.Write([]byte(`{"ok":true,"data":{"reload_id":7,"target_generation":2,` +
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"reload_id":7,"target_generation":2,` +
 			`"config_revision":"r2","state":"accepted","mode":"drain","failure_policy":"rollback"}}`))
 	}))
 	defer srv.Close()
@@ -239,7 +239,7 @@ func TestSubmitReloadDrainSendsQueryAndIfMatch(t *testing.T) {
 func TestSubmitReloadInProgressMapsToSentinel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
-		w.Write([]byte(`{"ok":false,"error":{"code":"reload_in_progress","message":"Reload 3 is already in progress"}}`))
+		_, _ = w.Write([]byte(`{"ok":false,"error":{"code":"reload_in_progress","message":"Reload 3 is already in progress"}}`))
 	}))
 	defer srv.Close()
 	c, err := NewClient(Config{BaseURL: srv.URL}, srv.Client())
@@ -257,7 +257,7 @@ func TestGetReloadStatusParsesTerminal(t *testing.T) {
 		if r.URL.Path != "/v1/system/reload/7" {
 			t.Errorf("path = %q", r.URL.Path)
 		}
-		w.Write([]byte(`{"ok":true,"data":{"reload_id":7,"state":"succeeded",` +
+		_, _ = w.Write([]byte(`{"ok":true,"data":{"reload_id":7,"state":"succeeded",` +
 			`"finished_at_epoch_secs":100,"deferred_process_fields":[],"warnings":["x"],"error":null}}`))
 	}))
 	defer srv.Close()
