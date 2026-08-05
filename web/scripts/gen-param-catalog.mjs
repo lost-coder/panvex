@@ -20,3 +20,18 @@ export function parseEnumOptions(typeCell) {
   const opts = [...typeCell.matchAll(/`"([^"]+)"`/g)].map((m) => m[1]);
   return opts.length >= 2 ? opts : null;
 }
+
+export function parseDescriptions(markdown) {
+  const desc = new Map();
+  let section = null, cur = null;
+  for (const line of markdown.split("\n")) {
+    const sec = line.match(/^# \[+([a-z_][\w.]*)\]+\s*$/);
+    if (sec) { section = sec[1]; cur = null; continue; }
+    if (/^# /.test(line)) { section = /^# Top-level keys/.test(line) ? "" : null; cur = null; continue; }
+    const h2 = line.match(/^## ([a-z_][\w.]*)\s*$/);
+    if (h2 && section !== null) { cur = section ? `${section}.${h2[1]}` : h2[1]; continue; }
+    const m = line.match(/^\s*-\s*\*\*(?:Description|Описание)\*\*:\s*(.+)$/);
+    if (m && cur) desc.set(cur, m[1].trim());
+  }
+  return desc;
+}
