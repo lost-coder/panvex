@@ -1660,7 +1660,7 @@
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enforces ALPN echo behavior based on client preference.",
-      "ru": "",
+      "ru": "Принудительно изменяет поведение возврата ALPN в соответствии с предпочтениями клиента.",
       "default": "true"
     },
     {
@@ -1670,7 +1670,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Length of synthetic certificate payload when emulation data is unavailable.",
-      "ru": "",
+      "ru": "Длина синтетического сертификатного payload’а, используемого при отсутствии данных для эмуляции.",
       "default": "2048"
     },
     {
@@ -1680,7 +1680,7 @@
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables masking / fronting relay mode.",
-      "ru": "",
+      "ru": "Включает режим маскировки/верхнего уровня. Принимаются все SNI, которые похожи на заданный в `tls_domain`.",
       "default": "true"
     },
     {
@@ -1690,7 +1690,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Timeout budget (ms) for extending fragmented initial classifier window on masking fallback.",
-      "ru": "",
+      "ru": "Лимит времени ожидания (в миллисекундах) для расширения первых входящих данных в режиме fallback-маскировки.",
       "default": "5"
     },
     {
@@ -1700,7 +1700,7 @@
       "type": "string",
       "applyMode": "reload",
       "en": "Upstream mask host for TLS fronting relay.",
-      "ru": ""
+      "ru": "Хост, используемый для маскировки при TLS-fronting."
     },
     {
       "path": "censorship.mask_port",
@@ -1709,7 +1709,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Upstream mask port for TLS fronting relay.",
-      "ru": "",
+      "ru": "Порт маскирующего upstream для TLS fronting.",
       "default": "443"
     },
     {
@@ -1719,7 +1719,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Sends PROXY protocol header when connecting to mask backend, allowing the backend to see the real client IP.",
-      "ru": "",
+      "ru": "Отправляет заголовок PROXY protocol при подключении к mask-бэкенду, позволяя бэкенду видеть реальный IP клиента.",
       "default": "0"
     },
     {
@@ -1729,7 +1729,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Per-read idle timeout on masking relay and drain paths. Limits resource consumption by slow-loris attacks and port scanners. A read call stalling beyond this value is treated as an abandoned connection. Default: 5 000 ms (5 s).",
-      "ru": "",
+      "ru": "Тайм-аут простоя на каждую операцию чтения (per-read idle timeout) в маскирующем прокси и drain-пайплайнах. Ограничивает потребление ресурсов при атаках типа slow-loris и сканировании портов. Если операция чтения блокируется дольше заданного времени, соединение считается заброшенным и закрывается. Значение по умолчанию: 5 000 мс (5 с).",
       "default": "5_000"
     },
     {
@@ -1739,7 +1739,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum relayed bytes per direction on unauthenticated masking fallback path.",
-      "ru": "",
+      "ru": "Максимальное количество байт, передаваемых в каждом направлении, на неаутентифицированной fallback маскировке.",
       "default": "5242880"
     },
     {
@@ -1749,7 +1749,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Wall-clock cap for the full masking relay on non-MTProto fallback paths. Raise when the mask target is a long-lived service (e.g. WebSocket). Default: 60 000 ms (1 minute).",
-      "ru": "",
+      "ru": "Жёсткий лимит по реальному времени (wall-clock) для полного маскирующего проксирования на fallback-путях без MTProto. Увеличивайте значение, если целевой сервис маскирования является долгоживущим (например, WebSocket-соединение). Значение по умолчанию: 60 000 мс (1 минута).",
       "default": "60_000"
     },
     {
@@ -1759,7 +1759,7 @@
       "type": "boolean",
       "applyMode": "reload",
       "en": "Adds bounded randomized tail bytes even when forwarded size already exceeds cap.",
-      "ru": "",
+      "ru": "Добавляет ограниченное количество случайных байтов в конец данных (tail), даже если передаваемый размер уже превышает лимит.",
       "default": "false"
     },
     {
@@ -1769,7 +1769,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum randomized extra bytes appended above cap when above-cap blur is enabled.",
-      "ru": "",
+      "ru": "Максимальное количество случайных дополнительных байтов, добавляемых сверх лимита, когда включено размытие данных(blur).",
       "default": "512"
     },
     {
@@ -1779,7 +1779,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum bucket size used by shape-channel hardening; traffic above cap is not bucket-padded further.",
-      "ru": "",
+      "ru": "Максимальный размер группы данных, используемого для усиления канала формирования/маскировки трафика (shape-channel); трафик, превышающий этот лимит, больше не подвергается bucket-padding'у.",
       "default": "4096"
     },
     {
@@ -1789,7 +1789,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Minimum bucket size used by shape-channel hardening.",
-      "ru": "",
+      "ru": "Минимальный размер группы данных, используемый при усилении канала формирования/маскировки трафика (shape-channel).",
       "default": "512"
     },
     {
@@ -1799,7 +1799,7 @@
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables client->mask shape-channel hardening by applying controlled tail padding to bucket boundaries on mask relay shutdown.",
-      "ru": "",
+      "ru": "Усиливает защиту канала формирования/маскировки (shape-channel) трафика client->mask за счёт контролируемого добавления хвостового padding'а к границам групп данных при завершении работы mask relay.",
       "default": "true"
     },
     {
@@ -1809,7 +1809,7 @@
       "type": "boolean",
       "applyMode": "reload",
       "en": "Opt-in aggressive shaping profile (stronger anti-classifier behavior with different shaping semantics).",
-      "ru": "",
+      "ru": "Опциональный агрессивный профиль формирования трафика (более сильное противодействие классификаторам с изменённой логикой шейпинга).",
       "default": "false"
     },
     {
@@ -1819,7 +1819,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Upper bound (ms) for masking outcome normalization target.",
-      "ru": "",
+      "ru": "Минимально допустимое значение таймингов/задержек, к которому система “приводит” (нормализует) поведение маскированного трафика.",
       "default": "0"
     },
     {
@@ -1829,7 +1829,7 @@
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables timing envelope normalization on masking outcomes.",
-      "ru": "",
+      "ru": "Включает выравнивание и сглаживание временных паттернов (таймингов) трафика после применения маскировки.",
       "default": "false"
     },
     {
@@ -1839,7 +1839,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Lower bound (ms) for masking outcome normalization target.",
-      "ru": "",
+      "ru": "Lower bound (ms) for masking outcome normalization target.",
       "default": "0"
     },
     {
@@ -1849,7 +1849,7 @@
       "type": "string",
       "applyMode": "reload",
       "en": "Unix socket path for mask backend instead of TCP `mask_host`/`mask_port`.",
-      "ru": ""
+      "ru": "Путь к Unix-сокету для mask-бэкенда вместо использования TCP `mask_host`/`mask_port`."
     },
     {
       "path": "censorship.server_hello_delay_max_ms",
@@ -1858,7 +1858,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum `server_hello` delay for anti-fingerprint behavior (ms).",
-      "ru": "",
+      "ru": "Максимальная задержка `server_hello` (в миллисекундах) для защиты от идентификации по fingerprint'у.",
       "default": "0"
     },
     {
@@ -1868,7 +1868,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Minimum `server_hello` delay for anti-fingerprint behavior (ms).",
-      "ru": "",
+      "ru": "Минимальная задержка `server_hello` (в миллисекундах) для защиты от идентификации по fingerprint'у.",
       "default": "0"
     },
     {
@@ -1878,7 +1878,7 @@
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables compact ServerHello/Fake-TLS profile to reduce response-size signature.",
-      "ru": "",
+      "ru": "Включает компактный профиль ServerHello/Fake-TLS для снижения сигнатуры размера ответа.",
       "default": "false"
     },
     {
@@ -1908,7 +1908,7 @@
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables certificate/TLS behavior emulation from cached real fronts.",
-      "ru": "",
+      "ru": "Включает эмуляцию поведения сертификата/TLS из кэшированных реальных сайтов.",
       "default": "true"
     },
     {
@@ -1918,7 +1918,7 @@
       "type": "string",
       "applyMode": "reload",
       "en": "TLS-front metadata fetch strategy settings (bootstrap + refresh behavior for TLS emulation data).",
-      "ru": "",
+      "ru": "Настройки стратегии получения TLS-front метаданных (поведение загрузки и обновления bootstrap и данных эмуляции TLS)..",
       "default": "built-in defaults"
     },
     {
@@ -2008,7 +2008,7 @@
       "type": "string",
       "applyMode": "reload",
       "en": "Directory path for TLS front cache storage.",
-      "ru": "",
+      "ru": "Путь к директории для хранения кэша сайтов.",
       "default": "\"tlsfront\""
     },
     {
@@ -2018,7 +2018,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "TTL for sending full cert payload per (domain, client IP) tuple.",
-      "ru": "",
+      "ru": "TTL для отправки полного сертификатного payload’а для каждой пары (домен, IP клиента).",
       "default": "90"
     },
     {
@@ -2028,7 +2028,7 @@
       "type": "number",
       "applyMode": "reload",
       "en": "Number of `NewSessionTicket` messages to emit after handshake.",
-      "ru": "",
+      "ru": "Количество сообщений `NewSessionTicket`, отправляемых после рукопожатия.",
       "default": "0"
     },
     {
@@ -2108,8 +2108,8 @@
       "key": "ipv4",
       "type": "boolean",
       "applyMode": "reload",
-      "en": "",
-      "ru": "",
+      "en": "Allows IPv4 DC targets for this upstream. When omitted, Telemt auto-detects support from runtime connectivity state.",
+      "ru": "Разрешает IPv4 DC-targets для этого upstream. Если не задан, Telemt определяет поддержку автоматически по runtime-состоянию connectivity.",
       "default": "— (auto)"
     },
     {
@@ -2118,8 +2118,8 @@
       "key": "ipv6",
       "type": "boolean",
       "applyMode": "reload",
-      "en": "",
-      "ru": "",
+      "en": "Allows IPv6 DC targets for this upstream. When omitted, Telemt auto-detects support from runtime connectivity state. Set this to `true` when the upstream proxy is reachable from the local host over IPv4 but the proxy itself can connect to Telegram DCs over IPv6.",
+      "ru": "Разрешает IPv6 DC-targets для этого upstream. Если не задан, Telemt определяет поддержку автоматически по runtime-состоянию connectivity. Установите `true`, если upstream proxy доступен с локального хоста по IPv4, но сам proxy умеет подключаться к Telegram DC по IPv6.",
       "default": "— (auto)"
     },
     {
@@ -2137,8 +2137,8 @@
       "key": "prefer",
       "type": "string",
       "applyMode": "reload",
-      "en": "",
-      "ru": "",
+      "en": "Overrides the IP family preference for Telegram DC targets selected through this upstream. When omitted, the upstream inherits the effective global `[network].prefer` decision. Use `prefer = 6` together with `ipv6 = true` for a SOCKS or Shadowsocks upstream that can egress over IPv6 even when the local Telemt host is IPv4-only.",
+      "ru": "Переопределяет предпочтительное IP-семейство для Telegram DC-targets, выбранных через этот upstream. Если параметр не задан, upstream наследует эффективное глобальное решение `[network].prefer`. Используйте `prefer = 6` вместе с `ipv6 = true` для SOCKS или Shadowsocks upstream, который умеет выходить в IPv6, даже если локальный хост с Telemt работает только по IPv4.",
       "default": "effective [network].prefer"
     },
     {
@@ -2147,8 +2147,8 @@
       "key": "scopes",
       "type": "string",
       "applyMode": "reload",
-      "en": "Overrides the IP family preference for Telegram DC targets selected through this upstream. When omitted, the upstream inherits the effective global `[network].prefer` decision. Use `prefer = 6` together with `ipv6 = true` for a SOCKS or Shadowsocks upstream that can egress over IPv6 even when the local Telemt host is IPv4-only.",
-      "ru": "Переопределяет предпочтительное IP-семейство для Telegram DC-targets, выбранных через этот upstream. Если параметр не задан, upstream наследует эффективное глобальное решение `[network].prefer`. Используйте `prefer = 6` вместе с `ipv6 = true` для SOCKS или Shadowsocks upstream, который умеет выходить в IPv6, даже если локальный хост с Telemt работает только по IPv4.",
+      "en": "Scope tags used for request-level upstream filtering. If a request specifies a scope, only upstreams whose `scopes` contains that tag can be selected. If a request does not specify a scope, only upstreams with empty `scopes` are eligible.",
+      "ru": "Теги области (`scope`), используемые для фильтрации upstream-серверов на уровне запроса. Если в запросе указан `scope`, выбираются только те upstream’ы, у которых поле `scopes` содержит этот тег. Если scope в запросе не указан, допускаются только upstream’ы с пустым scopes.",
       "default": "\"\""
     },
     {
@@ -2210,7 +2210,7 @@
       "type": "string",
       "applyMode": "reload",
       "en": "Overrides DC endpoints for non-standard DCs; key is DC index string, value is one or more `ip:port` addresses.",
-      "ru": "",
+      "ru": "Переопределяет DC эндпоинты для запросов с нестандартными DC; задается в виде строки с индексом DC, значение — один или несколько адресов `ip:port`.",
       "default": "{}"
     }
   ]

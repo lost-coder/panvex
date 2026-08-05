@@ -64,6 +64,25 @@ describe("buildCatalog", () => {
     const dc = cat.fields.find((f) => f.path === "dc_overrides");
     expect(dc.key).toBe("dc_overrides");
   });
+  it("recovers descriptions after a bracketless dotted sub-heading without losing the section", () => {
+    // RU doc has a malformed "# censorship.tls_fetch" (no brackets) where EN has
+    // "# [censorship.tls_fetch]". It must populate its own description AND leave
+    // the "censorship" section intact so the sibling "## mask" heading right
+    // after it still resolves to "censorship.mask", not "censorship.tls_fetch.mask".
+    const tlsFetch = cat.fields.find((f) => f.path === "censorship.tls_fetch");
+    expect(tlsFetch.ru).toMatch(/TLS-front/);
+    const mask = cat.fields.find((f) => f.path === "censorship.mask");
+    expect(mask.ru).toMatch(/маскировки/i);
+  });
+  it("extracts descriptions for h2 headings with a disambiguating parenthetical", () => {
+    const ipv4 = cat.fields.find((f) => f.path === "upstreams.ipv4");
+    expect(ipv4.en).toMatch(/IPv4/);
+    expect(ipv4.ru).toMatch(/IPv4/);
+  });
+  it("recognizes the Russian 'Top-level keys' heading so bare-key RU descriptions aren't dropped", () => {
+    const dc = cat.fields.find((f) => f.path === "dc_overrides");
+    expect(dc.ru).toMatch(/переопределяет/i);
+  });
 });
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");

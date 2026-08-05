@@ -55,6 +55,10 @@ This document lists all configuration keys accepted by `config.toml`.
 | [`type`](#type) | `"direct"`, `"socks4"`, `"socks5"`, or `"shadowsocks"` | — | `✘` |
 | [`weight`](#weight) | `u16` | `1` | `✘` |
 | [`enabled`](#enabled) | `bool` | `true` | `✘` |
+| [`ipv4`](#ipv4) | `bool` | `true` | `✘` |
+
+## ipv4 (upstreams)
+  - **Description**: Restricts upstream connections to IPv4 addresses.
 
 # [censorship]
 
@@ -63,3 +67,10 @@ This document lists all configuration keys accepted by `config.toml`.
 | --- | ---- | ------- | ---------- |
 | [`tls_domain`](#tls_domain) | `String` | `"petrovich.ru"` | `✘` |
 | [`mask`](#mask) | `bool` | `true` | `✘` |
+| [`tls_fetch`](#tls_fetch) | `bool` | `true` | `✘` |
+
+## tls_fetch
+  - **Description**: Table of TLS fetch strategy settings.
+
+## mask
+  - **Description**: Enables masking mode.

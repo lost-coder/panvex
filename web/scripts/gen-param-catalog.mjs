@@ -30,8 +30,20 @@ export function parseDescriptions(markdown) {
   for (const line of markdown.split("\n")) {
     const sec = line.match(/^# \[+([a-z_][\w.]*)\]+\s*$/);
     if (sec) { section = sec[1]; cur = null; continue; }
-    if (/^# /.test(line)) { section = /^# Top-level keys/.test(line) ? "" : null; cur = null; continue; }
-    const h2 = line.match(/^## ([a-z_][\w.]*)\s*$/);
+    // Bracketless dotted sub-heading (e.g. malformed "# censorship.tls_fetch" in
+    // the RU doc, where EN correctly has "# [censorship.tls_fetch]"): targets the
+    // description of that exact field without touching the current section, so
+    // sibling "## key" headings right after it still resolve relative to it.
+    const secBare = line.match(/^# ([a-z_][\w.]*)\s*$/);
+    if (secBare && section !== null) { cur = secBare[1]; continue; }
+    if (/^# /.test(line)) {
+      section = /^# (Top-level keys|Ключи верхнего уровня)\s*$/.test(line) ? "" : null;
+      cur = null;
+      continue;
+    }
+    // h2 headings sometimes carry a disambiguating parenthetical, e.g.
+    // "## ipv4 (upstreams)" — capture just the key.
+    const h2 = line.match(/^## ([a-z_][\w.]*)(?:\s+\([^)]*\))?\s*$/);
     if (h2 && section !== null) { cur = section ? `${section}.${h2[1]}` : h2[1]; continue; }
     const m = line.match(/^\s*-\s*\*\*(?:Description|Описание)\*\*:\s*(.+)$/);
     if (m && cur) desc.set(cur, m[1].trim());
