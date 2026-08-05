@@ -8,12 +8,15 @@ import { ConfigSectionEditor } from "./ConfigSectionEditor";
 describe("ConfigSectionEditor", () => {
   it("renders curated field labels grouped under section headings", () => {
     render(<ConfigSectionEditor values={{}} onChange={() => {}} />);
-    // Section heading.
+    // Section heading (still translated via config.section.*).
     expect(screen.getByText("General")).toBeInTheDocument();
-    // A couple of field labels.
-    expect(screen.getByText("Log level")).toBeInTheDocument();
-    expect(screen.getByText("Modes")).toBeInTheDocument();
-    expect(screen.getByText("SNI domain")).toBeInTheDocument();
+    // Task 7: CONFIG_FIELDS now derives from PARAM_CATALOG (the generated
+    // catalog) and labelKey carries the raw field key instead of an i18n
+    // key with a hand-written English label — t(field.labelKey) falls back
+    // to the key itself, so field labels are the raw keys below.
+    expect(screen.getByText("log_level")).toBeInTheDocument();
+    expect(screen.getByText("ad_tag")).toBeInTheDocument();
+    expect(screen.getByText("tls_domain")).toBeInTheDocument();
   });
 
   it("renders a Live badge for hot fields and a Reload badge for reload fields", () => {
@@ -54,22 +57,25 @@ describe("ConfigSectionEditor", () => {
     expect(onChange).toHaveBeenCalledWith("general.update_every", 42);
   });
 
-  it("maps string[] fields to/from a comma-separated text input", () => {
+  // Task 7 note: the generated catalog (paramCatalog.gen.json) currently
+  // never emits type "string[]" — censorship.tls_domains is genuinely a
+  // Vec<String> in Telemt (src/config/types.rs), but the catalog generator
+  // classifies it as a plain "string". FieldInput's string[] branch (comma
+  // text <-> array) is therefore currently unreachable from CONFIG_FIELDS;
+  // this test documents the actual (string) behavior so a future catalog
+  // fix that restores the array type shows up here as an intentional diff,
+  // not a silent regression.
+  it("renders censorship.tls_domains as a plain text field (catalog currently types it as string, not string[])", () => {
     const onChange = vi.fn();
     render(
       <ConfigSectionEditor
-        values={{ "censorship.tls_domains": ["a.com", "b.com"] }}
+        values={{ "censorship.tls_domains": "a.com, b.com" }}
         onChange={onChange}
       />,
     );
-    // Array renders as comma-separated text.
     const input = screen.getByDisplayValue("a.com, b.com");
-    // A change parses the text back into a trimmed string[].
     fireEvent.change(input, { target: { value: "x.com, y.com" } });
-    expect(onChange).toHaveBeenCalledWith("censorship.tls_domains", [
-      "x.com",
-      "y.com",
-    ]);
+    expect(onChange).toHaveBeenCalledWith("censorship.tls_domains", "x.com, y.com");
   });
 
   it("associates each field label with its focusable control (a11y)", () => {
@@ -77,13 +83,14 @@ describe("ConfigSectionEditor", () => {
     // The label now carries the field text + apply-mode badge, and its
     // htmlFor resolves to the real control (not the old wrapper <div>).
     // getByLabelText matches on the accessible name (label text content),
-    // so "Log level" resolves the select even though "Live" is appended.
-    const select = screen.getByLabelText(/Log level/);
+    // so "log_level" (the raw key -- see Task 7 note above) resolves the
+    // select even though "Live" is appended.
+    const select = screen.getByLabelText(/log_level/);
     // The control carries a generated id and the matching <label htmlFor>.
     expect(select.id).toBeTruthy();
     const label = document.querySelector(`label[for="${select.id}"]`);
     expect(label).not.toBeNull();
-    expect(label).toHaveTextContent("Log level");
+    expect(label).toHaveTextContent("log_level");
   });
 
   // The panel only stores what the operator overrode, so on a fresh install

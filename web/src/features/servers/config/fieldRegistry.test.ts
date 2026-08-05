@@ -28,7 +28,13 @@ describe("config field registry", () => {
   it("every field path is section.key and unique", () => {
     const seen = new Set<string>();
     for (const f of CONFIG_FIELDS) {
-      expect(f.path).toBe(`${f.section}.${f.key}`);
+      // dc_overrides is a single map-shaped catalog entry (path === section
+      // === key === "dc_overrides") representing the whole `[dc_overrides]`
+      // map rather than one scalar "section.key" leaf — it never fit the
+      // flat model this invariant checks (see fieldRegistry.ts header).
+      if (f.path !== "dc_overrides") {
+        expect(f.path).toBe(`${f.section}.${f.key}`);
+      }
       expect(seen.has(f.path)).toBe(false);
       seen.add(f.path);
     }
@@ -42,5 +48,15 @@ describe("config field registry", () => {
     for (const f of CONFIG_FIELDS) {
       expect(processOwned.has(f.path)).toBe(false);
     }
+  });
+});
+
+describe("CONFIG_FIELDS compat shim", () => {
+  it("derives from the catalog (>150 fields)", () => {
+    expect(CONFIG_FIELDS.length).toBeGreaterThan(150);
+  });
+  it("log_level carries the corrected enum options", () => {
+    const f = CONFIG_FIELDS.find((x) => x.path === "general.log_level");
+    expect(f?.options).toEqual(["debug", "verbose", "normal", "silent"]);
   });
 });
