@@ -23,7 +23,7 @@ export default defineConfig({
     // node:test suites are run via `npm run test:state`
     // (CI: frontend-test job; locally: pre-push hook).
     // Exclude them here so vitest only owns the vitest-native suites.
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}", "scripts/**/*.test.mjs"],
     exclude: [
       "node_modules/**",
       "dist/**",
