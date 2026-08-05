@@ -1,0 +1,8 @@
+{
+  "tag": "3.4.25",
+  "repo": "telemt/telemt",
+  "files": {
+    "en": { "path": "docs/Config_params/CONFIG_PARAMS.en.md", "sha256": "2294d28cfc6dd7da60dc81d041d4b711c49a1f5aef4c60b785ef45000e3316b5" },
+    "ru": { "path": "docs/Config_params/CONFIG_PARAMS.ru.md", "sha256": "cc7940f6fdd28e81cb57a3885e8ba896bf14d9b20d3d7a9e4c0558da4250ca5c" }
+  }
+}
