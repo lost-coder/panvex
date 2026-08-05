@@ -50,8 +50,17 @@ describe("buildCatalog", () => {
   });
   it("maps u64 to number and bool to boolean", () => {
     expect(cat.fields.find((f) => f.path === "timeouts.client_handshake").type).toBe("number");
+    expect(cat.fields.find((f) => f.path === "censorship.mask").type).toBe("boolean");
   });
   it("marks Hot-Reload cross as reload", () => {
     expect(cat.fields.find((f) => f.path === "timeouts.client_handshake").applyMode).toBe("reload");
+  });
+  it("omits default when the doc uses the em-dash placeholder", () => {
+    const adTag = cat.fields.find((f) => f.path === "general.ad_tag");
+    expect("default" in adTag).toBe(false);
+  });
+  it("uses the whole path as key for a bare top-level editable key", () => {
+    const dc = cat.fields.find((f) => f.path === "dc_overrides");
+    expect(dc.key).toBe("dc_overrides");
   });
 });

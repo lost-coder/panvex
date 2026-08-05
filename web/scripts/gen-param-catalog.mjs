@@ -56,7 +56,7 @@ export function buildCatalog(enMd, ruMd, tag) {
     const section = path.split(".")[0];
     if (!EDITABLE.includes(section)) continue;
     const options = parseEnumOptions(row.type);
-    const key = path.slice(section.length + 1);
+    const key = path.includes(".") ? path.slice(section.length + 1) : path;
     const entry = {
       path, section, key,
       type: fieldType(row.type, options),
@@ -64,7 +64,8 @@ export function buildCatalog(enMd, ruMd, tag) {
       en: dEn.get(path) ?? "", ru: dRu.get(path) ?? "",
     };
     if (options) entry.options = options;
-    if (row.default) entry.default = row.default;
+    const def = row.default === "—" ? "" : row.default;
+    if (def) entry.default = def;
     fields.push(entry);
   }
   fields.sort((a, b) =>

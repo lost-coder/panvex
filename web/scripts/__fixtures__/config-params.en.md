@@ -6,6 +6,16 @@ This document lists all configuration keys accepted by `config.toml`.
 >
 > This reference was drafted with the help of AI and cross-checked against the codebase (config schema, defaults, and validation logic).
 
+# Top-level keys
+
+
+| Key | Type | Default | Hot-Reload |
+| --- | ---- | ------- | ---------- |
+| [`dc_overrides`](#dc_overrides) | `Map<String, String or String[]>` | `{}` | `✘` |
+
+## dc_overrides
+  - **Description**: Overrides DC endpoints for non-standard DCs; key is DC index string, value is one or more `ip:port` addresses.
+
 # [general]
 
 
