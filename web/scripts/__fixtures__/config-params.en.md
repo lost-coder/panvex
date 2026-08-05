@@ -66,8 +66,12 @@ This document lists all configuration keys accepted by `config.toml`.
 | Key | Type | Default | Hot-Reload |
 | --- | ---- | ------- | ---------- |
 | [`tls_domain`](#tls_domain) | `String` | `"petrovich.ru"` | `✘` |
+| [`tls_domains`](#tls_domains) | `String[]` | `[]` | `✘` |
 | [`mask`](#mask) | `bool` | `true` | `✘` |
 | [`tls_fetch`](#tls_fetch) | `bool` | `true` | `✘` |
+
+## tls_domains
+  - **Description**: Additional SNI domains accepted alongside tls_domain.
 
 ## tls_fetch
   - **Description**: Table of TLS fetch strategy settings.

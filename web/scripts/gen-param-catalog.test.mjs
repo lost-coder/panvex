@@ -53,6 +53,15 @@ describe("buildCatalog", () => {
     expect(cat.fields.find((f) => f.path === "timeouts.client_handshake").type).toBe("number");
     expect(cat.fields.find((f) => f.path === "censorship.mask").type).toBe("boolean");
   });
+  it("maps an array Type cell (e.g. String[]) to string[], not string", () => {
+    const tlsDomains = cat.fields.find((f) => f.path === "censorship.tls_domains");
+    expect(tlsDomains.type).toBe("string[]");
+  });
+  it("does not flip a scalar enum union to an array just because it has bracket-shaped tokens", () => {
+    // general.log_level's Type cell is a quoted-literal enum, not an array —
+    // regression guard for the array-detection regex added alongside string[].
+    expect(cat.fields.find((f) => f.path === "general.log_level").type).toBe("select");
+  });
   it("marks Hot-Reload cross as reload", () => {
     expect(cat.fields.find((f) => f.path === "timeouts.client_handshake").applyMode).toBe("reload");
   });

@@ -53,10 +53,21 @@ export function parseDescriptions(markdown) {
 
 const EDITABLE = ["general", "timeouts", "censorship", "upstreams", "dc_overrides"];
 const NUMERIC = /^(u8|u16|u32|u64|usize|i8|i16|i32|i64|f32|f64)$/;
+// Matches the doc's array rendering exactly: a bare element type name
+// (String, IpNetwork, IpAddr, Table, ...) followed by a trailing `[]`, and
+// NOTHING else — anchored full-match so union cells like `"*"` or `String[]`
+// (show_link / general.links.show) are deliberately excluded: those are not
+// plain arrays, they're a literal-or-array union, and must keep falling
+// through to "string" like before.
+const ARRAY = /^[A-Za-z][A-Za-z0-9]*\[\]$/;
 
 function fieldType(typeCell, options) {
-  if (options) return "select";
+  // Checked before the enum/select branch: a Type cell that renders as an
+  // array of quoted-enum values would still need to come out as "string[]"
+  // here, not get misread as a scalar "select" by parseEnumOptions.
   const bare = typeCell.replace(/`/g, "").trim();
+  if (ARRAY.test(bare)) return "string[]";
+  if (options) return "select";
   if (bare === "bool") return "boolean";
   if (NUMERIC.test(bare)) return "number";
   return "string";

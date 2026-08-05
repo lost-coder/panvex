@@ -66,8 +66,12 @@
 | Ключ | Тип | По умолчанию | Hot-Reload |
 | --- | ---- | ------- | ---------- |
 | [`tls_domain`](#tls_domain) | `String` | `"petrovich.ru"` | `✘` |
+| [`tls_domains`](#tls_domains) | `String[]` | `[]` | `✘` |
 | [`mask`](#mask) | `bool` | `true` | `✘` |
 | [`tls_fetch`](#tls_fetch) | `bool` | `true` | `✘` |
+
+## tls_domains
+  - **Описание**: Дополнительные SNI-домены, принимаемые наряду с tls_domain.
 
 # censorship.tls_fetch
   - **Описание**: Настройки стратегии получения TLS-front метаданных.

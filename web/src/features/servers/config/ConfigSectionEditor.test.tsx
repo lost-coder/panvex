@@ -57,25 +57,22 @@ describe("ConfigSectionEditor", () => {
     expect(onChange).toHaveBeenCalledWith("general.update_every", 42);
   });
 
-  // Task 7 note: the generated catalog (paramCatalog.gen.json) currently
-  // never emits type "string[]" — censorship.tls_domains is genuinely a
-  // Vec<String> in Telemt (src/config/types.rs), but the catalog generator
-  // classifies it as a plain "string". FieldInput's string[] branch (comma
-  // text <-> array) is therefore currently unreachable from CONFIG_FIELDS;
-  // this test documents the actual (string) behavior so a future catalog
-  // fix that restores the array type shows up here as an intentional diff,
-  // not a silent regression.
-  it("renders censorship.tls_domains as a plain text field (catalog currently types it as string, not string[])", () => {
+  // Task 7: censorship.tls_domains is genuinely a Vec<String> in Telemt
+  // (src/config/types.rs); the catalog generator now detects the array Type
+  // cell and emits "string[]", so FieldInput's string[] branch (comma text
+  // <-> array) is reachable again. The field is edited as a comma-separated
+  // list but the onChange contract emits a real array, not a joined string.
+  it("renders censorship.tls_domains as a comma-separated array field", () => {
     const onChange = vi.fn();
     render(
       <ConfigSectionEditor
-        values={{ "censorship.tls_domains": "a.com, b.com" }}
+        values={{ "censorship.tls_domains": ["a.com", "b.com"] }}
         onChange={onChange}
       />,
     );
     const input = screen.getByDisplayValue("a.com, b.com");
     fireEvent.change(input, { target: { value: "x.com, y.com" } });
-    expect(onChange).toHaveBeenCalledWith("censorship.tls_domains", "x.com, y.com");
+    expect(onChange).toHaveBeenCalledWith("censorship.tls_domains", ["x.com", "y.com"]);
   });
 
   it("associates each field label with its focusable control (a11y)", () => {
