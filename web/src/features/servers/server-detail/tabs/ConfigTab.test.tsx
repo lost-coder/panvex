@@ -77,6 +77,28 @@ describe("ConfigTab", () => {
     expect(screen.getByDisplayValue("old.example.com")).toBeInTheDocument();
   });
 
+  // On an install with no group config and no override the panel knows the
+  // node's real settings only through `observed`. Without forwarding it, the
+  // form renders every field blank and the operator has to hunt for current
+  // values in the read-only viewer below it.
+  it("hints the observed value for fields the operator has not overridden", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        override: {},
+        effective: {},
+        observed: {
+          general: { log_level: "silent" },
+          timeouts: { client_handshake: 12 },
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+    expect(screen.getByText("Current on node: silent")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("12")).toBeInTheDocument();
+  });
+
   it("saves the unflattened sections when Save is clicked", () => {
     render(<ConfigTab server={server} />);
     const input = screen.getByDisplayValue("old.example.com");

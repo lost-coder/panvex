@@ -86,6 +86,71 @@ describe("ConfigSectionEditor", () => {
     expect(label).toHaveTextContent("Log level");
   });
 
+  // The panel only stores what the operator overrode, so on a fresh install
+  // `effective` is empty and the form would show no current values at all —
+  // the node's real settings live in `observed`. An un-overridden field must
+  // therefore fall back to the observed value, which is exactly what the node
+  // keeps if the operator leaves the field empty.
+  it("falls back to the observed value for the placeholder when nothing is effective", () => {
+    render(
+      <ConfigSectionEditor
+        values={{}}
+        observed={{ "censorship.tls_domain": "live.example" }}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByPlaceholderText("live.example")).toBeInTheDocument();
+  });
+
+  it("prefers the effective value over the observed one for the placeholder", () => {
+    render(
+      <ConfigSectionEditor
+        values={{}}
+        effective={{ "censorship.tls_domain": "effective.example" }}
+        observed={{ "censorship.tls_domain": "live.example" }}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByPlaceholderText("effective.example")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("live.example")).not.toBeInTheDocument();
+  });
+
+  // Selects and toggles have no placeholder, so without an explicit hint a
+  // non-overridden field silently misrepresents the node: the select reads
+  // "Select…" and the toggle reads OFF even when the node runs something else.
+  it("shows the current node value for select fields that have no override", () => {
+    render(
+      <ConfigSectionEditor
+        values={{}}
+        observed={{ "general.log_level": "silent" }}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("Current on node: silent")).toBeInTheDocument();
+  });
+
+  it("shows the current node value for toggle fields that have no override", () => {
+    render(
+      <ConfigSectionEditor
+        values={{}}
+        observed={{ "general.hardswap": true }}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("Current on node: on")).toBeInTheDocument();
+  });
+
+  it("omits the current-value hint once the field is overridden", () => {
+    render(
+      <ConfigSectionEditor
+        values={{ "general.log_level": "debug" }}
+        observed={{ "general.log_level": "silent" }}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.queryByText("Current on node: silent")).not.toBeInTheDocument();
+  });
+
   it("disables inputs when disabled is set", () => {
     render(<ConfigSectionEditor values={{}} onChange={() => {}} disabled />);
     const inputs = screen.getAllByRole("textbox");

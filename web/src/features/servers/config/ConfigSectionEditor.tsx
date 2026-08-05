@@ -29,6 +29,14 @@ export interface ConfigSectionEditorProps {
    * the current effective value" rather than "will blank this setting".
    */
   effective?: Record<string, unknown> | undefined;
+  /**
+   * dotted-path → value Telemt currently reports running on the node. Used
+   * wherever `effective` has nothing to say: the panel stores only what the
+   * operator overrode, so on an install with no group config and no override
+   * `effective` is empty and the form would otherwise show no current values
+   * at all. Leaving a field empty keeps exactly this value on the node.
+   */
+  observed?: Record<string, unknown> | undefined;
   onChange: (path: string, value: unknown) => void;
   disabled?: boolean;
 }
@@ -147,11 +155,31 @@ function FieldInput({
 export function ConfigSectionEditor({
   values,
   effective,
+  observed,
   onChange,
   disabled,
 }: Readonly<ConfigSectionEditorProps>) {
   const { t } = useTranslation("servers");
   const bySection = fieldsBySection();
+
+  /**
+   * Toggles and selects carry no placeholder, so a non-overridden field would
+   * misrepresent the node: the select reads "Select…" and the toggle reads OFF
+   * whatever the node actually runs. Render the current value as the field
+   * description instead. Overridden fields show their own value in the control,
+   * so the hint would only be noise there.
+   */
+  function currentValueHint(field: ConfigField): string | undefined {
+    if (field.type !== "boolean" && field.type !== "select") return undefined;
+    if (values[field.path] !== undefined) return undefined;
+    const current = effective?.[field.path] ?? observed?.[field.path];
+    if (current === undefined || current === null || current === "") return undefined;
+    const rendered =
+      typeof current === "boolean"
+        ? t(current ? "config.currentValue.on" : "config.currentValue.off")
+        : String(current);
+    return t("config.currentValue.label", { value: rendered });
+  }
 
   // Defensive guard: CONFIG_FIELDS never lists the three process-owned
   // paths (fieldRegistry.ts), so this branch is normally dead. It exists
@@ -179,11 +207,19 @@ export function ConfigSectionEditor({
                     <ApplyModeBadge field={field} />
                   </span>
                 }
+                // exactOptionalPropertyTypes: only pass the prop when there is
+                // a hint to show — `description: undefined` is not assignable.
+                {...(() => {
+                  const hint = currentValueHint(field);
+                  return hint ? { description: hint } : {};
+                })()}
               >
                 <FieldInput
                   field={field}
                   value={values[field.path]}
-                  placeholder={placeholderFor(effective?.[field.path])}
+                  placeholder={placeholderFor(
+                    effective?.[field.path] ?? observed?.[field.path],
+                  )}
                   onChange={handleChange}
                   disabled={disabled}
                 />

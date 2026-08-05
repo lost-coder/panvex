@@ -99,6 +99,14 @@ export function ConfigTab({
     () => flattenSections(data?.effective ?? {}),
     [data?.effective],
   );
+  // The panel persists only what the operator overrode, so on an install with
+  // no group config and no override `effective` is empty and every field would
+  // render blank. The observed config is what the node actually runs — and
+  // exactly what it keeps if the field is left empty — so it backs the hints.
+  const observedValues = useMemo(
+    () => flattenSections(data?.observed ?? {}),
+    [data?.observed],
+  );
   const [values, setValues] = useState<Record<string, unknown>>(initialValues);
 
   // Paths the operator has edited but not yet saved — drives the dirty
@@ -207,6 +215,7 @@ export function ConfigTab({
       <ConfigSectionEditor
         values={values}
         effective={effectiveValues}
+        observed={observedValues}
         onChange={(path, value) =>
           setValues((prev) => ({ ...prev, [path]: value }))
         }

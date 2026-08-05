@@ -436,6 +436,11 @@
       "hotHint": "Applied immediately",
       "reloadHint": "Applied via an in-process Telemt reload (no process restart)"
     },
+    "currentValue": {
+      "label": "Current on node: {{value}}",
+      "on": "on",
+      "off": "off"
+    },
     "drift": {
       "in_sync": "In sync",
       "drifted": "Drifted",
