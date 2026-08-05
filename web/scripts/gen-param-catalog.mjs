@@ -35,3 +35,39 @@ export function parseDescriptions(markdown) {
   }
   return desc;
 }
+
+const EDITABLE = ["general", "timeouts", "censorship", "upstreams", "dc_overrides"];
+const NUMERIC = /^(u8|u16|u32|u64|usize|i8|i16|i32|i64|f32|f64)$/;
+
+function fieldType(typeCell, options) {
+  if (options) return "select";
+  const bare = typeCell.replace(/`/g, "").trim();
+  if (bare === "bool") return "boolean";
+  if (NUMERIC.test(bare)) return "number";
+  return "string";
+}
+
+export function buildCatalog(enMd, ruMd, tag) {
+  const tables = parseTables(enMd);
+  const dEn = parseDescriptions(enMd);
+  const dRu = parseDescriptions(ruMd);
+  const fields = [];
+  for (const [path, row] of tables) {
+    const section = path.split(".")[0];
+    if (!EDITABLE.includes(section)) continue;
+    const options = parseEnumOptions(row.type);
+    const key = path.slice(section.length + 1);
+    const entry = {
+      path, section, key,
+      type: fieldType(row.type, options),
+      applyMode: row.hot ? "hot" : "reload",
+      en: dEn.get(path) ?? "", ru: dRu.get(path) ?? "",
+    };
+    if (options) entry.options = options;
+    if (row.default) entry.default = row.default;
+    fields.push(entry);
+  }
+  fields.sort((a, b) =>
+    EDITABLE.indexOf(a.section) - EDITABLE.indexOf(b.section) || a.path.localeCompare(b.path));
+  return { version: tag, fields };
+}

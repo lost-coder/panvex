@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseTables, parseEnumOptions, parseDescriptions } from "./gen-param-catalog.mjs";
+import { parseTables, parseEnumOptions, parseDescriptions, buildCatalog } from "./gen-param-catalog.mjs";
 
 const en = readFileSync(new URL("./__fixtures__/config-params.en.md", import.meta.url), "utf8");
 const ru = readFileSync(new URL("./__fixtures__/config-params.ru.md", import.meta.url), "utf8");
@@ -33,5 +33,25 @@ describe("parseDescriptions", () => {
   it("extracts ru description for a key", () => {
     const d = parseDescriptions(ru);
     expect(d.get("general.log_level")).toMatch(/детализац/i);
+  });
+});
+
+describe("buildCatalog", () => {
+  const cat = buildCatalog(en, ru, "3.4.25");
+  it("stamps the version", () => expect(cat.version).toBe("3.4.25"));
+  it("only includes editable sections", () => {
+    expect(cat.fields.every((f) => ["general","timeouts","censorship","upstreams","dc_overrides"].includes(f.section))).toBe(true);
+  });
+  it("maps enum type to select with options", () => {
+    const ll = cat.fields.find((f) => f.path === "general.log_level");
+    expect(ll).toMatchObject({ type: "select", applyMode: "hot", options: ["debug","verbose","normal","silent"] });
+    expect(ll.en).toMatch(/verbosity/i);
+    expect(ll.ru).toMatch(/детализац/i);
+  });
+  it("maps u64 to number and bool to boolean", () => {
+    expect(cat.fields.find((f) => f.path === "timeouts.client_handshake").type).toBe("number");
+  });
+  it("marks Hot-Reload cross as reload", () => {
+    expect(cat.fields.find((f) => f.path === "timeouts.client_handshake").applyMode).toBe("reload");
   });
 });
