@@ -9,11 +9,12 @@
 // read-only viewer check a path against the same source of truth, so a future
 // registry mistake (accidentally adding one of these to CONFIG_FIELDS) can't
 // make them silently editable.
-export const PROCESS_OWNED_PATHS = [
-  "general.data_path",
-  "general.quota_state_path",
-  "general.disable_colors",
-] as const;
+//
+// PROCESS_OWNED_PATHS itself lives in paramCatalog.ts (Task 6), which filters
+// the generated catalog against it; re-exported here for existing consumers.
+export { PROCESS_OWNED_PATHS } from "./paramCatalog";
+
+import { PROCESS_OWNED_PATHS } from "./paramCatalog";
 
 const PROCESS_OWNED_SET: ReadonlySet<string> = new Set(PROCESS_OWNED_PATHS);
 
