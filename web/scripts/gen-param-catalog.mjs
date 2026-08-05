@@ -90,7 +90,8 @@ export function buildCatalog(enMd, ruMd, tag) {
       en: dEn.get(path) ?? "", ru: dRu.get(path) ?? "",
     };
     if (options) entry.options = options;
-    const def = row.default === "—" ? "" : row.default;
+    let def = row.default === "—" ? "" : row.default;
+    if (def.length >= 2 && def.startsWith('"') && def.endsWith('"')) def = def.slice(1, -1);
     if (def) entry.default = def;
     fields.push(entry);
   }

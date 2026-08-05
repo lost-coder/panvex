@@ -69,6 +69,16 @@ describe("buildCatalog", () => {
     const adTag = cat.fields.find((f) => f.path === "general.ad_tag");
     expect("default" in adTag).toBe(false);
   });
+  it("strips the doc's surrounding double-quotes from a string default", () => {
+    // general.log_level's Default cell renders as `"normal"` in the markdown —
+    // those quotes are markdown formatting, not part of the value.
+    const ll = cat.fields.find((f) => f.path === "general.log_level");
+    expect(ll.default).toBe("normal");
+  });
+  it("leaves a non-quoted (numeric) default untouched", () => {
+    const ch = cat.fields.find((f) => f.path === "timeouts.client_handshake");
+    expect(ch.default).toBe("30");
+  });
   it("uses the whole path as key for a bare top-level editable key", () => {
     const dc = cat.fields.find((f) => f.path === "dc_overrides");
     expect(dc.key).toBe("dc_overrides");

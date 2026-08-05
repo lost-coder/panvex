@@ -38,7 +38,7 @@
       "applyMode": "reload",
       "en": "Observation snapshot output file path.",
       "ru": "Путь к выходному снэпшоту наблюдения.",
-      "default": "\"cache/beobachten.txt\""
+      "default": "cache/beobachten.txt"
     },
     {
       "path": "general.beobachten_flush_secs",
@@ -195,7 +195,7 @@
       "applyMode": "reload",
       "en": "Selects users whose `tg://` proxy links are shown at startup.",
       "ru": "Определяет пользователей, для которых показываются proxy-ссылки tg:// при запуске.",
-      "default": "\"*\""
+      "default": "*"
     },
     {
       "path": "general.log_level",
@@ -211,7 +211,7 @@
         "normal",
         "silent"
       ],
-      "default": "\"normal\""
+      "default": "normal"
     },
     {
       "path": "general.max_client_frame",
@@ -366,7 +366,7 @@
         "ttl",
         "always"
       ],
-      "default": "\"ttl\""
+      "default": "ttl"
     },
     {
       "path": "general.me_bind_stale_ttl_secs",
@@ -490,7 +490,7 @@
         "static",
         "adaptive"
       ],
-      "default": "\"adaptive\""
+      "default": "adaptive"
     },
     {
       "path": "general.me_hardswap_warmup_delay_max_ms",
@@ -915,7 +915,7 @@
         "inline_recovery_legacy",
         "hybrid_async_persistent"
       ],
-      "default": "\"hybrid_async_persistent\""
+      "default": "hybrid_async_persistent"
     },
     {
       "path": "general.me_route_no_writer_wait_ms",
@@ -1039,7 +1039,7 @@
         "strict",
         "compat"
       ],
-      "default": "\"strict\""
+      "default": "strict"
     },
     {
       "path": "general.me_warmup_stagger_enabled",
@@ -1103,7 +1103,7 @@
         "sorted_rr",
         "p2c"
       ],
-      "default": "\"p2c\""
+      "default": "p2c"
     },
     {
       "path": "general.me_writer_pick_sample_size",
@@ -1271,7 +1271,7 @@
       "applyMode": "reload",
       "en": "Optional disk cache path for raw `getProxyConfig` (IPv4) snapshot. At startup Telemt tries to fetch a fresh snapshot first; on fetch failure or empty snapshot it falls back to this cache file when present and non-empty.",
       "ru": "Необязательный путь к кэшу для необработанного (raw) снимка getProxyConfig (IPv4). При запуске Telemt сначала пытается получить свежий снимок; в случае сбоя выборки или пустого снимка он возвращается к этому файлу кэша, если он присутствует и не пуст.",
-      "default": "\"cache/proxy-config-v4.txt\""
+      "default": "cache/proxy-config-v4.txt"
     },
     {
       "path": "general.proxy_config_v4_url",
@@ -1281,7 +1281,7 @@
       "applyMode": "reload",
       "en": "Optional URL to obtain raw `getProxyConfig` (IPv4). Telemt always tries a fresh download from this URL first (with fallback to `https://core.telegram.org/getProxyConfig` if absent).",
       "ru": "Необязательный URL для получения `getProxyConfig` (IPv4). Telemt при всегда пытается выполнить новую загрузку с этого URL (и если не задан, использует `https://core.telegram.org/getProxyConfig`).",
-      "default": "\"https://core.telegram.org/getProxyConfig\""
+      "default": "https://core.telegram.org/getProxyConfig"
     },
     {
       "path": "general.proxy_config_v6_cache_path",
@@ -1291,7 +1291,7 @@
       "applyMode": "reload",
       "en": "Optional disk cache path for raw `getProxyConfigV6` (IPv6) snapshot. At startup Telemt tries to fetch a fresh snapshot first; on fetch failure or empty snapshot it falls back to this cache file when present and non-empty.",
       "ru": "Необязательный путь к кэшу для необработанного (raw) снимка getProxyConfigV6 (IPv6). При запуске Telemt сначала пытается получить свежий снимок; в случае сбоя выборки или пустого снимка он возвращается к этому файлу кэша, если он присутствует и не пуст.",
-      "default": "\"cache/proxy-config-v6.txt\""
+      "default": "cache/proxy-config-v6.txt"
     },
     {
       "path": "general.proxy_config_v6_url",
@@ -1301,7 +1301,7 @@
       "applyMode": "reload",
       "en": "Optional URL to obtain raw `getProxyConfigV6` (IPv6). Telemt always tries a fresh download from this URL first (with fallback to `https://core.telegram.org/getProxyConfigV6` if absent).",
       "ru": "Необязательный URL для получения `getProxyConfigV6` (IPv6). Telemt при всегда пытается выполнить новую загрузку с этого URL (и если не задан, использует `https://core.telegram.org/getProxyConfigV6`).",
-      "default": "\"https://core.telegram.org/getProxyConfigV6\""
+      "default": "https://core.telegram.org/getProxyConfigV6"
     },
     {
       "path": "general.proxy_secret_auto_reload_secs",
@@ -1331,7 +1331,7 @@
       "applyMode": "reload",
       "en": "Path to Telegram infrastructure `proxy-secret` cache file used by ME handshake/RPC auth. Telemt always tries a fresh download from `https://core.telegram.org/getProxySecret` first (unless `proxy_secret_url` is set) , caches it to this path on success, and falls back to reading the cached file (any age) on download failure.",
       "ru": "Путь к файлу кэша `proxy-secret` инфраструктуры Telegram, используемому ME-handshake/аутентификацией RPC. Telemt всегда сначала пытается выполнить новую загрузку с https://core.telegram.org/getProxySecret (если не установлен `proxy_secret_url`), в случае успеха кэширует ее по этому пути и возвращается к чтению кэшированного файла в случае сбоя загрузки.",
-      "default": "\"proxy-secret\""
+      "default": "proxy-secret"
     },
     {
       "path": "general.proxy_secret_rotate_runtime",
@@ -1361,7 +1361,7 @@
       "applyMode": "reload",
       "en": "Optional URL to obtain `proxy-secret` file used by ME handshake/RPC auth. Telemt always tries a fresh download from this URL first (with fallback to `https://core.telegram.org/getProxySecret` if absent).",
       "ru": "Необязательный URL для получения файла `proxy-secret` используемого ME-handshake/аутентификацией RPC. Telemt всегда сначала пытается выполнить новую загрузку с этого URL (если не задан, используется https://core.telegram.org/getProxySecret).",
-      "default": "\"https://core.telegram.org/getProxySecret\""
+      "default": "https://core.telegram.org/getProxySecret"
     },
     {
       "path": "general.quota_state_path",
@@ -1371,7 +1371,7 @@
       "applyMode": "reload",
       "en": "JSON state file used to persist runtime per-user quota consumption.",
       "ru": "JSON-файл состояния для сохранения runtime-расхода квот по пользователям.",
-      "default": "\"telemt.limit.json\""
+      "default": "telemt.limit.json"
     },
     {
       "path": "general.rpc_proxy_req_every",
@@ -1396,7 +1396,7 @@
         "errors",
         "always"
       ],
-      "default": "\"off\""
+      "default": "off"
     },
     {
       "path": "general.stun_iface_mismatch_ignore",
@@ -1441,7 +1441,7 @@
         "normal",
         "debug"
       ],
-      "default": "\"normal\""
+      "default": "normal"
     },
     {
       "path": "general.telemetry.user_enabled",
@@ -1481,7 +1481,7 @@
       "applyMode": "reload",
       "en": "Log file path for unknown (non-standard) DC requests when `unknown_dc_file_log_enabled = true`. Omit this key to disable file logging.",
       "ru": "Путь к файлу логов для неизвестных (нестандартных) DC-запросов, который используется только если `unknown_dc_file_log_enabled = true`. Чтобы отключить файловое логирование, не указывйте этот параметр.",
-      "default": "\"unknown-dc.txt\""
+      "default": "unknown-dc.txt"
     },
     {
       "path": "general.update_every",
@@ -1889,7 +1889,7 @@
       "applyMode": "reload",
       "en": "Primary domain used for Fake-TLS masking / fronting profile and as the default SNI domain presented to clients.",
       "ru": "Основной TLS-домен, используемый в профиле FakeTLS handshake и как домен SNI по умолчанию.",
-      "default": "\"petrovich.ru\""
+      "default": "petrovich.ru"
     },
     {
       "path": "censorship.tls_domains",
@@ -1928,8 +1928,7 @@
       "type": "string",
       "applyMode": "reload",
       "en": "Upstream scope tag used for TLS-front metadata fetches. Empty value keeps default upstream routing behavior.",
-      "ru": "Тег области upstream, используемый для TLS-front метаданных при их получении. Пустое значение сохраняет стандартное поведение маршрутизации upstream.",
-      "default": "\"\""
+      "ru": "Тег области upstream, используемый для TLS-front метаданных при их получении. Пустое значение сохраняет стандартное поведение маршрутизации upstream."
     },
     {
       "path": "censorship.tls_fetch.attempt_timeout_ms",
@@ -2009,7 +2008,7 @@
       "applyMode": "reload",
       "en": "Directory path for TLS front cache storage.",
       "ru": "Путь к директории для хранения кэша сайтов.",
-      "default": "\"tlsfront\""
+      "default": "tlsfront"
     },
     {
       "path": "censorship.tls_full_cert_ttl_secs",
@@ -2045,7 +2044,7 @@
         "accept",
         "reject_handshake"
       ],
-      "default": "\"drop\""
+      "default": "drop"
     },
     {
       "path": "upstreams.address",
@@ -2148,8 +2147,7 @@
       "type": "string",
       "applyMode": "reload",
       "en": "Scope tags used for request-level upstream filtering. If a request specifies a scope, only upstreams whose `scopes` contains that tag can be selected. If a request does not specify a scope, only upstreams with empty `scopes` are eligible.",
-      "ru": "Теги области (`scope`), используемые для фильтрации upstream-серверов на уровне запроса. Если в запросе указан `scope`, выбираются только те upstream’ы, у которых поле `scopes` содержит этот тег. Если scope в запросе не указан, допускаются только upstream’ы с пустым scopes.",
-      "default": "\"\""
+      "ru": "Теги области (`scope`), используемые для фильтрации upstream-серверов на уровне запроса. Если в запросе указан `scope`, выбираются только те upstream’ы, у которых поле `scopes` содержит этот тег. Если scope в запросе не указан, допускаются только upstream’ы с пустым scopes."
     },
     {
       "path": "upstreams.type",
