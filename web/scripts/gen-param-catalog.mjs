@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
+
 export function parseTables(markdown) {
   const rows = new Map();
   let section = null;
@@ -72,3 +75,28 @@ export function buildCatalog(enMd, ruMd, tag) {
     EDITABLE.indexOf(a.section) - EDITABLE.indexOf(b.section) || a.path.localeCompare(b.path));
   return { version: tag, fields };
 }
+
+export async function fetchAndVerify(source, fetchImpl = fetch) {
+  const out = {};
+  for (const [lang, f] of Object.entries(source.files)) {
+    const url = `https://raw.githubusercontent.com/${source.repo}/${source.tag}/${f.path}`;
+    const res = await fetchImpl(url);
+    if (!res.ok) throw new Error(`download failed: ${url}`);
+    const body = await res.text();
+    const got = createHash("sha256").update(body).digest("hex");
+    if (got !== f.sha256) throw new Error(`sha256 mismatch: ${f.path} (got ${got})`);
+    out[lang] = body;
+  }
+  return out;
+}
+
+async function main() {
+  const src = JSON.parse(readFileSync(new URL("./telemt-doc-sources.json", import.meta.url), "utf8"));
+  const { en, ru } = await fetchAndVerify(src);
+  const catalog = buildCatalog(en, ru, src.tag);
+  const dest = new URL("../src/features/servers/config/paramCatalog.gen.json", import.meta.url);
+  writeFileSync(dest, JSON.stringify(catalog, null, 2) + "\n");
+  console.log(`param catalog: ${catalog.fields.length} fields @ ${catalog.version}`);
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) main().catch((e) => { console.error(e); process.exit(1); });

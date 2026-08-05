@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseTables, parseEnumOptions, parseDescriptions, buildCatalog } from "./gen-param-catalog.mjs";
+import { createHash } from "node:crypto";
+import { parseTables, parseEnumOptions, parseDescriptions, buildCatalog, fetchAndVerify } from "./gen-param-catalog.mjs";
 
 const en = readFileSync(new URL("./__fixtures__/config-params.en.md", import.meta.url), "utf8");
 const ru = readFileSync(new URL("./__fixtures__/config-params.ru.md", import.meta.url), "utf8");
@@ -62,5 +63,21 @@ describe("buildCatalog", () => {
   it("uses the whole path as key for a bare top-level editable key", () => {
     const dc = cat.fields.find((f) => f.path === "dc_overrides");
     expect(dc.key).toBe("dc_overrides");
+  });
+});
+
+const sha = (s) => createHash("sha256").update(s).digest("hex");
+
+describe("fetchAndVerify", () => {
+  const src = { tag: "3.4.25", repo: "telemt/telemt",
+    files: { en: { path: "d/en.md", sha256: sha("EN") }, ru: { path: "d/ru.md", sha256: sha("RU") } } };
+  const fakeFetch = (body) => async () => ({ ok: true, text: async () => body });
+
+  it("returns bodies when hashes match", async () => {
+    const got = await fetchAndVerify(src, async (url) => ({ ok: true, text: async () => url.includes("en.md") ? "EN" : "RU" }));
+    expect(got).toEqual({ en: "EN", ru: "RU" });
+  });
+  it("throws on hash mismatch", async () => {
+    await expect(fetchAndVerify(src, fakeFetch("TAMPERED"))).rejects.toThrow(/sha256 mismatch/);
   });
 });

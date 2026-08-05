@@ -1,0 +1,2217 @@
+{
+  "version": "3.4.25",
+  "fields": [
+    {
+      "path": "general.ad_tag",
+      "section": "general",
+      "key": "ad_tag",
+      "type": "string",
+      "applyMode": "hot",
+      "en": "Global fallback sponsored-channel `ad_tag` (used when user has no override in `access.user_ad_tags`). An all-zero tag is accepted but has no effect (and is warned about) until replaced with a real tag from `@MTProxybot`.",
+      "ru": "Глобальный резервный спонсируемый канал `ad_tag` (используется, когда у пользователя нет переопределения в `access.user_ad_tags`). Тег со всеми нулями принимается, но не имеет никакого эффекта, пока не будет заменен реальным тегом от `@MTProxybot`."
+    },
+    {
+      "path": "general.auto_degradation_enabled",
+      "section": "general",
+      "key": "auto_degradation_enabled",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Reserved for future use. Currently this key is parsed but not used by the runtime.",
+      "ru": "Зарезервировано для будущего использования. Сейчас параметр читается, но не используется системой.",
+      "default": "true"
+    },
+    {
+      "path": "general.beobachten",
+      "section": "general",
+      "key": "beobachten",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables per-IP forensic observation buckets and appends TLS JA3/JA4 fingerprint snapshots to Beobachten output when available.",
+      "ru": "Включает \"криминалистическое\" наблюдения для каждого IP-адреса. Анализирует поведение всех подключений, записывает возможные типы клиентов, которые посылают active-probing запросы, и добавляет snapshot’ы TLS JA3/JA4 fingerprint’ов в Beobachten output, когда есть данные.",
+      "default": "true"
+    },
+    {
+      "path": "general.beobachten_file",
+      "section": "general",
+      "key": "beobachten_file",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Observation snapshot output file path.",
+      "ru": "Путь к выходному снэпшоту наблюдения.",
+      "default": "\"cache/beobachten.txt\""
+    },
+    {
+      "path": "general.beobachten_flush_secs",
+      "section": "general",
+      "key": "beobachten_flush_secs",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Snapshot flush interval (seconds) for observation output file.",
+      "ru": "Время удаления моментального снимка (в секундах) для файла наблюдения.",
+      "default": "15"
+    },
+    {
+      "path": "general.beobachten_minutes",
+      "section": "general",
+      "key": "beobachten_minutes",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Retention window (minutes) for per-IP observation buckets and in-memory TLS fingerprint buckets.",
+      "ru": "Время хранения (минуты) для сегментов наблюдения по каждому IP-адресу и in-memory bucket’ов TLS fingerprint’ов.",
+      "default": "10"
+    },
+    {
+      "path": "general.config_strict",
+      "section": "general",
+      "key": "config_strict",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Rejects unknown TOML keys during config load. Startup fails fast; hot-reload rejects the new snapshot and keeps the current config.",
+      "ru": "Отклоняет неизвестные TOML-ключи во время загрузки конфигурации. При запуске процесс завершается с ошибкой; при hot-reload новый снимок отклоняется, а текущая конфигурация сохраняется.",
+      "default": "false"
+    },
+    {
+      "path": "general.crypto_pending_buffer",
+      "section": "general",
+      "key": "crypto_pending_buffer",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Max pending ciphertext buffer per client writer (bytes).",
+      "ru": "Максимальный объём ожидающих (неотправленных) зашифрованных данных в буфере client writer (в байтах).",
+      "default": "262144"
+    },
+    {
+      "path": "general.data_path",
+      "section": "general",
+      "key": "data_path",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Optional runtime data directory path.",
+      "ru": "Необязательный путь к каталогу данных состояния telemt."
+    },
+    {
+      "path": "general.degradation_min_unavailable_dc_groups",
+      "section": "general",
+      "key": "degradation_min_unavailable_dc_groups",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Reserved for future use. Currently this key is parsed but not used by the runtime.",
+      "ru": "Зарезервировано для будущего использования. Сейчас параметр читается, но не используется системой.",
+      "default": "2"
+    },
+    {
+      "path": "general.desync_all_full",
+      "section": "general",
+      "key": "desync_all_full",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Emits full crypto-desync forensic logs for every event.",
+      "ru": "Создавать полные журналы крипто-рассинхронизации для каждого события",
+      "default": "false"
+    },
+    {
+      "path": "general.direct_relay_copy_buf_c2s_bytes",
+      "section": "general",
+      "key": "direct_relay_copy_buf_c2s_bytes",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Copy buffer size for client->DC direction in direct relay.",
+      "ru": "Размер буфера копирования для направления client > DC в режиме прямой пересылки (direct relay).",
+      "default": "65536"
+    },
+    {
+      "path": "general.direct_relay_copy_buf_s2c_bytes",
+      "section": "general",
+      "key": "direct_relay_copy_buf_s2c_bytes",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Copy buffer size for DC->client direction in direct relay.",
+      "ru": "CoРазмер буфера копирования для направления DC > клиент в режиме прямой пересылки (direct relay).",
+      "default": "262144"
+    },
+    {
+      "path": "general.disable_colors",
+      "section": "general",
+      "key": "disable_colors",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Disables ANSI colors in logs (useful for files/systemd). This affects log formatting only and does not change the log level/filtering.",
+      "ru": "Отключает ANSI-цвета в логах. Это влияет только на форматирование вывода и не меняет уровень логирования и фильтрацию сообщений..",
+      "default": "false"
+    },
+    {
+      "path": "general.fast_mode",
+      "section": "general",
+      "key": "fast_mode",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables fast-path optimizations for traffic processing.",
+      "ru": "Включает оптимизированные маршруты для обработки трафика.",
+      "default": "true"
+    },
+    {
+      "path": "general.fast_mode_min_tls_record",
+      "section": "general",
+      "key": "fast_mode_min_tls_record",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Minimum TLS record size when fast-mode coalescing is enabled.",
+      "ru": "Минимальный размер TLS-записи при включённой агрегации fast-mode.",
+      "default": "0"
+    },
+    {
+      "path": "general.hardswap",
+      "section": "general",
+      "key": "hardswap",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Enables generation-based ME hardswap strategy.",
+      "ru": "Включить стратегию ME-hardswap на основе генерации.",
+      "default": "true"
+    },
+    {
+      "path": "general.links.public_host",
+      "section": "general",
+      "key": "links.public_host",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Public hostname/IP override used for generated `tg://` links (overrides detected IP).",
+      "ru": "Переопределение общедоступного имени хоста/IP-адреса, используемое для сгенерированных ссылок `tg://` (перезаписывает автоматически определённый IP)."
+    },
+    {
+      "path": "general.links.public_port",
+      "section": "general",
+      "key": "links.public_port",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Public port override used for generated `tg://` links (overrides `server.port`).",
+      "ru": "Публичный порт для генерации tg:// ссылок (перезаписывает server.port)."
+    },
+    {
+      "path": "general.links.show",
+      "section": "general",
+      "key": "links.show",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Selects users whose `tg://` proxy links are shown at startup.",
+      "ru": "Определяет пользователей, для которых показываются proxy-ссылки tg:// при запуске.",
+      "default": "\"*\""
+    },
+    {
+      "path": "general.log_level",
+      "section": "general",
+      "key": "log_level",
+      "type": "select",
+      "applyMode": "hot",
+      "en": "Runtime logging verbosity level (used when `RUST_LOG` is not set). If `RUST_LOG` is set in the environment, it takes precedence over this setting.",
+      "ru": "Уровень детализации логов во время работы системы, который используется только если переменная окружения `RUST_LOG` не задана. Если `RUST_LOG` задана, она имеет приоритет и переопределяет этот параметр.",
+      "options": [
+        "debug",
+        "verbose",
+        "normal",
+        "silent"
+      ],
+      "default": "\"normal\""
+    },
+    {
+      "path": "general.max_client_frame",
+      "section": "general",
+      "key": "max_client_frame",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum allowed client MTProto frame size (bytes).",
+      "ru": "Максимально допустимый размер кадра MTProto клиента (в байтах).",
+      "default": "16777216"
+    },
+    {
+      "path": "general.me_adaptive_floor_cpu_cores_override",
+      "section": "general",
+      "key": "me_adaptive_floor_cpu_cores_override",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Override logical CPU core count used for adaptive floor calculations.",
+      "ru": "Переопределить количество логических CPU-ядер, используемых при расчёте адаптивного нижнего порога (adaptive floor).",
+      "default": "0"
+    },
+    {
+      "path": "general.me_adaptive_floor_idle_secs",
+      "section": "general",
+      "key": "me_adaptive_floor_idle_secs",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Idle time before adaptive floor may reduce the single-endpoint writer target.",
+      "ru": "Время простоя, после которого адаптивный нижний порог (adaptive floor) может уменьшить целевой лимит writer’а для единственного endpoint’а.",
+      "default": "90"
+    },
+    {
+      "path": "general.me_adaptive_floor_max_active_writers_global",
+      "section": "general",
+      "key": "me_adaptive_floor_max_active_writers_global",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Hard global cap for active ME writers.",
+      "ru": "Глобальный лимит количества ME writer-процессов.",
+      "default": "256"
+    },
+    {
+      "path": "general.me_adaptive_floor_max_active_writers_per_core",
+      "section": "general",
+      "key": "me_adaptive_floor_max_active_writers_per_core",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Hard cap for active ME writers per logical CPU core.",
+      "ru": "Лимит количества ME writer-процессов на одно логическое CPU-ядро.",
+      "default": "64"
+    },
+    {
+      "path": "general.me_adaptive_floor_max_extra_writers_multi_per_core",
+      "section": "general",
+      "key": "me_adaptive_floor_max_extra_writers_multi_per_core",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Per-core max extra writers above base required floor for multi-endpoint DC groups.",
+      "ru": "Максимальное количество дополнительных writer-процессов на одно CPU-ядро сверх базового требуемого уровня для DC-групп с несколькими endpoint’ами.",
+      "default": "2"
+    },
+    {
+      "path": "general.me_adaptive_floor_max_extra_writers_single_per_core",
+      "section": "general",
+      "key": "me_adaptive_floor_max_extra_writers_single_per_core",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Per-core max extra writers above base required floor for single-endpoint DC groups.",
+      "ru": "Максимальное количество дополнительных writer-процессов на одно CPU-ядро сверх базового требуемого уровня для DC-групп с единственным endpoint’ом.",
+      "default": "1"
+    },
+    {
+      "path": "general.me_adaptive_floor_max_warm_writers_global",
+      "section": "general",
+      "key": "me_adaptive_floor_max_warm_writers_global",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Hard global cap for warm ME writers.",
+      "ru": "Глобальный лимит количества “разогретых” (warm) ME writer-процессов.",
+      "default": "256"
+    },
+    {
+      "path": "general.me_adaptive_floor_max_warm_writers_per_core",
+      "section": "general",
+      "key": "me_adaptive_floor_max_warm_writers_per_core",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Hard cap for warm ME writers per logical CPU core.",
+      "ru": "Лимит количества “разогретых” (warm) ME writer-процессов на одно логическое CPU-ядро.",
+      "default": "64"
+    },
+    {
+      "path": "general.me_adaptive_floor_min_writers_multi_endpoint",
+      "section": "general",
+      "key": "me_adaptive_floor_min_writers_multi_endpoint",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Minimum writer target for multi-endpoint DC groups in adaptive floor mode.",
+      "ru": "Минимально допустимое количество writer’ов в DC-группах с несколькими endpoint’ами в режиме адаптивного нижнего порога (adaptive floor).",
+      "default": "1"
+    },
+    {
+      "path": "general.me_adaptive_floor_min_writers_single_endpoint",
+      "section": "general",
+      "key": "me_adaptive_floor_min_writers_single_endpoint",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Minimum writer target for single-endpoint DC groups in adaptive floor mode.",
+      "ru": "Минимально допустимое количество writer’ов в DC-группах с одним endpoint’ом в режиме адаптивного нижнего порога (adaptive floor).",
+      "default": "1"
+    },
+    {
+      "path": "general.me_adaptive_floor_recover_grace_secs",
+      "section": "general",
+      "key": "me_adaptive_floor_recover_grace_secs",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Grace period to hold static floor after activity in adaptive mode.",
+      "ru": "Период “льготного ожидания”, в течение которого сохраняется фиксированный (static) нижний порог после появления активности в адаптивном режиме",
+      "default": "180"
+    },
+    {
+      "path": "general.me_adaptive_floor_writers_per_core_total",
+      "section": "general",
+      "key": "me_adaptive_floor_writers_per_core_total",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Global ME writer budget per logical CPU core in adaptive mode.",
+      "ru": "Глобальный лимит записи ME writer’а на каждое логическое CPU-ядро в адаптивном режиме.",
+      "default": "48"
+    },
+    {
+      "path": "general.me_admission_poll_ms",
+      "section": "general",
+      "key": "me_admission_poll_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Poll interval for conditional-admission state checks.",
+      "ru": "Интервал опроса (polling interval) для проверки состояния приема при выполнении условий (conditional admission).",
+      "default": "1000"
+    },
+    {
+      "path": "general.me_bind_stale_mode",
+      "section": "general",
+      "key": "me_bind_stale_mode",
+      "type": "select",
+      "applyMode": "hot",
+      "en": "Policy for new binds on stale draining writers.",
+      "ru": "Политика разрешения новых биндов к устаревшим writer’ам.",
+      "options": [
+        "never",
+        "ttl",
+        "always"
+      ],
+      "default": "\"ttl\""
+    },
+    {
+      "path": "general.me_bind_stale_ttl_secs",
+      "section": "general",
+      "key": "me_bind_stale_ttl_secs",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "TTL for stale bind allowance when stale mode is `ttl`.",
+      "ru": "TTL для разрешения биндов к устаревшим writer’ам при режиме `ttl`.",
+      "default": "90"
+    },
+    {
+      "path": "general.me_c2me_channel_capacity",
+      "section": "general",
+      "key": "me_c2me_channel_capacity",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Capacity of per-client command queue (client reader -> ME sender).",
+      "ru": "Емкость очереди команд для каждого клиента (client reader -> ME sender).",
+      "default": "1024"
+    },
+    {
+      "path": "general.me_c2me_send_timeout_ms",
+      "section": "general",
+      "key": "me_c2me_send_timeout_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum wait for enqueueing client->ME commands when the per-client queue is full (`0` keeps legacy unbounded wait).",
+      "ru": "Максимальное ожидание постановки в очередь команд client->ME, если очередь для каждого клиента заполнена (`0` сохраняет устаревшее неограниченное ожидание).",
+      "default": "4000"
+    },
+    {
+      "path": "general.me_config_apply_cooldown_secs",
+      "section": "general",
+      "key": "me_config_apply_cooldown_secs",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Cooldown between applied ME endpoint-map updates. `0` disables the cooldown.",
+      "ru": "Время восстановления между примененными обновлениями карты конечных точек ME. `0` отключает время восстановления.",
+      "default": "300"
+    },
+    {
+      "path": "general.me_config_stable_snapshots",
+      "section": "general",
+      "key": "me_config_stable_snapshots",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Number of identical ME config snapshots required before apply.",
+      "ru": "Количество одинаковых подряд снимков конфигурации ME, необходимых для применения изменений.",
+      "default": "2"
+    },
+    {
+      "path": "general.me_d2c_ack_flush_immediate",
+      "section": "general",
+      "key": "me_d2c_ack_flush_immediate",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Flushes client writer immediately after quick-ack write.",
+      "ru": "Сбрасывать буфер записи клиента сразу после быстрой отправки подтверждения (quick-ack).",
+      "default": "true"
+    },
+    {
+      "path": "general.me_d2c_flush_batch_max_bytes",
+      "section": "general",
+      "key": "me_d2c_flush_batch_max_bytes",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Max ME->client payload bytes coalesced before flush.",
+      "ru": "Максимальный объём данных (в байтах) от ME к клиенту, который можно объединить перед отправкой.",
+      "default": "131072"
+    },
+    {
+      "path": "general.me_d2c_flush_batch_max_delay_us",
+      "section": "general",
+      "key": "me_d2c_flush_batch_max_delay_us",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Max microsecond wait for coalescing more ME->client frames (`0` disables timed coalescing).",
+      "ru": "Максимальное время ожидания (в миллисекундах) для накопления дополнительных фреймов от ME к клиенту перед отправкой (0 = без ожидания).",
+      "default": "500"
+    },
+    {
+      "path": "general.me_d2c_flush_batch_max_frames",
+      "section": "general",
+      "key": "me_d2c_flush_batch_max_frames",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Max ME->client frames coalesced before flush.",
+      "ru": "Максимальное количество кадров (фреймов) от ME к клиенту, объединяемых перед отправкой.",
+      "default": "32"
+    },
+    {
+      "path": "general.me_d2c_frame_buf_shrink_threshold_bytes",
+      "section": "general",
+      "key": "me_d2c_frame_buf_shrink_threshold_bytes",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Threshold for shrinking oversized ME->client frame-aggregation buffers after flush.",
+      "ru": "Порог, при котором слишком большие буферы агрегации фреймов ME>client уменьшаются (сжимаются) после отправки.",
+      "default": "262144"
+    },
+    {
+      "path": "general.me_deterministic_writer_sort",
+      "section": "general",
+      "key": "me_deterministic_writer_sort",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Enables deterministic candidate sort for writer binding path.",
+      "ru": "Включить детерминированную сортировку кандидатов при выборе writer’а.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_floor_mode",
+      "section": "general",
+      "key": "me_floor_mode",
+      "type": "select",
+      "applyMode": "hot",
+      "en": "Floor policy mode for ME writer targets.",
+      "ru": "Режим политики нижнего порога (минимального ограничения) для целевых узлов/получателей ME writer’а.",
+      "options": [
+        "static",
+        "adaptive"
+      ],
+      "default": "\"adaptive\""
+    },
+    {
+      "path": "general.me_hardswap_warmup_delay_max_ms",
+      "section": "general",
+      "key": "me_hardswap_warmup_delay_max_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Upper bound for hardswap warmup dial spacing.",
+      "ru": "Верхняя граница задержки между шагами \"прогрева\" при \"принудительном\" изменении состояния.",
+      "default": "2000"
+    },
+    {
+      "path": "general.me_hardswap_warmup_delay_min_ms",
+      "section": "general",
+      "key": "me_hardswap_warmup_delay_min_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Lower bound for hardswap warmup dial spacing.",
+      "ru": "Нижняя граница задержки между шагами \"прогрева\" при \"принудительном\" изменении состояния.",
+      "default": "1000"
+    },
+    {
+      "path": "general.me_hardswap_warmup_extra_passes",
+      "section": "general",
+      "key": "me_hardswap_warmup_extra_passes",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Additional warmup passes after the base pass in one hardswap cycle.",
+      "ru": "Количество дополнительных циклов \"прогрева\" сверх базового при \"принудительном\" изменении состояния.",
+      "default": "3"
+    },
+    {
+      "path": "general.me_hardswap_warmup_pass_backoff_base_ms",
+      "section": "general",
+      "key": "me_hardswap_warmup_pass_backoff_base_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Base backoff between extra hardswap warmup passes when the floor is still incomplete.",
+      "ru": "Базовая задержка повторной попытки между дополнительными проходами \"прогрева\" при \"принудительном\" изменении состояния, если нижний порог ещё не достигнут.",
+      "default": "500"
+    },
+    {
+      "path": "general.me_health_interval_ms_healthy",
+      "section": "general",
+      "key": "me_health_interval_ms_healthy",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Health monitor interval while ME writer coverage is stable/healthy.",
+      "ru": "Интервал проверки состояния (health monitoring), который используется, когда покрытие ME-writer’ов стабильно.",
+      "default": "3000"
+    },
+    {
+      "path": "general.me_health_interval_ms_unhealthy",
+      "section": "general",
+      "key": "me_health_interval_ms_unhealthy",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Health monitor interval while ME writer coverage is degraded.",
+      "ru": "Интервал проверки состояния (health monitoring), который используется, когда покрытие ME-writer’ов ухудшено (деградировало).",
+      "default": "1000"
+    },
+    {
+      "path": "general.me_init_retry_attempts",
+      "section": "general",
+      "key": "me_init_retry_attempts",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Startup retries for ME pool initialization.",
+      "ru": "Количество повторных попыток инициализации пула ME.",
+      "default": "0"
+    },
+    {
+      "path": "general.me_instadrain",
+      "section": "general",
+      "key": "me_instadrain",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Forces draining stale writers to be removed on the next cleanup tick, bypassing TTL/deadline waiting.",
+      "ru": "Принудительно удаляет устаревшие writer’ы на следующем цикле очистки, обходя TTL и таймаут ожидания.",
+      "default": "false"
+    },
+    {
+      "path": "general.me_keepalive_enabled",
+      "section": "general",
+      "key": "me_keepalive_enabled",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables periodic ME keepalive padding frames.",
+      "ru": "Включает периодическое добавление дополнительных кадров для ME keepalive-сообщений.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_keepalive_interval_secs",
+      "section": "general",
+      "key": "me_keepalive_interval_secs",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Base ME keepalive interval in seconds.",
+      "ru": "Базовый интервал ME keepalive-сообщений в секундах.",
+      "default": "8"
+    },
+    {
+      "path": "general.me_keepalive_jitter_secs",
+      "section": "general",
+      "key": "me_keepalive_jitter_secs",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Keepalive jitter in seconds to reduce synchronized bursts.",
+      "ru": "Случайная задержка (джиттер) keepalive-сообщений в секундах, которая используется для уменьшения синхронных \"всплесков\" нагрузки.",
+      "default": "2"
+    },
+    {
+      "path": "general.me_keepalive_payload_random",
+      "section": "general",
+      "key": "me_keepalive_payload_random",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Randomizes keepalive payload bytes instead of fixed zero payload.",
+      "ru": "Заполняет данные (payload) keepalive-пакетов случайными байтами вместо фиксированных нулей.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_pool_drain_soft_evict_budget_per_core",
+      "section": "general",
+      "key": "me_pool_drain_soft_evict_budget_per_core",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Per-core budget limiting aggregate soft-eviction work per pass.",
+      "ru": "Лимиты работы мягкого удаления на одно CPU-ядро за один проход.",
+      "default": "16"
+    },
+    {
+      "path": "general.me_pool_drain_soft_evict_cooldown_ms",
+      "section": "general",
+      "key": "me_pool_drain_soft_evict_cooldown_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Cooldown between repetitive soft-eviction on the same writer.",
+      "ru": "Время восстановления между повторяющимися мягкими удалениями одного и того же writer’а.",
+      "default": "1000"
+    },
+    {
+      "path": "general.me_pool_drain_soft_evict_enabled",
+      "section": "general",
+      "key": "me_pool_drain_soft_evict_enabled",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables gradual soft-eviction of stale writers during drain/reinit instead of immediate hard close.",
+      "ru": "Включает постепенное удаление устаревших writer’ов во время очистки/повторной инициализации вместо их немедленного закрытия.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_pool_drain_soft_evict_grace_secs",
+      "section": "general",
+      "key": "me_pool_drain_soft_evict_grace_secs",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Extra grace (after drain TTL) before soft-eviction stage starts.",
+      "ru": "Дополнительный период ожидания после TTL перед началом этапа мягкого удаления.",
+      "default": "10"
+    },
+    {
+      "path": "general.me_pool_drain_soft_evict_per_writer",
+      "section": "general",
+      "key": "me_pool_drain_soft_evict_per_writer",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum stale routes soft-evicted per writer in one eviction pass.",
+      "ru": "Максимальное количество устаревших маршрутов, вытесняемых за один проход мягкого удаления на один writer.",
+      "default": "2"
+    },
+    {
+      "path": "general.me_pool_drain_threshold",
+      "section": "general",
+      "key": "me_pool_drain_threshold",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Maximum number of draining stale writers before oldest ones are force-closed in batches.",
+      "ru": "Максимальное количество устаревших writer’ов, после которого самые старые принудительно закрываются в пакетном режиме.",
+      "default": "32"
+    },
+    {
+      "path": "general.me_pool_drain_ttl_secs",
+      "section": "general",
+      "key": "me_pool_drain_ttl_secs",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Drain-TTL time window for stale ME writers after endpoint map changes. During the TTL, stale writers may be used only as fallback for new bindings (depending on bind policy).",
+      "ru": "Временной интервал Drain-TTL для устаревших ME writer’ов после изменения карты endpoint’ов. В течение TTL устаревшие writer’ы могут использоваться только как fallback для новых биндов (в зависимости от политики биндов).",
+      "default": "90"
+    },
+    {
+      "path": "general.me_pool_min_fresh_ratio",
+      "section": "general",
+      "key": "me_pool_min_fresh_ratio",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Minimum fresh desired-DC coverage ratio before stale writers are drained.",
+      "ru": "Минимальный коэффициент актуального (fresh) покрытия DC перед началом удаления устаревших writer’ов.",
+      "default": "0.8"
+    },
+    {
+      "path": "general.me_quota_soft_overshoot_bytes",
+      "section": "general",
+      "key": "me_quota_soft_overshoot_bytes",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Extra per-route quota allowance (bytes) tolerated before writer-side quota enforcement drops route data.",
+      "ru": "Дополнительный допустимый объём (в байтах) на маршрут, который разрешён сверх квоты, прежде чем механизм записи начнёт принудительно отбрасывать данные этого маршрута.",
+      "default": "65536"
+    },
+    {
+      "path": "general.me_reader_route_data_wait_ms",
+      "section": "general",
+      "key": "me_reader_route_data_wait_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Bounded wait for routing ME DATA to per-connection queue (`0` = no wait).",
+      "ru": "Ограничение времени ожидания при маршрутизации данных ME в очереди конкретного соединения (0 = без ожидания).",
+      "default": "2"
+    },
+    {
+      "path": "general.me_reconnect_backoff_base_ms",
+      "section": "general",
+      "key": "me_reconnect_backoff_base_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Initial reconnect backoff in milliseconds.",
+      "ru": "Базовая задержка повторного подключения в миллисекундах.",
+      "default": "500"
+    },
+    {
+      "path": "general.me_reconnect_backoff_cap_ms",
+      "section": "general",
+      "key": "me_reconnect_backoff_cap_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum reconnect backoff cap in milliseconds.",
+      "ru": "Максимальная задержка повторного подключения в миллисекундах.",
+      "default": "30000"
+    },
+    {
+      "path": "general.me_reconnect_fast_retry_count",
+      "section": "general",
+      "key": "me_reconnect_fast_retry_count",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Immediate retry budget before long backoff behavior applies.",
+      "ru": "Лимит немедленных повторных попыток подключения перед тем, как включается долгий backoff (увеличивающаяся задержка между попытками).",
+      "default": "16"
+    },
+    {
+      "path": "general.me_reconnect_max_concurrent_per_dc",
+      "section": "general",
+      "key": "me_reconnect_max_concurrent_per_dc",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Limits concurrent reconnect workers per DC during health recovery.",
+      "ru": "Ограничить количество одновременно работающих процессов переподключения (reconnect workers) к DC во время восстановления работоспособности.",
+      "default": "8"
+    },
+    {
+      "path": "general.me_reinit_coalesce_window_ms",
+      "section": "general",
+      "key": "me_reinit_coalesce_window_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Trigger coalescing window before starting reinit (ms).",
+      "ru": "Время объединения (coalescing) триггеров перед запуском переинициализации (в мс).",
+      "default": "200"
+    },
+    {
+      "path": "general.me_reinit_drain_timeout_secs",
+      "section": "general",
+      "key": "me_reinit_drain_timeout_secs",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Force-close timeout for draining stale writers. When set to `0`, the effective timeout is the runtime safety fallback (300 seconds).",
+      "ru": "Таймаут принудительного закрытия устаревших writer’ов при очистке/повторной инициализации. При `0` используется безопасный системный fallback (300 секунд).",
+      "default": "90"
+    },
+    {
+      "path": "general.me_reinit_every_secs",
+      "section": "general",
+      "key": "me_reinit_every_secs",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Periodic interval for zero-downtime ME reinit cycle.",
+      "ru": "Интервал для выполнения цикла повторной инициализации ME с нулевым временем простоя.",
+      "default": "900"
+    },
+    {
+      "path": "general.me_reinit_singleflight",
+      "section": "general",
+      "key": "me_reinit_singleflight",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Serializes ME reinit cycles across trigger sources.",
+      "ru": "Упорядочивать циклы повторной инициализации ME, поступающие от разных источников триггеров.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_reinit_trigger_channel",
+      "section": "general",
+      "key": "me_reinit_trigger_channel",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Trigger queue capacity for reinit scheduler.",
+      "ru": "Емкость очереди триггеров для планировщика повторной инициализации.",
+      "default": "64"
+    },
+    {
+      "path": "general.me_route_backpressure_base_timeout_ms",
+      "section": "general",
+      "key": "me_route_backpressure_base_timeout_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Base backpressure timeout in milliseconds for ME route-channel send.",
+      "ru": "Базовый таймаут (в миллисекундах) ожидания при режиме **backpressure** (ситуация, при которой данные обрабатываются медленне, чем получаются) для отправки через ME route-channel.",
+      "default": "25"
+    },
+    {
+      "path": "general.me_route_backpressure_enabled",
+      "section": "general",
+      "key": "me_route_backpressure_enabled",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Enables channel-pressure-aware route send timeouts.",
+      "ru": "Включает адаптивные таймауты записи маршрута в зависимости от заполнения канала.",
+      "default": "false"
+    },
+    {
+      "path": "general.me_route_backpressure_high_timeout_ms",
+      "section": "general",
+      "key": "me_route_backpressure_high_timeout_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "High backpressure timeout in milliseconds when queue occupancy is above watermark.",
+      "ru": "Увеличенный таймаут ожидания (в миллисекундах) при режиме **backpressure**, когда заполненность очереди превышает порог.",
+      "default": "120"
+    },
+    {
+      "path": "general.me_route_backpressure_high_watermark_pct",
+      "section": "general",
+      "key": "me_route_backpressure_high_watermark_pct",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Queue occupancy percent threshold for switching to high backpressure timeout.",
+      "ru": "Порог заполненности очереди (в процентах), при превышении которого система переключается на увеличенный таймаут **backpressure**.",
+      "default": "80"
+    },
+    {
+      "path": "general.me_route_blocking_send_timeout_ms",
+      "section": "general",
+      "key": "me_route_blocking_send_timeout_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum wait for blocking route-channel send fallback.",
+      "ru": "Максимальное время ожидания для блокировки отправки через канал маршрутизации при fallback.",
+      "default": "250"
+    },
+    {
+      "path": "general.me_route_channel_capacity",
+      "section": "general",
+      "key": "me_route_channel_capacity",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Capacity of per-connection ME response route channel.",
+      "ru": "Количество ответов от ME, которое может одновременно находиться “в пути” или в очереди для одного соединения.",
+      "default": "768"
+    },
+    {
+      "path": "general.me_route_fairshare_enabled",
+      "section": "general",
+      "key": "me_route_fairshare_enabled",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Enables fair-share routing admission across writer workers.",
+      "ru": "Включает справедливое распределение нагрузки маршрутизации между writer-потоками.",
+      "default": "false"
+    },
+    {
+      "path": "general.me_route_hybrid_max_wait_ms",
+      "section": "general",
+      "key": "me_route_hybrid_max_wait_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum cumulative wait in hybrid no-writer mode before failfast fallback.",
+      "ru": "Максимальное суммарное время ожидания в гибридном режиме без writer’а перед failfast fallback.",
+      "default": "3000"
+    },
+    {
+      "path": "general.me_route_inline_recovery_attempts",
+      "section": "general",
+      "key": "me_route_inline_recovery_attempts",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Number of inline recovery attempts in legacy mode.",
+      "ru": "Количество попыток inline-восстановления в legacy-режиме",
+      "default": "3"
+    },
+    {
+      "path": "general.me_route_inline_recovery_wait_ms",
+      "section": "general",
+      "key": "me_route_inline_recovery_wait_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Max inline recovery wait in legacy mode.",
+      "ru": "Максимальное время ожидания inline-восстановления в legacy-режиме.",
+      "default": "3000"
+    },
+    {
+      "path": "general.me_route_no_writer_mode",
+      "section": "general",
+      "key": "me_route_no_writer_mode",
+      "type": "select",
+      "applyMode": "reload",
+      "en": "ME route behavior when no writer is immediately available.",
+      "ru": "Поведение ME-маршрута, когда ни один writer не доступен.",
+      "options": [
+        "async_recovery_failfast",
+        "inline_recovery_legacy",
+        "hybrid_async_persistent"
+      ],
+      "default": "\"hybrid_async_persistent\""
+    },
+    {
+      "path": "general.me_route_no_writer_wait_ms",
+      "section": "general",
+      "key": "me_route_no_writer_wait_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Max wait time used by async-recovery failfast mode before falling back.",
+      "ru": "Максимальное время ожидания, используемое в режиме **async-recovery failfast** перед переходом к fallback.",
+      "default": "250"
+    },
+    {
+      "path": "general.me_secret_atomic_snapshot",
+      "section": "general",
+      "key": "me_secret_atomic_snapshot",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Keeps selector and secret bytes from the same snapshot atomically. When `general.use_middle_proxy = true`, this is auto-enabled during config load to keep ME KDF material coherent.",
+      "ru": "Сохраняет селекторные и секретные байты из одного и того же снимка атомарно. Если `general.use_middle_proxy = true`, автоматически включается при загрузке конфигурации для согласованности KDF-данных ME.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_single_endpoint_outage_backoff_max_ms",
+      "section": "general",
+      "key": "me_single_endpoint_outage_backoff_max_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Maximum reconnect backoff in single-endpoint outage mode.",
+      "ru": "Максимальная задержка между попытками переподключения (reconnect backoff) в режиме сбоя с единственным endpoint’ом.",
+      "default": "3000"
+    },
+    {
+      "path": "general.me_single_endpoint_outage_backoff_min_ms",
+      "section": "general",
+      "key": "me_single_endpoint_outage_backoff_min_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Minimum reconnect backoff in single-endpoint outage mode.",
+      "ru": "Минимальная задержка между повторными попытками переподключения (reconnect backoff) в режиме сбоя с единственным endpoint’ом.",
+      "default": "250"
+    },
+    {
+      "path": "general.me_single_endpoint_outage_disable_quarantine",
+      "section": "general",
+      "key": "me_single_endpoint_outage_disable_quarantine",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Ignores endpoint quarantine while in single-endpoint outage mode.",
+      "ru": "Игнорировать карантин endpoint’а в режиме сбоя, когда доступен только один endpoint.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_single_endpoint_outage_mode_enabled",
+      "section": "general",
+      "key": "me_single_endpoint_outage_mode_enabled",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Enables aggressive outage recovery mode for DC groups with exactly one endpoint.",
+      "ru": "Включает агрессивный режим восстановления после сбоя для групп DC, когда доступен только один endpoint.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_single_endpoint_shadow_rotate_every_secs",
+      "section": "general",
+      "key": "me_single_endpoint_shadow_rotate_every_secs",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Periodic shadow writer rotation interval for single-endpoint DC groups.",
+      "ru": "Интервал периодической ротации резервного (shadow) writer’а для DC-групп с единственным endpoint’ом",
+      "default": "900"
+    },
+    {
+      "path": "general.me_single_endpoint_shadow_writers",
+      "section": "general",
+      "key": "me_single_endpoint_shadow_writers",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Additional reserve writers for DC groups with exactly one endpoint.",
+      "ru": "Количество дополнительных резервных writer-процессов для групп DC, у которых есть только один конечный узел (endpoint).",
+      "default": "2"
+    },
+    {
+      "path": "general.me_snapshot_min_proxy_for_lines",
+      "section": "general",
+      "key": "me_snapshot_min_proxy_for_lines",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Minimum parsed `proxy_for` rows required to accept snapshot.",
+      "ru": "Минимальное количество проанализированных строк `proxy_for`, необходимое для принятия снимка.",
+      "default": "1"
+    },
+    {
+      "path": "general.me_snapshot_reject_empty_map",
+      "section": "general",
+      "key": "me_snapshot_reject_empty_map",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Rejects empty ME config snapshots (no endpoints). When `false`, an empty snapshot can be applied (subject to other gates), which may temporarily reduce/clear the ME map.",
+      "ru": "Отклоняет пустые snapshot-конфигурации ME (без endpoint’ов). Если установлено значение `false`, пустой snapshot может быть применён (при выполнении других условий), что может временно очистить или уменьшить карту ME.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_snapshot_require_http_2xx",
+      "section": "general",
+      "key": "me_snapshot_require_http_2xx",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Requires 2xx HTTP responses for applying ME config snapshots. When `false`, non-2xx responses may still be parsed/considered by the updater.",
+      "ru": "Требовать HTTP-ответы **2xx** для применения снимков конфигурации ME. Если `false`, **не-2xx** ответы также могут быть проанализированы/учтены программой обновления.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_socks_kdf_policy",
+      "section": "general",
+      "key": "me_socks_kdf_policy",
+      "type": "select",
+      "applyMode": "hot",
+      "en": "SOCKS-bound KDF fallback policy for Middle-End handshake.",
+      "ru": "Политика fallback-поведения KDF, привязанная к SOCKS, для Middle-End-handshake.",
+      "options": [
+        "strict",
+        "compat"
+      ],
+      "default": "\"strict\""
+    },
+    {
+      "path": "general.me_warmup_stagger_enabled",
+      "section": "general",
+      "key": "me_warmup_stagger_enabled",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Staggers extra ME warmup dials to avoid connection spikes.",
+      "ru": "Распределить во времени дополнительные стадии \"прогрева\" ME, чтобы избежать всплесков нагрузки на соединения.",
+      "default": "true"
+    },
+    {
+      "path": "general.me_warmup_step_delay_ms",
+      "section": "general",
+      "key": "me_warmup_step_delay_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Base delay in milliseconds between warmup dial steps.",
+      "ru": "Базовая задержка в миллисекундах между этапами \"прогрева\".",
+      "default": "500"
+    },
+    {
+      "path": "general.me_warmup_step_jitter_ms",
+      "section": "general",
+      "key": "me_warmup_step_jitter_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Additional random delay in milliseconds for warmup steps.",
+      "ru": "Дополнительная случайная задержка (джиттер) в миллисекундах для шагов \"прогрева\".",
+      "default": "300"
+    },
+    {
+      "path": "general.me_warn_rate_limit_ms",
+      "section": "general",
+      "key": "me_warn_rate_limit_ms",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Cooldown for repetitive ME warning logs.",
+      "ru": "Период \"затухания\" (cooldown) для повторяющихся предупреждающих логов ME, чтобы ограничить их частоту.",
+      "default": "5000"
+    },
+    {
+      "path": "general.me_writer_cmd_channel_capacity",
+      "section": "general",
+      "key": "me_writer_cmd_channel_capacity",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Capacity of per-writer command channel.",
+      "ru": "Ёмкость (размер) канала команд для каждого отправителя.",
+      "default": "4096"
+    },
+    {
+      "path": "general.me_writer_pick_mode",
+      "section": "general",
+      "key": "me_writer_pick_mode",
+      "type": "select",
+      "applyMode": "hot",
+      "en": "Writer selection mode for route bind path.",
+      "ru": "Режим выбора writer’а для бинда маршрута.",
+      "options": [
+        "sorted_rr",
+        "p2c"
+      ],
+      "default": "\"p2c\""
+    },
+    {
+      "path": "general.me_writer_pick_sample_size",
+      "section": "general",
+      "key": "me_writer_pick_sample_size",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Number of candidates sampled by picker in `p2c` mode.",
+      "ru": "Количество кандидатов, отобранных сборщиком в режиме p2c.",
+      "default": "3"
+    },
+    {
+      "path": "general.me2dc_fallback",
+      "section": "general",
+      "key": "me2dc_fallback",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Allows Direct-DC fallback when ME is unavailable. With `use_middle_proxy = true`, startup opens Direct-DC routing first and moves new sessions to ME after ME readiness is observed.",
+      "ru": "Разрешает fallback на прямой DC, когда ME недоступен. При `use_middle_proxy = true` запуск сначала открывает маршрутизацию через Direct-DC, а новые сеансы переводятся на ME после подтверждения готовности ME.",
+      "default": "true"
+    },
+    {
+      "path": "general.me2dc_fast",
+      "section": "general",
+      "key": "me2dc_fast",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Fast ME->Direct fallback mode for new sessions after ME was ready at least once. Initial direct-first startup fallback is controlled by `me2dc_fallback`.",
+      "ru": "Быстрый fallback ME->Direct для новых сеансов после того, как ME уже был готов хотя бы один раз. Начальный direct-first fallback управляется `me2dc_fallback`.",
+      "default": "false"
+    },
+    {
+      "path": "general.middle_proxy_nat_ip",
+      "section": "general",
+      "key": "middle_proxy_nat_ip",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Manual public NAT IP override used as ME address material when set.",
+      "ru": "При установке этого параметра указанное значение публичного IP-адреса NAT используется в качестве адреса ME."
+    },
+    {
+      "path": "general.middle_proxy_nat_probe",
+      "section": "general",
+      "key": "middle_proxy_nat_probe",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables STUN-based NAT probing to discover public IP:port used by ME key derivation in NAT environments.",
+      "ru": "Позволяет проверить NAT на основе STUN для обнаружения общедоступного IP, используемого при получении ключа ME в средах NAT.",
+      "default": "true"
+    },
+    {
+      "path": "general.middle_proxy_nat_stun",
+      "section": "general",
+      "key": "middle_proxy_nat_stun",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Deprecated legacy single STUN server for NAT probing. During config load it is merged into `network.stun_servers` unless `network.stun_servers` is explicitly set.",
+      "ru": "Устаревший сервер STUN для проверки NAT. Во время загрузки конфигурации он объединяется с `network.stun_servers`, если `network.stun_servers` не задан явно."
+    },
+    {
+      "path": "general.middle_proxy_nat_stun_servers",
+      "section": "general",
+      "key": "middle_proxy_nat_stun_servers",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Deprecated legacy STUN list for NAT probing fallback. During config load it is merged into `network.stun_servers` unless `network.stun_servers` is explicitly set.",
+      "ru": "Устаревший список STUN серверов для проверки NAT-fallback. Во время загрузки конфигурации значение параметра объединяется с `network.stun_servers`, если `network.stun_servers` не задан явно.",
+      "default": "[]"
+    },
+    {
+      "path": "general.middle_proxy_pool_size",
+      "section": "general",
+      "key": "middle_proxy_pool_size",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Target size of active ME writer pool.",
+      "ru": "Размер пула записи ME.",
+      "default": "8"
+    },
+    {
+      "path": "general.middle_proxy_warm_standby",
+      "section": "general",
+      "key": "middle_proxy_warm_standby",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Number of warm standby ME connections kept pre-initialized.",
+      "ru": "Количество предварительно инициализированных резервных подключений ME.",
+      "default": "16"
+    },
+    {
+      "path": "general.modes.classic",
+      "section": "general",
+      "key": "modes.classic",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables classic MTProxy mode.",
+      "ru": "Включает классический режим MTProxy.",
+      "default": "false"
+    },
+    {
+      "path": "general.modes.secure",
+      "section": "general",
+      "key": "modes.secure",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables secure mode.",
+      "ru": "Включает защищённый режим (dd-ссылки).",
+      "default": "false"
+    },
+    {
+      "path": "general.modes.tls",
+      "section": "general",
+      "key": "modes.tls",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables TLS mode.",
+      "ru": "Включает режим TLS (ee-ссылки).",
+      "default": "true"
+    },
+    {
+      "path": "general.ntp_check",
+      "section": "general",
+      "key": "ntp_check",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Reserved for future use. Currently this key is parsed but not used by the runtime.",
+      "ru": "Зарезервировано для будущего использования. Сейчас параметр читается, но не используется системой.",
+      "default": "true"
+    },
+    {
+      "path": "general.ntp_servers",
+      "section": "general",
+      "key": "ntp_servers",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Reserved for future use. Currently this key is parsed but not used by the runtime.",
+      "ru": "Зарезервировано для будущего использования. Сейчас параметр читается, но не используется системой.",
+      "default": "[\"pool.ntp.org\"]"
+    },
+    {
+      "path": "general.prefer_ipv6",
+      "section": "general",
+      "key": "prefer_ipv6",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Deprecated legacy IPv6 preference flag migrated to `network.prefer`.",
+      "ru": "Устаревший флаг предпочтения IPv6 перенесен в `network.prefer`.",
+      "default": "false"
+    },
+    {
+      "path": "general.proxy_config_auto_reload_secs",
+      "section": "general",
+      "key": "proxy_config_auto_reload_secs",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Deprecated legacy ME config refresh interval. Used only when `general.update_every` is not set.",
+      "ru": "Интервал обновления устаревшей конфигурации ME. Используется только, если `general.update_every` не задан.",
+      "default": "3600"
+    },
+    {
+      "path": "general.proxy_config_v4_cache_path",
+      "section": "general",
+      "key": "proxy_config_v4_cache_path",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Optional disk cache path for raw `getProxyConfig` (IPv4) snapshot. At startup Telemt tries to fetch a fresh snapshot first; on fetch failure or empty snapshot it falls back to this cache file when present and non-empty.",
+      "ru": "Необязательный путь к кэшу для необработанного (raw) снимка getProxyConfig (IPv4). При запуске Telemt сначала пытается получить свежий снимок; в случае сбоя выборки или пустого снимка он возвращается к этому файлу кэша, если он присутствует и не пуст.",
+      "default": "\"cache/proxy-config-v4.txt\""
+    },
+    {
+      "path": "general.proxy_config_v4_url",
+      "section": "general",
+      "key": "proxy_config_v4_url",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Optional URL to obtain raw `getProxyConfig` (IPv4). Telemt always tries a fresh download from this URL first (with fallback to `https://core.telegram.org/getProxyConfig` if absent).",
+      "ru": "Необязательный URL для получения `getProxyConfig` (IPv4). Telemt при всегда пытается выполнить новую загрузку с этого URL (и если не задан, использует `https://core.telegram.org/getProxyConfig`).",
+      "default": "\"https://core.telegram.org/getProxyConfig\""
+    },
+    {
+      "path": "general.proxy_config_v6_cache_path",
+      "section": "general",
+      "key": "proxy_config_v6_cache_path",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Optional disk cache path for raw `getProxyConfigV6` (IPv6) snapshot. At startup Telemt tries to fetch a fresh snapshot first; on fetch failure or empty snapshot it falls back to this cache file when present and non-empty.",
+      "ru": "Необязательный путь к кэшу для необработанного (raw) снимка getProxyConfigV6 (IPv6). При запуске Telemt сначала пытается получить свежий снимок; в случае сбоя выборки или пустого снимка он возвращается к этому файлу кэша, если он присутствует и не пуст.",
+      "default": "\"cache/proxy-config-v6.txt\""
+    },
+    {
+      "path": "general.proxy_config_v6_url",
+      "section": "general",
+      "key": "proxy_config_v6_url",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Optional URL to obtain raw `getProxyConfigV6` (IPv6). Telemt always tries a fresh download from this URL first (with fallback to `https://core.telegram.org/getProxyConfigV6` if absent).",
+      "ru": "Необязательный URL для получения `getProxyConfigV6` (IPv6). Telemt при всегда пытается выполнить новую загрузку с этого URL (и если не задан, использует `https://core.telegram.org/getProxyConfigV6`).",
+      "default": "\"https://core.telegram.org/getProxyConfigV6\""
+    },
+    {
+      "path": "general.proxy_secret_auto_reload_secs",
+      "section": "general",
+      "key": "proxy_secret_auto_reload_secs",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Deprecated legacy proxy-secret refresh interval. Used only when `general.update_every` is not set.",
+      "ru": "Интервал обновления устаревшего секрета прокси-сервера. Используется только, если `general.update_every` не задан.",
+      "default": "3600"
+    },
+    {
+      "path": "general.proxy_secret_len_max",
+      "section": "general",
+      "key": "proxy_secret_len_max",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Upper length limit (bytes) for accepted proxy-secret during startup and runtime refresh.",
+      "ru": "Верхний предел длины (в байтах) принимаемого proxy-secret во время запуска и обновления.",
+      "default": "256"
+    },
+    {
+      "path": "general.proxy_secret_path",
+      "section": "general",
+      "key": "proxy_secret_path",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Path to Telegram infrastructure `proxy-secret` cache file used by ME handshake/RPC auth. Telemt always tries a fresh download from `https://core.telegram.org/getProxySecret` first (unless `proxy_secret_url` is set) , caches it to this path on success, and falls back to reading the cached file (any age) on download failure.",
+      "ru": "Путь к файлу кэша `proxy-secret` инфраструктуры Telegram, используемому ME-handshake/аутентификацией RPC. Telemt всегда сначала пытается выполнить новую загрузку с https://core.telegram.org/getProxySecret (если не установлен `proxy_secret_url`), в случае успеха кэширует ее по этому пути и возвращается к чтению кэшированного файла в случае сбоя загрузки.",
+      "default": "\"proxy-secret\""
+    },
+    {
+      "path": "general.proxy_secret_rotate_runtime",
+      "section": "general",
+      "key": "proxy_secret_rotate_runtime",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Enables runtime proxy-secret rotation from updater snapshots.",
+      "ru": "Включает ротацию proxy-secret на основе снапшотов, получаемых от обновляющего компонента.",
+      "default": "true"
+    },
+    {
+      "path": "general.proxy_secret_stable_snapshots",
+      "section": "general",
+      "key": "proxy_secret_stable_snapshots",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Number of identical proxy-secret snapshots required before rotation.",
+      "ru": "Количество идентичных снимков с секретом прокси-сервера, необходимых для ротации.",
+      "default": "2"
+    },
+    {
+      "path": "general.proxy_secret_url",
+      "section": "general",
+      "key": "proxy_secret_url",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Optional URL to obtain `proxy-secret` file used by ME handshake/RPC auth. Telemt always tries a fresh download from this URL first (with fallback to `https://core.telegram.org/getProxySecret` if absent).",
+      "ru": "Необязательный URL для получения файла `proxy-secret` используемого ME-handshake/аутентификацией RPC. Telemt всегда сначала пытается выполнить новую загрузку с этого URL (если не задан, используется https://core.telegram.org/getProxySecret).",
+      "default": "\"https://core.telegram.org/getProxySecret\""
+    },
+    {
+      "path": "general.quota_state_path",
+      "section": "general",
+      "key": "quota_state_path",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "JSON state file used to persist runtime per-user quota consumption.",
+      "ru": "JSON-файл состояния для сохранения runtime-расхода квот по пользователям.",
+      "default": "\"telemt.limit.json\""
+    },
+    {
+      "path": "general.rpc_proxy_req_every",
+      "section": "general",
+      "key": "rpc_proxy_req_every",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Interval for service `RPC_PROXY_REQ` activity signals to ME (`0` disables).",
+      "ru": "Интервал для отправки сигналов активности службы `RPC_PROXY_REQ` для ME (`0` отключает).",
+      "default": "0"
+    },
+    {
+      "path": "general.rst_on_close",
+      "section": "general",
+      "key": "rst_on_close",
+      "type": "select",
+      "applyMode": "reload",
+      "en": "Controls `SO_LINGER(0)` behaviour on accepted client TCP sockets.",
+      "ru": "Управляет поведением `SO_LINGER(0)` на принятых клиентских TCP-сокетах.",
+      "options": [
+        "off",
+        "errors",
+        "always"
+      ],
+      "default": "\"off\""
+    },
+    {
+      "path": "general.stun_iface_mismatch_ignore",
+      "section": "general",
+      "key": "stun_iface_mismatch_ignore",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Compatibility flag reserved for future use. Currently this key is parsed but not used by the runtime.",
+      "ru": "Флаг совместимости, зарезервированный для будущего использования. Сейчас этот параметр читается (парсится), но не используется средой выполнения.",
+      "default": "false"
+    },
+    {
+      "path": "general.stun_nat_probe_concurrency",
+      "section": "general",
+      "key": "stun_nat_probe_concurrency",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum number of parallel STUN probes during NAT/public endpoint discovery.",
+      "ru": "Максимальное количество параллельных тестов STUN для обнаружения NAT/публичного эндпоинта.",
+      "default": "8"
+    },
+    {
+      "path": "general.telemetry.core_enabled",
+      "section": "general",
+      "key": "telemetry.core_enabled",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Enables core hot-path telemetry counters.",
+      "ru": "Включает метрики ядра (hot-path telemetry counters).",
+      "default": "true"
+    },
+    {
+      "path": "general.telemetry.me_level",
+      "section": "general",
+      "key": "telemetry.me_level",
+      "type": "select",
+      "applyMode": "hot",
+      "en": "Middle-End telemetry verbosity level.",
+      "ru": "Уровень детализации телеметрии Middle-End.",
+      "options": [
+        "silent",
+        "normal",
+        "debug"
+      ],
+      "default": "\"normal\""
+    },
+    {
+      "path": "general.telemetry.user_enabled",
+      "section": "general",
+      "key": "telemetry.user_enabled",
+      "type": "boolean",
+      "applyMode": "hot",
+      "en": "Enables per-user telemetry counters.",
+      "ru": "Включает счетчики телеметрии для каждого пользователя.",
+      "default": "true"
+    },
+    {
+      "path": "general.tg_connect",
+      "section": "general",
+      "key": "tg_connect",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Upstream Telegram connect timeout.",
+      "ru": "Таймаут подключения к upstream-серверам Telegram.",
+      "default": "10"
+    },
+    {
+      "path": "general.unknown_dc_file_log_enabled",
+      "section": "general",
+      "key": "unknown_dc_file_log_enabled",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables unknown-DC file logging (writes `dc_idx=<N>` lines). Requires `unknown_dc_log_path` to be set and, on non-Unix platforms, may be unsupported. Logging is deduplicated and capped (only the first ~1024 distinct unknown DC indices are recorded).",
+      "ru": "Включить файловое логирование неизвестных DC (записывает строки вида `dc_idx=<N>`). Требует, чтобы был задан `unknown_dc_log_path`. На не-Unix платформах может не поддерживаться. Логирование очищается от дубликатов и имеет ограничения: записываются только первые ~1024 уникальных неизвестных DC-индексов.",
+      "default": "false"
+    },
+    {
+      "path": "general.unknown_dc_log_path",
+      "section": "general",
+      "key": "unknown_dc_log_path",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Log file path for unknown (non-standard) DC requests when `unknown_dc_file_log_enabled = true`. Omit this key to disable file logging.",
+      "ru": "Путь к файлу логов для неизвестных (нестандартных) DC-запросов, который используется только если `unknown_dc_file_log_enabled = true`. Чтобы отключить файловое логирование, не указывйте этот параметр.",
+      "default": "\"unknown-dc.txt\""
+    },
+    {
+      "path": "general.update_every",
+      "section": "general",
+      "key": "update_every",
+      "type": "number",
+      "applyMode": "hot",
+      "en": "Unified refresh interval for ME updater tasks (`getProxyConfig`, `getProxyConfigV6`, `getProxySecret`). When set, it overrides legacy proxy reload intervals.",
+      "ru": "Унифицированный интервал обновления задач ME-updater’а (getProxyConfig, getProxyConfigV6, getProxySecret). При установке переопределяет устаревшие интервалы автообновления прокси-сервера.",
+      "default": "300"
+    },
+    {
+      "path": "general.upstream_connect_budget_ms",
+      "section": "general",
+      "key": "upstream_connect_budget_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Total wall-clock budget in milliseconds for one upstream connect request across retries.",
+      "ru": "Общий лимит времени (в миллисекундах), измеряемый по реальному времени (wall-clock), на одну попытку подключения к upstream с учётом всех повторных попыток.",
+      "default": "3000"
+    },
+    {
+      "path": "general.upstream_connect_failfast_hard_errors",
+      "section": "general",
+      "key": "upstream_connect_failfast_hard_errors",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "When true, skips additional retries for hard non-transient upstream connect errors.",
+      "ru": "Если включено (true), telemt пропускает дополнительные повторные попытки для постоянных ошибок подключения к upstream.",
+      "default": "false"
+    },
+    {
+      "path": "general.upstream_connect_retry_attempts",
+      "section": "general",
+      "key": "upstream_connect_retry_attempts",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Connect attempts for the selected upstream before returning error/fallback.",
+      "ru": "Количество попыток подключения к выбранному upstream'у перед тем, как вернуть ошибку или перейти к fallback.",
+      "default": "2"
+    },
+    {
+      "path": "general.upstream_connect_retry_backoff_ms",
+      "section": "general",
+      "key": "upstream_connect_retry_backoff_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Delay in milliseconds between upstream connect attempts.",
+      "ru": "Задержка в миллисекундах между попытками подключения к upstream.",
+      "default": "100"
+    },
+    {
+      "path": "general.upstream_unhealthy_fail_threshold",
+      "section": "general",
+      "key": "upstream_unhealthy_fail_threshold",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Consecutive failed requests before upstream is marked unhealthy.",
+      "ru": "Количество неудачных запросов подряд, после которого upstream помечается, как неработоспособный.",
+      "default": "5"
+    },
+    {
+      "path": "general.use_middle_proxy",
+      "section": "general",
+      "key": "use_middle_proxy",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables ME transport mode; if `false`, runtime falls back to direct DC routing.",
+      "ru": "Включает режим ME; если значение `false`, telemt возвращается к прямой DC-маршрутизации.",
+      "default": "true"
+    },
+    {
+      "path": "timeouts.client_ack",
+      "section": "timeouts",
+      "key": "client_ack",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Client ACK timeout (seconds).",
+      "ru": "Таймаут подтверждения (ACK) от клиента в секундах.",
+      "default": "90"
+    },
+    {
+      "path": "timeouts.client_first_byte_idle_secs",
+      "section": "timeouts",
+      "key": "client_first_byte_idle_secs",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum idle time to wait for the first client payload byte after session setup.",
+      "ru": "Максимальное время ожидания первого байта полезной нагрузки от клиента после установления сессии.",
+      "default": "300"
+    },
+    {
+      "path": "timeouts.client_handshake",
+      "section": "timeouts",
+      "key": "client_handshake",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Client handshake timeout (seconds).",
+      "ru": "Таймаут выполнения \"рукопожатия\" для клиента (в секундах).",
+      "default": "30"
+    },
+    {
+      "path": "timeouts.client_keepalive",
+      "section": "timeouts",
+      "key": "client_keepalive",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Client keepalive timeout (seconds).",
+      "ru": "Таймаут keepalive для клиента..",
+      "default": "15"
+    },
+    {
+      "path": "timeouts.me_one_retry",
+      "section": "timeouts",
+      "key": "me_one_retry",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Fast reconnect attempts budget for single-endpoint DC scenarios.",
+      "ru": "Лимит быстрых попыток переподключения в сценариях DC с единственным endpoint'ом.",
+      "default": "12"
+    },
+    {
+      "path": "timeouts.me_one_timeout_ms",
+      "section": "timeouts",
+      "key": "me_one_timeout_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Timeout per quick attempt (ms) for single-endpoint DC reconnect logic.",
+      "ru": "Таймаут на одну быструю попытку переподключения (в миллисекундах) в логике reconnect для DC с единственным endpoint'ом.",
+      "default": "1200"
+    },
+    {
+      "path": "timeouts.relay_client_idle_hard_secs",
+      "section": "timeouts",
+      "key": "relay_client_idle_hard_secs",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Hard idle threshold (seconds) for middle-relay client uplink inactivity. Hitting this threshold closes the session.",
+      "ru": "Жёсткий порог простоя (в секундах) для неактивности uplink клиента в промежуточном узле. При достижении этого порога сессия принудительно закрывается.",
+      "default": "360"
+    },
+    {
+      "path": "timeouts.relay_client_idle_soft_secs",
+      "section": "timeouts",
+      "key": "relay_client_idle_soft_secs",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Soft idle threshold (seconds) for middle-relay client uplink inactivity. Hitting this threshold marks the session as an idle-candidate (it may be eligible for cleanup depending on policy).",
+      "ru": "Мягкий порог простоя (в секундах) для неактивности uplink клиента в промежуточном узле. При достижении этого порога сессия помечается как кандидат на простой и может быть удалена в зависимости от политики.",
+      "default": "120"
+    },
+    {
+      "path": "timeouts.relay_idle_grace_after_downstream_activity_secs",
+      "section": "timeouts",
+      "key": "relay_idle_grace_after_downstream_activity_secs",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Extra hard-idle grace period (seconds) added after recent downstream activity.",
+      "ru": "Дополнительный период отсрочки жёсткого простоя (в секундах), добавляемый после недавней активности downstream.",
+      "default": "30"
+    },
+    {
+      "path": "timeouts.relay_idle_policy_v2_enabled",
+      "section": "timeouts",
+      "key": "relay_idle_policy_v2_enabled",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables soft/hard middle-relay client idle policy.",
+      "ru": "Включает политику простоя клиента для промежуточного узла.",
+      "default": "true"
+    },
+    {
+      "path": "censorship.alpn_enforce",
+      "section": "censorship",
+      "key": "alpn_enforce",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enforces ALPN echo behavior based on client preference.",
+      "ru": "",
+      "default": "true"
+    },
+    {
+      "path": "censorship.fake_cert_len",
+      "section": "censorship",
+      "key": "fake_cert_len",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Length of synthetic certificate payload when emulation data is unavailable.",
+      "ru": "",
+      "default": "2048"
+    },
+    {
+      "path": "censorship.mask",
+      "section": "censorship",
+      "key": "mask",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables masking / fronting relay mode.",
+      "ru": "",
+      "default": "true"
+    },
+    {
+      "path": "censorship.mask_classifier_prefetch_timeout_ms",
+      "section": "censorship",
+      "key": "mask_classifier_prefetch_timeout_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Timeout budget (ms) for extending fragmented initial classifier window on masking fallback.",
+      "ru": "",
+      "default": "5"
+    },
+    {
+      "path": "censorship.mask_host",
+      "section": "censorship",
+      "key": "mask_host",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Upstream mask host for TLS fronting relay.",
+      "ru": ""
+    },
+    {
+      "path": "censorship.mask_port",
+      "section": "censorship",
+      "key": "mask_port",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Upstream mask port for TLS fronting relay.",
+      "ru": "",
+      "default": "443"
+    },
+    {
+      "path": "censorship.mask_proxy_protocol",
+      "section": "censorship",
+      "key": "mask_proxy_protocol",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Sends PROXY protocol header when connecting to mask backend, allowing the backend to see the real client IP.",
+      "ru": "",
+      "default": "0"
+    },
+    {
+      "path": "censorship.mask_relay_idle_timeout_ms",
+      "section": "censorship",
+      "key": "mask_relay_idle_timeout_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Per-read idle timeout on masking relay and drain paths. Limits resource consumption by slow-loris attacks and port scanners. A read call stalling beyond this value is treated as an abandoned connection. Default: 5 000 ms (5 s).",
+      "ru": "",
+      "default": "5_000"
+    },
+    {
+      "path": "censorship.mask_relay_max_bytes",
+      "section": "censorship",
+      "key": "mask_relay_max_bytes",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum relayed bytes per direction on unauthenticated masking fallback path.",
+      "ru": "",
+      "default": "5242880"
+    },
+    {
+      "path": "censorship.mask_relay_timeout_ms",
+      "section": "censorship",
+      "key": "mask_relay_timeout_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Wall-clock cap for the full masking relay on non-MTProto fallback paths. Raise when the mask target is a long-lived service (e.g. WebSocket). Default: 60 000 ms (1 minute).",
+      "ru": "",
+      "default": "60_000"
+    },
+    {
+      "path": "censorship.mask_shape_above_cap_blur",
+      "section": "censorship",
+      "key": "mask_shape_above_cap_blur",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Adds bounded randomized tail bytes even when forwarded size already exceeds cap.",
+      "ru": "",
+      "default": "false"
+    },
+    {
+      "path": "censorship.mask_shape_above_cap_blur_max_bytes",
+      "section": "censorship",
+      "key": "mask_shape_above_cap_blur_max_bytes",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum randomized extra bytes appended above cap when above-cap blur is enabled.",
+      "ru": "",
+      "default": "512"
+    },
+    {
+      "path": "censorship.mask_shape_bucket_cap_bytes",
+      "section": "censorship",
+      "key": "mask_shape_bucket_cap_bytes",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum bucket size used by shape-channel hardening; traffic above cap is not bucket-padded further.",
+      "ru": "",
+      "default": "4096"
+    },
+    {
+      "path": "censorship.mask_shape_bucket_floor_bytes",
+      "section": "censorship",
+      "key": "mask_shape_bucket_floor_bytes",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Minimum bucket size used by shape-channel hardening.",
+      "ru": "",
+      "default": "512"
+    },
+    {
+      "path": "censorship.mask_shape_hardening",
+      "section": "censorship",
+      "key": "mask_shape_hardening",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables client->mask shape-channel hardening by applying controlled tail padding to bucket boundaries on mask relay shutdown.",
+      "ru": "",
+      "default": "true"
+    },
+    {
+      "path": "censorship.mask_shape_hardening_aggressive_mode",
+      "section": "censorship",
+      "key": "mask_shape_hardening_aggressive_mode",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Opt-in aggressive shaping profile (stronger anti-classifier behavior with different shaping semantics).",
+      "ru": "",
+      "default": "false"
+    },
+    {
+      "path": "censorship.mask_timing_normalization_ceiling_ms",
+      "section": "censorship",
+      "key": "mask_timing_normalization_ceiling_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Upper bound (ms) for masking outcome normalization target.",
+      "ru": "",
+      "default": "0"
+    },
+    {
+      "path": "censorship.mask_timing_normalization_enabled",
+      "section": "censorship",
+      "key": "mask_timing_normalization_enabled",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables timing envelope normalization on masking outcomes.",
+      "ru": "",
+      "default": "false"
+    },
+    {
+      "path": "censorship.mask_timing_normalization_floor_ms",
+      "section": "censorship",
+      "key": "mask_timing_normalization_floor_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Lower bound (ms) for masking outcome normalization target.",
+      "ru": "",
+      "default": "0"
+    },
+    {
+      "path": "censorship.mask_unix_sock",
+      "section": "censorship",
+      "key": "mask_unix_sock",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Unix socket path for mask backend instead of TCP `mask_host`/`mask_port`.",
+      "ru": ""
+    },
+    {
+      "path": "censorship.server_hello_delay_max_ms",
+      "section": "censorship",
+      "key": "server_hello_delay_max_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Maximum `server_hello` delay for anti-fingerprint behavior (ms).",
+      "ru": "",
+      "default": "0"
+    },
+    {
+      "path": "censorship.server_hello_delay_min_ms",
+      "section": "censorship",
+      "key": "server_hello_delay_min_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Minimum `server_hello` delay for anti-fingerprint behavior (ms).",
+      "ru": "",
+      "default": "0"
+    },
+    {
+      "path": "censorship.serverhello_compact",
+      "section": "censorship",
+      "key": "serverhello_compact",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables compact ServerHello/Fake-TLS profile to reduce response-size signature.",
+      "ru": "",
+      "default": "false"
+    },
+    {
+      "path": "censorship.tls_domain",
+      "section": "censorship",
+      "key": "tls_domain",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Primary domain used for Fake-TLS masking / fronting profile and as the default SNI domain presented to clients.",
+      "ru": "Основной TLS-домен, используемый в профиле FakeTLS handshake и как домен SNI по умолчанию.",
+      "default": "\"petrovich.ru\""
+    },
+    {
+      "path": "censorship.tls_domains",
+      "section": "censorship",
+      "key": "tls_domains",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Additional TLS domains for generating multiple proxy links.",
+      "ru": "Дополнительные домены TLS для создания нескольких прокси-ссылок.",
+      "default": "[]"
+    },
+    {
+      "path": "censorship.tls_emulation",
+      "section": "censorship",
+      "key": "tls_emulation",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables certificate/TLS behavior emulation from cached real fronts.",
+      "ru": "",
+      "default": "true"
+    },
+    {
+      "path": "censorship.tls_fetch",
+      "section": "censorship",
+      "key": "tls_fetch",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "TLS-front metadata fetch strategy settings (bootstrap + refresh behavior for TLS emulation data).",
+      "ru": "",
+      "default": "built-in defaults"
+    },
+    {
+      "path": "censorship.tls_fetch_scope",
+      "section": "censorship",
+      "key": "tls_fetch_scope",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Upstream scope tag used for TLS-front metadata fetches. Empty value keeps default upstream routing behavior.",
+      "ru": "Тег области upstream, используемый для TLS-front метаданных при их получении. Пустое значение сохраняет стандартное поведение маршрутизации upstream.",
+      "default": "\"\""
+    },
+    {
+      "path": "censorship.tls_fetch.attempt_timeout_ms",
+      "section": "censorship",
+      "key": "tls_fetch.attempt_timeout_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Timeout budget per one TLS-fetch profile attempt (ms).",
+      "ru": "Лимит таймаута на одну попытку получения профиля TLS (мс).",
+      "default": "5000"
+    },
+    {
+      "path": "censorship.tls_fetch.deterministic",
+      "section": "censorship",
+      "key": "tls_fetch.deterministic",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables deterministic ClientHello randomness for debugging/tests.",
+      "ru": "Включает детерминированную случайность ClientHello для отладки и тестов. Dместо настоящей случайности в TLS ClientHello используется фиксированная (повторяемая) “псевдослучайность”, чтобы поведение можно было воспроизводить.",
+      "default": "false"
+    },
+    {
+      "path": "censorship.tls_fetch.grease_enabled",
+      "section": "censorship",
+      "key": "tls_fetch.grease_enabled",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "Enables GREASE-style random values in selected ClientHello extensions for fetch traffic.",
+      "ru": "Включает случайные GREASE-style значения в выбранных расширениях ClientHello для получения трафика.",
+      "default": "false"
+    },
+    {
+      "path": "censorship.tls_fetch.profile_cache_ttl_secs",
+      "section": "censorship",
+      "key": "tls_fetch.profile_cache_ttl_secs",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "TTL for winner-profile cache entries used by TLS fetch path.",
+      "ru": "Время жизни (TTL) записей кэша “победившего профиля” (winner-profile), используемых для получения данных через TLS.",
+      "default": "600"
+    },
+    {
+      "path": "censorship.tls_fetch.profiles",
+      "section": "censorship",
+      "key": "tls_fetch.profiles",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Ordered ClientHello profile fallback chain for TLS-front metadata fetch.",
+      "ru": "Упорядоченная цепочка fallback-профилей ClientHello для получения TLS-front метаданных.",
+      "default": "[\"modern_chrome_like\", \"modern_firefox_like\", \"compat_tls12\", \"legacy_minimal\"]"
+    },
+    {
+      "path": "censorship.tls_fetch.strict_route",
+      "section": "censorship",
+      "key": "tls_fetch.strict_route",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "When `true` and an upstream route is configured, TLS fetch fails closed on upstream connect errors instead of falling back to direct TCP.",
+      "ru": "Если значние `true` и настроен upstream-маршрут, то при ошибках подключения к upstream TLS-запрос завершается с ошибкой вместо перехода на прямое TCP-соединение.",
+      "default": "true"
+    },
+    {
+      "path": "censorship.tls_fetch.total_budget_ms",
+      "section": "censorship",
+      "key": "tls_fetch.total_budget_ms",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Total wall-clock budget across all TLS-fetch attempts (ms).",
+      "ru": "Общий бюджет “реального времени” (wall-clock) на все попытки получения данных через TLS (в миллисекундах).",
+      "default": "15000"
+    },
+    {
+      "path": "censorship.tls_front_dir",
+      "section": "censorship",
+      "key": "tls_front_dir",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Directory path for TLS front cache storage.",
+      "ru": "",
+      "default": "\"tlsfront\""
+    },
+    {
+      "path": "censorship.tls_full_cert_ttl_secs",
+      "section": "censorship",
+      "key": "tls_full_cert_ttl_secs",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "TTL for sending full cert payload per (domain, client IP) tuple.",
+      "ru": "",
+      "default": "90"
+    },
+    {
+      "path": "censorship.tls_new_session_tickets",
+      "section": "censorship",
+      "key": "tls_new_session_tickets",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Number of `NewSessionTicket` messages to emit after handshake.",
+      "ru": "",
+      "default": "0"
+    },
+    {
+      "path": "censorship.unknown_sni_action",
+      "section": "censorship",
+      "key": "unknown_sni_action",
+      "type": "select",
+      "applyMode": "reload",
+      "en": "Action for TLS ClientHello with unknown / non-configured SNI.",
+      "ru": "Действие для TLS ClientHello с неизвестным/ненастроенным SNI.",
+      "options": [
+        "drop",
+        "mask",
+        "accept",
+        "reject_handshake"
+      ],
+      "default": "\"drop\""
+    },
+    {
+      "path": "upstreams.address",
+      "section": "upstreams",
+      "key": "address",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "SOCKS proxy server endpoint used for upstream connects.",
+      "ru": "Endpoint прокси-сервера SOCKS, используемый для  upstream-подключений."
+    },
+    {
+      "path": "upstreams.bind_addresses",
+      "section": "upstreams",
+      "key": "bind_addresses",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Explicit local source addresses for outgoing direct TCP connects. When multiple addresses are provided, selection is round-robin.",
+      "ru": "Явно заданные локальные source адреса для исходящих прямых TCP-соединений. Если указано несколько адресов, они выбираются по алгоритму round-robin."
+    },
+    {
+      "path": "upstreams.bindtodevice",
+      "section": "upstreams",
+      "key": "bindtodevice",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Hard interface pinning via `SO_BINDTODEVICE` for outgoing direct TCP connects.",
+      "ru": "Жёсткая привязка исходящих direct TCP-connect к интерфейсу через `SO_BINDTODEVICE`."
+    },
+    {
+      "path": "upstreams.enabled",
+      "section": "upstreams",
+      "key": "enabled",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "When `false`, this entry is ignored and not used for any upstream selection.",
+      "ru": "Если установлено значение `false`, эта запись игнорируется и не используется при выборе upstream-сервера",
+      "default": "true"
+    },
+    {
+      "path": "upstreams.force_bind",
+      "section": "upstreams",
+      "key": "force_bind",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Backward-compatible alias for Linux `SO_BINDTODEVICE` hard interface pinning.",
+      "ru": "Обратно-совместимый алиас для жёсткой Linux-привязки к интерфейсу через `SO_BINDTODEVICE`."
+    },
+    {
+      "path": "upstreams.interface",
+      "section": "upstreams",
+      "key": "interface",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Optional outbound interface / local bind hint for the upstream connect socket.",
+      "ru": "Передаётся в коннектор Shadowsocks как необязательная подсказка для outbound bind."
+    },
+    {
+      "path": "upstreams.ipv4",
+      "section": "upstreams",
+      "key": "ipv4",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "",
+      "ru": "",
+      "default": "— (auto)"
+    },
+    {
+      "path": "upstreams.ipv6",
+      "section": "upstreams",
+      "key": "ipv6",
+      "type": "boolean",
+      "applyMode": "reload",
+      "en": "",
+      "ru": "",
+      "default": "— (auto)"
+    },
+    {
+      "path": "upstreams.password",
+      "section": "upstreams",
+      "key": "password",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "SOCKS5 password (for username/password authentication). Note: when a request scope is selected, Telemt may override this with the selected scope value.",
+      "ru": "Пароль SOCKS5 (для аутентификации по username/password). Примечание: если для запроса выбран scope, Telemt может переопределить это значение на выбранный scope."
+    },
+    {
+      "path": "upstreams.prefer",
+      "section": "upstreams",
+      "key": "prefer",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "",
+      "ru": "",
+      "default": "effective [network].prefer"
+    },
+    {
+      "path": "upstreams.scopes",
+      "section": "upstreams",
+      "key": "scopes",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Overrides the IP family preference for Telegram DC targets selected through this upstream. When omitted, the upstream inherits the effective global `[network].prefer` decision. Use `prefer = 6` together with `ipv6 = true` for a SOCKS or Shadowsocks upstream that can egress over IPv6 even when the local Telemt host is IPv4-only.",
+      "ru": "Переопределяет предпочтительное IP-семейство для Telegram DC-targets, выбранных через этот upstream. Если параметр не задан, upstream наследует эффективное глобальное решение `[network].prefer`. Используйте `prefer = 6` вместе с `ipv6 = true` для SOCKS или Shadowsocks upstream, который умеет выходить в IPv6, даже если локальный хост с Telemt работает только по IPv4.",
+      "default": "\"\""
+    },
+    {
+      "path": "upstreams.type",
+      "section": "upstreams",
+      "key": "type",
+      "type": "select",
+      "applyMode": "reload",
+      "en": "Selects the upstream transport implementation for this `[[upstreams]]` entry.",
+      "ru": "Выбирает реализацию upstream-транспорта для этой записи в `[[upstreams]]`.",
+      "options": [
+        "direct",
+        "socks4",
+        "socks5",
+        "shadowsocks"
+      ]
+    },
+    {
+      "path": "upstreams.url",
+      "section": "upstreams",
+      "key": "url",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Shadowsocks server URL used for connecting to Telegram via a Shadowsocks relay.",
+      "ru": "URL-адрес сервера Shadowsocks, используемый для подключения к Telegram через Shadowsocks."
+    },
+    {
+      "path": "upstreams.user_id",
+      "section": "upstreams",
+      "key": "user_id",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "SOCKS4 CONNECT user ID. Note: when a request scope is selected, Telemt may override this with the selected scope value.",
+      "ru": "User ID для команды CONNECT в SOCKS4. Примечание: если для запроса выбран scope, Telemt может переопределить это значение на выбранный scope."
+    },
+    {
+      "path": "upstreams.username",
+      "section": "upstreams",
+      "key": "username",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "SOCKS5 username (for username/password authentication). Note: when a request scope is selected, Telemt may override this with the selected scope value.",
+      "ru": "Имя пользователя SOCKS5 (для аутентификации по username/password). Примечание: если для запроса выбран scope, Telemt может переопределить это значение на выбранный scope."
+    },
+    {
+      "path": "upstreams.weight",
+      "section": "upstreams",
+      "key": "weight",
+      "type": "number",
+      "applyMode": "reload",
+      "en": "Base weight used by weighted-random upstream selection (higher = chosen more often).",
+      "ru": "Приоритет, используемый при случайном выборе upstream-сервера (чем выше значение, тем чаще он выбирается).",
+      "default": "1"
+    },
+    {
+      "path": "dc_overrides",
+      "section": "dc_overrides",
+      "key": "dc_overrides",
+      "type": "string",
+      "applyMode": "reload",
+      "en": "Overrides DC endpoints for non-standard DCs; key is DC index string, value is one or more `ip:port` addresses.",
+      "ru": "",
+      "default": "{}"
+    }
+  ]
+}
