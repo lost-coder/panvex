@@ -379,6 +379,19 @@ func (a *Agent) BuildRuntimeSnapshot(ctx context.Context, observedAt time.Time) 
 // fields are intentionally zero — the panel zeroes/stubs the corresponding
 // UI views to avoid showing stale "last known" data while we have nothing
 // fresh to report.
+// ResetDeltaGates forgets every content hash the agent remembers, so the next
+// runtime snapshot re-sends the full observed config, diagnostics and security
+// bodies. The panel keeps those only in its in-memory live store, so a panel
+// restart (or any newly established stream) leaves it without them — and the
+// delta gates, which live for the agent process's lifetime, would otherwise
+// never re-send: the panel would show an empty observed config and a drift
+// status of "unknown" until the Telemt config happened to change.
+func (a *Agent) ResetDeltaGates() {
+	a.observedConfig.reset()
+	a.diagnosticsGate.reset()
+	a.securityGate.reset()
+}
+
 func (a *Agent) BuildRuntimeUnreachableSnapshot(observedAt, since time.Time) *gatewayrpc.Snapshot {
 	snapshot := a.baseSnapshot(observedAt)
 	snapshot.Runtime = &gatewayrpc.RuntimeSnapshot{

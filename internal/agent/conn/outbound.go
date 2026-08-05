@@ -102,6 +102,13 @@ func sendOrAbort(ctx context.Context, outbound chan<- *gatewayrpc.ConnectClientM
 }
 
 func sendInitialMessages(ctx context.Context, outbound chan<- *gatewayrpc.ConnectClientMessage, agent *runtime.Agent) error {
+	// A new session means the panel may be starting from an empty live store —
+	// it keeps the observed config, diagnostics and security bodies only in
+	// memory. The delta gates live for the agent process's lifetime, so without
+	// this reset a panel restart would leave the panel with an empty observed
+	// config (drift stuck at "unknown") until the underlying data changed.
+	agent.ResetDeltaGates()
+
 	if err := sendOrAbort(ctx, outbound, heartbeatMessage(agent, time.Now())); err != nil {
 		return err
 	}

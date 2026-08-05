@@ -32,3 +32,11 @@ func (o *observedConfigReporter) next(sections map[string]any) (string, string) 
 	}
 	return hash, string(configcanon.CanonicalBytes(sections))
 }
+
+// reset forgets the last reported hash so the next call re-sends the full body.
+// Mirrors contentHashGate.reset (diagnostics_gate.go).
+func (o *observedConfigReporter) reset() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.lastHash = ""
+}
