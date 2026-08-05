@@ -4,7 +4,7 @@
 .PHONY: help test test-fast test-pkg lint vuln check build build-embed \
         sqlc tidy fmt clean install-tools bench gen-settings all \
         gen-openapi-go gen-openapi-ts gen-openapi verify-openapi \
-        gen-install-script
+        gen-install-script gen-param-catalog verify-param-catalog
 
 # Default target: list available commands.
 help:
@@ -134,6 +134,15 @@ gen-openapi: gen-openapi-go gen-openapi-ts
 verify-openapi: gen-openapi
 	@git diff --exit-code -- openapi/ web/src/shared/api/openapi.gen.ts \
 	    || { echo ""; echo "OpenAPI generated files are out of date — run 'make gen-openapi'."; exit 1; }
+
+# Telemt config-parameter catalog (regenerated from upstream source, then
+# committed so CI does not need network access on the hot path;
+# verify-param-catalog regenerates and asserts no diff).
+gen-param-catalog:
+	cd web && node scripts/gen-param-catalog.mjs
+
+verify-param-catalog: gen-param-catalog
+	git diff --exit-code web/src/features/servers/config/paramCatalog.gen.json
 
 # Control-plane microbenchmarks (batch writer, event bus, bulk insert).
 bench:

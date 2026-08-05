@@ -298,6 +298,22 @@ jobs:
       - name: Verify generated files in sync with spec
         run: make verify-openapi
 
+  # Telemt config-parameter catalog is regenerated from upstream source and
+  # committed (see openapi-drift above for the same pattern). Node-only:
+  # the generator has no Go dependency.
+  param-catalog-drift:
+    name: Param Catalog Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Regenerate catalog and check drift
+        run: make verify-param-catalog
+
   # Phase 4 inlined @lost-coder/panvex-ui into web/src/ui/, so the
   # frontend jobs no longer need to clone + build a side-repo UI-kit
   # or symlink ../ui. They just npm ci + run the target script.
