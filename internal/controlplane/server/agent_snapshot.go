@@ -337,8 +337,16 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot gateway.AgentS
 	// store's own lock under s.mu (s.mu -> live), consistent with every other
 	// call site. The live store never calls back into the server, so this can
 	// never invert.
+	// A snapshot that reports no instances at all is not a claim that the agent
+	// has none: usage and active-IP snapshots are built from the agent's
+	// baseSnapshot, which carries neither Instances nor Partial. Overwriting the
+	// instance set from those would wipe the observed managed config (and the
+	// per-instance version / connections) a few hundred ms after every runtime
+	// snapshot, leaving the config editor without `observed` and drift stuck at
+	// "unknown". Instance pruning still works: it needs a snapshot that actually
+	// reports a (smaller) instance set.
 	var instances []Instance
-	if snapshot.Snap.Partial {
+	if snapshot.Snap.Partial || len(snapshot.Snap.Instances) == 0 {
 		instances = s.live.InstancesForAgent(snapshot.AgentID)
 	} else {
 		instances = instancesFromSnapshot(snapshot)
