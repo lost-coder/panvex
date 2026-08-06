@@ -236,6 +236,12 @@ func (s *Server) routes() http.Handler {
 					admin.With(sensitive).Post("/agents/{id}/certificate-recovery-grants/revoke", oapi.RevokeAgentCertificateRecoveryGrant)
 					admin.With(sensitive).Delete("/agents/{id}", oapi.DeregisterAgent)
 					admin.With(sensitive).Put("/agents/{id}/transport-mode", oapi.UpdateAgentTransportMode)
+					// Task 9 (Telemt Update v1): the per-agent update strategy
+					// governs which local restart command the panel later
+					// runs after a binary swap — admin-only, same trust bar
+					// as the panel/agent update settings above.
+					admin.Get("/agents/{id}/telemt/update-strategy", s.handleGetTelemtUpdateStrategy())
+					admin.Put("/agents/{id}/telemt/update-strategy", s.handlePutTelemtUpdateStrategy())
 					// PR-2c: one-shot provisioning for outbound (reverse-mode)
 					// agents. Combines the agent-row INSERT and the install-
 					// command issuance into a single round-trip so the wizard's

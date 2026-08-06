@@ -210,6 +210,12 @@ type Server struct {
 	// editable-section validation, and the drift view; the store round-trips
 	// go through this service. See internal/controlplane/configtargets.
 	configTargets *configtargets.Service
+	// telemtStrategySvc owns the persistence + validation of the per-agent
+	// Telemt update strategy (Task 9, configtargets-pattern). HTTP handlers
+	// keep request decoding and the live-probe lookup (LiveStore, not
+	// persisted); the store round-trips and the mode/restart-spec/
+	// binary-path validation live here. See internal/controlplane/updates.
+	telemtStrategySvc *updates.StrategyService
 	// historySvc is the read-only facade for the time-series history endpoints
 	// (server load, DC health, per-client IP history) (P8.2j). Handlers keep
 	// scope checks, time-range parsing, raw-vs-hourly resolution, and geoip

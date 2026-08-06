@@ -239,6 +239,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{id}/telemt/update-strategy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get an agent's Telemt update strategy and live probe
+         * @description Returns the persisted update strategy for the agent (`null` when
+         *     never configured) alongside its live-reported probe (`null` until
+         *     the agent has sent at least one snapshot carrying it — see
+         *     `Agent.telemt_update_probe`), so the dashboard can render "not
+         *     configured yet, but here's what we detected" in one round trip.
+         */
+        get: operations["getTelemtUpdateStrategy"];
+        /**
+         * Set an agent's Telemt update strategy
+         * @description Persists how `telemt.update` jobs should apply on this agent:
+         *     `mode` is one of `binary` (a supported process supervisor fronts
+         *     telemt; a binary swap + supervised restart is safe), `docker`
+         *     (updates must go through the image), or `none`. For
+         *     `mode: binary`, `restart_spec` (validated with the same rules the
+         *     agent applies) and an absolute `binary_path` are required.
+         *     Admin-only.
+         */
+        put: operations["putTelemtUpdateStrategy"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/provision-outbound": {
         parameters: {
             query?: never;
@@ -749,6 +785,49 @@ export interface components {
              *     "no_service_manager_detected". Empty when available is true.
              */
             reason: string;
+        };
+        /**
+         * @description Operator-configured strategy for how `telemt.update` jobs apply on
+         *     one agent. Persisted; distinct from TelemtUpdateProbe, which is the
+         *     agent's own live-detected capability. `restart_spec` and
+         *     `binary_path` are only meaningful (and required) for `mode: binary`.
+         */
+        TelemtUpdateStrategy: {
+            /**
+             * @description "binary" (a supported supervisor owns telemt; a binary swap +
+             *     supervised restart is safe), "docker" (telemt runs in a
+             *     container; updates must go through the image), or "none" (no
+             *     in-place update path).
+             * @enum {string}
+             */
+            mode: "binary" | "docker" | "none";
+            /**
+             * @description telemtrestart spec ("systemd:telemt", "openrc:telemt",
+             *     "procd:telemt", "runit:telemt", "command:...") to use for the
+             *     supervised restart after a binary swap. Required for
+             *     mode=binary; validated with the same rules the agent applies.
+             */
+            restart_spec: string;
+            /**
+             * @description Absolute path to the telemt executable, used as the swap
+             *     target. Required for mode=binary.
+             */
+            binary_path: string;
+            /**
+             * @description Release-asset variant to download for this agent, e.g. "v3"
+             *     for a CPU-feature-optimised build. Empty selects the default
+             *     asset.
+             */
+            asset_flavor: string;
+        };
+        /**
+         * @description Response of `GET /api/agents/{id}/telemt/update-strategy`: the
+         *     persisted strategy (absent when never configured) alongside the
+         *     agent's live probe (absent until the agent has reported one).
+         */
+        TelemtUpdateStrategyResponse: {
+            strategy: components["schemas"]["TelemtUpdateStrategy"] | null;
+            probe: components["schemas"]["TelemtUpdateProbe"] | null;
         };
         EnrollmentTokenList: components["schemas"]["EnrollmentTokenListItem"][];
         /**
@@ -1329,6 +1408,59 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getTelemtUpdateStrategy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Strategy and probe for the agent. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemtUpdateStrategyResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    putTelemtUpdateStrategy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelemtUpdateStrategy"];
+            };
+        };
+        responses: {
+            /** @description Strategy saved. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
         };
     };

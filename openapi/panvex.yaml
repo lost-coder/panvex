@@ -331,6 +331,66 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/agents/{id}/telemt/update-strategy:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getTelemtUpdateStrategy
+      summary: Get an agent's Telemt update strategy and live probe
+      description: |
+        Returns the persisted update strategy for the agent (`null` when
+        never configured) alongside its live-reported probe (`null` until
+        the agent has sent at least one snapshot carrying it — see
+        `Agent.telemt_update_probe`), so the dashboard can render "not
+        configured yet, but here's what we detected" in one round trip.
+      tags: [agents]
+      responses:
+        '200':
+          description: Strategy and probe for the agent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemtUpdateStrategyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: putTelemtUpdateStrategy
+      summary: Set an agent's Telemt update strategy
+      description: |
+        Persists how `telemt.update` jobs should apply on this agent:
+        `mode` is one of `binary` (a supported process supervisor fronts
+        telemt; a binary swap + supervised restart is safe), `docker`
+        (updates must go through the image), or `none`. For
+        `mode: binary`, `restart_spec` (validated with the same rules the
+        agent applies) and an absolute `binary_path` are required.
+        Admin-only.
+      tags: [agents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemtUpdateStrategy'
+      responses:
+        '204':
+          description: Strategy saved.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/agents/provision-outbound:
     post:
       operationId: provisionOutboundAgent
@@ -1065,6 +1125,65 @@ components:
             Localizable CODE (not a human-readable phrase) explaining why
             available is false, e.g. "docker_only",
             "no_service_manager_detected". Empty when available is true.
+
+    TelemtUpdateStrategy:
+      type: object
+      description: |
+        Operator-configured strategy for how `telemt.update` jobs apply on
+        one agent. Persisted; distinct from TelemtUpdateProbe, which is the
+        agent's own live-detected capability. `restart_spec` and
+        `binary_path` are only meaningful (and required) for `mode: binary`.
+      required:
+        - mode
+        - restart_spec
+        - binary_path
+        - asset_flavor
+      properties:
+        mode:
+          type: string
+          enum: [binary, docker, none]
+          description: |
+            "binary" (a supported supervisor owns telemt; a binary swap +
+            supervised restart is safe), "docker" (telemt runs in a
+            container; updates must go through the image), or "none" (no
+            in-place update path).
+        restart_spec:
+          type: string
+          description: |
+            telemtrestart spec ("systemd:telemt", "openrc:telemt",
+            "procd:telemt", "runit:telemt", "command:...") to use for the
+            supervised restart after a binary swap. Required for
+            mode=binary; validated with the same rules the agent applies.
+        binary_path:
+          type: string
+          description: |
+            Absolute path to the telemt executable, used as the swap
+            target. Required for mode=binary.
+        asset_flavor:
+          type: string
+          description: |
+            Release-asset variant to download for this agent, e.g. "v3"
+            for a CPU-feature-optimised build. Empty selects the default
+            asset.
+
+    TelemtUpdateStrategyResponse:
+      type: object
+      description: |
+        Response of `GET /api/agents/{id}/telemt/update-strategy`: the
+        persisted strategy (absent when never configured) alongside the
+        agent's live probe (absent until the agent has reported one).
+      required:
+        - strategy
+        - probe
+      properties:
+        strategy:
+          allOf:
+            - $ref: '#/components/schemas/TelemtUpdateStrategy'
+          nullable: true
+        probe:
+          allOf:
+            - $ref: '#/components/schemas/TelemtUpdateProbe'
+          nullable: true
 
     EnrollmentTokenList:
       type: array

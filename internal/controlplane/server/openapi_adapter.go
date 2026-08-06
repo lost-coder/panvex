@@ -94,6 +94,14 @@ func (a *oapiAdapter) GetAgentConfig(w http.ResponseWriter, r *http.Request, _ s
 	a.s.handleGetAgentConfigTarget().ServeHTTP(w, r)
 }
 
+func (a *oapiAdapter) GetTelemtUpdateStrategy(w http.ResponseWriter, r *http.Request, _ string) {
+	a.s.handleGetTelemtUpdateStrategy().ServeHTTP(w, r)
+}
+
+func (a *oapiAdapter) PutTelemtUpdateStrategy(w http.ResponseWriter, r *http.Request, _ string) {
+	a.s.handlePutTelemtUpdateStrategy().ServeHTTP(w, r)
+}
+
 func (a *oapiAdapter) ApplyAgentConfig(w http.ResponseWriter, r *http.Request, _ string) {
 	a.s.handleApplyAgentConfig().ServeHTTP(w, r)
 }

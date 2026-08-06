@@ -195,6 +195,26 @@ export const telemtUpdateProbeSchema = z.object({
   reason: z.string(),
 }) satisfies z.ZodType<Gen["TelemtUpdateProbe"]>;
 
+// telemtUpdateStrategySchema mirrors the operator-configured Telemt update
+// strategy (Task 9): GET/PUT /api/agents/{id}/telemt/update-strategy. Unlike
+// telemtUpdateProbeSchema (the agent's live-detected capability), this is
+// persisted config, so `mode` is validated as a strict enum matching the
+// OpenAPI spec's `enum: [binary, docker, none]`.
+export const telemtUpdateStrategySchema = z.object({
+  mode: z.enum(["binary", "docker", "none"]),
+  restart_spec: z.string(),
+  binary_path: z.string(),
+  asset_flavor: z.string(),
+}) satisfies z.ZodType<Gen["TelemtUpdateStrategy"]>;
+
+// telemtUpdateStrategyResponseSchema is the GET response shape: both
+// `strategy` and `probe` are nullable-but-required (the spec always sends
+// the key, `null` when there is nothing to report).
+export const telemtUpdateStrategyResponseSchema = z.object({
+  strategy: telemtUpdateStrategySchema.nullable(),
+  probe: telemtUpdateProbeSchema.nullable(),
+}) satisfies z.ZodType<Gen["TelemtUpdateStrategyResponse"]>;
+
 export const agentCertificateRecoverySchema = z.object({
   // P8.3: agent_id was silently STRIPPED before (Zod drops unknown keys);
   // the wire always carries it (Go json tag without omitempty) and the
@@ -270,3 +290,5 @@ export type AgentRuntimeParsed = z.infer<typeof agentRuntimeSchema>;
 export type InstanceParsed = z.infer<typeof instanceSchema>;
 export type AgentCertificateRecoveryParsed = z.infer<typeof agentCertificateRecoverySchema>;
 export type TelemtUpdateProbeParsed = z.infer<typeof telemtUpdateProbeSchema>;
+export type TelemtUpdateStrategyParsed = z.infer<typeof telemtUpdateStrategySchema>;
+export type TelemtUpdateStrategyResponseParsed = z.infer<typeof telemtUpdateStrategyResponseSchema>;

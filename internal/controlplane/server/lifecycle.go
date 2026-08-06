@@ -105,13 +105,13 @@ func initSecrets(bootCtx context.Context, options Options) (func() time.Time, *c
 // — no I/O, no error paths.
 func newServerFromOptions(options Options, now func() time.Time, csrfManager *csrf.Manager, vault *secretvault.Vault) *Server {
 	s := &Server{
-		auth:            auth.NewService(),
-		store:           options.Store,
-		uiFiles:         options.UIFiles,
-		jobs:            jobs.NewService(),
-		presence:        presence.NewTracker(30*time.Second, 90*time.Second),
-		events:          eventbus.NewHub(),
-		agentsUpdated:   newAgentsUpdatedCoalescer(),
+		auth:          auth.NewService(),
+		store:         options.Store,
+		uiFiles:       options.UIFiles,
+		jobs:          jobs.NewService(),
+		presence:      presence.NewTracker(30*time.Second, 90*time.Second),
+		events:        eventbus.NewHub(),
+		agentsUpdated: newAgentsUpdatedCoalescer(),
 		// Runtime Events Phase 3: 500-event ring buffer per agent for
 		// slog records shipped over the Connect bidi-stream. Always
 		// constructed (independent of Store wiring) so the message
@@ -164,14 +164,15 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		// nil (HasRepo() gates every persistence path). initStoreBackedSubsystems
 		// overwrites it with a Repository+UoW-backed Service once a *sql.DB is
 		// available (the only path that actually persists clients).
-		clientsSvc:       clients.NewService(clients.ServiceConfig{Vault: vault, Now: now}),
-		fleetSvc:         fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
-		configTargets:    configtargets.NewService(options.Store, now),
-		historySvc:       history.NewService(options.Store),
-		intervals:        options.Intervals.withDefaults(),
-		sqlitePath:       options.SQLitePath,
-		bootstrap:        options.Bootstrap,
-		bootstrapSources: options.BootstrapSources,
+		clientsSvc:        clients.NewService(clients.ServiceConfig{Vault: vault, Now: now}),
+		fleetSvc:          fleet.NewService(options.Store, func() time.Time { return now().UTC() }),
+		configTargets:     configtargets.NewService(options.Store, now),
+		telemtStrategySvc: updates.NewStrategyService(options.Store, now),
+		historySvc:        history.NewService(options.Store),
+		intervals:         options.Intervals.withDefaults(),
+		sqlitePath:        options.SQLitePath,
+		bootstrap:         options.Bootstrap,
+		bootstrapSources:  options.BootstrapSources,
 	}
 	// P8.1: the client supersession rule lives in the clients layer; jobs.Service
 	// receives it via injection and does not know about the clients domain itself.
