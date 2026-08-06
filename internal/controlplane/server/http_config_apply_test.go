@@ -28,6 +28,18 @@ func seedGroupConfigTarget(t *testing.T, srv *Server, groupID string, sections m
 	}
 }
 
+// seedAgentConfigTarget stores an agent-scope config target directly through
+// the configtargets service, bypassing the PUT handler's HTTP path. This is
+// the P2 "desired" snapshot enqueueConfigApplyJob (Task 5) diffs against
+// observed — a group-scope target alone (seedGroupConfigTarget) no longer
+// drives what an apply pushes.
+func seedAgentConfigTarget(t *testing.T, srv *Server, agentID string, sections map[string]any) {
+	t.Helper()
+	if err := srv.configTargets.Upsert(context.Background(), storage.ConfigScopeAgent, agentID, sections); err != nil {
+		t.Fatalf("configTargets.Upsert(agent %s): %v", agentID, err)
+	}
+}
+
 // TestApplyConfigGroupOutOfScope: a fleet-scoped operator whose scope excludes
 // the target group gets the same 404 the sibling endpoints return.
 func TestApplyConfigGroupOutOfScope(t *testing.T) {
@@ -78,6 +90,11 @@ func TestApplyConfigAgentSuccessRoundTrip(t *testing.T) {
 	const agentID = "agent-apply-ok"
 	srv.seedLiveAgent(Agent{ID: agentID, FleetGroupID: groupID})
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+	// P2: the diff enqueueConfigApplyJob pushes comes from the agent's OWN
+	// desired snapshot, not the group target — seed it directly too.
+	seedAgentConfigTarget(t, srv, agentID, map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
 
@@ -152,6 +169,13 @@ func TestApplyConfigGroupAsyncAccepted(t *testing.T) {
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
+	// P2: the diff comes from each agent's OWN desired snapshot.
+	seedAgentConfigTarget(t, srv, "agent-async-1", map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+	seedAgentConfigTarget(t, srv, "agent-async-2", map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
 
 	// No goroutine, no RecordResult — a synchronous handler would block here.
 	resp := performJSONRequest(t, srv, http.MethodPost, "/api/fleet-groups/"+groupID+"/config/apply", nil, cookies)
@@ -188,6 +212,13 @@ func TestApplyConfigGroupPersistsBatch(t *testing.T) {
 	srv.seedLiveAgent(Agent{ID: "agent-persist-1", FleetGroupID: groupID})
 	srv.seedLiveAgent(Agent{ID: "agent-persist-2", FleetGroupID: groupID})
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+	// P2: the diff comes from each agent's OWN desired snapshot.
+	seedAgentConfigTarget(t, srv, "agent-persist-1", map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+	seedAgentConfigTarget(t, srv, "agent-persist-2", map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
 
@@ -286,7 +317,7 @@ func TestCreateGroupApplyBatchMidLoopFailureMarksBatchFailed(t *testing.T) {
 	// first (succeeds) and failAgent second (fails), reproducing the
 	// mid-loop scenario deterministically rather than depending on map
 	// iteration order.
-	batchID, err := srv.createConfigApplyBatch(context.Background(), "tester", groupID, []string{okAgent, failAgent}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
+	batchID, err := srv.createConfigApplyBatch(context.Background(), "tester", groupID, []string{okAgent, failAgent}, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
 	if err == nil {
 		t.Fatalf("createConfigApplyBatch() error = nil, want non-nil (injected failure for %s)", failAgent)
 	}
@@ -315,7 +346,7 @@ func TestCreateGroupApplyBatchEmptyAgentListNoBatch(t *testing.T) {
 	srv, _ := newConfigTargetTestServer(t)
 	groupID := seedTestFleetGroup(t, srv.store, "apply-empty-agents-group", time.Time{})
 
-	batchID, err := srv.createConfigApplyBatch(context.Background(), "tester", groupID, nil, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
+	batchID, err := srv.createConfigApplyBatch(context.Background(), "tester", groupID, nil, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch(empty agentIDs) error = %v, want nil", err)
 	}
@@ -406,5 +437,85 @@ func TestAgentApplyBatchStatusForeignBatchNotFound(t *testing.T) {
 	}
 	if err := json.Unmarshal(ownResp.Body.Bytes(), &status); err != nil || status.Total != 1 {
 		t.Fatalf("owner body = %s, want total=1", ownResp.Body.String())
+	}
+}
+
+// decodeConfigApplyJobPatch fetches the enqueued job by id and decodes its
+// config.apply payload's Patch field, for asserting exactly what an apply
+// pushed (P2 Task 5: a diff, not the whole effective/desired config).
+func decodeConfigApplyJobPatch(t *testing.T, srv *Server, jobID string) map[string]any {
+	t.Helper()
+	job, ok := srv.jobs.Get(jobID)
+	if !ok {
+		t.Fatalf("srv.jobs.Get(%s): not found", jobID)
+	}
+	var payload configApplyJobPayload
+	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
+		t.Fatalf("unmarshal config.apply payload: %v", err)
+	}
+	return payload.Patch
+}
+
+// TestApplySendsDiffNotWholeEffective (P2 Task 5): the agent's desired
+// snapshot has two fields; only one of them ("log_level") differs from the
+// last observed config ("fast_mode" already matches). enqueueConfigApplyJob
+// must enqueue a job whose Patch carries ONLY the drifted leaf — pre-Task-5
+// it sent the whole effective config regardless of what actually drifted.
+func TestApplySendsDiffNotWholeEffective(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	const agentID = "agent-apply-diff"
+	observedJSON, err := json.Marshal(map[string]any{
+		"general": map[string]any{"fast_mode": true},
+	})
+	if err != nil {
+		t.Fatalf("marshal observed: %v", err)
+	}
+	srv.live.ApplySnapshot(agentID, Agent{ID: agentID, NodeName: "node-" + agentID}, []Instance{
+		{ID: "telemt-primary", AgentID: agentID, ManagedConfigJSON: string(observedJSON)},
+	})
+	seedAgentConfigTarget(t, srv, agentID, map[string]any{
+		"general": map[string]any{"log_level": "normal", "fast_mode": true},
+	})
+
+	jobID, err := srv.enqueueConfigApplyJob(context.Background(), "tester", agentID, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
+	if err != nil {
+		t.Fatalf("enqueueConfigApplyJob() error = %v", err)
+	}
+	if jobID == "" {
+		t.Fatalf("enqueueConfigApplyJob() jobID empty, want a job for the drifted field")
+	}
+
+	patch := decodeConfigApplyJobPatch(t, srv, jobID)
+	general, _ := patch["general"].(map[string]any)
+	if len(patch) != 1 || len(general) != 1 || general["log_level"] != "normal" {
+		t.Fatalf("patch = %+v, want exactly {general: {log_level: normal}}", patch)
+	}
+}
+
+// TestApplyRestrictedToPaths (P2 Task 5): the agent's desired snapshot has
+// two fields that both drift from observed, but the apply is restricted to
+// a single dotted path. Only that path may appear in the enqueued patch,
+// even though the other field also legitimately drifted.
+func TestApplyRestrictedToPaths(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	const agentID = "agent-apply-restrict"
+	srv.live.ApplySnapshot(agentID, Agent{ID: agentID, NodeName: "node-" + agentID}, nil)
+	seedAgentConfigTarget(t, srv, agentID, map[string]any{
+		"general": map[string]any{"log_level": "normal", "ad_tag": "y"},
+	})
+
+	jobID, err := srv.enqueueConfigApplyJob(context.Background(), "tester", agentID,
+		reloadPolicy{Mode: "drain", TimeoutSecs: 30}, []string{"general.log_level"})
+	if err != nil {
+		t.Fatalf("enqueueConfigApplyJob() error = %v", err)
+	}
+	if jobID == "" {
+		t.Fatalf("enqueueConfigApplyJob() jobID empty, want a job for the restricted field")
+	}
+
+	patch := decodeConfigApplyJobPatch(t, srv, jobID)
+	general, _ := patch["general"].(map[string]any)
+	if len(patch) != 1 || len(general) != 1 || general["log_level"] != "normal" {
+		t.Fatalf("patch = %+v, want exactly {general: {log_level: normal}} (ad_tag excluded by paths restriction)", patch)
 	}
 }

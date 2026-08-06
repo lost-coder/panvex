@@ -227,9 +227,12 @@ func TestAdvanceConfigApplyBatchPersistsMessageForStatusEndpoint(t *testing.T) {
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
+	seedAgentConfigTarget(t, srv, failAgent, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{failAgent}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{failAgent}, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}

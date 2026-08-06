@@ -40,24 +40,31 @@ func parseReloadPolicy(mode string, timeoutSecs int) (reloadPolicy, error) {
 
 // reloadPolicyRequest is the optional JSON body accepted by the config-apply
 // handlers (handleApplyAgentConfig, handleApplyGroupConfig) to let the
-// operator choose the session policy for the reload the agent performs.
+// operator choose the session policy for the reload the agent performs, and
+// optionally restrict the push to a specific set of dotted config paths
+// (Paths, P2 Task 5) — e.g. pushing a single field the operator just edited
+// rather than every drifted leaf.
 type reloadPolicyRequest struct {
-	ReloadMode        string `json:"reload_mode"`
-	ReloadTimeoutSecs int    `json:"reload_timeout_secs"`
+	ReloadMode        string   `json:"reload_mode"`
+	ReloadTimeoutSecs int      `json:"reload_timeout_secs"`
+	Paths             []string `json:"paths"`
 }
 
 // decodeReloadPolicyBody decodes the request's optional JSON body into a
-// reloadPolicy. An absent or empty body (the existing callers, and any
-// caller that never picked a policy) decodes as zero values, which
-// parseReloadPolicy resolves to the drain/30s default — so this is safe to
-// call unconditionally without breaking callers that send no body at all.
-func decodeReloadPolicyBody(r *http.Request) (reloadPolicy, error) {
+// reloadPolicy plus the optional restrictPaths list. An absent or empty body
+// (the existing callers, and any caller that never picked a policy) decodes
+// as zero values, which parseReloadPolicy resolves to the drain/30s default
+// — so this is safe to call unconditionally without breaking callers that
+// send no body at all. restrictPaths is nil unless the caller supplied paths.
+func decodeReloadPolicyBody(r *http.Request) (reloadPolicy, []string, error) {
 	var req reloadPolicyRequest
 	if err := decodeJSON(r, &req); err != nil {
 		if errors.Is(err, io.EOF) {
-			return parseReloadPolicy("", 0)
+			policy, err := parseReloadPolicy("", 0)
+			return policy, nil, err
 		}
-		return reloadPolicy{}, err
+		return reloadPolicy{}, nil, err
 	}
-	return parseReloadPolicy(req.ReloadMode, req.ReloadTimeoutSecs)
+	policy, err := parseReloadPolicy(req.ReloadMode, req.ReloadTimeoutSecs)
+	return policy, req.Paths, err
 }

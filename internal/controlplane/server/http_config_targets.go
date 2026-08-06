@@ -91,9 +91,11 @@ func driftView(target, observed map[string]any, hasObserved bool) configDriftVie
 }
 
 // upsertConfigTarget validates the requested sections against the editable
-// allowlist and persists them for the given scope through the configtargets
-// service (which preserves the original CreatedAt across updates). Shared by
-// the group and agent PUT handlers.
+// allowlist and REPLACES the stored sections for the given scope through the
+// configtargets service (which preserves the original CreatedAt across
+// updates). Used by the group PUT handler only — the group scope has no P2
+// full-snapshot semantics to preserve, unlike the agent scope, which merges
+// via upsertAgentConfigTarget instead.
 func (s *Server) upsertConfigTarget(w http.ResponseWriter, r *http.Request, scopeType, scopeID string) {
 	var request configTargetRequest
 	if err := decodeJSON(r, &request); err != nil {
@@ -112,6 +114,53 @@ func (s *Server) upsertConfigTarget(w http.ResponseWriter, r *http.Request, scop
 		return
 	}
 	if err := s.configTargets.Upsert(r.Context(), scopeType, scopeID, request.Sections); err != nil {
+		writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgInternalError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// upsertAgentConfigTarget validates the requested sparse sections and MERGES
+// them into the agent's stored full-snapshot config target (P2 Task 5): the
+// incoming sections' leaves win field-by-field (nested maps merge
+// recursively via deepMergeConfigInto), but any path NOT present in the
+// request — including the __schema_version marker seedDesiredConfig stamps
+// — is preserved from the existing snapshot. Without this an operator PUTing
+// a single field (e.g. general.log_level) would silently wipe every other
+// field seeded from the agent's own observed config, which is exactly the
+// full-snapshot regression P2 exists to prevent. Unlike the group scope
+// (upsertConfigTarget), an agent target always exists once the agent has
+// reported once (seedDesiredConfig), so "no existing snapshot" only happens
+// for an agent that has never reported — that case degrades gracefully to a
+// plain create.
+func (s *Server) upsertAgentConfigTarget(w http.ResponseWriter, r *http.Request, agentID string) {
+	var request configTargetRequest
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, msgConfigTargetInvalid)
+		return
+	}
+	if request.Sections == nil {
+		request.Sections = map[string]any{}
+	}
+	if err := validateEditableSections(request.Sections); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateNoProcessOwnedFields(request.Sections); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	existing, err := s.configTargets.Sections(r.Context(), storage.ConfigScopeAgent, agentID)
+	if err != nil {
+		writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgInternalError, err)
+		return
+	}
+	merged := deepCopyConfigMap(existing)
+	if merged == nil {
+		merged = map[string]any{}
+	}
+	deepMergeConfigInto(merged, request.Sections)
+	if err := s.configTargets.Upsert(r.Context(), storage.ConfigScopeAgent, agentID, merged); err != nil {
 		writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgInternalError, err)
 		return
 	}
@@ -307,6 +356,6 @@ func (s *Server) handlePutAgentConfigTarget() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
-		s.upsertConfigTarget(w, r, storage.ConfigScopeAgent, id)
+		s.upsertAgentConfigTarget(w, r, id)
 	}
 }

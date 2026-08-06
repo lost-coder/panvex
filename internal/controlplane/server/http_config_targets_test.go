@@ -248,6 +248,49 @@ func TestAgentConfigResponseUsesDesiredAndSnapshotDrift(t *testing.T) {
 	}
 }
 
+// TestPutMergesIntoSnapshot (P2 Task 5): PUTing a sparse sections map onto an
+// agent that already has a full desired snapshot must MERGE the new leaf
+// into the stored snapshot, not replace it wholesale — a sibling field
+// (general.ad_tag) untouched by the request, and the __schema_version
+// marker seedDesiredConfig stamps, must both survive the PUT.
+func TestPutMergesIntoSnapshot(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	const agentID = "agent-put-merge"
+	srv.live.ApplySnapshot(agentID, Agent{ID: agentID, NodeName: "node-" + agentID}, nil)
+
+	if err := srv.configTargets.Upsert(context.Background(), storage.ConfigScopeAgent, agentID, map[string]any{
+		"general":           map[string]any{"log_level": "silent", "ad_tag": "x"},
+		schemaVersionMarker: "1.2.3",
+	}); err != nil {
+		t.Fatalf("seed desired snapshot: %v", err)
+	}
+
+	putBody := map[string]any{
+		"sections": map[string]any{
+			"general": map[string]any{"log_level": "normal"},
+		},
+	}
+	if resp := performJSONRequest(t, srv, http.MethodPut, "/api/agents/"+agentID+"/config", putBody, cookies); resp.Code != http.StatusOK {
+		t.Fatalf("PUT agent config status = %d, want %d (body: %s)", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	got := getAgentConfig(t, srv, cookies, agentID)
+	if logLevel := nestedString(got.Desired, "general", "log_level"); logLevel != "normal" {
+		t.Fatalf("desired.general.log_level = %q, want %q", logLevel, "normal")
+	}
+	if adTag := nestedString(got.Desired, "general", "ad_tag"); adTag != "x" {
+		t.Fatalf("desired.general.ad_tag = %q, want %q (merge must preserve fields untouched by the PUT)", adTag, "x")
+	}
+
+	stored, err := srv.configTargets.Sections(context.Background(), storage.ConfigScopeAgent, agentID)
+	if err != nil {
+		t.Fatalf("configTargets.Sections() error = %v", err)
+	}
+	if v, _ := stored[schemaVersionMarker].(string); v != "1.2.3" {
+		t.Fatalf("stored schema-version marker = %q, want %q (merge must preserve it)", v, "1.2.3")
+	}
+}
+
 // seedGroupTargetAndAgent seeds a fleet group, PUTs a group config target
 // (censorship.tls_domain = groupDomain), and seeds the agent into the live
 // snapshot with the supplied observed instances. Returns the group id.

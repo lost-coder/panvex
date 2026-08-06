@@ -70,38 +70,28 @@ func targetAgentID(tgt jobs.JobTarget) string {
 	return tgt.AgentID
 }
 
-// effectiveConfigForAgent resolves the agent's effective config target —
-// the agent's fleet-group target deep-merged with its own override. The
-// fleet group is read from the live snapshot; an agent with no group (or no
-// stored sections) resolves an empty map. Mirrors handleGetAgentConfigTarget.
-func (s *Server) effectiveConfigForAgent(ctx context.Context, agentID string) map[string]any {
-	groupSections := map[string]any{}
-	if existing, ok := s.live.Get(agentID); ok && existing.FleetGroupID != "" {
-		if sections, err := s.configTargets.Sections(ctx, storage.ConfigScopeGroup, existing.FleetGroupID); err == nil {
-			groupSections = sections
-		}
-	}
-	overrideSections, err := s.configTargets.Sections(ctx, storage.ConfigScopeAgent, agentID)
+// enqueueConfigApplyJob resolves the agent's own desired config snapshot,
+// diffs it against the last observed config (P2: only the leaves that
+// actually differ are pushed, not the whole effective config), and enqueues
+// a config.apply job for it WITHOUT blocking on the result. restrictPaths,
+// when non-empty, further narrows the diff to just those dotted paths (an
+// operator pushing a single field). Returns the enqueued job id, or an empty
+// id when the diff is empty (a no-op — the agent is already in sync). Used
+// by createConfigApplyBatch for both the single-agent batch-of-one path and
+// the group fan-out; neither blocks on the job's terminal status — progress
+// is observed via the batch status views instead.
+func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID string, policy reloadPolicy, restrictPaths []string) (string, error) {
+	desired, err := s.configTargets.Sections(ctx, storage.ConfigScopeAgent, agentID)
 	if err != nil {
-		overrideSections = map[string]any{}
+		return "", fmt.Errorf("load desired config for %s: %w", agentID, err)
 	}
-	return resolveEffectiveConfig(groupSections, overrideSections)
-}
-
-// enqueueConfigApplyJob resolves the agent's effective config target and
-// enqueues a config.apply job for it WITHOUT blocking on the result. Returns
-// the enqueued job id, or an empty id when the effective config is empty (a
-// no-op — the agent is already in sync). Used by createConfigApplyBatch for
-// both the single-agent batch-of-one path and the group fan-out; neither
-// blocks on the job's terminal status — progress is observed via the batch
-// status views instead.
-func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID string, policy reloadPolicy) (string, error) {
-	effective := s.effectiveConfigForAgent(ctx, agentID)
-	if len(effective) == 0 {
+	observed, _ := s.observedConfigForAgent(agentID)
+	patch := applyDiff(strippedSnapshot(desired), observed, restrictPaths)
+	if len(patch) == 0 {
 		return "", nil
 	}
 	payload, err := json.Marshal(configApplyJobPayload{
-		Patch:             effective,
+		Patch:             patch,
 		HealthTimeoutS:    configApplyHealthTimeoutSec,
 		ReloadMode:        policy.Mode,
 		ReloadTimeoutSecs: policy.TimeoutSecs,
@@ -160,7 +150,7 @@ func (s *Server) handleApplyGroupConfig() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgFleetGroupNotFound)
 			return
 		}
-		policy, err := decodeReloadPolicyBody(r)
+		policy, _, err := decodeReloadPolicyBody(r)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -171,7 +161,9 @@ func (s *Server) handleApplyGroupConfig() http.HandlerFunc {
 				agentIDs = append(agentIDs, agent.ID)
 			}
 		}
-		batchID, err := s.createConfigApplyBatch(ctx, user.ID, id, agentIDs, policy)
+		// Group fan-out intentionally does not restrict paths (P3 refines
+		// group apply further).
+		batchID, err := s.createConfigApplyBatch(ctx, user.ID, id, agentIDs, policy, nil)
 		if err != nil {
 			writeErrorLogged(ctx, w, http.StatusInternalServerError,
 				"failed to enqueue config apply", err)
@@ -427,14 +419,14 @@ func (s *Server) handleApplyAgentConfig() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
-		policy, err := decodeReloadPolicyBody(r)
+		policy, restrictPaths, err := decodeReloadPolicyBody(r)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		// fleetGroupID intentionally empty: the batch is agent-scoped and must
 		// not surface as the group's "active batch" on the fleet-group page.
-		batchID, err := s.createConfigApplyBatch(ctx, user.ID, "", []string{id}, policy)
+		batchID, err := s.createConfigApplyBatch(ctx, user.ID, "", []string{id}, policy, restrictPaths)
 		if err != nil {
 			writeErrorLogged(ctx, w, http.StatusInternalServerError,
 				"failed to enqueue config apply", err)

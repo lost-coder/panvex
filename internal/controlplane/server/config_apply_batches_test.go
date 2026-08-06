@@ -25,9 +25,15 @@ func TestConfigApplyBatchAdvanceAllSucceededFinalizesBatch(t *testing.T) {
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
+	seedAgentConfigTarget(t, srv, agentA, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+	seedAgentConfigTarget(t, srv, agentB, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA, agentB}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA, agentB}, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -87,9 +93,15 @@ func TestConfigApplyBatchAdvanceOneFailedFinalizesBatchFailed(t *testing.T) {
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
+	seedAgentConfigTarget(t, srv, okAgent, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+	seedAgentConfigTarget(t, srv, failAgent, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{okAgent, failAgent}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{okAgent, failAgent}, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -143,9 +155,12 @@ func TestConfigApplyBatchAdvanceNonTerminalStaysRunning(t *testing.T) {
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
+	seedAgentConfigTarget(t, srv, agentID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID}, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -194,9 +209,12 @@ func TestConfigApplyBatchAdvanceJobEvictedBeforePersistFinalizesFailed(t *testin
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
+	seedAgentConfigTarget(t, srv, agentID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID}, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -271,9 +289,12 @@ func TestConfigApplyJobStatusReadsEvictedJobFromStore(t *testing.T) {
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
+	seedAgentConfigTarget(t, srv, agentID, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentID}, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -316,9 +337,15 @@ func TestConfigApplyBatchFinalizesAfterRestartMidRollout(t *testing.T) {
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
+	seedAgentConfigTarget(t, srv, agentA, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
+	seedAgentConfigTarget(t, srv, agentB, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA, agentB}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA, agentB}, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
@@ -385,9 +412,12 @@ func TestConfigApplyBatchAdoptsOrphanedJobIDAfterRestart(t *testing.T) {
 	seedGroupConfigTarget(t, srv, groupID, map[string]any{
 		"censorship": map[string]any{"tls_domain": "example.com"},
 	})
+	seedAgentConfigTarget(t, srv, agentA, map[string]any{
+		"censorship": map[string]any{"tls_domain": "example.com"},
+	})
 
 	ctx := context.Background()
-	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA}, reloadPolicy{Mode: "drain", TimeoutSecs: 30})
+	batchID, err := srv.createConfigApplyBatch(ctx, "tester", groupID, []string{agentA}, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, nil)
 	if err != nil {
 		t.Fatalf("createConfigApplyBatch() error = %v", err)
 	}
