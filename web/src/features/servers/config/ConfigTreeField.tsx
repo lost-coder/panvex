@@ -13,9 +13,10 @@
 // tie-breaker: it takes precedence over the "unknown parameter" note so
 // operators see "set at process start", not "unknown parameter", for
 // fields that are actually documented but structurally uneditable here.
+import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Badge, type BadgeProps, Button, FormField, Input, Select, Toggle } from "@/ui";
+import { Badge, type BadgeProps, Button, Input, Select, Toggle } from "@/ui";
 
 import { InfoTooltip } from "./InfoTooltip";
 import { isProcessOwned } from "./guard";
@@ -149,6 +150,10 @@ export function ConfigTreeField({
   const key = path.split(".").pop() ?? path;
   const processOwned = isProcessOwned(path);
   const disabled = readonly || locked;
+  // Explicit id/htmlFor (instead of FormField's cloneElement) so the
+  // label↔control a11y association survives the two-column layout: the
+  // control is no longer FormField's sole direct child.
+  const fieldId = useId();
 
   function handleChange(next: unknown) {
     if (disabled) return;
@@ -156,36 +161,45 @@ export function ConfigTreeField({
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
+    // max-w bounds the form to a comfortable reading width so on an ultrawide
+    // the control isn't stranded at the far edge with a huge middle gap.
+    <div className="flex max-w-4xl flex-col gap-1.5">
       {/*
-        FormField's cloneElement a11y wiring (form-field.tsx) reaches only a
-        SINGLE direct child, injecting its generated id onto it so the
-        label's htmlFor resolves to a real focusable element. The control
-        (FieldControl/RawValueInput) must therefore be that sole child —
-        decorations render as siblings below, outside FormField, exactly
-        like ConfigSectionEditor.tsx's FieldInput usage.
+        Label + control: stacked on mobile (full-width control, reads fine on
+        a phone), a two-column grid on sm+ (label/meta left, capped ~18rem
+        control right) so a wide desktop panel isn't mostly empty input.
+        The default-value hint sits under the label in the left column to keep
+        each field to roughly one control-height row.
       */}
-      <FormField
-        label={
-          <span className="inline-flex items-center gap-2">
-            <span className="font-mono">{key}</span>
-            {entry && <ApplyModeBadge applyMode={entry.applyMode} />}
-            {entry && <InfoTooltip entry={entry} />}
-          </span>
-        }
-      >
-        {entry ? (
-          <FieldControl entry={entry} value={value} disabled={disabled} onChange={handleChange} />
-        ) : (
-          <RawValueInput value={value} disabled={disabled} />
-        )}
-      </FormField>
-
-      {entry?.default !== undefined && (
-        <p className="text-caption text-fg-muted">
-          {t("config.tree.defaultHint", { value: entry.default })}
-        </p>
-      )}
+      <div className="flex flex-col gap-1.5 sm:grid sm:grid-cols-[minmax(0,1fr)_18rem] sm:items-center sm:gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <label htmlFor={fieldId} className="text-sm font-medium text-fg leading-none">
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span className="font-mono">{key}</span>
+              {entry && <ApplyModeBadge applyMode={entry.applyMode} />}
+              {entry && <InfoTooltip entry={entry} />}
+            </span>
+          </label>
+          {entry?.default !== undefined && (
+            <p className="text-caption text-fg-muted">
+              {t("config.tree.defaultHint", { value: entry.default })}
+            </p>
+          )}
+        </div>
+        <div className="min-w-0">
+          {entry ? (
+            <FieldControl
+              entry={entry}
+              value={value}
+              disabled={disabled}
+              id={fieldId}
+              onChange={handleChange}
+            />
+          ) : (
+            <RawValueInput value={value} disabled={disabled} id={fieldId} />
+          )}
+        </div>
+      </div>
 
       {drifted && (
         <div className="flex flex-col gap-1.5">
