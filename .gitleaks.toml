@@ -10,9 +10,15 @@
 useDefault = true
 
 [allowlist]
-description = "Allow synthetic credentials in test fixtures and storybook examples"
+description = "Allow synthetic credentials in test fixtures, storybook examples, and generated files"
 paths = [
   '''(^|/).*_test\.go$''',
   '''(^|/).*\.test\.(ts|tsx|js|jsx)$''',
   '''(^|/).*\.stories\.(ts|tsx|js|jsx)$''',
+  # Generated files are never where a human commits a real secret, and
+  # tools like oapi-codegen embed the whole OpenAPI spec as a base64/gzip
+  # blob (openapi/panvex.gen.go's `swaggerSpec`) whose high-entropy chunks
+  # trip gitleaks' generic-api-key rule on every regeneration. Scan the
+  # hand-written source, not the codegen output.
+  '''(^|/).*\.gen\.(go|ts|tsx|json)$''',
 ]
