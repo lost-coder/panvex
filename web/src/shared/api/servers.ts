@@ -4,6 +4,8 @@ import {
   agentCertificateRecoverySchema,
   agentListSchema,
   agentSchema,
+  dispatchTelemtUpdateRequestSchema,
+  dispatchTelemtUpdateResponseSchema,
   instanceListSchema,
   provisionOutboundAgentRequestSchema,
   provisionOutboundAgentResponseSchema,
@@ -55,6 +57,10 @@ export type TelemtUpdateProbe = Gen["TelemtUpdateProbe"];
 export type TelemtUpdateStrategyResponse = LoosenOptional<
   Gen["TelemtUpdateStrategyResponse"]
 >;
+
+// Task 14: 202 response of POST /agents/{id}/telemt/update — just the job
+// id, no optionals to loosen.
+export type DispatchTelemtUpdateResponse = Gen["DispatchTelemtUpdateResponse"];
 
 // Instance has no OpenAPI counterpart yet (GET /api/instances is not in
 // openapi/panvex.yaml) — kept hand-written. When the endpoint is specced,
@@ -177,4 +183,24 @@ export const serversApi = {
         strategy,
       ),
     }),
+
+  // Task 11/14: dispatch an in-place Telemt binary update for one agent.
+  // Empty version dispatches the panel's cached latest known release
+  // (server-side default). 409s carry a typed `code` (see
+  // dispatchTelemtUpdateErrorSchema) that the caller maps to a localized
+  // toast via ApiError.code — no response-schema parse needed for the
+  // error path, `api()` already extracts `code` from the JSON body.
+  dispatchTelemtUpdate: (agentID: string, payload?: { version?: string; allowDowngrade?: boolean }) =>
+    api<DispatchTelemtUpdateResponse>(
+      `${apiBasePath}/agents/${agentID}/telemt/update`,
+      {
+        method: "POST",
+        body: encodeRequest(
+          `${apiBasePath}/agents/${agentID}/telemt/update`,
+          dispatchTelemtUpdateRequestSchema,
+          { version: payload?.version ?? "", allow_downgrade: payload?.allowDowngrade ?? false },
+        ),
+      },
+      dispatchTelemtUpdateResponseSchema,
+    ),
 };

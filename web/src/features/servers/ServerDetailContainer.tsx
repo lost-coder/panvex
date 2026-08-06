@@ -75,6 +75,10 @@ export function ServerDetailContainer() {
   const isAdmin = profile?.role === "admin";
   const { query: updatesQuery } = useUpdates();
   const latestAgentVersion = updatesQuery.data?.state.latest_agent_version;
+  // Task 14: same GET /settings/updates payload the agent-version badge
+  // above already reads (admin-gated by the same `isAdmin` this hook's
+  // result is only *displayed* behind, not additionally re-fetched here).
+  const latestTelemtVersion = updatesQuery.data?.state.telemt_latest_version;
   const navigate = useNavigate();
   const confirm = useConfirm();
   const [timeRange, setTimeRange] = useState("6h");
@@ -163,7 +167,15 @@ export function ServerDetailContainer() {
       }}
       enrollmentHistorySlot={<EnrollmentHistory agentId={server.id} />}
       runtimeEventsSlot={<RuntimeEvents agentId={server.id} />}
-      telemtUpdateSlot={isAdmin ? <TelemtUpdateSection agentId={server.id} /> : undefined}
+      telemtUpdateSlot={
+        isAdmin ? (
+          <TelemtUpdateSection
+            agentId={server.id}
+            currentVersion={server.systemInfo?.version ?? ""}
+            latestVersion={latestTelemtVersion}
+          />
+        ) : undefined
+      }
     />
   );
 }

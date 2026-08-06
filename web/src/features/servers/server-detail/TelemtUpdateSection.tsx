@@ -11,12 +11,14 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button, FormField, Input, Select, Spinner, Toggle } from "@/ui";
+import { Badge, Button, FormField, Input, Select, Spinner, Toggle, Tooltip } from "@/ui";
+import { useConfirm } from "@/app/providers/ConfirmProvider";
 import { useToast } from "@/app/providers/ToastProvider";
 import type { TelemtUpdateProbe, TelemtUpdateStrategy } from "@/shared/api/api";
 import { telemtUpdateStrategySchema } from "@/shared/api/schemas";
 
 import { Fold } from "./components/Fold";
+import { semverLt } from "./semver";
 import {
   composeRestartSpec,
   isValidRestartName,
@@ -24,10 +26,37 @@ import {
   type RestartPreset,
   type RestartSpecForm,
 } from "./telemtRestartSpec";
-import { useTelemtUpdateStrategy, usePutTelemtUpdateStrategy } from "./useTelemtUpdateStrategy";
+import {
+  useDispatchTelemtUpdate,
+  useTelemtUpdateStrategy,
+  usePutTelemtUpdateStrategy,
+} from "./useTelemtUpdateStrategy";
 
 interface Props {
   agentId: string;
+  /** Currently running Telemt version on this node (systemInfo.version). */
+  currentVersion: string;
+  /** Panel's cached latest known Telemt release, "" when never checked. */
+  latestVersion?: string | undefined;
+}
+
+// Client-side mirror of handleDispatchTelemtUpdate's guard chain (see
+// http_telemt_update.go) for the three conditions the dashboard can know
+// about *before* attempting the POST: no strategy configured, strategy mode
+// isn't "binary", or the agent's live probe reports it can't do an in-place
+// update. `no_known_release` is NOT included here — the client doesn't try
+// to predict whether the panel has a cached latest version; that 409 (if it
+// happens) is caught and toasted after the POST like any other guard.
+type DisableReason = "strategy_not_configured" | "mode_not_binary" | "update_unavailable";
+
+function disableReason(
+  strategy: TelemtUpdateStrategy | null,
+  probe: TelemtUpdateProbe | null,
+): DisableReason | null {
+  if (!strategy) return "strategy_not_configured";
+  if (strategy.mode !== "binary") return "mode_not_binary";
+  if (!probe || !probe.available) return "update_unavailable";
+  return null;
 }
 
 type Mode = TelemtUpdateStrategy["mode"];
@@ -71,11 +100,13 @@ function toStrategyPayload(form: FormState): TelemtUpdateStrategy {
   };
 }
 
-export function TelemtUpdateSection({ agentId }: Readonly<Props>) {
+export function TelemtUpdateSection({ agentId, currentVersion, latestVersion }: Readonly<Props>) {
   const { t } = useTranslation("servers");
   const toast = useToast();
+  const confirm = useConfirm();
   const query = useTelemtUpdateStrategy(agentId);
   const putMutation = usePutTelemtUpdateStrategy(agentId);
+  const dispatchMutation = useDispatchTelemtUpdate(agentId);
 
   const [form, setForm] = useState<FormState>(() => formFromStrategy(null));
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -141,9 +172,41 @@ export function TelemtUpdateSection({ agentId }: Readonly<Props>) {
   }
 
   const probe = query.data?.probe ?? null;
+  const strategy = query.data?.strategy ?? null;
+  const updateAvailable = semverLt(currentVersion, latestVersion ?? "");
+  const reason = disableReason(strategy, probe);
+
+  async function handleUpdateClick() {
+    const version = latestVersion ?? "";
+    const ok = await confirm({
+      title: t("telemtUpdate.action.confirmTitle"),
+      body: t("telemtUpdate.action.confirmBody", { version }),
+      confirmLabel: t("telemtUpdate.action.confirm"),
+    });
+    if (!ok) return;
+    dispatchMutation.mutate(version);
+  }
+
+  const updateButton = (
+    <Button size="sm" disabled={!!reason || dispatchMutation.isPending} onClick={handleUpdateClick}>
+      {dispatchMutation.isPending
+        ? t("telemtUpdate.action.updating")
+        : t("telemtUpdate.action.button", { version: latestVersion ?? "" })}
+    </Button>
+  );
 
   return (
-    <Fold title={t("telemtUpdate.title")} defaultOpen={false}>
+    <Fold
+      title={t("telemtUpdate.title")}
+      defaultOpen={false}
+      rightHint={
+        updateAvailable ? (
+          <Badge variant="accent">
+            {t("telemtUpdate.action.badge", { current: currentVersion, latest: latestVersion })}
+          </Badge>
+        ) : undefined
+      }
+    >
       {query.isLoading ? (
         <div className="flex items-center gap-2 text-sm text-fg-muted" aria-busy aria-live="polite">
           <Spinner />
@@ -153,6 +216,33 @@ export function TelemtUpdateSection({ agentId }: Readonly<Props>) {
         <div className="text-sm text-status-error">{t("telemtUpdate.error")}</div>
       ) : (
         <div className="flex flex-col gap-4">
+          {updateAvailable && (
+            <div className="flex flex-col gap-2 rounded-md border border-divider bg-bg-card/50 p-3">
+              {strategy?.mode === "docker" ? (
+                <>
+                  <span className="text-sm text-fg">{t("telemtUpdate.action.dockerHint")}</span>
+                  <code className="rounded bg-bg-inset px-2 py-1 font-mono text-xs text-fg">
+                    {t("telemtUpdate.action.dockerCommand")}
+                  </code>
+                  <span className="text-xs text-fg-muted">{t("telemtUpdate.action.dockerHintFooter")}</span>
+                </>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm text-fg">
+                    {t("telemtUpdate.action.available", { version: latestVersion })}
+                  </span>
+                  {reason ? (
+                    <Tooltip content={t(`telemtUpdate.action.disabledReason.${reason}`)}>
+                      <span className="inline-flex">{updateButton}</span>
+                    </Tooltip>
+                  ) : (
+                    updateButton
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {probe && (
             <div className="flex flex-col gap-2 rounded-md border border-divider bg-bg-card/50 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">

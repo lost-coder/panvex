@@ -58,7 +58,7 @@ vi.mock("./runtime-events/RuntimeEvents", () => ({
 // the spy doubles as a "fetch was never attempted" proxy for a non-admin.
 const telemtUpdateSectionSpy = vi.fn();
 vi.mock("./server-detail/TelemtUpdateSection", () => ({
-  TelemtUpdateSection: (props: { agentId: string }) => {
+  TelemtUpdateSection: (props: { agentId: string; currentVersion: string; latestVersion?: string }) => {
     telemtUpdateSectionSpy(props);
     return <div data-testid="telemt-update-section" />;
   },
@@ -125,6 +125,10 @@ describe("ServerDetailContainer — telemt update strategy admin gating", () => 
     useProfileMock.mockReturnValue({ profile: { role: "admin" } });
     render(<ServerDetailContainer />);
     expect(screen.getByTestId("telemt-update-section")).toBeInTheDocument();
-    expect(telemtUpdateSectionSpy).toHaveBeenCalledWith({ agentId: "agent-1" });
+    expect(telemtUpdateSectionSpy).toHaveBeenCalledWith({
+      agentId: "agent-1",
+      currentVersion: "",
+      latestVersion: undefined,
+    });
   });
 });

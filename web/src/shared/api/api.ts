@@ -47,6 +47,7 @@ export type {
   Agent,
   AgentCertificateRecovery,
   AgentRuntime,
+  DispatchTelemtUpdateResponse,
   Instance,
   ProvisionOutboundAgentResponse,
   RuntimeEvent,

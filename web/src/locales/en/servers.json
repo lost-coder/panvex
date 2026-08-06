@@ -562,6 +562,30 @@
         "binaryPathNotAbsolute": "Binary path must be absolute (start with \"/\")",
         "invalid": "Check the highlighted fields"
       }
+    },
+    "action": {
+      "badge": "Telemt {{current}} → {{latest}}",
+      "available": "Telemt {{version}} is available",
+      "button": "Update Telemt to {{version}}",
+      "updating": "Updating…",
+      "confirmTitle": "Update Telemt?",
+      "confirmBody": "This installs Telemt {{version}} on this node and restarts the service. Active connections may drop briefly.",
+      "confirm": "Update",
+      "queued": "Telemt update queued",
+      "dockerHint": "Telemt runs in Docker on this node — update the image instead of using this button:",
+      "dockerCommand": "docker compose pull && docker compose up -d",
+      "dockerHintFooter": "The new version is picked up automatically once the container restarts.",
+      "disabledReason": {
+        "strategy_not_configured": "Configure an update strategy below first",
+        "mode_not_binary": "The configured strategy does not support an in-place binary update",
+        "update_unavailable": "The agent reports an in-place update is not available right now"
+      },
+      "error": {
+        "strategy_not_configured": "No Telemt update strategy is configured for this node",
+        "mode_not_binary": "The configured strategy does not support an in-place binary update",
+        "update_unavailable": "The agent reports an in-place update is not available right now",
+        "no_known_release": "No known Telemt release yet — check for updates first or specify a version"
+      }
     }
   }
 }
