@@ -14,6 +14,19 @@ describe("ConfigTreeField", () => {
     render(<ConfigTreeField field={base} onChange={() => {}} />);
     expect(screen.getByText("log_level")).toBeInTheDocument();
   });
+  it("associates the label with the actual focusable control (a11y)", () => {
+    render(<ConfigTreeField field={base} onChange={() => {}} />);
+    // getByLabelText matches on the accessible name (label text content),
+    // so "log_level" (the raw key) resolves the select even though the
+    // "Live" badge and ℹ tooltip glyph are also inside the label.
+    const control = screen.getByLabelText(/log_level/);
+    expect(control.tagName).toBe("SELECT");
+    expect(control.id).toBeTruthy();
+    const label = document.querySelector(`label[for="${control.id}"]`);
+    expect(label).not.toBeNull();
+    expect(label).toHaveTextContent("log_level");
+  });
+
   it("emits onChange for an editable field", () => {
     const onChange = vi.fn();
     render(<ConfigTreeField field={base} onChange={onChange} />);

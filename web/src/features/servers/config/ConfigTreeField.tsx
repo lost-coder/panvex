@@ -135,47 +135,55 @@ export function ConfigTreeField({ field, onChange }: Readonly<ConfigTreeFieldPro
   }
 
   return (
-    <FormField
-      label={
-        <span className="inline-flex items-center gap-2">
-          <span className="font-mono">{key}</span>
-          {entry && <ApplyModeBadge applyMode={entry.applyMode} />}
-          {entry && <InfoTooltip entry={entry} />}
-        </span>
-      }
-    >
-      <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5">
+      {/*
+        FormField's cloneElement a11y wiring (form-field.tsx) reaches only a
+        SINGLE direct child, injecting its generated id onto it so the
+        label's htmlFor resolves to a real focusable element. The control
+        (FieldControl/RawValueInput) must therefore be that sole child —
+        decorations render as siblings below, outside FormField, exactly
+        like ConfigSectionEditor.tsx's FieldInput usage.
+      */}
+      <FormField
+        label={
+          <span className="inline-flex items-center gap-2">
+            <span className="font-mono">{key}</span>
+            {entry && <ApplyModeBadge applyMode={entry.applyMode} />}
+            {entry && <InfoTooltip entry={entry} />}
+          </span>
+        }
+      >
         {entry ? (
           <FieldControl entry={entry} value={value} disabled={disabled} onChange={handleChange} />
         ) : (
           <RawValueInput value={value} disabled={disabled} />
         )}
+      </FormField>
 
-        {entry?.default !== undefined && (
-          <p className="text-caption text-fg-muted">
-            {t("config.tree.defaultHint", { value: entry.default })}
-          </p>
-        )}
+      {entry?.default !== undefined && (
+        <p className="text-caption text-fg-muted">
+          {t("config.tree.defaultHint", { value: entry.default })}
+        </p>
+      )}
 
-        {drifted && (
-          <p className="text-caption text-status-warn">
-            {t("config.tree.driftPanel", { value: String(value) })}
-            {" / "}
-            {t("config.tree.driftNode", { value: String(observed) })}
-          </p>
-        )}
+      {drifted && (
+        <p className="text-caption text-status-warn">
+          {t("config.tree.driftPanel", { value: String(value) })}
+          {" / "}
+          {t("config.tree.driftNode", { value: String(observed) })}
+        </p>
+      )}
 
-        {locked && <p className="text-caption text-fg-muted">{t("config.tree.lockedByGroup")}</p>}
+      {locked && <p className="text-caption text-fg-muted">{t("config.tree.lockedByGroup")}</p>}
 
-        {processOwned ? (
-          <p className="text-caption text-fg-muted">{t("config.tree.processOwned")}</p>
-        ) : unknown ? (
-          <p className="text-caption text-fg-muted">{t("config.tree.unknownParam")}</p>
-        ) : (
-          readonly &&
-          !locked && <p className="text-caption text-fg-muted">{t("config.tree.readonlyContainer")}</p>
-        )}
-      </div>
-    </FormField>
+      {processOwned ? (
+        <p className="text-caption text-fg-muted">{t("config.tree.processOwned")}</p>
+      ) : unknown ? (
+        <p className="text-caption text-fg-muted">{t("config.tree.unknownParam")}</p>
+      ) : (
+        readonly &&
+        !locked && <p className="text-caption text-fg-muted">{t("config.tree.readonlyContainer")}</p>
+      )}
+    </div>
   );
 }
