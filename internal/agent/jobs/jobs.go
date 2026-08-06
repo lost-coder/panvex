@@ -36,6 +36,24 @@ const (
 	configApplyRestartAllowance = 30 * time.Second
 	configApplyBudgetMargin     = 30 * time.Second
 	selfUpdateExecutionTimeout  = 5 * time.Minute
+	// telemtUpdateExecutionTimeout covers the full telemtupdate.Execute
+	// cycle for the telemt.update action, which is heavier than
+	// self-update's plain download+swap: it also restarts Telemt and runs a
+	// post-restart health-gate (with a rollback-and-restart branch on
+	// failure). The blanket jobExecutionTimeout (30s) would strangle this
+	// exactly like it did config.apply before A5 — the ctx would expire
+	// mid-health-poll and Execute would roll back an update that actually
+	// succeeded, reporting a false failure. Budget, summed from
+	// telemtupdate's own constants:
+	//   5m  archive download (telemtupdate.defaultDownloadTimeout stall cap;
+	//       the checksum sidecar reuses the same client but is a ~1KB fetch,
+	//       not worth double-booking another full 5m for)
+	//   60s post-restart health-gate (telemtupdate's defaultHealthTimeout)
+	//   60s rollback allowance (restoreBackup + a second Restart call on
+	//       the health-gate-timeout / restart-failure branches)
+	//   60s margin (extract/swap file I/O, process/JSON overhead)
+	// = 8m, rounded up to 10m for headroom.
+	telemtUpdateExecutionTimeout = 10 * time.Minute
 )
 
 func pipelineForAction(action string) Pipeline {
@@ -68,8 +86,9 @@ func shouldSendRuntimeSnapshotAfterJob(action string, success bool) bool {
 //     rename ripple through the connection layer.)
 //   - client_mutation: per-client mutations must apply in delivery order;
 //     two workers would let client.update#2 overtake #1.
-//   - default: config.apply / self-update / transport switches are
-//     heavyweight node-level operations — one at a time is the safe default.
+//   - default: config.apply / self-update / telemt.update / transport
+//     switches are heavyweight node-level operations — one at a time is the
+//     safe default.
 func workerCountForPipeline(Pipeline) int {
 	return 1
 }
@@ -78,7 +97,9 @@ func workerCountForPipeline(Pipeline) int {
 // config.apply derives its budget from the payload's health_timeout_s
 // (panel sends 30 by default) so the agent-side deadline always exceeds
 // the apply sequence it has to cover: preflight + PATCH + restart +
-// health polls. Everything else keeps the conservative default.
+// health polls. self-update and telemt.update get fixed budgets sized for
+// their own download/restart/health-gate cycles (see the constants above).
+// Everything else keeps the conservative default.
 func executionBudget(job *gatewayrpc.JobCommand) time.Duration {
 	switch job.GetAction() {
 	case "config.apply":
@@ -93,6 +114,8 @@ func executionBudget(job *gatewayrpc.JobCommand) time.Duration {
 		return health + configApplyRestartAllowance + configApplyBudgetMargin
 	case "agent.self-update":
 		return selfUpdateExecutionTimeout
+	case "telemt.update":
+		return telemtUpdateExecutionTimeout
 	default:
 		return jobExecutionTimeout
 	}

@@ -44,6 +44,11 @@ func TestJobExecutionBudget(t *testing.T) {
 			job:  &gatewayrpc.JobCommand{Action: "agent.self-update"},
 			want: selfUpdateExecutionTimeout,
 		},
+		{
+			name: "telemt.update gets the download+restart+health-gate budget",
+			job:  &gatewayrpc.JobCommand{Action: "telemt.update"},
+			want: telemtUpdateExecutionTimeout,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
