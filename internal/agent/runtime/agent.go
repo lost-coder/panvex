@@ -880,6 +880,8 @@ func (a *Agent) HandleJob(ctx context.Context, job *gatewayrpc.JobCommand, obser
 		return a.handleSwitchTransportModeJob(result, job)
 	case "config.apply":
 		return a.handleConfigApplyJob(ctx, job, result)
+	case "telemt.update":
+		return a.handleTelemtUpdateJob(ctx, job, result)
 	default:
 		result.Message = fmt.Sprintf("unsupported action %s", job.GetAction())
 		return result

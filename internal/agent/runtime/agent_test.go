@@ -966,6 +966,8 @@ type fakeTelemtClient struct {
 	discoverCalls                  int
 	managedConfig                  map[string]any
 	managedRevision                string
+	systemInfo                     telemt.SystemInfo
+	systemInfoErr                  error
 }
 
 // registryName reads the in-memory clientID->name registry under the agent's
@@ -1035,7 +1037,10 @@ func (c *fakeTelemtClient) HealthReady(context.Context) (bool, string, error) {
 }
 
 func (c *fakeTelemtClient) FetchSystemInfo(context.Context) (telemt.SystemInfo, error) {
-	return telemt.SystemInfo{}, nil
+	if c.systemInfoErr != nil {
+		return telemt.SystemInfo{}, c.systemInfoErr
+	}
+	return c.systemInfo, nil
 }
 
 func (c *fakeTelemtClient) FetchDiscoveredUsers(_ context.Context, _ string) ([]telemt.DiscoveredUser, error) {
