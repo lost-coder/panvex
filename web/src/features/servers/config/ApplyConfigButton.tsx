@@ -34,7 +34,7 @@ import { useTranslation } from "react-i18next";
 import { Button, ConfirmDialog } from "@/ui";
 import type { ApplyConfigRequest } from "@/shared/api/schemas/requests/applyConfigRequest";
 
-import { requiresReload } from "./fieldRegistry";
+import { catalogEntry } from "./paramCatalog";
 
 // Matches the panel's own default (see applyConfigRequest.ts / P5-T5
 // config_apply_reload.go): an absent policy resolves to a 30s drain. The
@@ -72,7 +72,7 @@ export function ApplyConfigButton({
   const [inFlight, setInFlight] = useState(false);
   const [reloadChoice, setReloadChoice] = useState<ReloadChoice>("drain");
 
-  const needsReload = requiresReload(changedPaths);
+  const needsReload = changedPaths.some((p) => catalogEntry(p)?.applyMode === "reload");
   const drifted = driftedFields ?? [];
   const hasDrift = drifted.length > 0;
   const needsConfirm = needsReload || hasDrift;
