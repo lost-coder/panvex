@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/eventbus"
@@ -368,6 +369,23 @@ func (s *Server) applyAgentSnapshot(ctx context.Context, snapshot gateway.AgentS
 	// Enqueue all DB writes asynchronously via the batch writer. No DB I/O
 	// blocks the caller — the background flush goroutine handles persistence.
 	s.enqueueAgentSnapshotBatchWrites(ctx, agent, instances, metricSnapshot, snapshot)
+
+	// P2: seed the agent's desired config from its first observed managed
+	// config, so the config editor has a starting point instead of an empty
+	// desired state. Guarded on a non-empty observed config and a real
+	// Telemt version; seedDesiredConfig itself is a no-op once a P2 snapshot
+	// already exists. s.store == nil only in literal/no-store test fixtures
+	// (configTargets wraps a nil repo there and would panic on first use);
+	// production servers always have a store. Seeding must never fail a
+	// heartbeat — log and continue.
+	if s.store != nil {
+		if observed, ok := s.observedConfigForAgent(snapshot.AgentID); ok && agent.Version != "" {
+			if err := s.seedDesiredConfig(ctx, snapshot.AgentID, agent.Version, observed); err != nil {
+				slog.WarnContext(ctx, "seed desired config failed",
+					"agent_id", snapshot.AgentID, "error", err)
+			}
+		}
+	}
 
 	// P2-LOG-12 / L-05: only Heartbeat on every snapshot. MarkConnected is
 	// called exactly once per gRPC stream open (see Connect in
