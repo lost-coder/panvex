@@ -498,6 +498,15 @@ export interface components {
              * @description Expiry timestamp of the agent's current certificate.
              */
             cert_expires_at?: string;
+            /**
+             * @description Whether (and how) this node's telemt install can be updated
+             *     in place: which process supervisor fronts it, and — when no
+             *     in-place path exists — why. Cached by the agent once at
+             *     process startup and stamped on every snapshot; absent until
+             *     the agent has sent at least one such snapshot (older agents
+             *     that predate the probe never populate it).
+             */
+            telemt_update_probe?: components["schemas"]["TelemtUpdateProbe"];
             runtime: components["schemas"]["AgentRuntime"];
             /**
              * Format: date-time
@@ -706,6 +715,40 @@ export interface components {
             used_at_unix?: number | null;
             /** Format: int64 */
             revoked_at_unix?: number | null;
+        };
+        /**
+         * @description Result of the agent probing its local process supervisor
+         *     (systemd, OpenRC/procd, runit, docker, or none) once at startup,
+         *     used by the panel to decide whether an in-place telemt update is
+         *     safe to offer for this node.
+         */
+        TelemtUpdateProbe: {
+            /**
+             * @description "binary" (a supported supervisor owns telemt; a binary swap +
+             *     supervised restart is safe), "docker" (telemt runs in a
+             *     container; updates must go through the image), or "none"
+             *     (nothing detected).
+             */
+            mode: string;
+            /**
+             * @description telemtrestart spec ("systemd:telemt", "openrc:telemt",
+             *     "procd:telemt", "runit:telemt") to use for the supervised
+             *     restart after a binary swap. Empty when mode != "binary".
+             */
+            suggested_restart_spec: string;
+            /**
+             * @description Best-effort resolved path to the telemt executable, used as
+             *     the swap target. May be empty if it could not be resolved.
+             */
+            binary_path: string;
+            /** @description Whether an in-place update is offered at all. */
+            available: boolean;
+            /**
+             * @description Localizable CODE (not a human-readable phrase) explaining why
+             *     available is false, e.g. "docker_only",
+             *     "no_service_manager_detected". Empty when available is true.
+             */
+            reason: string;
         };
         EnrollmentTokenList: components["schemas"]["EnrollmentTokenListItem"][];
         /**

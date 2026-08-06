@@ -9,6 +9,7 @@ import (
 	cpevents "github.com/lost-coder/panvex/internal/controlplane/events"
 	"github.com/lost-coder/panvex/internal/controlplane/gateway"
 	controltelemetry "github.com/lost-coder/panvex/internal/controlplane/telemetry"
+	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
 // updateAgentRecordFromSnapshot folds the snapshot's identity / runtime
@@ -65,7 +66,28 @@ func (s *Server) updateAgentRecordFromSnapshot(snapshot gateway.AgentSnapshot) A
 		agent.Runtime = next
 		s.refreshInitializationWatchCooldown(snapshot, agent.Runtime, previousRuntime, receivedAt)
 	}
+	// Cached once by the agent at process startup and stamped on every
+	// snapshot regardless of partial-fetch status (unlike version/read_only
+	// above, this never depends on the slow Telemt sub-endpoint fetches), so
+	// it is always safe to overwrite outright rather than carry forward.
+	agent.TelemtUpdateProbe = telemtUpdateProbeFromSnapshot(snap.TelemtUpdateProbe)
 	return agent
+}
+
+// telemtUpdateProbeFromSnapshot converts the wire TelemtUpdateProbe into the
+// presentation type, or nil if the agent did not report one (pre-probe
+// agents). Pure, I/O-free — mirrors agentRuntimeFromSnapshot.
+func telemtUpdateProbeFromSnapshot(p *gatewayrpc.TelemtUpdateProbe) *TelemtUpdateProbe {
+	if p == nil {
+		return nil
+	}
+	return &TelemtUpdateProbe{
+		Mode:                 p.GetMode(),
+		SuggestedRestartSpec: p.GetSuggestedRestartSpec(),
+		BinaryPath:           p.GetBinaryPath(),
+		Available:            p.GetAvailable(),
+		Reason:               p.GetReason(),
+	}
 }
 
 // updateAgentIdentity applies an identity-only mutation to an agent in the

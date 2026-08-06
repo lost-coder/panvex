@@ -187,6 +187,14 @@ export const agentRuntimeSchema = z.object({
   user_telemetry_suppressed: z.boolean().default(false),
 }) satisfies z.ZodType<Gen["AgentRuntime"]>;
 
+export const telemtUpdateProbeSchema = z.object({
+  mode: z.string(),
+  suggested_restart_spec: z.string(),
+  binary_path: z.string(),
+  available: z.boolean(),
+  reason: z.string(),
+}) satisfies z.ZodType<Gen["TelemtUpdateProbe"]>;
+
 export const agentCertificateRecoverySchema = z.object({
   // P8.3: agent_id was silently STRIPPED before (Zod drops unknown keys);
   // the wire always carries it (Go json tag without omitempty) and the
@@ -225,6 +233,10 @@ export const agentSchema = z.object({
   // dial_transport_mode → a stuck transport switch. Optional (omitempty on
   // the wire); the server detail view renders a warning badge for it.
   transport_drift: z.boolean().optional(),
+  // Absent for agents that predate the probe (older builds never send it),
+  // and for pre-probe snapshots — nil is a meaningful "unknown" state, not
+  // an omission.
+  telemt_update_probe: telemtUpdateProbeSchema.optional(),
   runtime: agentRuntimeSchema,
   last_seen_at: timestamp,
 }) satisfies z.ZodType<Gen["Agent"]>;
@@ -257,3 +269,4 @@ export type AgentParsed = z.infer<typeof agentSchema>;
 export type AgentRuntimeParsed = z.infer<typeof agentRuntimeSchema>;
 export type InstanceParsed = z.infer<typeof instanceSchema>;
 export type AgentCertificateRecoveryParsed = z.infer<typeof agentCertificateRecoverySchema>;
+export type TelemtUpdateProbeParsed = z.infer<typeof telemtUpdateProbeSchema>;

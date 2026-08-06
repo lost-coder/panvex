@@ -43,9 +43,41 @@ type Agent struct {
 	// Used to pin agent identity at gRPC connect time (Q4.U-S-04). Not
 	// exposed in the public JSON shape — operators don't need it and
 	// it's noise in the dashboard.
-	CertSerial string       `json:"-"`
-	Runtime    AgentRuntime `json:"runtime"`
-	LastSeenAt time.Time    `json:"last_seen_at"`
+	CertSerial string `json:"-"`
+	// TelemtUpdateProbe reports whether (and how) this node's telemt
+	// install can be updated in place: which supervisor fronts the
+	// process, and — when no in-place update path exists — why. Cached by
+	// the agent once at process startup and stamped on every snapshot; nil
+	// until the agent has sent at least one such snapshot (older agents
+	// that predate the probe never populate it).
+	TelemtUpdateProbe *TelemtUpdateProbe `json:"telemt_update_probe,omitempty"`
+	Runtime           AgentRuntime       `json:"runtime"`
+	LastSeenAt        time.Time          `json:"last_seen_at"`
+}
+
+// TelemtUpdateProbe is the presentation view of gatewayrpc.TelemtUpdateProbe
+// — the result of the agent probing its local process supervisor
+// (systemd/OpenRC/procd/runit/docker/none) once at startup, used by the
+// panel to decide whether an in-place telemt update is safe to offer.
+type TelemtUpdateProbe struct {
+	// Mode is "binary" (a supported supervisor owns telemt; a binary swap +
+	// supervised restart is safe), "docker" (telemt runs in a container;
+	// updates must go through the image), or "none" (nothing detected).
+	Mode string `json:"mode"`
+	// SuggestedRestartSpec is the telemtrestart spec ("systemd:telemt",
+	// "openrc:telemt", "procd:telemt", "runit:telemt") to use for the
+	// supervised restart after a binary swap. Empty when Mode != "binary".
+	SuggestedRestartSpec string `json:"suggested_restart_spec"`
+	// BinaryPath is the best-effort resolved path to the telemt
+	// executable, used as the swap target. May be empty if it could not be
+	// resolved.
+	BinaryPath string `json:"binary_path"`
+	// Available is whether an in-place update is offered at all.
+	Available bool `json:"available"`
+	// Reason is a localizable CODE (not a human-readable phrase)
+	// explaining why Available is false, e.g. "docker_only",
+	// "no_service_manager_detected". Empty when Available is true.
+	Reason string `json:"reason"`
 }
 
 // AgentCertificateRecoveryGrantResponse is the operator-facing view of an

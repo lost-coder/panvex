@@ -21,6 +21,7 @@ type (
 	Instance                = api.Instance
 	MetricSnapshot          = api.MetricSnapshot
 	AuditEvent              = api.AuditEvent
+	TelemtUpdateProbe       = api.TelemtUpdateProbe
 
 	// Unexported: the recovery-grant view is nested in Agent but server code
 	// references it by its original lowercase name.

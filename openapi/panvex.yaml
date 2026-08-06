@@ -690,6 +690,16 @@ components:
           type: string
           format: date-time
           description: Expiry timestamp of the agent's current certificate.
+        telemt_update_probe:
+          allOf:
+            - $ref: '#/components/schemas/TelemtUpdateProbe'
+          description: |
+            Whether (and how) this node's telemt install can be updated
+            in place: which process supervisor fronts it, and — when no
+            in-place path exists — why. Cached by the agent once at
+            process startup and stamped on every snapshot; absent until
+            the agent has sent at least one such snapshot (older agents
+            that predate the probe never populate it).
         runtime:
           $ref: '#/components/schemas/AgentRuntime'
         last_seen_at:
@@ -1013,6 +1023,48 @@ components:
           type: integer
           format: int64
           nullable: true
+
+    TelemtUpdateProbe:
+      type: object
+      description: |
+        Result of the agent probing its local process supervisor
+        (systemd, OpenRC/procd, runit, docker, or none) once at startup,
+        used by the panel to decide whether an in-place telemt update is
+        safe to offer for this node.
+      required:
+        - mode
+        - suggested_restart_spec
+        - binary_path
+        - available
+        - reason
+      properties:
+        mode:
+          type: string
+          description: |
+            "binary" (a supported supervisor owns telemt; a binary swap +
+            supervised restart is safe), "docker" (telemt runs in a
+            container; updates must go through the image), or "none"
+            (nothing detected).
+        suggested_restart_spec:
+          type: string
+          description: |
+            telemtrestart spec ("systemd:telemt", "openrc:telemt",
+            "procd:telemt", "runit:telemt") to use for the supervised
+            restart after a binary swap. Empty when mode != "binary".
+        binary_path:
+          type: string
+          description: |
+            Best-effort resolved path to the telemt executable, used as
+            the swap target. May be empty if it could not be resolved.
+        available:
+          type: boolean
+          description: Whether an in-place update is offered at all.
+        reason:
+          type: string
+          description: |
+            Localizable CODE (not a human-readable phrase) explaining why
+            available is false, e.g. "docker_only",
+            "no_service_manager_detected". Empty when available is true.
 
     EnrollmentTokenList:
       type: array
