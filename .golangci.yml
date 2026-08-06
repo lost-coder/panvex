@@ -219,16 +219,19 @@ linters:
         text: "G301"
         path: "internal/controlplane/config/panel_test.go"
 
-      # G304 — file inclusion via variable. The agent/updater opens
-      # paths it just created via os.CreateTemp; agent/state and
-      # state/users_file open operator-configured paths; tests mint
-      # paths inside t.TempDir.
+      # G304 — file inclusion via variable. The agent/updater and
+      # agent/telemtupdate open paths they just created via
+      # os.CreateTemp; agent/state and state/users_file open
+      # operator-configured paths; tests mint paths inside t.TempDir.
       - linters: [gosec]
         text: "G304"
         path: "internal/agent/state/credentials.go"
       - linters: [gosec]
         text: "G304"
         path: "internal/agent/updater/updater.go"
+      - linters: [gosec]
+        text: "G304"
+        path: "internal/agent/telemtupdate/download.go"
       - linters: [gosec]
         text: "G304"
         path: "internal/controlplane/state/users_file.go"
