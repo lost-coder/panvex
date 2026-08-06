@@ -246,6 +246,25 @@ func (s *Server) enrollAgent(ctx context.Context, request agentEnrollmentRequest
 		Data: agent,
 	})
 
+	// P3 Task 3: a node enrolled straight into a group that already carries
+	// config has never seen it (there is no prior desired snapshot to have
+	// picked it up from). Push the group's sections now instead of leaving
+	// the node bare until an unrelated config-apply run. Best-effort and
+	// after every other enrollment side effect: enrollment itself has
+	// already succeeded (token consumed, agent row + cert persisted) and
+	// must not be rolled back over an apply failure. The node need not be
+	// connected yet — the resulting job queues and the R10 reconciler
+	// delivers it on connect, same as the reassign path (Task 2). No
+	// session actor exists on this path, so mirror the enrollment audit
+	// above and use the agent's own id.
+	if batchID, err := s.applyGroupToAgent(ctx, agentID, agentID, token.FleetGroupID); err != nil {
+		s.logger.WarnContext(ctx, "auto-apply group config on enroll failed",
+			"agent_id", agentID, "group_id", token.FleetGroupID, "error", err)
+	} else if batchID != "" {
+		s.appendAuditWithContext(ctx, agentID, "config.group_auto_apply", agentID,
+			map[string]any{"group_id": token.FleetGroupID, "batch_id": batchID})
+	}
+
 	return agentEnrollmentResponse{
 		AgentID:        agentID,
 		CertificatePEM: issued.CertificatePEM,
