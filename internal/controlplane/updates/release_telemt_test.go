@@ -49,6 +49,26 @@ func TestFetchAndPickLatestTelemtRelease_SkipsPrereleaseDraftAndPicksNewestStabl
 	}
 }
 
+// TestPickLatestTelemtRelease_IgnoresListOrderPicksSemverMax is the
+// regression guard for the review finding: GitHub's releases API returns
+// entries in publish-date order, NOT semver order. A hotfix published later
+// on an older branch (3.3.9, listed first / newest-published) must lose to a
+// numerically newer release that happened to ship earlier (3.4.25).
+func TestPickLatestTelemtRelease_IgnoresListOrderPicksSemverMax(t *testing.T) {
+	releases := []GitHubRelease{
+		{TagName: "3.3.9"},  // published most recently, but semver-oldest of the three
+		{TagName: "3.4.25"}, // the true semver max
+		{TagName: "3.4.1"},
+	}
+	release := pickLatestTelemtRelease(releases)
+	if release == nil {
+		t.Fatal("pickLatestTelemtRelease() = nil, want 3.4.25")
+	}
+	if release.TagName != "3.4.25" {
+		t.Fatalf("pickLatestTelemtRelease().TagName = %q, want %q (semver max, not list-order first)", release.TagName, "3.4.25")
+	}
+}
+
 func TestPickLatestTelemtRelease_NoStableReleaseReturnsNil(t *testing.T) {
 	releases := []GitHubRelease{
 		{TagName: "3.5.0-rc1", Prerelease: true},

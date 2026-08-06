@@ -51,8 +51,9 @@ func (s *Server) startUpdateCheckerWorker(ctx context.Context) {
 // checkForUpdates fetches the latest release information from GitHub and
 // persists the result into s.updateState. The panel/agent check and the
 // Telemt check are independent tries within the same tick — each owns a
-// disjoint set of fields on State and persists on its own, so a failure (or
-// a skip, e.g. no GitHubRepo configured) in one never blocks or corrupts the
+// disjoint set of fields on State, persists on its own, and gets its own
+// fetch deadline (see checkPanelAndAgentUpdates / checkTelemtRelease), so a
+// failure OR a slow response in one never blocks, starves, or corrupts the
 // other (Task 10, Telemt Update v1).
 func (s *Server) checkForUpdates(ctx context.Context) {
 	s.settingsMu.RLock()
@@ -60,14 +61,18 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 	token := s.updateSettings.GitHubToken
 	s.settingsMu.RUnlock()
 
-	fetchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
 	if repo != "" {
-		s.checkPanelAndAgentUpdates(fetchCtx, repo, token)
+		s.checkPanelAndAgentUpdates(ctx, repo, token)
 	}
-	s.checkTelemtRelease(fetchCtx, token)
+	s.checkTelemtRelease(ctx, token)
 }
+
+// updateCheckFetchTimeout bounds a single release-check's GitHub round trip.
+// checkPanelAndAgentUpdates and checkTelemtRelease each derive their own
+// timeout from this constant off the tick's parent context, rather than
+// sharing one deadline, so a slow panel/agent fetch cannot eat into the
+// Telemt check's budget (or vice versa).
+const updateCheckFetchTimeout = 30 * time.Second
 
 // checkPanelAndAgentUpdates queries the operator-configured GitHub repo for
 // the latest control-plane and agent releases and persists the result into
@@ -76,7 +81,10 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 // s.updateState, so a same-tick Telemt result (run before or after this call)
 // is never clobbered.
 func (s *Server) checkPanelAndAgentUpdates(ctx context.Context, repo, token string) {
-	panel, agent, err := updates.FetchLatestVersions(ctx, repo, token)
+	fetchCtx, cancel := context.WithTimeout(ctx, updateCheckFetchTimeout)
+	defer cancel()
+
+	panel, agent, err := updates.FetchLatestVersions(fetchCtx, repo, token)
 	if err != nil {
 		s.logger.WarnContext(ctx, "update check failed", "error", err)
 		s.recordUpdateCheckError(ctx, err)
@@ -134,7 +142,10 @@ func (s *Server) checkPanelAndAgentUpdates(ctx context.Context, repo, token stri
 // s.updateState as its base so the panel/agent result from earlier in the
 // same tick is never clobbered.
 func (s *Server) checkTelemtRelease(ctx context.Context, token string) {
-	release, err := updates.FetchLatestTelemtRelease(ctx, token)
+	fetchCtx, cancel := context.WithTimeout(ctx, updateCheckFetchTimeout)
+	defer cancel()
+
+	release, err := updates.FetchLatestTelemtRelease(fetchCtx, token)
 	if err != nil {
 		s.logger.WarnContext(ctx, "telemt update check failed", "error", err)
 	}

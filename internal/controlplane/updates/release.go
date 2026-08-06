@@ -279,11 +279,17 @@ func fetchTelemtReleasesPage(ctx context.Context, token string) ([]GitHubRelease
 	return doFetchReleases(ctx, url, token)
 }
 
-// pickLatestTelemtRelease returns the newest stable Telemt release in
-// releases (GitHub's releases API returns newest-first), skipping drafts,
-// releases GitHub itself flags as pre-release, and any tag that is not a bare
-// "X.Y.Z" (the hyphenated pre-release tag shape, e.g. "3.5.0-rc1").
+// pickLatestTelemtRelease returns the stable Telemt release with the highest
+// semver tag among releases, skipping drafts, releases GitHub itself flags as
+// pre-release, and any tag that is not a bare "X.Y.Z" (the hyphenated
+// pre-release tag shape, e.g. "3.5.0-rc1"). It does NOT trust GitHub's
+// newest-first list ordering (that's publish-date order, not semver order):
+// a hotfix published later on an older branch would otherwise beat a
+// numerically newer release that shipped earlier. telemtStableTagPattern
+// already guarantees every candidate is a parseable bare semver, so
+// CompareVersions is only defensively checked for an error.
 func pickLatestTelemtRelease(releases []GitHubRelease) *GitHubRelease {
+	var best *GitHubRelease
 	for i := range releases {
 		r := &releases[i]
 		if r.Draft || r.Prerelease {
@@ -292,9 +298,15 @@ func pickLatestTelemtRelease(releases []GitHubRelease) *GitHubRelease {
 		if !telemtStableTagPattern.MatchString(r.TagName) {
 			continue
 		}
-		return r
+		if best == nil {
+			best = r
+			continue
+		}
+		if cmp, err := CompareVersions(r.TagName, best.TagName); err == nil && cmp > 0 {
+			best = r
+		}
 	}
-	return nil
+	return best
 }
 
 // telemtReleaseBaseURL builds the download base URL for a Telemt release tag:
