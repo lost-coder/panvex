@@ -436,6 +436,17 @@
       "hotHint": "Applied immediately",
       "reloadHint": "Applied via an in-process Telemt reload (no process restart)"
     },
+    "tree": {
+      "defaultHint": "Default: {{value}}",
+      "lockedByGroup": "Set by group {{name}}",
+      "unknownParam": "Unknown parameter — read-only",
+      "readonlyContainer": "Structural setting — edit it in its own section, not here",
+      "processOwned": "Process-owned — set at process start, not editable",
+      "driftPanel": "In panel: {{value}}",
+      "driftNode": "On node: {{value}}",
+      "acceptNode": "Accept node value",
+      "revertPanel": "Revert to panel value"
+    },
     "currentValue": {
       "label": "Current on node: {{value}}",
       "on": "on",
