@@ -429,6 +429,21 @@ func (s *Server) handleUpdateAgentFleetGroup() http.HandlerFunc {
 		// them.
 		s.clientsSvc.ReconcileTopology(r.Context(), session.UserID, s.now())
 
+		// P3: the new group may carry config the node has never applied
+		// (its desired snapshot still reflects the old group, so the usual
+		// applyDiff path would not surface the new group's sections). Push
+		// them now so the node catches up on join instead of waiting for an
+		// unrelated config-apply run. Best-effort: the reassign itself has
+		// already succeeded and must not be rolled back over an apply
+		// failure.
+		if batchID, err := s.applyGroupToAgent(r.Context(), session.UserID, agentID, newGroupID); err != nil {
+			s.logger.WarnContext(r.Context(), "auto-apply group config on reassign failed",
+				"agent_id", agentID, "group_id", newGroupID, "error", err)
+		} else if batchID != "" {
+			s.appendAuditWithContext(r.Context(), session.UserID, "config.group_auto_apply", agentID,
+				map[string]any{"group_id": newGroupID, "batch_id": batchID})
+		}
+
 		writeJSON(w, http.StatusOK, current)
 	}
 }
