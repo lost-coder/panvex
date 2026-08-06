@@ -23,4 +23,19 @@ describe("buildTree", () => {
     expect(f.unknown).toBe(true);
     expect(f.readonly).toBe(true);
   });
+  it("does not flag array fields as drifted when contents are equal but instances differ", () => {
+    const desired = { censorship: { tls_domains: ["a", "b"] } };
+    const observed = { censorship: { tls_domains: ["a", "b"] } };
+    const tree = buildTree(desired, observed, new Set());
+    const f = tree.flatMap((s) => s.fields).find((x) => x.path === "censorship.tls_domains")!;
+    expect(desired.censorship.tls_domains).not.toBe(observed.censorship.tls_domains);
+    expect(f.drifted).toBe(false);
+  });
+  it("flags array fields as drifted when contents genuinely differ", () => {
+    const desired = { censorship: { tls_domains: ["a"] } };
+    const observed = { censorship: { tls_domains: ["a", "b"] } };
+    const tree = buildTree(desired, observed, new Set());
+    const f = tree.flatMap((s) => s.fields).find((x) => x.path === "censorship.tls_domains")!;
+    expect(f.drifted).toBe(true);
+  });
 });

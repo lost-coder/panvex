@@ -89,7 +89,8 @@ export function buildTree(
       path,
       value,
       observed: observedValue,
-      drifted: hasDesired && hasObserved && value !== observedValue,
+      drifted:
+        hasDesired && hasObserved && JSON.stringify(value) !== JSON.stringify(observedValue),
       locked: groupPaths.has(path),
       readonly: !entry || isProcessOwned(path) || container,
       unknown: !entry && !container,
