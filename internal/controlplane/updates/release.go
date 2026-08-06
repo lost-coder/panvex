@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,6 +21,8 @@ type GitHubRelease struct {
 	TagName     string               `json:"tag_name"`
 	Body        string               `json:"body"`
 	PublishedAt string               `json:"published_at"`
+	Draft       bool                 `json:"draft"`
+	Prerelease  bool                 `json:"prerelease"`
 	Assets      []GitHubReleaseAsset `json:"assets"`
 }
 
@@ -112,6 +115,17 @@ func fetchReleasesPage(ctx context.Context, repo, token string) ([]GitHubRelease
 	if uErr := CheckDownloadURL(url); uErr != nil {
 		return nil, fmt.Errorf("fetch latest versions: %w", uErr)
 	}
+	return doFetchReleases(ctx, url, token)
+}
+
+// doFetchReleases issues an authenticated GET against url and decodes the
+// GitHub releases page. Split out of fetchReleasesPage so
+// fetchTelemtReleasesPage below can share the same auth-header and
+// rate-limit-error handling, and so tests can exercise the network/decode
+// path directly against an httptest server without routing through the
+// GitHub-only host allow-list (CheckDownloadURL stays at each production
+// call site, above and in fetchTelemtReleasesPage).
+func doFetchReleases(ctx context.Context, url, token string) ([]GitHubRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -227,4 +241,87 @@ func ResolveAssetURLs(release *GitHubRelease, component string) (binaryURL, chec
 		}
 	}
 	return binaryURL, checksumURL
+}
+
+// telemtRepo is the fixed upstream Telemt project checked for new releases.
+// Unlike Settings.GitHubRepo (operator-configurable, defaults to the panel's
+// own fork), the Telemt release feed always points at the upstream repo — an
+// operator cannot repoint it.
+const telemtRepo = "telemt/telemt"
+
+// telemtStableTagPattern matches Telemt's bare-semver release tags exactly:
+// no "v" prefix, no pre-release suffix (see the release workflow's
+// `[0-9]+.[0-9]+.[0-9]+` tag regex). A hyphenated tag such as "3.5.0-rc1" is
+// a pre-release by construction and never matches.
+var telemtStableTagPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+
+// FetchLatestTelemtRelease queries the GitHub Releases API for telemtRepo and
+// returns the newest stable release (not a draft, not flagged prerelease by
+// GitHub, and tagged as a bare "X.Y.Z") found in the first page of results.
+// Returns a nil release with a nil error when only pre-releases/drafts exist.
+func FetchLatestTelemtRelease(ctx context.Context, token string) (*GitHubRelease, error) {
+	releases, err := fetchTelemtReleasesPage(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	return pickLatestTelemtRelease(releases), nil
+}
+
+// fetchTelemtReleasesPage validates the resolved URL and delegates to
+// doFetchReleases, mirroring fetchReleasesPage's validation step. telemtRepo
+// is a fixed constant, so unlike fetchReleasesPage there is no operator input
+// to run through ValidateGitHubRepo.
+func fetchTelemtReleasesPage(ctx context.Context, token string) ([]GitHubRelease, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", telemtRepo)
+	if uErr := CheckDownloadURL(url); uErr != nil {
+		return nil, fmt.Errorf("fetch latest telemt release: %w", uErr)
+	}
+	return doFetchReleases(ctx, url, token)
+}
+
+// pickLatestTelemtRelease returns the newest stable Telemt release in
+// releases (GitHub's releases API returns newest-first), skipping drafts,
+// releases GitHub itself flags as pre-release, and any tag that is not a bare
+// "X.Y.Z" (the hyphenated pre-release tag shape, e.g. "3.5.0-rc1").
+func pickLatestTelemtRelease(releases []GitHubRelease) *GitHubRelease {
+	for i := range releases {
+		r := &releases[i]
+		if r.Draft || r.Prerelease {
+			continue
+		}
+		if !telemtStableTagPattern.MatchString(r.TagName) {
+			continue
+		}
+		return r
+	}
+	return nil
+}
+
+// telemtReleaseBaseURL builds the download base URL for a Telemt release tag:
+// https://github.com/telemt/telemt/releases/download/<tag> — the agent
+// appends its own per-platform asset name to this when it self-updates.
+func telemtReleaseBaseURL(tag string) string {
+	return fmt.Sprintf("https://github.com/%s/releases/download/%s", telemtRepo, tag)
+}
+
+// ApplyTelemtCheckResult merges the outcome of a Telemt release check into
+// state, following the "failure preserves, success clears" contract: an
+// error leaves the previously known TelemtLatestVersion/TelemtReleaseBaseURL
+// untouched and records the message so the dashboard can surface it, while a
+// successful check always clears the previous error. A successful check that
+// found no stable release (release == nil, err == nil) clears the error but
+// otherwise leaves the previously known version/URL alone — the same "no
+// signal, no change" behavior FetchLatestTelemtRelease's nil-nil return
+// implies.
+func ApplyTelemtCheckResult(state *State, release *GitHubRelease, err error) {
+	if err != nil {
+		state.TelemtLastCheckError = err.Error()
+		return
+	}
+	state.TelemtLastCheckError = ""
+	if release == nil {
+		return
+	}
+	state.TelemtLatestVersion = release.TagName
+	state.TelemtReleaseBaseURL = telemtReleaseBaseURL(release.TagName)
 }

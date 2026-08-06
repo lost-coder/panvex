@@ -49,30 +49,54 @@ func (s *Server) startUpdateCheckerWorker(ctx context.Context) {
 }
 
 // checkForUpdates fetches the latest release information from GitHub and
-// persists the result into s.updateState.
+// persists the result into s.updateState. The panel/agent check and the
+// Telemt check are independent tries within the same tick — each owns a
+// disjoint set of fields on State and persists on its own, so a failure (or
+// a skip, e.g. no GitHubRepo configured) in one never blocks or corrupts the
+// other (Task 10, Telemt Update v1).
 func (s *Server) checkForUpdates(ctx context.Context) {
 	s.settingsMu.RLock()
 	repo := s.updateSettings.GitHubRepo
 	token := s.updateSettings.GitHubToken
 	s.settingsMu.RUnlock()
 
-	if repo == "" {
-		return
-	}
-
 	fetchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	panel, agent, err := updates.FetchLatestVersions(fetchCtx, repo, token)
+	if repo != "" {
+		s.checkPanelAndAgentUpdates(fetchCtx, repo, token)
+	}
+	s.checkTelemtRelease(fetchCtx, token)
+}
+
+// checkPanelAndAgentUpdates queries the operator-configured GitHub repo for
+// the latest control-plane and agent releases and persists the result into
+// s.updateState. Only the panel/agent-owned fields are touched — Telemt's
+// fields on the same State are read-modify-written from the live
+// s.updateState, so a same-tick Telemt result (run before or after this call)
+// is never clobbered.
+func (s *Server) checkPanelAndAgentUpdates(ctx context.Context, repo, token string) {
+	panel, agent, err := updates.FetchLatestVersions(ctx, repo, token)
 	if err != nil {
 		s.logger.WarnContext(ctx, "update check failed", "error", err)
 		s.recordUpdateCheckError(ctx, err)
 		return
 	}
 
-	state := UpdateState{
-		LastCheckedAt: s.now().Unix(),
-	}
+	s.settingsMu.Lock()
+	state := s.updateState
+	state.LastCheckedAt = s.now().Unix()
+	// A successful check clears any prior error and resets the panel/agent
+	// fields before conditionally repopulating them below — a release page
+	// that no longer lists a component drops its stale version, matching the
+	// pre-Task-10 behavior for these fields.
+	state.LastCheckError = ""
+	state.LatestPanelVersion = ""
+	state.PanelDownloadURL = ""
+	state.PanelChecksumURL = ""
+	state.PanelChangelog = ""
+	state.LatestAgentVersion = ""
+	state.AgentChangelog = ""
 
 	if panel != nil {
 		_, version, _ := updates.ParseReleaseTag(panel.TagName)
@@ -91,8 +115,6 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 		state.AgentChangelog = agent.Body
 	}
 
-	// A successful check clears any prior error (LastCheckError defaults to "").
-	s.settingsMu.Lock()
 	s.updateState = state
 	s.settingsMu.Unlock()
 
@@ -102,6 +124,35 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 		"panel_version", state.LatestPanelVersion,
 		"agent_version", state.LatestAgentVersion,
 	)
+}
+
+// checkTelemtRelease queries the fixed upstream telemt/telemt repository for
+// the newest stable release and merges the result into s.updateState. It is
+// its own try within the tick — see checkForUpdates — and only ever touches
+// the Telemt-owned fields on State (TelemtLatestVersion /
+// TelemtReleaseBaseURL / TelemtLastCheckError), reading the current
+// s.updateState as its base so the panel/agent result from earlier in the
+// same tick is never clobbered.
+func (s *Server) checkTelemtRelease(ctx context.Context, token string) {
+	release, err := updates.FetchLatestTelemtRelease(ctx, token)
+	if err != nil {
+		s.logger.WarnContext(ctx, "telemt update check failed", "error", err)
+	}
+
+	s.settingsMu.Lock()
+	state := s.updateState
+	updates.ApplyTelemtCheckResult(&state, release, err)
+	state.LastCheckedAt = s.now().Unix()
+	s.updateState = state
+	s.settingsMu.Unlock()
+
+	s.persistUpdateState(ctx, state)
+
+	if err == nil {
+		s.logger.InfoContext(ctx, "telemt update check completed",
+			"telemt_version", state.TelemtLatestVersion,
+		)
+	}
 }
 
 // recordUpdateCheckError stores the reason the latest check failed so the

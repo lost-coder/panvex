@@ -38,6 +38,13 @@ export const updateStateSchema = z.object({
   // message). Omitted by the server after a successful check; defaults to ""
   // so the parsed type stays a plain string.
   last_check_error: z.string().optional().default(""),
+  // Telemt release check (Task 10, Telemt Update v1): newest stable release
+  // tag of the fixed upstream telemt/telemt repo, its asset base URL, and the
+  // independent error for that check. Always present (server sends "" rather
+  // than omitting, unlike last_check_error above).
+  telemt_latest_version: z.string(),
+  telemt_release_base_url: z.string(),
+  telemt_last_check_error: z.string(),
 });
 
 // Server-persisted panel self-update lifecycle. Defensive defaults so a phase

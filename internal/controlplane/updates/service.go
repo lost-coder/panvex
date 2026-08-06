@@ -44,6 +44,19 @@ type State struct {
 	// successful check. Surfaced in the dashboard so a failed check is visible,
 	// not silent.
 	LastCheckError string `json:"last_check_error,omitempty"`
+
+	// TelemtLatestVersion is the newest stable Telemt release tag known to the
+	// panel (bare semver, e.g. "3.4.25"). Checked against the fixed upstream
+	// telemt/telemt repo, independently of GitHubRepo above.
+	TelemtLatestVersion string `json:"telemt_latest_version"`
+	// TelemtReleaseBaseURL is the release's asset base URL
+	// (https://github.com/telemt/telemt/releases/download/<tag>); the agent
+	// appends its own per-platform asset name when it self-updates.
+	TelemtReleaseBaseURL string `json:"telemt_release_base_url"`
+	// TelemtLastCheckError mirrors LastCheckError but for the Telemt release
+	// check, which runs as its own try in the same tick: a failure here (or in
+	// LastCheckError) never affects the other's fields or clears its error.
+	TelemtLastCheckError string `json:"telemt_last_check_error"`
 }
 
 // SelfUpdatePhase enumerates the lifecycle of one panel self-update run.

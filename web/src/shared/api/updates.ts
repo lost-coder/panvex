@@ -25,6 +25,11 @@ export interface UpdateState {
   agent_changelog: string;
   last_checked_at: number;
   last_check_error: string;
+  // Telemt release check (Task 10, Telemt Update v1) — runs independently of
+  // the panel/agent check above against the fixed upstream telemt/telemt repo.
+  telemt_latest_version: string;
+  telemt_release_base_url: string;
+  telemt_last_check_error: string;
 }
 
 export type SelfUpdatePhase =
