@@ -256,14 +256,29 @@ func parseChecksumSidecar(b []byte) string {
 // README-first archive must not be silently extracted (mirrors
 // updater.extractBinaryFromArchive's "wanted entry missing" defense, but
 // telemtupdate does not know a specific member name to look for).
-//
-// Every member's declared size is checked against defaultMaxArchive before
-// any bytes are streamed, and the stream itself is bounded to that same
-// declared size — together this defends both against a header lying about
-// a huge size (rejected up front) and a decompression bomb hidden behind a
-// small declared size (the tar reader never yields more than hdr.Size
-// bytes for the entry regardless of how much compressed data backs it).
 func extractBinary(archivePath, destDir string) (binTmpPath string, size int64, err error) {
+	return extractBinaryCapped(archivePath, destDir, defaultMaxArchive)
+}
+
+// extractBinaryCapped is extractBinary with an injectable decompression
+// cap, so tests can trip the bomb defense on small, fast fixtures instead
+// of a real 128 MiB archive. extractBinary (the package's public surface,
+// per the task spec) always calls this with defaultMaxArchive.
+//
+// The cap is enforced by wrapping the *decompressed byte stream itself*
+// (capReader, below) rather than only checking the one regular-file
+// member we intend to extract. That distinction matters: tar.Reader.Next
+// silently reads and discards the remaining declared bytes of whatever
+// entry it is skipping past — including non-regular members our loop
+// `continue`s over without ever inspecting their Size. A forged member
+// (e.g. a symlink or directory header lying about a multi-gigabyte Size)
+// would otherwise sail through the per-regular-file bound check and still
+// cost the CPU/wall-clock time of decompressing (and discarding) whatever
+// real compressed payload backs that declared size — a checksum-verified,
+// signed-by-a-hostile-origin decompression bomb. Capping the cumulative
+// stream closes that gap for every current and future skip path, not just
+// the one this review caught.
+func extractBinaryCapped(archivePath, destDir string, maxDecompressed int64) (binTmpPath string, size int64, err error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return "", 0, fmt.Errorf("open archive: %w", err)
@@ -276,7 +291,7 @@ func extractBinary(archivePath, destDir string) (binTmpPath string, size int64, 
 	}
 	defer gz.Close()
 
-	tr := tar.NewReader(gz)
+	tr := tar.NewReader(&capReader{r: gz, remaining: maxDecompressed})
 
 	var (
 		binPath  string
@@ -293,6 +308,9 @@ func extractBinary(archivePath, destDir string) (binTmpPath string, size int64, 
 			if binPath != "" {
 				_ = os.Remove(binPath)
 			}
+			if errors.Is(nextErr, errArchiveTooLarge) {
+				return "", 0, fmt.Errorf("%w: decompressed archive exceeds cap=%d while scanning entries", errArchiveTooLarge, maxDecompressed)
+			}
 			return "", 0, fmt.Errorf("read tar entry: %w", nextErr)
 		}
 		if hdr.Typeflag != tar.TypeReg {
@@ -305,11 +323,14 @@ func extractBinary(archivePath, destDir string) (binTmpPath string, size int64, 
 			}
 			return "", 0, fmt.Errorf("archive contains more than one file member")
 		}
-		if hdr.Size <= 0 || hdr.Size > defaultMaxArchive {
-			return "", 0, fmt.Errorf("refusing to extract %q: declared size %d out of bounds (cap %d)", hdr.Name, hdr.Size, int64(defaultMaxArchive))
+		if hdr.Size <= 0 || hdr.Size > maxDecompressed {
+			return "", 0, fmt.Errorf("refusing to extract %q: declared size %d out of bounds (cap %d)", hdr.Name, hdr.Size, maxDecompressed)
 		}
 		path, n, stageErr := stageMember(tr, hdr.Size, destDir)
 		if stageErr != nil {
+			if errors.Is(stageErr, errArchiveTooLarge) {
+				return "", 0, fmt.Errorf("%w: decompressed archive exceeds cap=%d while extracting %q", errArchiveTooLarge, maxDecompressed, hdr.Name)
+			}
 			return "", 0, fmt.Errorf("extract: %w", stageErr)
 		}
 		binPath, binSize = path, n
@@ -319,6 +340,29 @@ func extractBinary(archivePath, destDir string) (binTmpPath string, size int64, 
 		return "", 0, fmt.Errorf("archive contains no file member")
 	}
 	return binPath, binSize, nil
+}
+
+// capReader enforces a hard ceiling on the CUMULATIVE bytes read from r
+// over the reader's whole lifetime, not per read call or per tar entry.
+// Wrapping the gzip stream with this (instead of, say, only bounding the
+// one entry extractBinaryCapped intends to keep) is what makes the cap
+// apply even to tar entries the caller never asked to read — see
+// extractBinaryCapped's doc comment for why that generality matters.
+type capReader struct {
+	r         io.Reader
+	remaining int64
+}
+
+func (c *capReader) Read(p []byte) (int, error) {
+	if c.remaining <= 0 {
+		return 0, errArchiveTooLarge
+	}
+	if int64(len(p)) > c.remaining {
+		p = p[:c.remaining]
+	}
+	n, err := c.r.Read(p)
+	c.remaining -= int64(n)
+	return n, err
 }
 
 // stageMember copies declaredSize bytes of the current tar entry into a new

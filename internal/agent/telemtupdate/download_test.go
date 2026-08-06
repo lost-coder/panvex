@@ -398,9 +398,12 @@ func TestExtractBinary_RejectsNoRegularMembers(t *testing.T) {
 }
 
 func TestExtractBinary_RejectsOversizedMember(t *testing.T) {
-	// A header declaring a size above the archive cap must be rejected
-	// before any bytes are streamed — this is the decompression-bomb
-	// defense (a lying/huge declared size is refused outright).
+	// A regular member's header declaring a size above the archive cap
+	// must be rejected before any bytes are streamed for THAT member —
+	// the fast pre-check on the entry we actually intend to extract.
+	// (The general decompression-bomb defense covering every member,
+	// including ones the loop never inspects the size of, is
+	// TestExtractBinaryCapped_BlocksBombBehindNonRegularMember below.)
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
@@ -425,6 +428,68 @@ func TestExtractBinary_RejectsOversizedMember(t *testing.T) {
 	_, _, err := extractBinary(path, t.TempDir())
 	if err == nil {
 		t.Fatal("expected error for oversized declared member size")
+	}
+}
+
+// TestExtractBinaryCapped_BlocksBombBehindNonRegularMember is the
+// regression test for the review finding: extractBinary's loop skips
+// non-regular members (`continue`) without ever looking at their declared
+// Size, but tar.Reader.Next still has to consume — i.e. decompress — the
+// remaining bytes of a skipped entry to reach the next header. A hostile
+// release host can sign a "telemt.tar.gz" whose sidecar checksum matches
+// the archive bytes on disk perfectly (checksum verification never looks
+// inside the archive) while burying a forged non-regular member (a
+// symlink or directory header lying about a huge Size; '9' — an
+// unrecognized/vendor typeflag — is used here purely because Go's
+// archive/tar.Writer refuses to let a test *construct* an oversized
+// Dir/Symlink/Link body, not because the vulnerable code path cares about
+// the flag) ahead of the real "telemt" member. Without a cumulative cap on
+// the decompressed stream, that bomb's declared size is paid for in
+// CPU/wall-clock decompression time regardless of it never being
+// extracted to disk.
+//
+// The test uses extractBinaryCapped directly with a tiny cap so it stays
+// fast — no multi-gigabyte fixture required to prove the defense works;
+// production always goes through extractBinary, which calls this with
+// defaultMaxArchive (128 MiB).
+func TestExtractBinaryCapped_BlocksBombBehindNonRegularMember(t *testing.T) {
+	const smallCap = 64
+	bomb := bytes.Repeat([]byte("B"), smallCap*4) // real bytes, well over smallCap
+	archive := makeTarGz(t, []tarEntry{
+		{name: "bomb", body: bomb, typeflag: '9'},
+		{name: "telemt", body: []byte("real-binary-payload")},
+	})
+
+	_, _, err := extractBinaryCapped(archive, t.TempDir(), smallCap)
+	if !errors.Is(err, errArchiveTooLarge) {
+		t.Fatalf("want errArchiveTooLarge, got %v", err)
+	}
+}
+
+// TestExtractBinaryCapped_AllowsArchiveWithinCap is the paired positive
+// case: a normal single-member archive comfortably inside the cap must
+// still extract successfully — the fix must not have turned the cap into
+// a rejection of legitimate archives. The cap here is generous relative
+// to the member's body (unlike production's 128 MiB vs. a few-MB Telemt
+// binary, a tiny test archive's fixed per-entry tar overhead — the
+// 512-byte header block, end-of-archive padding — is non-negligible
+// relative to a few bytes of payload, so this deliberately does not probe
+// an exact byte boundary; capReader bounds the whole decompressed stream,
+// headers included, by design).
+func TestExtractBinaryCapped_AllowsArchiveWithinCap(t *testing.T) {
+	const smallCap = 4096
+	binary := []byte("real-binary-payload")
+	archive := makeTarGz(t, []tarEntry{
+		{name: "telemt", body: binary},
+	})
+
+	path, size, err := extractBinaryCapped(archive, t.TempDir(), smallCap)
+	if err != nil {
+		t.Fatalf("extractBinaryCapped: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+	if size != int64(len(binary)) {
+		t.Fatalf("size = %d, want %d", size, len(binary))
 	}
 }
 
