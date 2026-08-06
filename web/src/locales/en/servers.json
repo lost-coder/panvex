@@ -445,7 +445,11 @@
       "driftPanel": "In panel: {{value}}",
       "driftNode": "On node: {{value}}",
       "acceptNode": "Accept node value",
-      "revertPanel": "Revert to panel value"
+      "revertPanel": "Revert to panel value",
+      "search": "Search fields…",
+      "filterChanged": "Changed only",
+      "filterDrifted": "Drifted only",
+      "emptyFiltered": "No fields match the current filters."
     },
     "currentValue": {
       "label": "Current on node: {{value}}",

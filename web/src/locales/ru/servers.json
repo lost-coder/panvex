@@ -456,7 +456,11 @@
       "driftPanel": "В панели: {{value}}",
       "driftNode": "На ноде: {{value}}",
       "acceptNode": "Принять значение ноды",
-      "revertPanel": "Вернуть значение панели"
+      "revertPanel": "Вернуть значение панели",
+      "search": "Поиск полей…",
+      "filterChanged": "Только изменённые",
+      "filterDrifted": "Только расхождения",
+      "emptyFiltered": "Нет полей, соответствующих текущим фильтрам."
     },
     "currentValue": {
       "label": "Сейчас на ноде: {{value}}",
