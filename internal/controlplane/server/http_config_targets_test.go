@@ -447,6 +447,51 @@ func TestConfigTargetGroupNodesDrift(t *testing.T) {
 	}
 }
 
+// TestConfigTargetGroupNodesDriftIgnoresSchemaVersionMarker is a regression
+// test for the bug where groupConfigNodeDrifts merged the agent-scope
+// override into the group's effective config WITHOUT stripping the P2
+// __schema_version marker (seedDesiredConfig stamps every agent's snapshot
+// with it). configDrift walks every leaf of the effective target, so the
+// marker — which never appears in the observed config — was reported as a
+// drifted field for every seeded node, permanently mislabeling in-sync nodes
+// as "drifted" on the fleet-group page while the sibling agent-scope GET
+// (which does strip the marker) correctly reported "in_sync" for the same
+// node. Asserts the group-page status is "in_sync" once the agent-scope
+// snapshot (marker included) matches the observed config.
+func TestConfigTargetGroupNodesDriftIgnoresSchemaVersionMarker(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	const agentID = "agent-group-nodes-marker"
+	groupID := seedGroupTargetAndAgent(t, srv, cookies, "cfg-group-nodes-marker", "match.example", agentID,
+		[]Instance{observedInstance(agentID, "match.example")})
+
+	// Simulate seedDesiredConfig: the agent-scope snapshot carries the P2
+	// schema-version marker alongside the config sections, and those
+	// sections match what's observed (so the only possible drift source is
+	// the unstripped marker).
+	agentSections := map[string]any{
+		"censorship":        map[string]any{"tls_domain": "match.example"},
+		schemaVersionMarker: "telemt-1.2.3",
+	}
+	if err := srv.configTargets.Upsert(context.Background(), storage.ConfigScopeAgent, agentID, agentSections); err != nil {
+		t.Fatalf("seed agent-scope config target with marker: %v", err)
+	}
+
+	getResp := performJSONRequest(t, srv, http.MethodGet, "/api/fleet-groups/"+groupID+"/config", nil, cookies)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("GET group config status = %d, want %d (body: %s)", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+	var got groupConfigTargetResponse
+	if err := json.Unmarshal(getResp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode group config response: %v", err)
+	}
+	if len(got.Nodes) != 1 {
+		t.Fatalf("group nodes = %v, want 1 entry", got.Nodes)
+	}
+	if got.Nodes[0].AgentID != agentID || got.Nodes[0].Status != "in_sync" {
+		t.Fatalf("group node = %+v, want agent_id=%q status=in_sync (marker must not leak into drift)", got.Nodes[0], agentID)
+	}
+}
+
 // loginScopedOperator bootstraps a non-admin operator whose fleet scope
 // is restricted to allowedGroupIDs, logs them in, and returns their
 // session cookies. With explicit scope rows the operator is no longer

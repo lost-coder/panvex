@@ -209,8 +209,9 @@ func (s *Server) handleGetGroupConfigTarget() http.HandlerFunc {
 
 // groupConfigNodeDrifts computes the per-agent drift rows for a fleet group:
 // for every live agent in the group, resolve its effective config (group ⊕
-// override) against the last observed snapshot. Any override-load failure is
-// surfaced so the handler can return 500.
+// override, override stripped of the P2 schema-version marker) against the
+// last observed snapshot. Any override-load failure is surfaced so the
+// handler can return 500.
 func (s *Server) groupConfigNodeDrifts(r *http.Request, groupID string, groupSections map[string]any) ([]groupConfigNodeDrift, error) {
 	nodes := []groupConfigNodeDrift{}
 	for _, agent := range s.live.List() {
@@ -221,7 +222,7 @@ func (s *Server) groupConfigNodeDrifts(r *http.Request, groupID string, groupSec
 		if err != nil {
 			return nil, err
 		}
-		effective := resolveEffectiveConfig(groupSections, override)
+		effective := resolveEffectiveConfig(groupSections, strippedSnapshot(override))
 		observed, hasObserved := s.observedConfigForAgent(agent.ID)
 		nodes = append(nodes, groupConfigNodeDrift{
 			AgentID: agent.ID,
