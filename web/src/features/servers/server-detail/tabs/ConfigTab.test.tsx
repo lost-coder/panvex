@@ -133,6 +133,58 @@ describe("ConfigTab", () => {
     expect(putMutate.mock.calls[0]?.[0]).toEqual({ general: { log_level: "silent" } });
   });
 
+  // Regression: handleAcceptNode used to PUT the accepted path server-side
+  // but never touch local `values`/`lastSeededRef`. If another path was
+  // dirty at the same time, the reseed-from-refetch effect bails (it only
+  // resyncs when nothing is dirty), so the accepted path kept its stale
+  // local value — and a later whole-map Save silently reverted the just
+  // accepted server value back to the old one.
+  it("Accept node value survives a later Save even when another field is mid-edit", () => {
+    putMutate.mockImplementation((_body: unknown, opts?: { onSuccess?: () => void }) =>
+      opts?.onSuccess?.(),
+    );
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {
+          censorship: { tls_domain: "old.example.com" },
+          general: { log_level: "normal" },
+        },
+        effective: {
+          censorship: { tls_domain: "old.example.com" },
+          general: { log_level: "normal" },
+        },
+        observed: { general: { log_level: "silent" } },
+        drift: { status: "drifted", fields: ["general.log_level"] },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+
+    // Dirty an unrelated field FIRST — this is what previously blocked the
+    // reseed effect from ever picking up the accepted value.
+    fireEvent.change(screen.getByDisplayValue("old.example.com"), {
+      target: { value: "dirty.example.com" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept node value" }));
+    expect(putMutate).toHaveBeenNthCalledWith(
+      1,
+      { general: { log_level: "silent" } },
+      expect.anything(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(putMutate).toHaveBeenCalledTimes(2);
+    // The accepted value (silent) must survive into the Save payload
+    // alongside the still-dirty tls_domain edit — NOT the old desired
+    // value (normal) the stale `values` map used to carry.
+    expect(putMutate.mock.calls[1]?.[0]).toEqual({
+      censorship: { tls_domain: "dirty.example.com" },
+      general: { log_level: "silent" },
+    });
+  });
+
   it("Revert to panel value applies just that one path", async () => {
     useAgentConfig.mockReturnValue({
       data: makeConfig({

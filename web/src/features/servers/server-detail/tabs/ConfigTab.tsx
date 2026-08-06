@@ -183,9 +183,24 @@ export function ConfigTab({
   // "Accept node value" pulls the drifted path's observed value into the
   // panel: a single-path PUT, which the panel merges into the existing
   // desired sections server-side (P2 Task 5) rather than replacing them.
+  //
+  // Fix (review round 1): the PUT alone left local `values` — and
+  // `lastSeededRef`, the reseed baseline — untouched. If another path was
+  // mid-edit (dirty), the reseed effect bails on refetch (it only resyncs
+  // when NOTHING is dirty), so `values[path]` kept its stale pre-accept
+  // value. A later Save then sent the WHOLE `values` map via
+  // `unflattenPaths`, silently overwriting the just-accepted server value
+  // back to the old one. Updating both `values` and `lastSeededRef` here,
+  // optimistically, makes the accepted value stick locally too — so it
+  // can't be clobbered by a later whole-map Save, and it isn't
+  // misread as a fresh dirty edit either.
   function handleAcceptNode(path: string) {
     putMutation.mutate(unflattenPaths({ [path]: observedValues[path] }), {
-      onSuccess: () => toast.success(t("config.saved")),
+      onSuccess: () => {
+        setValues((prev) => ({ ...prev, [path]: observedValues[path] }));
+        lastSeededRef.current = { ...lastSeededRef.current, [path]: observedValues[path] };
+        toast.success(t("config.saved"));
+      },
     });
   }
 
