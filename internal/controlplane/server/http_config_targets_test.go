@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -186,6 +187,62 @@ func TestConfigTargetAgentEffectiveMergePrefersOverride(t *testing.T) {
 	}
 	if tlsDomain := nestedString(got.Effective, "censorship", "tls_domain"); tlsDomain != "agent.example" {
 		t.Fatalf("effective.censorship.tls_domain = %q, want %q (override should win)", tlsDomain, "agent.example")
+	}
+}
+
+// TestAgentConfigGroupPaths seeds a fleet group config target with two
+// sections and an agent belonging to that group, and asserts the agent
+// config GET response's group_paths field carries the flattened dotted
+// paths of the group's sections (so the UI can lock those fields without
+// re-deriving them from the effective merge).
+func TestAgentConfigGroupPaths(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	groupID := seedTestFleetGroup(t, srv.store, "cfg-group-paths", time.Time{})
+	const agentID = "agent-group-paths"
+	srv.live.ApplySnapshot(agentID, Agent{ID: agentID, NodeName: "node-" + agentID, FleetGroupID: groupID}, nil)
+
+	groupBody := map[string]any{
+		"sections": map[string]any{
+			"censorship": map[string]any{"tls_domain": "group.example"},
+			"general":    map[string]any{"log_level": "normal"},
+		},
+	}
+	if resp := performJSONRequest(t, srv, http.MethodPut, "/api/fleet-groups/"+groupID+"/config", groupBody, cookies); resp.Code != http.StatusOK {
+		t.Fatalf("PUT group config status = %d, want %d (body: %s)", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	got := getAgentConfig(t, srv, cookies, agentID)
+	want := []string{"censorship.tls_domain", "general.log_level"}
+	sort.Strings(got.GroupPaths)
+	if len(got.GroupPaths) != len(want) {
+		t.Fatalf("group_paths = %v, want %v", got.GroupPaths, want)
+	}
+	for i, p := range want {
+		if got.GroupPaths[i] != p {
+			t.Fatalf("group_paths = %v, want %v", got.GroupPaths, want)
+		}
+	}
+}
+
+// TestAgentConfigGroupPathsEmptyForUngroupedAgent asserts an agent with no
+// fleet group gets a non-nil, empty group_paths slice (never null in the
+// JSON response — the UI treats it as a plain array).
+func TestAgentConfigGroupPathsEmptyForUngroupedAgent(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	const agentID = "agent-no-group"
+	srv.live.ApplySnapshot(agentID, Agent{ID: agentID, NodeName: "node-" + agentID}, nil)
+
+	getResp := performJSONRequest(t, srv, http.MethodGet, "/api/agents/"+agentID+"/config", nil, cookies)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("GET agent config status = %d, want %d (body: %s)", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+	rawBody := getResp.Body.String()
+	if strings.Contains(rawBody, `"group_paths":null`) {
+		t.Fatalf("group_paths must not be null: %s", rawBody)
+	}
+	got := getAgentConfig(t, srv, cookies, agentID)
+	if len(got.GroupPaths) != 0 {
+		t.Fatalf("group_paths = %v, want empty", got.GroupPaths)
 	}
 }
 

@@ -945,8 +945,10 @@ export interface components {
          *     `desired` is the agent's own stored config snapshot (stripped
          *     of the internal schema-version marker), `effective` is the
          *     fleet-group sections deep-merged with `desired`, `observed` is
-         *     the node's last-reported editable sections, and `drift`
-         *     compares `desired` against `observed`.
+         *     the node's last-reported editable sections, `drift`
+         *     compares `desired` against `observed`, and `group_paths` lists
+         *     the flattened dotted paths the node's fleet group governs (so
+         *     the UI can lock those fields).
          */
         AgentConfigResponse: {
             desired: {
@@ -959,6 +961,7 @@ export interface components {
                 [key: string]: unknown;
             };
             drift: components["schemas"]["ConfigDrift"];
+            group_paths: string[];
         };
     };
     responses: {

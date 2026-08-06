@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 
 	"github.com/go-chi/chi/v5"
 
@@ -34,12 +35,15 @@ type groupConfigTargetResponse struct {
 // agent's own desired snapshot (the full stored config, stripped of the P2
 // schema-version marker), the group⊕desired effective merge (used to mark
 // locked/group-owned fields in the UI), the node's observed editable
-// sections, and the drift of observed vs desired.
+// sections, the drift of observed vs desired, and the dotted paths the
+// node's fleet group governs (GroupPaths — P4 Task 5) so the UI can lock
+// those fields without re-deriving them from the effective merge.
 type agentConfigTargetResponse struct {
-	Desired   map[string]any  `json:"desired"`
-	Effective map[string]any  `json:"effective"`
-	Observed  map[string]any  `json:"observed"`
-	Drift     configDriftView `json:"drift"`
+	Desired    map[string]any  `json:"desired"`
+	Effective  map[string]any  `json:"effective"`
+	Observed   map[string]any  `json:"observed"`
+	Drift      configDriftView `json:"drift"`
+	GroupPaths []string        `json:"group_paths"`
 }
 
 // configDriftView is the drift summary attached to a config GET response.
@@ -293,39 +297,66 @@ func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
-		desired, effective, err := s.loadAgentEffectiveConfig(r.Context(), id, existing.FleetGroupID)
+		desired, effective, groupPaths, err := s.loadAgentEffectiveConfig(r.Context(), id, existing.FleetGroupID)
 		if err != nil {
 			writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
 			return
 		}
 		observed, hasObserved := s.observedConfigForAgent(id)
 		writeJSON(w, http.StatusOK, agentConfigTargetResponse{
-			Desired:   desired,
-			Effective: effective,
-			Observed:  observed,
-			Drift:     driftView(desired, observed, hasObserved),
+			Desired:    desired,
+			Effective:  effective,
+			Observed:   observed,
+			Drift:      driftView(desired, observed, hasObserved),
+			GroupPaths: groupPaths,
 		})
 	}
 }
 
 // loadAgentEffectiveConfig loads an agent's own desired snapshot (stripped of
-// the P2 schema-version marker) and the effective config (its fleet group's
-// sections ⊕ the desired snapshot). An empty groupID resolves an empty group
-// config. Returns the desired snapshot plus the merged effective config.
-func (s *Server) loadAgentEffectiveConfig(ctx context.Context, agentID, groupID string) (desired, effective map[string]any, err error) {
+// the P2 schema-version marker), the effective config (its fleet group's
+// sections ⊕ the desired snapshot), and the flattened dotted paths the
+// group's sections govern (P4 Task 5 — used by the UI to lock those fields).
+// An empty groupID resolves an empty group config and empty group paths.
+func (s *Server) loadAgentEffectiveConfig(ctx context.Context, agentID, groupID string) (desired, effective map[string]any, groupPaths []string, err error) {
 	groupSections := map[string]any{}
 	if groupID != "" {
 		groupSections, err = s.configTargets.Sections(ctx, storage.ConfigScopeGroup, groupID)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 	raw, err := s.configTargets.Sections(ctx, storage.ConfigScopeAgent, agentID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	desired = strippedSnapshot(raw)
-	return desired, resolveEffectiveConfig(groupSections, desired), nil
+	return desired, resolveEffectiveConfig(groupSections, desired), flattenConfigPaths(groupSections), nil
+}
+
+// flattenConfigPaths flattens a nested config sections map into a sorted,
+// non-nil list of dotted leaf paths (e.g. {"censorship":{"tls_domain":"x"}}
+// -> ["censorship.tls_domain"]). Used to report which paths a fleet group's
+// config target governs (GroupPaths), so the UI can lock those fields.
+func flattenConfigPaths(m map[string]any) []string {
+	paths := []string{}
+	var walk func(prefix string, node map[string]any)
+	walk = func(prefix string, node map[string]any) {
+		for k, v := range node {
+			path := k
+			if prefix != "" {
+				path = prefix + "." + k
+			}
+			if nested, ok := v.(map[string]any); ok {
+				walk(path, nested)
+				continue
+			}
+			paths = append(paths, path)
+		}
+	}
+	walk("", m)
+	sort.Strings(paths)
+	return paths
 }
 
 // handlePutAgentConfigTarget validates and upserts the config override

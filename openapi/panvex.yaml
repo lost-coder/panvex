@@ -1358,9 +1358,11 @@ components:
         `desired` is the agent's own stored config snapshot (stripped
         of the internal schema-version marker), `effective` is the
         fleet-group sections deep-merged with `desired`, `observed` is
-        the node's last-reported editable sections, and `drift`
-        compares `desired` against `observed`.
-      required: [desired, effective, observed, drift]
+        the node's last-reported editable sections, `drift`
+        compares `desired` against `observed`, and `group_paths` lists
+        the flattened dotted paths the node's fleet group governs (so
+        the UI can lock those fields).
+      required: [desired, effective, observed, drift, group_paths]
       properties:
         desired:
           type: object
@@ -1373,6 +1375,10 @@ components:
           additionalProperties: true
         drift:
           $ref: '#/components/schemas/ConfigDrift'
+        group_paths:
+          type: array
+          items:
+            type: string
 
   responses:
     BadRequest:

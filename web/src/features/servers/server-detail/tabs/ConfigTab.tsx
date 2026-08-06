@@ -246,13 +246,13 @@ export function ConfigTab({
           edits (`unflattenPaths(values)`) rather than `data.desired`
           directly, so unsaved edits keep rendering across re-renders; the
           observed snapshot backs both the fallback value for un-overridden
-          fields and the drift decoration. `groupPaths` stays empty until
-          Task 5 adds `group_paths` to the agent-config API — see the
-          plan's ordering note. */}
+          fields and the drift decoration. `groupPaths` comes from
+          `data.group_paths` (P4-T5) — the dotted paths the node's fleet
+          group governs, so the tree can lock those fields. */}
       <ConfigTree
         desired={unflattenPaths(values)}
         observed={data.observed ?? {}}
-        groupPaths={new Set<string>()}
+        groupPaths={new Set(data.group_paths ?? [])}
         onChange={(path, value) =>
           setValues((prev) => ({ ...prev, [path]: value }))
         }

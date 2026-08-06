@@ -25,6 +25,7 @@ export const agentConfigSchema = z.object({
   effective: configSectionsSchema.default({}),
   observed: configSectionsSchema.default({}),
   drift: configDriftSchema,
+  group_paths: z.array(z.string()).default([]),
 });
 
 export const groupConfigNodeSchema = z.object({

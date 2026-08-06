@@ -40,6 +40,7 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     effective: { censorship: { tls_domain: "old.example.com" } },
     observed: {},
     drift: { status: "drifted", fields: ["censorship.tls_domain"] },
+    group_paths: [],
     ...overrides,
   };
 }
@@ -75,6 +76,21 @@ describe("ConfigTab", () => {
   it("seeds the tree from desired", () => {
     render(<ConfigTab server={server} />);
     expect(screen.getByDisplayValue("old.example.com")).toBeInTheDocument();
+  });
+
+  // P4-T5: the GET response's group_paths must reach ConfigTree so it can
+  // lock the fields the node's fleet group governs — asserts the wiring
+  // (ConfigTab -> ConfigTree -> ConfigTreeField), not the locking logic
+  // itself (already covered by ConfigTree/ConfigTreeField's own tests).
+  it("locks a field whose path is present in group_paths", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({ group_paths: ["censorship.tls_domain"] }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+    expect(screen.getByText(/set by group|управляется группой/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue("old.example.com")).toBeDisabled();
   });
 
   // On an install with no group config and no override the panel knows the
