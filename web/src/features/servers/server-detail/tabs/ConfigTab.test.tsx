@@ -72,22 +72,21 @@ describe("ConfigTab", () => {
     expect(screen.getByText("censorship.tls_domain")).toBeInTheDocument();
   });
 
-  it("seeds the editor from the override", () => {
+  it("seeds the tree from desired", () => {
     render(<ConfigTab server={server} />);
     expect(screen.getByDisplayValue("old.example.com")).toBeInTheDocument();
   });
 
   // On an install with no group config and no override the panel knows the
-  // node's real settings only through `observed`. Without forwarding it, the
-  // form renders every field blank and the operator has to hunt for current
-  // values in the read-only viewer below it.
-  it("hints the observed value for fields the operator has not overridden", () => {
+  // node's real settings only through `observed`. buildTree falls back to
+  // the observed value for any path with no desired entry, so the field
+  // renders pre-filled with what the node actually runs rather than blank.
+  it("falls back to the observed value for fields with no desired override", () => {
     useAgentConfig.mockReturnValue({
       data: makeConfig({
         desired: {},
         effective: {},
         observed: {
-          general: { log_level: "silent" },
           timeouts: { client_handshake: 12 },
         },
       }),
@@ -95,8 +94,61 @@ describe("ConfigTab", () => {
       isError: false,
     });
     render(<ConfigTab server={server} />);
-    expect(screen.getByText("Current on node: silent")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("12")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("12")).toBeInTheDocument();
+  });
+
+  it("renders the config tree seeded from desired and shows drift actions", () => {
+    useAgentConfig.mockReturnValue({
+      data: {
+        desired: { general: { log_level: "normal" } },
+        effective: { general: { log_level: "normal" } },
+        observed: { general: { log_level: "silent" } },
+        drift: { status: "drifted", fields: ["general.log_level"] },
+      },
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+    expect(screen.getByText("log_level")).toBeInTheDocument();
+    expect(screen.getByText(/on node: silent|на ноде: silent/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /accept node|принять значение ноды/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("Accept node value PUTs just the observed value at that path", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: { general: { log_level: "normal" } },
+        effective: { general: { log_level: "normal" } },
+        observed: { general: { log_level: "silent" } },
+        drift: { status: "drifted", fields: ["general.log_level"] },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+    fireEvent.click(screen.getByRole("button", { name: "Accept node value" }));
+    expect(putMutate).toHaveBeenCalledTimes(1);
+    expect(putMutate.mock.calls[0]?.[0]).toEqual({ general: { log_level: "silent" } });
+  });
+
+  it("Revert to panel value applies just that one path", async () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: { general: { log_level: "normal" } },
+        effective: { general: { log_level: "normal" } },
+        observed: { general: { log_level: "silent" } },
+        drift: { status: "drifted", fields: ["general.log_level"] },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+    fireEvent.click(screen.getByRole("button", { name: "Revert to panel value" }));
+    await waitFor(() =>
+      expect(applyMutateAsync).toHaveBeenCalledWith({ paths: ["general.log_level"] }),
+    );
   });
 
   it("saves the unflattened sections when Save is clicked", () => {

@@ -80,4 +80,41 @@ describe("ConfigTreeField", () => {
     );
     expect(screen.getByText(/unknown parameter|неизвестный параметр/i)).toBeInTheDocument();
   });
+
+  // P4-T4: per-field drift-resolution actions.
+  const drifted: TreeField = { ...base, drifted: true, value: "normal", observed: "silent" };
+
+  it("does not render drift-action buttons when no handlers are given, even when drifted", () => {
+    render(<ConfigTreeField field={drifted} onChange={() => {}} />);
+    expect(screen.queryByRole("button", { name: /accept node/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /revert to panel/i })).not.toBeInTheDocument();
+  });
+
+  it("renders and wires the accept-node and revert-to-panel actions on a drifted field", () => {
+    const onAcceptNode = vi.fn();
+    const onRevertPanel = vi.fn();
+    render(
+      <ConfigTreeField
+        field={drifted}
+        onChange={() => {}}
+        onAcceptNode={onAcceptNode}
+        onRevertPanel={onRevertPanel}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Accept node value" }));
+    expect(onAcceptNode).toHaveBeenCalledWith("general.log_level");
+    fireEvent.click(screen.getByRole("button", { name: "Revert to panel value" }));
+    expect(onRevertPanel).toHaveBeenCalledWith("general.log_level");
+  });
+
+  it("resolves the {{name}} placeholder in the locked-by-group note from groupName, falling back when omitted", () => {
+    const { rerender } = render(
+      <ConfigTreeField field={{ ...base, locked: true }} onChange={() => {}} groupName="edge-fleet" />,
+    );
+    expect(screen.getByText(/set by group edge-fleet/i)).toBeInTheDocument();
+
+    rerender(<ConfigTreeField field={{ ...base, locked: true }} onChange={() => {}} />);
+    expect(screen.queryByText(/\{\{name\}\}/)).not.toBeInTheDocument();
+    expect(screen.getByText(/set by group/i)).toBeInTheDocument();
+  });
 });

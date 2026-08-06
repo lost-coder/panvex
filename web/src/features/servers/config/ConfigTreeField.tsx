@@ -15,7 +15,7 @@
 // fields that are actually documented but structurally uneditable here.
 import { useTranslation } from "react-i18next";
 
-import { Badge, type BadgeProps, FormField, Input, Select, Toggle } from "@/ui";
+import { Badge, type BadgeProps, Button, FormField, Input, Select, Toggle } from "@/ui";
 
 import { InfoTooltip } from "./InfoTooltip";
 import { isProcessOwned } from "./guard";
@@ -25,6 +25,21 @@ import type { ParamCatalogEntry } from "./paramCatalog";
 export interface ConfigTreeFieldProps {
   field: TreeField;
   onChange: (path: string, value: unknown) => void;
+  /**
+   * P4-T4: the fleet group's display name, interpolated into the
+   * "Set by group {{name}}" locked note. ConfigTab doesn't have this on
+   * hand yet (the `server` prop carries no group name), so callers may
+   * omit it — the note falls back to a generic "this group" rather than
+   * ever rendering the raw `{{name}}` placeholder unresolved.
+   */
+  groupName?: string | undefined;
+  /**
+   * P4-T4: per-field drift-resolution actions, shown ONLY on a drifted
+   * field. Optional so ConfigTreeField stays usable standalone (existing
+   * tests, any future read-only embedding) without wiring both handlers.
+   */
+  onAcceptNode?: ((path: string) => void) | undefined;
+  onRevertPanel?: ((path: string) => void) | undefined;
 }
 
 function listToText(value: unknown): string {
@@ -122,7 +137,13 @@ function RawValueInput({
   return <Input id={id} type="text" value={text} disabled={disabled} onChange={() => {}} />;
 }
 
-export function ConfigTreeField({ field, onChange }: Readonly<ConfigTreeFieldProps>) {
+export function ConfigTreeField({
+  field,
+  onChange,
+  groupName,
+  onAcceptNode,
+  onRevertPanel,
+}: Readonly<ConfigTreeFieldProps>) {
   const { t } = useTranslation("servers");
   const { entry, path, value, observed, drifted, locked, readonly, unknown } = field;
   const key = path.split(".").pop() ?? path;
@@ -167,14 +188,34 @@ export function ConfigTreeField({ field, onChange }: Readonly<ConfigTreeFieldPro
       )}
 
       {drifted && (
-        <p className="text-caption text-status-warn">
-          {t("config.tree.driftPanel", { value: String(value) })}
-          {" / "}
-          {t("config.tree.driftNode", { value: String(observed) })}
-        </p>
+        <div className="flex flex-col gap-1.5">
+          <p className="text-caption text-status-warn">
+            {t("config.tree.driftPanel", { value: String(value) })}
+            {" / "}
+            {t("config.tree.driftNode", { value: String(observed) })}
+          </p>
+          {(onAcceptNode || onRevertPanel) && (
+            <div className="flex flex-wrap gap-2">
+              {onAcceptNode && (
+                <Button type="button" variant="outline" size="sm" onClick={() => onAcceptNode(path)}>
+                  {t("config.tree.acceptNode")}
+                </Button>
+              )}
+              {onRevertPanel && (
+                <Button type="button" variant="outline" size="sm" onClick={() => onRevertPanel(path)}>
+                  {t("config.tree.revertPanel")}
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
-      {locked && <p className="text-caption text-fg-muted">{t("config.tree.lockedByGroup")}</p>}
+      {locked && (
+        <p className="text-caption text-fg-muted">
+          {t("config.tree.lockedByGroup", { name: groupName ?? "this group" })}
+        </p>
+      )}
 
       {processOwned ? (
         <p className="text-caption text-fg-muted">{t("config.tree.processOwned")}</p>

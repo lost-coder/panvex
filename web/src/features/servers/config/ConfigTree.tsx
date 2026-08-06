@@ -35,6 +35,11 @@ export interface ConfigTreeProps {
   observed: ConfigSections;
   groupPaths: Set<string>;
   onChange: (path: string, value: unknown) => void;
+  /** P4-T4: threaded through to ConfigTreeField's locked-note interpolation. */
+  groupName?: string | undefined;
+  /** P4-T4: per-field drift-resolution actions, threaded through to ConfigTreeField. */
+  onAcceptNode?: ((path: string) => void) | undefined;
+  onRevertPanel?: ((path: string) => void) | undefined;
 }
 
 function isPhantomContainerRow(field: TreeField): boolean {
@@ -49,7 +54,15 @@ function snapshotValues(desired: ConfigSections, observed: ConfigSections, group
   return map;
 }
 
-export function ConfigTree({ desired, observed, groupPaths, onChange }: Readonly<ConfigTreeProps>) {
+export function ConfigTree({
+  desired,
+  observed,
+  groupPaths,
+  onChange,
+  groupName,
+  onAcceptNode,
+  onRevertPanel,
+}: Readonly<ConfigTreeProps>) {
   const { t } = useTranslation("servers");
   const [search, setSearch] = useState("");
   const [changedOnly, setChangedOnly] = useState(false);
@@ -133,7 +146,14 @@ export function ConfigTree({ desired, observed, groupPaths, onChange }: Readonly
             <summary className="cursor-pointer text-sm font-medium text-fg">{section}</summary>
             <div className="mt-3 flex flex-col gap-4">
               {fields.map((field) => (
-                <ConfigTreeField key={field.path} field={field} onChange={onChange} />
+                <ConfigTreeField
+                  key={field.path}
+                  field={field}
+                  onChange={onChange}
+                  groupName={groupName}
+                  onAcceptNode={onAcceptNode}
+                  onRevertPanel={onRevertPanel}
+                />
               ))}
             </div>
           </details>

@@ -1,22 +1,25 @@
 // P5-T6: the Server-detail "Config" tab.
 //
-// Fetches the agent's config (override / effective / observed + drift) via
-// useAgentConfig, seeds a local editor map from the OVERRIDE, and lets the
-// operator edit the curated CONFIG_FIELDS. Save persists the override
-// (PUT, nested sections); Apply pushes the override down to the running
+// Fetches the agent's config (desired / effective / observed + drift) via
+// useAgentConfig, seeds a local editor map from DESIRED, and lets the
+// operator edit the full catalog-native ConfigTree (P4). Save persists the
+// desired sections (PUT, nested); Apply pushes them down to the running
 // Telemt process. The drift header surfaces whether the observed config has
 // diverged from the effective target, listing the diverging fields.
 //
-// The editor is fully controlled, so this tab owns the dotted-path → value
+// The tree is fully controlled, so this tab owns the dotted-path → value
 // map. We track which paths the user touched (changedPaths) against the
 // initial flatten so the Apply gate only lights up — and the reload
 // confirmation only fires — for genuinely-changed fields, surviving a
 // Save→refetch round trip via the data-keyed reset effect.
 //
-// Below the editor, ObservedConfigViewer (Task 9) renders the rest of the
-// node's live config read-only — everything Telemt reports that isn't in
-// the curated CONFIG_FIELDS set. Agent-scope only (fleet groups have no
-// single node's observed config).
+// P4-T4: ConfigTree replaces the old ConfigSectionEditor + ObservedConfigViewer
+// pair — the tree itself renders both the editable catalog fields AND every
+// observed-only field Telemt reports (marked "unknown"), so there is no
+// longer a separate read-only viewer below it. Two per-field drift actions
+// are wired here: "Accept node value" PUTs the observed value at that one
+// path (merges server-side); "Revert to panel value" applies just that path
+// back down to the node.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -32,8 +35,7 @@ import {
   useApplyAgentConfig,
   usePutAgentConfig,
 } from "@/features/servers/config/configHooks";
-import { ConfigSectionEditor } from "@/features/servers/config/ConfigSectionEditor";
-import { ObservedConfigViewer } from "@/features/servers/config/ObservedConfigViewer";
+import { ConfigTree } from "@/features/servers/config/ConfigTree";
 import { DriftBadge } from "@/features/servers/config/DriftBadge";
 import { ApplyConfigButton } from "@/features/servers/config/ApplyConfigButton";
 import {
@@ -93,16 +95,9 @@ export function ConfigTab({
     () => flattenSections(data?.desired ?? {}),
     [data?.desired],
   );
-  // U-13: effective config powers placeholder hints so an un-overridden
-  // (empty) field reads as "inherits this value", not "blank/wipe".
-  const effectiveValues = useMemo(
-    () => flattenSections(data?.effective ?? {}),
-    [data?.effective],
-  );
-  // The panel persists only what the operator overrode, so on an install with
-  // no group config and no override `effective` is empty and every field would
-  // render blank. The observed config is what the node actually runs — and
-  // exactly what it keeps if the field is left empty — so it backs the hints.
+  // The observed config is what the node actually runs. ConfigTree falls
+  // back to it for any path with no desired override, and "Accept node
+  // value" reads the value to PUT from here too.
   const observedValues = useMemo(
     () => flattenSections(data?.observed ?? {}),
     [data?.observed],
@@ -183,6 +178,26 @@ export function ConfigTab({
     });
   }
 
+  // P4-T4: per-field drift actions.
+  //
+  // "Accept node value" pulls the drifted path's observed value into the
+  // panel: a single-path PUT, which the panel merges into the existing
+  // desired sections server-side (P2 Task 5) rather than replacing them.
+  function handleAcceptNode(path: string) {
+    putMutation.mutate(unflattenPaths({ [path]: observedValues[path] }), {
+      onSuccess: () => toast.success(t("config.saved")),
+    });
+  }
+
+  // "Revert to panel value" pushes the panel's own value for just that one
+  // path back down to the node — an apply restricted to `paths: [path]`
+  // (P2 Task 7). It shares the same batch-id/toast machinery as the main
+  // Apply button above, so only one apply is ever tracked at a time.
+  async function handleRevertPanel(path: string) {
+    const accepted = await applyMutation.mutateAsync({ paths: [path] });
+    setApplyBatchId(accepted.batch_id);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {/* Drift header — status pill plus, when drifted, the list of fields
@@ -211,15 +226,23 @@ export function ConfigTab({
           inherit the effective value shown as a placeholder. */}
       <p className="text-micro text-fg-muted -mt-2">{t("config.overrideHint")}</p>
 
-      {/* Override editor — the curated CONFIG_FIELDS, fully controlled. */}
-      <ConfigSectionEditor
-        values={values}
-        effective={effectiveValues}
-        observed={observedValues}
+      {/* P4-T4: the catalog-native config tree — replaces the curated
+          editor + separate read-only viewer. Seeded from the in-progress
+          edits (`unflattenPaths(values)`) rather than `data.desired`
+          directly, so unsaved edits keep rendering across re-renders; the
+          observed snapshot backs both the fallback value for un-overridden
+          fields and the drift decoration. `groupPaths` stays empty until
+          Task 5 adds `group_paths` to the agent-config API — see the
+          plan's ordering note. */}
+      <ConfigTree
+        desired={unflattenPaths(values)}
+        observed={data.observed ?? {}}
+        groupPaths={new Set<string>()}
         onChange={(path, value) =>
           setValues((prev) => ({ ...prev, [path]: value }))
         }
-        disabled={putMutation.isPending}
+        onAcceptNode={handleAcceptNode}
+        onRevertPanel={handleRevertPanel}
       />
 
       {/* Actions — Save persists the override, Apply pushes it to the node.
@@ -253,12 +276,6 @@ export function ConfigTab({
           </span>
         )}
       </div>
-
-      {/* Task 9: read-only view of everything else Telemt reports running
-          on this node — the ~97% of fields not in the curated editor
-          above. Agent-scope only; no per-node observed config exists at
-          the group level. */}
-      <ObservedConfigViewer observed={data.observed ?? {}} />
     </div>
   );
 }

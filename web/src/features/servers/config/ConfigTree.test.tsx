@@ -76,4 +76,22 @@ describe("ConfigTree", () => {
     expect(screen.queryByText("ad_tag")).not.toBeInTheDocument();
     expect(screen.getByText(/no fields match|нет полей/i)).toBeInTheDocument();
   });
+
+  // P4-T4: threads the per-field drift actions + groupName down to
+  // ConfigTreeField for a genuinely drifted field.
+  it("threads onAcceptNode/onRevertPanel/groupName down to the drifted field's actions", () => {
+    render(
+      <ConfigTree
+        desired={{ general: { log_level: "normal" } }}
+        observed={{ general: { log_level: "silent" } }}
+        groupPaths={new Set()}
+        onChange={() => {}}
+        groupName="edge-fleet"
+        onAcceptNode={() => {}}
+        onRevertPanel={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Accept node value" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Revert to panel value" })).toBeInTheDocument();
+  });
 });
