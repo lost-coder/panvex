@@ -145,6 +145,40 @@ describe("GroupConfigSection", () => {
     });
   });
 
+  // Fix round: general.ad_tag has no documented catalog default, so Add
+  // seeds it at "". Governing a field is an explicit operator action
+  // (clicking Add), independent of whether its value is non-empty — the
+  // Save payload must include it as "", not silently drop it the way the
+  // shared unflattenPaths (empty-override-means-no-override) would.
+  it("persists a governed field with an empty value (no catalog default), and keeps it governed after a reseed", () => {
+    const { unmount } = render(<GroupConfigSection groupId="fg-1" />);
+    const row = screen.getByText("general.ad_tag").closest("li") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Add to group" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(putMutate.mock.calls[0]?.[0]).toEqual({
+      censorship: { tls_domain: "old.example.com" },
+      general: { ad_tag: "" },
+    });
+    unmount();
+
+    // Simulate the post-Save refetch returning the persisted (empty-valued)
+    // field — a fresh mount (e.g. page reload) must still show it governed,
+    // not reverted to the addable list just because its value is empty.
+    useGroupConfig.mockReturnValue({
+      data: makeConfig({
+        sections: { censorship: { tls_domain: "old.example.com" }, general: { ad_tag: "" } },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<GroupConfigSection groupId="fg-1" />);
+    expect(screen.queryByText("general.ad_tag")).not.toBeInTheDocument();
+    expect(screen.getAllByText("ad_tag").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("button", { name: "Remove from group" }).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("saves the unflattened sections when Save is clicked", () => {
     render(<GroupConfigSection groupId="fg-1" />);
     const input = screen.getByDisplayValue("old.example.com");

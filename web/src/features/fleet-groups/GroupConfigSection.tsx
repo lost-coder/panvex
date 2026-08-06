@@ -39,10 +39,27 @@ import {
   type DriftStatus,
 } from "@/features/servers/config/DriftBadge";
 import { ApplyConfigButton } from "@/features/servers/config/ApplyConfigButton";
-import {
-  flattenSections,
-  unflattenPaths,
-} from "@/features/servers/config/sections";
+import { flattenSections } from "@/features/servers/config/sections";
+import { catalogEntry } from "@/features/servers/config/paramCatalog";
+
+// Fix round: governing a field is an explicit operator action (Add/Remove in
+// GovernedConfigFields), not something inferred from whether its value
+// happens to be non-empty. The shared `unflattenPaths` (./sections) drops
+// empty-string values — correct for the node page's "empty override means
+// no override" semantics, but wrong here: it would silently un-govern a
+// field the operator just added but hasn't typed a value into yet. Build
+// the group's PUT payload locally instead: every key present in `values` IS
+// governed, full stop, regardless of its value. Do not change the shared
+// helper — the node page relies on its current (filtering) behavior.
+function toGovernedPayload(values: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [path, value] of Object.entries(values)) {
+    const entry = catalogEntry(path);
+    if (!entry) continue; // not a governable catalog field — ignore defensively
+    ((out[entry.section] ??= {}) as Record<string, unknown>)[entry.key] = value;
+  }
+  return out;
+}
 
 // Compute the set of dotted paths whose current value differs from the
 // initial (target-seeded) flatten. Used both for the Apply gate and the
@@ -245,7 +262,7 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
   const nodes = data.nodes;
 
   function handleSave() {
-    putMutation.mutate(unflattenPaths(values), {
+    putMutation.mutate(toGovernedPayload(values), {
       onSuccess: () => toast.success(t("config.saved")),
     });
   }
