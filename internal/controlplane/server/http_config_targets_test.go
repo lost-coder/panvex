@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 )
 
@@ -140,8 +142,8 @@ func TestConfigTargetAgentPutThenGet(t *testing.T) {
 	if err := json.Unmarshal(getResp.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode agent config response: %v", err)
 	}
-	if tlsDomain := nestedString(got.Override, "censorship", "tls_domain"); tlsDomain != "override.example" {
-		t.Fatalf("agent override.censorship.tls_domain = %q, want %q", tlsDomain, "override.example")
+	if tlsDomain := nestedString(got.Desired, "censorship", "tls_domain"); tlsDomain != "override.example" {
+		t.Fatalf("agent desired.censorship.tls_domain = %q, want %q", tlsDomain, "override.example")
 	}
 }
 
@@ -187,6 +189,65 @@ func TestConfigTargetAgentEffectiveMergePrefersOverride(t *testing.T) {
 	}
 }
 
+// TestAgentConfigResponseUsesDesiredAndSnapshotDrift seeds a P2 full-snapshot
+// desired config directly (carrying the schema-version marker, the way
+// seedDesiredConfig would) that differs from the observed config, and
+// asserts: the GET response's `desired` field carries the stored sections
+// under the new `desired` JSON key, the schema-version marker never reaches
+// the client in any field, and drift is computed desired-vs-observed (not
+// effective-vs-observed) — status "drifted" with the mismatching path listed.
+func TestAgentConfigResponseUsesDesiredAndSnapshotDrift(t *testing.T) {
+	srv, cookies := newConfigTargetTestServer(t)
+	const agentID = "agent-desired-drift"
+
+	managed, _ := json.Marshal(map[string]any{
+		"general": map[string]any{"log_level": "silent"},
+	})
+	srv.live.ApplySnapshot(agentID, Agent{ID: agentID, NodeName: "node-desired-drift"}, []Instance{
+		{ID: "telemt-primary", AgentID: agentID, ManagedConfigJSON: string(managed)},
+	})
+
+	// Seed the agent's desired snapshot directly through the config-targets
+	// store (bypassing the PUT handler's editable-section allowlist, which
+	// would reject the schema-version marker key), mirroring what
+	// seedDesiredConfig writes on first observation.
+	if err := srv.configTargets.Upsert(context.Background(), storage.ConfigScopeAgent, agentID, map[string]any{
+		"general":           map[string]any{"log_level": "normal"},
+		schemaVersionMarker: "1.2.3",
+	}); err != nil {
+		t.Fatalf("seed desired snapshot: %v", err)
+	}
+
+	getResp := performJSONRequest(t, srv, http.MethodGet, "/api/agents/"+agentID+"/config", nil, cookies)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("GET agent config status = %d, want %d (body: %s)", getResp.Code, http.StatusOK, getResp.Body.String())
+	}
+	rawBody := getResp.Body.String()
+	if strings.Contains(rawBody, schemaVersionMarker) {
+		t.Fatalf("response leaked schema version marker: %s", rawBody)
+	}
+
+	var got agentConfigTargetResponse
+	if err := json.Unmarshal(getResp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode agent config response: %v", err)
+	}
+	if logLevel := nestedString(got.Desired, "general", "log_level"); logLevel != "normal" {
+		t.Fatalf("desired.general.log_level = %q, want %q", logLevel, "normal")
+	}
+	if got.Drift.Status != "drifted" {
+		t.Fatalf("drift.status = %q, want %q", got.Drift.Status, "drifted")
+	}
+	found := false
+	for _, f := range got.Drift.Fields {
+		if f == "general.log_level" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("drift.fields = %v, want to contain %q", got.Drift.Fields, "general.log_level")
+	}
+}
+
 // seedGroupTargetAndAgent seeds a fleet group, PUTs a group config target
 // (censorship.tls_domain = groupDomain), and seeds the agent into the live
 // snapshot with the supplied observed instances. Returns the group id.
@@ -229,12 +290,22 @@ func getAgentConfig(t *testing.T, srv *Server, cookies []*http.Cookie, agentID s
 }
 
 // TestConfigTargetAgentDriftInSync seeds an observed instance matching the
-// effective target → drift.status == "in_sync".
+// agent's own desired target → drift.status == "in_sync". Drift is
+// desired-vs-observed (P2), so the agent's own config target — not just the
+// group target seeded by seedGroupTargetAndAgent — must equal observed here.
 func TestConfigTargetAgentDriftInSync(t *testing.T) {
 	srv, cookies := newConfigTargetTestServer(t)
 	const agentID = "agent-drift-insync"
 	seedGroupTargetAndAgent(t, srv, cookies, "cfg-drift-insync", "match.example", agentID,
 		[]Instance{observedInstance(agentID, "match.example")})
+	agentBody := map[string]any{
+		"sections": map[string]any{
+			"censorship": map[string]any{"tls_domain": "match.example"},
+		},
+	}
+	if resp := performJSONRequest(t, srv, http.MethodPut, "/api/agents/"+agentID+"/config", agentBody, cookies); resp.Code != http.StatusOK {
+		t.Fatalf("PUT agent config status = %d, want %d (body: %s)", resp.Code, http.StatusOK, resp.Body.String())
+	}
 
 	got := getAgentConfig(t, srv, cookies, agentID)
 	if got.Drift.Status != "in_sync" {
@@ -246,13 +317,23 @@ func TestConfigTargetAgentDriftInSync(t *testing.T) {
 }
 
 // TestConfigTargetAgentDriftDrifted seeds an observed instance whose value
-// mismatches the effective target → drift.status == "drifted" and the field
-// is listed.
+// mismatches the agent's own desired target → drift.status == "drifted" and
+// the field is listed. Drift is desired-vs-observed (P2), so the agent's own
+// config target is what must differ from observed here — the group target
+// alone (seeded by seedGroupTargetAndAgent) no longer drives agent drift.
 func TestConfigTargetAgentDriftDrifted(t *testing.T) {
 	srv, cookies := newConfigTargetTestServer(t)
 	const agentID = "agent-drift-drifted"
 	seedGroupTargetAndAgent(t, srv, cookies, "cfg-drift-drifted", "target.example", agentID,
 		[]Instance{observedInstance(agentID, "observed.example")})
+	agentBody := map[string]any{
+		"sections": map[string]any{
+			"censorship": map[string]any{"tls_domain": "target.example"},
+		},
+	}
+	if resp := performJSONRequest(t, srv, http.MethodPut, "/api/agents/"+agentID+"/config", agentBody, cookies); resp.Code != http.StatusOK {
+		t.Fatalf("PUT agent config status = %d, want %d (body: %s)", resp.Code, http.StatusOK, resp.Body.String())
+	}
 
 	got := getAgentConfig(t, srv, cookies, agentID)
 	if got.Drift.Status != "drifted" {

@@ -31,10 +31,12 @@ type groupConfigTargetResponse struct {
 }
 
 // agentConfigTargetResponse is the GET shape for an agent scope: the
-// agent's own override, the group⊕override effective merge, the node's
-// observed editable sections, and the drift of observed vs effective.
+// agent's own desired snapshot (the full stored config, stripped of the P2
+// schema-version marker), the group⊕desired effective merge (used to mark
+// locked/group-owned fields in the UI), the node's observed editable
+// sections, and the drift of observed vs desired.
 type agentConfigTargetResponse struct {
-	Override  map[string]any  `json:"override"`
+	Desired   map[string]any  `json:"desired"`
 	Effective map[string]any  `json:"effective"`
 	Observed  map[string]any  `json:"observed"`
 	Drift     configDriftView `json:"drift"`
@@ -70,12 +72,14 @@ func (s *Server) observedConfigForAgent(agentID string) (map[string]any, bool) {
 	return map[string]any{}, false
 }
 
-// driftView computes the drift view of observed vs effective.
-func driftView(effective, observed map[string]any, hasObserved bool) configDriftView {
+// driftView computes the drift view of observed vs target. target is the
+// effective (group⊕override) config for the group GET response, or the
+// desired (stripped agent snapshot) config for the agent GET response.
+func driftView(target, observed map[string]any, hasObserved bool) configDriftView {
 	if !hasObserved {
 		return configDriftView{Status: "unknown", Fields: []string{}}
 	}
-	drifted, fields := configDrift(effective, observed)
+	drifted, fields := configDrift(target, observed)
 	if fields == nil {
 		fields = []string{}
 	}
@@ -205,10 +209,11 @@ func (s *Server) handlePutGroupConfigTarget() http.HandlerFunc {
 	}
 }
 
-// handleGetAgentConfigTarget returns the agent's own override and the
-// group⊕override effective config. The agent's fleet group is read from
+// handleGetAgentConfigTarget returns the agent's own desired snapshot and the
+// group⊕desired effective config. The agent's fleet group is read from
 // the in-memory live snapshot; an agent with no group resolves an empty
-// group config.
+// group config. Drift is computed desired-vs-observed (P2): the effective
+// merge is retained only so the UI can mark group-locked fields.
 func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, user, err := s.requireSession(r)
@@ -238,26 +243,26 @@ func (s *Server) handleGetAgentConfigTarget() http.HandlerFunc {
 			writeError(w, http.StatusNotFound, msgAgentNotFound)
 			return
 		}
-		overrideSections, effective, err := s.loadAgentEffectiveConfig(r.Context(), id, existing.FleetGroupID)
+		desired, effective, err := s.loadAgentEffectiveConfig(r.Context(), id, existing.FleetGroupID)
 		if err != nil {
 			writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgConfigTargetReadFailed, err)
 			return
 		}
 		observed, hasObserved := s.observedConfigForAgent(id)
 		writeJSON(w, http.StatusOK, agentConfigTargetResponse{
-			Override:  overrideSections,
+			Desired:   desired,
 			Effective: effective,
 			Observed:  observed,
-			Drift:     driftView(effective, observed, hasObserved),
+			Drift:     driftView(desired, observed, hasObserved),
 		})
 	}
 }
 
-// loadAgentEffectiveConfig loads an agent's own override sections and the
-// effective config (its fleet group's sections ⊕ the override). An empty
-// groupID resolves an empty group config. Returns the override plus the
-// merged effective config.
-func (s *Server) loadAgentEffectiveConfig(ctx context.Context, agentID, groupID string) (override, effective map[string]any, err error) {
+// loadAgentEffectiveConfig loads an agent's own desired snapshot (stripped of
+// the P2 schema-version marker) and the effective config (its fleet group's
+// sections ⊕ the desired snapshot). An empty groupID resolves an empty group
+// config. Returns the desired snapshot plus the merged effective config.
+func (s *Server) loadAgentEffectiveConfig(ctx context.Context, agentID, groupID string) (desired, effective map[string]any, err error) {
 	groupSections := map[string]any{}
 	if groupID != "" {
 		groupSections, err = s.configTargets.Sections(ctx, storage.ConfigScopeGroup, groupID)
@@ -265,11 +270,12 @@ func (s *Server) loadAgentEffectiveConfig(ctx context.Context, agentID, groupID 
 			return nil, nil, err
 		}
 	}
-	override, err = s.configTargets.Sections(ctx, storage.ConfigScopeAgent, agentID)
+	raw, err := s.configTargets.Sections(ctx, storage.ConfigScopeAgent, agentID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return override, resolveEffectiveConfig(groupSections, override), nil
+	desired = strippedSnapshot(raw)
+	return desired, resolveEffectiveConfig(groupSections, desired), nil
 }
 
 // handlePutAgentConfigTarget validates and upserts the config override
