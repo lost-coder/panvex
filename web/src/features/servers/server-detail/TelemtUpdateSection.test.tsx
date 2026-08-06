@@ -56,6 +56,30 @@ describe("TelemtUpdateSection", () => {
     expect(screen.getByText("Auto-detected")).toBeInTheDocument();
     expect(screen.getByText(/systemd:telemt/)).toBeInTheDocument();
     expect(screen.getByText(/\/usr\/local\/bin\/telemt/)).toBeInTheDocument();
+    // The raw wire value ("binary") must be localized through the same
+    // telemtUpdate.form.mode.* keys the mode <Select> uses, not shown verbatim
+    // as "Mode: binary".
+    expect(screen.getByText("Mode: Binary")).toBeInTheDocument();
+  });
+
+  it("falls back to the raw probe mode string when it isn't a known mode key", () => {
+    useTelemtUpdateStrategy.mockReturnValue({
+      data: {
+        strategy: null,
+        probe: {
+          mode: "some_future_mode",
+          suggested_restart_spec: "",
+          binary_path: "",
+          available: true,
+          reason: "",
+        },
+      },
+      isLoading: false,
+      isError: false,
+    });
+    render(<TelemtUpdateSection agentId="agent-1" />);
+    openFold();
+    expect(screen.getByText("Mode: some_future_mode")).toBeInTheDocument();
   });
 
   it("does not render a probe hint when the agent has never reported one", () => {
@@ -209,6 +233,30 @@ describe("TelemtUpdateSection", () => {
 
     expect(putMutate).not.toHaveBeenCalled();
     expect(screen.getByText("Enter a unit or service name")).toBeInTheDocument();
+  });
+
+  it("blocks save and shows a validation message when the binary path is not absolute", () => {
+    useTelemtUpdateStrategy.mockReturnValue({
+      data: { strategy: null, probe: null },
+      isLoading: false,
+      isError: false,
+    });
+    render(<TelemtUpdateSection agentId="agent-1" />);
+    openFold();
+
+    fireEvent.change(screen.getByLabelText("Update mode"), { target: { value: "binary" } });
+    fireEvent.change(screen.getByLabelText("Unit / service name"), {
+      target: { value: "telemt" },
+    });
+    fireEvent.change(screen.getByLabelText("Telemt binary path"), {
+      target: { value: "usr/local/bin/telemt" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save strategy" }));
+
+    expect(putMutate).not.toHaveBeenCalled();
+    expect(
+      screen.getByText('Binary path must be absolute (start with "/")'),
+    ).toBeInTheDocument();
   });
 
   it("seeds the form from an already-configured strategy", () => {

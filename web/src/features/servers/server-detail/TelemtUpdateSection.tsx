@@ -116,7 +116,11 @@ export function TelemtUpdateSection({ agentId }: Readonly<Props>) {
           ? t("telemtUpdate.form.validation.unitNameInvalid")
           : t("telemtUpdate.form.validation.unitNameRequired");
       }
-      if (!form.binaryPath.trim()) return t("telemtUpdate.form.validation.binaryPathRequired");
+      const binaryPath = form.binaryPath.trim();
+      if (!binaryPath) return t("telemtUpdate.form.validation.binaryPathRequired");
+      // Mirrors the server's filepath.IsAbs check — catch a relative path
+      // client-side instead of round-tripping to a 400.
+      if (!binaryPath.startsWith("/")) return t("telemtUpdate.form.validation.binaryPathNotAbsolute");
     }
     const payload = toStrategyPayload(form);
     const result = telemtUpdateStrategySchema.safeParse(payload);
@@ -160,7 +164,11 @@ export function TelemtUpdateSection({ agentId }: Readonly<Props>) {
                 </Button>
               </div>
               <div className="flex flex-col gap-1 text-sm text-fg">
-                <span>{t("telemtUpdate.probe.mode", { mode: probe.mode })}</span>
+                <span>
+                  {t("telemtUpdate.probe.mode", {
+                    mode: t(`telemtUpdate.form.mode.${probe.mode}`, { defaultValue: probe.mode }),
+                  })}
+                </span>
                 {probe.suggested_restart_spec && (
                   <span className="font-mono text-xs text-fg-muted">
                     {t("telemtUpdate.probe.restartSpec", { spec: probe.suggested_restart_spec })}

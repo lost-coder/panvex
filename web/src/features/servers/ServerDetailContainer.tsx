@@ -16,6 +16,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { apiClient, type ServerLoadPoint } from "@/shared/api/api";
 import { transformAgentConnection } from "@/shared/api/transforms/servers";
 import { useConfirm } from "@/app/providers/ConfirmProvider";
+import { useProfile } from "@/features/auth/hooks/useProfile";
 
 const RANGE_HOURS: Record<string, number> = { "1h": 1, "6h": 6, "24h": 24, "7d": 168 };
 
@@ -66,6 +67,12 @@ export function ServerDetailContainer() {
     deregisterMutation,
   } = useServerMutations(serverId ?? "");
   const { fleetGroups } = useFleetGroups();
+  const { profile } = useProfile();
+  // GET/PUT .../telemt/update-strategy is admin-only server-side
+  // (routes.go); gate the section here rather than letting it mount and
+  // eat a guaranteed 403 for operators/viewers — same pattern as
+  // SettingsContainer's `{isAdmin && <Section/>}` admin-only sections.
+  const isAdmin = profile?.role === "admin";
   const { query: updatesQuery } = useUpdates();
   const latestAgentVersion = updatesQuery.data?.state.latest_agent_version;
   const navigate = useNavigate();
@@ -156,7 +163,7 @@ export function ServerDetailContainer() {
       }}
       enrollmentHistorySlot={<EnrollmentHistory agentId={server.id} />}
       runtimeEventsSlot={<RuntimeEvents agentId={server.id} />}
-      telemtUpdateSlot={<TelemtUpdateSection agentId={server.id} />}
+      telemtUpdateSlot={isAdmin ? <TelemtUpdateSection agentId={server.id} /> : undefined}
     />
   );
 }
