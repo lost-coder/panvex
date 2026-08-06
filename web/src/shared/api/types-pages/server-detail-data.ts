@@ -72,7 +72,14 @@ export interface ConnectionClassCount {
 
 // /v1/system/info
 export interface ServerSystemInfoData {
+  // `version` carries an agent-version fallback when Telemt hasn't reported
+  // system_info yet (fresh enroll / partial data) — see transforms/servers.ts.
+  // `telemtVersion` is the RAW Telemt-reported version with no fallback, "" when
+  // unknown; use this (not `version`) for anything that compares against
+  // Telemt release tags (e.g. the Task 14 update badge) — the two version
+  // spaces (panvex-agent vs Telemt) are not comparable.
   version: string;
+  telemtVersion: string;
   targetArch: string;
   targetOs: string;
   buildProfile: string;

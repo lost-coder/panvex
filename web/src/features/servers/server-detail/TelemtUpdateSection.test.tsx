@@ -336,6 +336,22 @@ describe("TelemtUpdateSection", () => {
       expect(screen.getByText("Telemt 3.4.10 → 3.4.25")).toBeInTheDocument();
     });
 
+    it("shows no badge when the current (Telemt) version is unknown, even with a newer release known", () => {
+      // Task 14 fix: currentVersion is the RAW Telemt-reported version with
+      // no panvex-agent fallback (see transforms/servers.ts telemtVersion) —
+      // "" means Telemt hasn't reported system_info yet (fresh enroll /
+      // partial data), which must never be compared against a real release.
+      useTelemtUpdateStrategy.mockReturnValue({
+        data: { strategy: binaryStrategy, probe: availableProbe },
+        isLoading: false,
+        isError: false,
+      });
+      render(<TelemtUpdateSection agentId="agent-1" currentVersion="" latestVersion="3.4.25" />);
+      expect(screen.queryByText(/→/)).not.toBeInTheDocument();
+      openFold();
+      expect(screen.queryByRole("button", { name: /Update Telemt/ })).not.toBeInTheDocument();
+    });
+
     it("shows no badge and no update action when already on the latest known version", () => {
       useTelemtUpdateStrategy.mockReturnValue({
         data: { strategy: binaryStrategy, probe: availableProbe },
@@ -362,6 +378,17 @@ describe("TelemtUpdateSection", () => {
     it("disables the update button when no strategy has been configured", () => {
       useTelemtUpdateStrategy.mockReturnValue({
         data: { strategy: null, probe: null },
+        isLoading: false,
+        isError: false,
+      });
+      render(<TelemtUpdateSection agentId="agent-1" currentVersion="3.4.10" latestVersion="3.4.25" />);
+      openFold();
+      expect(screen.getByRole("button", { name: "Update Telemt to 3.4.25" })).toBeDisabled();
+    });
+
+    it("disables the update button when the configured strategy mode is not binary (e.g. none)", () => {
+      useTelemtUpdateStrategy.mockReturnValue({
+        data: { strategy: { ...binaryStrategy, mode: "none" as const }, probe: availableProbe },
         isLoading: false,
         isError: false,
       });

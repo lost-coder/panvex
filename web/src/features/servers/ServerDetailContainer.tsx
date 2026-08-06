@@ -171,7 +171,7 @@ export function ServerDetailContainer() {
         isAdmin ? (
           <TelemtUpdateSection
             agentId={server.id}
-            currentVersion={server.systemInfo?.version ?? ""}
+            currentVersion={server.systemInfo?.telemtVersion ?? ""}
             latestVersion={latestTelemtVersion}
           />
         ) : undefined

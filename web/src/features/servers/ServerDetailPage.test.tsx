@@ -20,6 +20,7 @@ function makeProps(): ServerDetailPageProps {
       state: "ok",
       systemInfo: {
         version: "1.2.3",
+        telemtVersion: "1.2.3",
         targetArch: "x86_64",
         targetOs: "linux",
         buildProfile: "release",

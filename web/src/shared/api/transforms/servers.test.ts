@@ -209,6 +209,33 @@ describe("transformServerDetail", () => {
     expect(result.fallbackEnteredAtUnix).toBeNull();
   });
 
+  it("does not fall back to the agent version for telemtVersion when Telemt hasn't reported system_info yet", () => {
+    // Task 14 fix: `version` keeps the agent-version fallback (fresh
+    // enroll / partial diagnostics — other consumers rely on always
+    // having *something* to show), but `telemtVersion` is the raw
+    // Telemt-reported value only. A Telemt-version comparison (the
+    // update badge) must never compare against panvex-agent's own
+    // version — the two version spaces aren't comparable.
+    const runtime = makeRuntime();
+    const resp = makeDetailResponse(runtime);
+    // makeDetailResponse's diagnostics.system_info is already `{}` (no
+    // version reported) and its agent.version is "1.0.0".
+    const result = transformServerDetail(resp);
+
+    expect(result.systemInfo.version).toBe("1.0.0");
+    expect(result.systemInfo.telemtVersion).toBe("");
+  });
+
+  it("populates telemtVersion straight from system_info.version when Telemt has reported it", () => {
+    const runtime = makeRuntime();
+    const resp = makeDetailResponse(runtime);
+    resp.diagnostics = { ...resp.diagnostics, system_info: { version: "3.4.10" } };
+    const result = transformServerDetail(resp);
+
+    expect(result.systemInfo.version).toBe("3.4.10");
+    expect(result.systemInfo.telemtVersion).toBe("3.4.10");
+  });
+
   it("derives state onto the detail server", () => {
     const resp = {
       server: {

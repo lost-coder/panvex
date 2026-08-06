@@ -416,6 +416,10 @@ export function transformServerDetail(
   const sysInfoRaw = detail.diagnostics?.system_info ?? {};
   const systemInfo: ServerDetailPageProps["server"]["systemInfo"] = {
     version: str(sysInfoRaw.version) || str(agent?.version),
+    // Task 14 fix: no agent-version fallback here — a Telemt-version
+    // comparison (update badge) must never silently compare against the
+    // panvex-agent's own version when Telemt hasn't reported system_info yet.
+    telemtVersion: str(sysInfoRaw.version),
     targetArch: str(sysInfoRaw.target_arch),
     targetOs: str(sysInfoRaw.target_os),
     buildProfile: str(sysInfoRaw.build_profile),
