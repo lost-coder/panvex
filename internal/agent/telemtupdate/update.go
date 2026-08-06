@@ -211,11 +211,22 @@ func executeWith(ctx context.Context, p Payload, currentVersion string, info Tel
 	logger.WarnContext(ctx, "telemtupdate: health gate did not confirm target version, rolling back", "target_version", p.Version)
 
 	if rerr := restoreBackup(p.BinaryPath); rerr != nil {
-		msg := fmt.Sprintf("update failed health check AND restore backup failed: %v; manual recovery required, backup kept at %s", rerr, backupPath)
+		// restoreBackup itself failed: a failed rename leaves both its
+		// source and destination exactly as they were, so backupPath
+		// genuinely still holds the pre-update binary on disk. The binary
+		// in place at p.BinaryPath is still the unhealthy new one, so there
+		// is nothing safe to restart into — do not attempt a rollback
+		// Restart here.
+		msg := fmt.Sprintf("manual recovery required, backup kept at %s: %v", backupPath, rerr)
 		logger.ErrorContext(ctx, "telemtupdate: restore backup failed after health-gate timeout", "error", rerr)
 		return Outcome{KeepBackup: true, Message: msg}, fmt.Errorf("health check failed and restore backup failed: %w", rerr)
 	}
 
+	// restoreBackup succeeded: p.BinaryPath now holds the old binary again,
+	// and backupPath (the .bak it renamed from) is gone — consumed by that
+	// rename. No message from this point on can truthfully claim a backup
+	// is being kept.
+	//
 	// The incoming ctx may already be cancelled or past its deadline — that
 	// is precisely what routes here when the caller's context is cancelled
 	// mid-poll. Strip cancellation (keeping any request-scoped values) for
@@ -223,9 +234,9 @@ func executeWith(ctx context.Context, p Payload, currentVersion string, info Tel
 	// one attempt we have left to get Telemt running again.
 	rollbackCtx := context.WithoutCancel(ctx)
 	if rerr := restarter.Restart(rollbackCtx); rerr != nil {
-		msg := fmt.Sprintf("update failed AND rollback restart failed: %v; manual recovery required, backup kept at %s", rerr, backupPath)
-		logger.ErrorContext(ctx, "telemtupdate: rollback restart failed", "error", rerr)
-		return Outcome{KeepBackup: true, Message: msg}, fmt.Errorf("update failed health check and rollback restart failed: %w", rerr)
+		msg := fmt.Sprintf("old binary restored to %s but telemt was not restarted (rollback restart failed: %v); manually restart the service", p.BinaryPath, rerr)
+		logger.ErrorContext(ctx, "telemtupdate: rollback restart failed after binary was restored", "error", rerr)
+		return Outcome{Message: msg}, fmt.Errorf("update failed health check and rollback restart failed: %w", rerr)
 	}
 
 	logger.InfoContext(ctx, "telemtupdate: rolled back after failed health check", "version", currentVersion)

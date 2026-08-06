@@ -297,9 +297,16 @@ func TestExecute_HealthNeverConfirmsRollsBackWithSecondRestart(t *testing.T) {
 	}
 }
 
-// ---- (d) health fails AND the rollback restart also fails ----
+// ---- (d) health fails AND the rollback recovery also fails ----
+//
+// Split into the two distinct sub-cases the owner's approved semantics
+// distinguish: restoreBackup succeeding but the retried Restart failing
+// (KeepBackup=false — the .bak was already consumed by the successful
+// restore, so there is genuinely nothing left to "keep"), versus
+// restoreBackup itself failing (KeepBackup=true — a failed rename leaves
+// its source untouched, so the .bak is genuinely still on disk).
 
-func TestExecute_HealthFailsAndRollbackRestartFailsKeepsBackup(t *testing.T) {
+func TestExecute_HealthFailsRestoreOKButRollbackRestartFailsNoKeepBackup(t *testing.T) {
 	fx := newUpdateFixture(t, []byte("new-telemt-binary-content"))
 	rollbackErr := errors.New("systemctl restart: connection refused")
 	// Call 1 (post-swap restart) succeeds; call 2 (rollback restart) fails.
@@ -313,29 +320,100 @@ func TestExecute_HealthFailsAndRollbackRestartFailsKeepsBackup(t *testing.T) {
 	if outcome.Updated {
 		t.Fatalf("Updated = true, want false")
 	}
-	if !outcome.KeepBackup {
-		t.Fatalf("KeepBackup = false, want true (manual recovery required)")
+	if outcome.KeepBackup {
+		t.Fatalf("KeepBackup = true, want false (restore already succeeded; the .bak is already consumed, nothing left to keep)")
 	}
-	if !strings.Contains(outcome.Message, "manual recovery required") || !strings.Contains(outcome.Message, "rollback restart failed") {
-		t.Fatalf("Message = %q, missing expected phrases", outcome.Message)
+	wantSubstrs := []string{
+		"old binary restored to " + fx.binaryPath,
+		"was not restarted",
+		"rollback restart failed",
+		"manually restart the service",
+	}
+	for _, s := range wantSubstrs {
+		if !strings.Contains(outcome.Message, s) {
+			t.Fatalf("Message = %q, missing %q", outcome.Message, s)
+		}
 	}
 	if runner.callCount() != 2 {
 		t.Fatalf("runner called %d times, want 2", runner.callCount())
 	}
 
-	// restoreBackup (called before the failed rollback restart) already
-	// renamed binaryPath+backupSuffix back onto binaryPath, so binaryPath
-	// itself holds the restored old content — that part of the recovery
-	// did succeed even though the rollback restart didn't. The .bak file
-	// backupSuffix names is consumed by that rename (see restoreBackup's
-	// doc comment in swap.go); KeepBackup=true here signals "an operator
-	// must intervene", not literally "the .bak file is still on disk".
 	got, err := os.ReadFile(fx.binaryPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(got) != "old-telemt-binary" {
 		t.Fatalf("binaryPath content = %q, want the restored old binary", got)
+	}
+	if _, statErr := os.Stat(fx.binaryPath + backupSuffix); !os.IsNotExist(statErr) {
+		t.Fatalf(".bak should be gone (consumed by the successful restoreBackup), stat err = %v", statErr)
+	}
+}
+
+// sabotagingTelemtInfo always reports not-ready (so the health-gate always
+// times out), and on its first call replaces backupPath — the .bak
+// swapBinary left next to the binary — with a directory. That makes the
+// later os.Rename(backupPath, binaryPath) inside restoreBackup fail with
+// ENOTDIR (renaming a directory onto an existing regular file is refused),
+// deterministically and without relying on permission bits (which running
+// as root would otherwise bypass) — and, crucially, a failed rename leaves
+// its source (this directory) untouched, so backupPath genuinely still
+// exists on disk afterward.
+type sabotagingTelemtInfo struct {
+	mu         sync.Mutex
+	backupPath string
+	sabotaged  bool
+}
+
+func (f *sabotagingTelemtInfo) HealthReady(_ context.Context) (bool, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.sabotaged {
+		f.sabotaged = true
+		_ = os.Remove(f.backupPath)
+		_ = os.Mkdir(f.backupPath, 0o755) //nolint:gosec // G301: test fixture, permissions irrelevant
+	}
+	return false, "", nil
+}
+
+func (f *sabotagingTelemtInfo) FetchSystemInfo(_ context.Context) (telemt.SystemInfo, error) {
+	return telemt.SystemInfo{}, nil
+}
+
+func TestExecute_HealthFailsAndRestoreBackupItselfFailsKeepsBackup(t *testing.T) {
+	fx := newUpdateFixture(t, []byte("new-telemt-binary-content"))
+	runner := &fakeRunner{}
+	backupPath := fx.binaryPath + backupSuffix
+	info := &sabotagingTelemtInfo{backupPath: backupPath}
+
+	outcome, err := executeWith(context.Background(), fx.payload, currentVersion, info, runner, testLogger(), fx.cfg, fastTuning())
+	if err == nil {
+		t.Fatal("expected non-nil error when restoreBackup itself fails")
+	}
+	if outcome.Updated {
+		t.Fatalf("Updated = true, want false")
+	}
+	if !outcome.KeepBackup {
+		t.Fatalf("KeepBackup = false, want true (restoreBackup failed, backup genuinely still on disk)")
+	}
+	wantSubstrs := []string{
+		"manual recovery required",
+		"backup kept at " + backupPath,
+	}
+	for _, s := range wantSubstrs {
+		if !strings.Contains(outcome.Message, s) {
+			t.Fatalf("Message = %q, missing %q", outcome.Message, s)
+		}
+	}
+	// restoreBackup failing must not trigger a rollback Restart attempt:
+	// there is nothing safe to restart into (the binary in place is still
+	// the unhealthy new one).
+	if runner.callCount() != 1 {
+		t.Fatalf("runner called %d times, want 1 (post-swap restart only, no rollback attempt)", runner.callCount())
+	}
+
+	if _, statErr := os.Stat(backupPath); statErr != nil {
+		t.Fatalf("backup should still exist on disk, stat err = %v", statErr)
 	}
 }
 
