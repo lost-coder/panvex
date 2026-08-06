@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GroupConfig } from "@/shared/api/schemas/config";
@@ -93,6 +93,56 @@ describe("GroupConfigSection", () => {
   it("seeds the editor from the group target sections", () => {
     render(<GroupConfigSection groupId="fg-1" />);
     expect(screen.getByDisplayValue("old.example.com")).toBeInTheDocument();
+  });
+
+  // Task 6: manage-fields mode. The group has no observed config — it
+  // manages WHICH catalog fields it governs, not what's running anywhere.
+  it("shows a governed field with its stored value and a remove-from-group affordance", () => {
+    useGroupConfig.mockReturnValue({
+      data: makeConfig({ sections: { general: { fast_mode: false } } }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<GroupConfigSection groupId="fg-1" />);
+    expect(screen.getByText("fast_mode")).toBeInTheDocument();
+    expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("button", { name: "Remove from group" })).toBeInTheDocument();
+  });
+
+  it("shows a non-governed field with an add-to-group affordance and no editable control", () => {
+    // Default config only governs censorship.tls_domain — general.fast_mode
+    // is a real catalog path the group does NOT govern.
+    render(<GroupConfigSection groupId="fg-1" />);
+    const row = screen.getByText("general.fast_mode").closest("li");
+    expect(row).not.toBeNull();
+    expect(
+      within(row as HTMLElement).getByRole("button", { name: "Add to group" }),
+    ).toBeInTheDocument();
+    expect(within(row as HTMLElement).queryByRole("switch")).not.toBeInTheDocument();
+    expect(within(row as HTMLElement).queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("drops a field from the Save payload after Remove from group is clicked", () => {
+    useGroupConfig.mockReturnValue({
+      data: makeConfig({ sections: { general: { fast_mode: false } } }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<GroupConfigSection groupId="fg-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Remove from group" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(putMutate.mock.calls[0]?.[0]).toEqual({});
+  });
+
+  it("adds a field to the Save payload, at its catalog default, after Add to group is clicked", () => {
+    render(<GroupConfigSection groupId="fg-1" />);
+    const row = screen.getByText("general.fast_mode").closest("li") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Add to group" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(putMutate.mock.calls[0]?.[0]).toEqual({
+      censorship: { tls_domain: "old.example.com" },
+      general: { fast_mode: true },
+    });
   });
 
   it("saves the unflattened sections when Save is clicked", () => {

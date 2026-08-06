@@ -33,7 +33,7 @@ import {
   useGroupConfigApplyBatch,
   usePutGroupConfig,
 } from "@/features/servers/config/configHooks";
-import { ConfigSectionEditor } from "@/features/servers/config/ConfigSectionEditor";
+import { GovernedConfigFields } from "@/features/fleet-groups/GovernedConfigFields";
 import {
   DriftBadge,
   type DriftStatus,
@@ -254,11 +254,26 @@ export function GroupConfigSection({ groupId }: Readonly<{ groupId: string }>) {
     <section className="rounded-xs bg-bg-card border border-divider p-4 flex flex-col gap-6">
       <SectionHeader title={t("config.tab")} />
 
-      {/* Group target editor — the curated CONFIG_FIELDS, fully controlled. */}
-      <ConfigSectionEditor
+      {/* Group target editor — manage-fields mode (Task 6): unlike the node's
+          ConfigTree, the group page has no observed config to show — it
+          manages WHICH catalog fields the group governs. Governed fields
+          (currently the keys of `values`) render editable via the tree's
+          own field row, with a "remove from group" affordance; every other
+          catalog field is listed separately with an "add to group"
+          affordance instead of a value, so nothing is editable before the
+          operator explicitly opts it into governance. */}
+      <GovernedConfigFields
         values={values}
         onChange={(path, value) =>
           setValues((prev) => ({ ...prev, [path]: value }))
+        }
+        onAdd={(path, value) => setValues((prev) => ({ ...prev, [path]: value }))}
+        onRemove={(path) =>
+          setValues((prev) => {
+            const next = { ...prev };
+            delete next[path];
+            return next;
+          })
         }
         disabled={putMutation.isPending}
       />

@@ -449,7 +449,13 @@
       "search": "Search fields…",
       "filterChanged": "Changed only",
       "filterDrifted": "Drifted only",
-      "emptyFiltered": "No fields match the current filters."
+      "emptyFiltered": "No fields match the current filters.",
+      "governedTitle": "Governed fields",
+      "noGoverned": "This group doesn't govern any fields yet. Add one below.",
+      "addFieldTitle": "Add a field to this group",
+      "allGoverned": "Every catalog field is already governed by this group.",
+      "addField": "Add to group",
+      "removeField": "Remove from group"
     },
     "currentValue": {
       "label": "Current on node: {{value}}",
