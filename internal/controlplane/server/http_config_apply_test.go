@@ -492,6 +492,65 @@ func TestApplySendsDiffNotWholeEffective(t *testing.T) {
 	}
 }
 
+// TestGroupApplySuccessFoldsIntoSnapshot (P3 Task 4): a config.apply job
+// reaching SUCCESS folds its applied patch into the target agent's stored
+// desired snapshot, so the snapshot keeps reflecting what was actually
+// applied — the point for a group-driven apply, and a near-no-op
+// reaffirmation for a node-driven one. A FAILED job carrying the same patch
+// must leave the snapshot untouched.
+func TestGroupApplySuccessFoldsIntoSnapshot(t *testing.T) {
+	srv, _ := newConfigTargetTestServer(t)
+	ctx := context.Background()
+	const agentID = "agent-fold-ok"
+	seedAgentConfigTarget(t, srv, agentID, map[string]any{
+		"general": map[string]any{"fast_mode": true},
+	})
+
+	patch := map[string]any{"general": map[string]any{"fast_mode": false}}
+	jobID, err := srv.enqueueConfigApplyJobWithPatch(ctx, "tester", agentID, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, patch)
+	if err != nil {
+		t.Fatalf("enqueueConfigApplyJobWithPatch() error = %v", err)
+	}
+	if jobID == "" {
+		t.Fatalf("enqueueConfigApplyJobWithPatch() jobID empty, want a job for the patch")
+	}
+
+	srv.RecordClientJobResult(ctx, agentID, jobID, true, "", "", srv.now())
+
+	sections, err := srv.configTargets.Sections(ctx, storage.ConfigScopeAgent, agentID)
+	if err != nil {
+		t.Fatalf("Sections() error = %v", err)
+	}
+	general, _ := sections["general"].(map[string]any)
+	if general["fast_mode"] != false {
+		t.Fatalf("general.fast_mode after successful apply = %v, want false", general["fast_mode"])
+	}
+
+	// Reset the snapshot and repeat with a FAILED job: it must leave the
+	// snapshot untouched.
+	seedAgentConfigTarget(t, srv, agentID, map[string]any{
+		"general": map[string]any{"fast_mode": true},
+	})
+	jobID2, err := srv.enqueueConfigApplyJobWithPatch(ctx, "tester", agentID, reloadPolicy{Mode: "drain", TimeoutSecs: 30}, patch)
+	if err != nil {
+		t.Fatalf("enqueueConfigApplyJobWithPatch() (2) error = %v", err)
+	}
+	if jobID2 == "" {
+		t.Fatalf("enqueueConfigApplyJobWithPatch() (2) jobID empty, want a job for the patch")
+	}
+
+	srv.RecordClientJobResult(ctx, agentID, jobID2, false, "reload failed", "", srv.now())
+
+	sections2, err := srv.configTargets.Sections(ctx, storage.ConfigScopeAgent, agentID)
+	if err != nil {
+		t.Fatalf("Sections() (2) error = %v", err)
+	}
+	general2, _ := sections2["general"].(map[string]any)
+	if general2["fast_mode"] != true {
+		t.Fatalf("general.fast_mode after FAILED apply = %v, want true (unchanged)", general2["fast_mode"])
+	}
+}
+
 // TestApplyRestrictedToPaths (P2 Task 5): the agent's desired snapshot has
 // two fields that both drift from observed, but the apply is restricted to
 // a single dotted path. Only that path may appear in the enqueued patch,

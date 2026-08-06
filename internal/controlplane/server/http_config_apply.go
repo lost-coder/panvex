@@ -127,6 +127,58 @@ func (s *Server) enqueueConfigApplyJobWithPatch(ctx context.Context, actorID, ag
 	return job.ID, nil
 }
 
+// foldAppliedConfigOnJobResult folds a successful config.apply job's applied
+// patch into the target agent's stored desired snapshot (P3 Task 4), so the
+// snapshot keeps reflecting reality after both node-Apply (a near-no-op
+// reaffirmation — the patch came from the agent's own snapshot via
+// enqueueConfigApplyJob's applyDiff) and group-Apply (records the
+// group-driven change — the patch came from a group's sections via
+// enqueueConfigApplyJobWithPatch). RecordClientJobResult (gateway_deps.go)
+// sees EVERY job result, so — mirroring recordSelfUpdateJobOutcome's shape —
+// this keys off the job's own action rather than trying to distinguish
+// node-Apply from group-Apply, which the caller has no way to tell apart
+// here anyway.
+//
+// Gated on success only: a failed apply must never touch the snapshot.
+// Deep-merges via deepMergeConfigInto (the same helper P2 Task 5 uses for
+// PUT /config-targets), which preserves untouched keys — including the
+// stored __schema_version marker, since a config.apply patch never carries
+// it. Any error is logged and swallowed: this is a best-effort reconciliation
+// side effect and must not disrupt job-result processing.
+func (s *Server) foldAppliedConfigOnJobResult(ctx context.Context, agentID, jobID string, success bool) {
+	if !success || jobID == "" || s.configTargets == nil {
+		return
+	}
+	job, ok, err := s.jobs.GetWithContext(ctx, jobID)
+	if err != nil || !ok || job.Action != jobs.ActionConfigApply {
+		return
+	}
+	var payload configApplyJobPayload
+	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
+		slog.WarnContext(ctx, "config-apply: fold into snapshot: decode payload failed",
+			"agent_id", agentID, "job_id", jobID, "error", err)
+		return
+	}
+	if len(payload.Patch) == 0 {
+		return
+	}
+	existing, err := s.configTargets.Sections(ctx, storage.ConfigScopeAgent, agentID)
+	if err != nil {
+		slog.WarnContext(ctx, "config-apply: fold into snapshot: load snapshot failed",
+			"agent_id", agentID, "job_id", jobID, "error", err)
+		return
+	}
+	merged := deepCopyConfigMap(existing)
+	if merged == nil {
+		merged = map[string]any{}
+	}
+	deepMergeConfigInto(merged, payload.Patch)
+	if err := s.configTargets.Upsert(ctx, storage.ConfigScopeAgent, agentID, merged); err != nil {
+		slog.WarnContext(ctx, "config-apply: fold into snapshot: upsert failed",
+			"agent_id", agentID, "job_id", jobID, "error", err)
+	}
+}
+
 // handleApplyGroupConfig applies the effective config target to every in-scope
 // agent in a fleet group ASYNCHRONOUSLY. It enqueues one config.apply job per
 // agent and returns 202 Accepted immediately with a batch id + the per-agent

@@ -520,6 +520,7 @@ func (s *Server) AppendAudit(ctx context.Context, actorID, action, targetID stri
 func (s *Server) RecordClientJobResult(ctx context.Context, agentID, jobID string, success bool, message, resultJSON string, observedAt time.Time) {
 	s.clientsSvc.RecordJobResult(ctx, agentID, jobID, success, message, resultJSON, observedAt)
 	s.recordSelfUpdateJobOutcome(ctx, agentID, jobID, success)
+	s.foldAppliedConfigOnJobResult(ctx, agentID, jobID, success)
 }
 
 // ReconcileDiscoveredClients reconciles a full client-list response.
