@@ -36,7 +36,7 @@ const server = { id: "agent-7", name: "edge-1" } as ServerDetailPageProps["serve
 
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
-    override: { censorship: { tls_domain: "old.example.com" } },
+    desired: { censorship: { tls_domain: "old.example.com" } },
     effective: { censorship: { tls_domain: "old.example.com" } },
     observed: {},
     drift: { status: "drifted", fields: ["censorship.tls_domain"] },
@@ -84,7 +84,7 @@ describe("ConfigTab", () => {
   it("hints the observed value for fields the operator has not overridden", () => {
     useAgentConfig.mockReturnValue({
       data: makeConfig({
-        override: {},
+        desired: {},
         effective: {},
         observed: {
           general: { log_level: "silent" },
@@ -171,7 +171,7 @@ describe("ConfigTab", () => {
     // Hot-only override so Apply kicks off directly (no restart dialog).
     useAgentConfig.mockReturnValue({
       data: makeConfig({
-        override: { general: { log_level: "info" } },
+        desired: { general: { log_level: "info" } },
         effective: { general: { log_level: "info" } },
         drift: { status: "in_sync", fields: [] },
       }),
@@ -229,7 +229,7 @@ describe("ConfigTab", () => {
     // override (identity changes on every query settle, even when the
     // server-side value hasn't changed).
     useAgentConfig.mockReturnValue({
-      data: makeConfig({ override: { censorship: { tls_domain: "old.example.com" } } }),
+      data: makeConfig({ desired: { censorship: { tls_domain: "old.example.com" } } }),
       isLoading: false,
       isError: false,
     });
@@ -245,7 +245,7 @@ describe("ConfigTab", () => {
 
     const otherServer = { id: "agent-99", name: "edge-2" } as ServerDetailPageProps["server"];
     useAgentConfig.mockReturnValue({
-      data: makeConfig({ override: { censorship: { tls_domain: "fresh.example.com" } } }),
+      data: makeConfig({ desired: { censorship: { tls_domain: "fresh.example.com" } } }),
       isLoading: false,
       isError: false,
     });
@@ -259,7 +259,7 @@ describe("ConfigTab", () => {
     expect(screen.getByDisplayValue("old.example.com")).toBeInTheDocument();
 
     useAgentConfig.mockReturnValue({
-      data: makeConfig({ override: { censorship: { tls_domain: "server-updated.example.com" } } }),
+      data: makeConfig({ desired: { censorship: { tls_domain: "server-updated.example.com" } } }),
       isLoading: false,
       isError: false,
     });

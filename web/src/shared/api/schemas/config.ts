@@ -21,7 +21,7 @@ export const configDriftSchema = z.object({
 });
 
 export const agentConfigSchema = z.object({
-  override: configSectionsSchema.default({}),
+  desired: configSectionsSchema.default({}),
   effective: configSectionsSchema.default({}),
   observed: configSectionsSchema.default({}),
   drift: configDriftSchema,

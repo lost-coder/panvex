@@ -87,11 +87,11 @@ export function ConfigTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applyBatchId, applyDone]);
 
-  // Editor state — seeded from the OVERRIDE. We keep the initial flatten so
-  // the changed-path diff is stable across re-renders.
+  // Editor state — seeded from the DESIRED snapshot. We keep the initial
+  // flatten so the changed-path diff is stable across re-renders.
   const initialValues = useMemo(
-    () => flattenSections(data?.override ?? {}),
-    [data?.override],
+    () => flattenSections(data?.desired ?? {}),
+    [data?.desired],
   );
   // U-13: effective config powers placeholder hints so an un-overridden
   // (empty) field reads as "inherits this value", not "blank/wipe".

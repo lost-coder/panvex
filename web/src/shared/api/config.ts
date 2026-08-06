@@ -1,5 +1,6 @@
 import { api, apiBasePath, encodeRequest, type RequestOpts } from "./http";
 import {
+  agentApplyConfigRequestSchema,
   agentConfigSchema,
   applyAcceptedSchema,
   applyConfigRequestSchema,
@@ -7,6 +8,7 @@ import {
   groupApplyActiveBatchSchema,
   groupApplyBatchStatusSchema,
   groupConfigSchema,
+  type AgentApplyConfigRequest,
   type AgentConfig,
   type ApplyAccepted,
   type ApplyConfigRequest,
@@ -17,6 +19,7 @@ import {
 } from "./schemas";
 
 export type {
+  AgentApplyConfigRequest,
   AgentConfig,
   ApplyAccepted,
   ApplyConfigRequest,
@@ -46,14 +49,14 @@ export const configApi = {
   // polled via getAgentConfigApplyBatch. `policy` is the optional reload
   // session policy (instant vs. drain); an absent policy sends an empty
   // body, which the panel resolves to its own default (drain/30s).
-  applyAgentConfig: (id: string, policy?: ApplyConfigRequest) =>
+  applyAgentConfig: (id: string, policy?: AgentApplyConfigRequest) =>
     api<ApplyAccepted>(
       `${apiBasePath}/agents/${id}/config/apply`,
       {
         method: "POST",
         body: encodeRequest(
           `${apiBasePath}/agents/${id}/config/apply`,
-          applyConfigRequestSchema,
+          agentApplyConfigRequestSchema,
           policy ?? {},
         ),
       },

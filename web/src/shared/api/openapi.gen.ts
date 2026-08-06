@@ -318,6 +318,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get an agent's desired config snapshot, effective merge, observed config, and drift
+         * @description Returns the agent's own desired config snapshot (the full
+         *     stored config target, stripped of the internal schema-version
+         *     marker), the fleet-group ⊕ desired effective merge (used to
+         *     mark locked/group-owned fields in the UI), the node's
+         *     last-observed editable sections, and the drift between the
+         *     desired snapshot and what was last observed.
+         */
+        get: operations["getAgentConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/{id}/config/apply": {
         parameters: {
             query?: never;
@@ -333,11 +360,14 @@ export interface paths {
          * Apply the effective config target to a single agent
          * @description Enqueues a config.apply job for the agent's effective config
          *     target (fleet-group sections deep-merged with its own
-         *     override) as a persistent batch-of-one and returns immediately
-         *     with a batch id to poll. The optional body lets the operator
-         *     choose the reload session policy (instant vs. drain) the
-         *     agent's Maestro reload uses; an absent body defaults to a 30s
-         *     drain window.
+         *     desired snapshot) as a persistent batch-of-one and returns
+         *     immediately with a batch id to poll. The optional body lets
+         *     the operator choose the reload session policy (instant vs.
+         *     drain) the agent's Maestro reload uses, and optionally
+         *     restrict the push to a specific set of dotted config paths
+         *     (e.g. pushing a single field the operator just edited rather
+         *     than every drifted leaf); an absent body defaults to a 30s
+         *     drain window and no path restriction.
          */
         post: operations["applyAgentConfig"];
         delete?: never;
@@ -898,6 +928,38 @@ export interface components {
         ApplyAccepted: {
             batch_id: string;
         };
+        /**
+         * @description Drift summary attached to a config GET response. `fields` lists
+         *     the dotted paths that drift; it is empty unless `status` is
+         *     `drifted`.
+         */
+        ConfigDrift: {
+            /** @enum {string} */
+            status: "in_sync" | "drifted" | "unknown";
+            fields: string[];
+        };
+        /**
+         * @description GET /api/agents/{id}/config response. Mirrors the Go
+         *     `agentConfigTargetResponse` struct
+         *     (`internal/controlplane/server/http_config_targets.go`).
+         *     `desired` is the agent's own stored config snapshot (stripped
+         *     of the internal schema-version marker), `effective` is the
+         *     fleet-group sections deep-merged with `desired`, `observed` is
+         *     the node's last-reported editable sections, and `drift`
+         *     compares `desired` against `observed`.
+         */
+        AgentConfigResponse: {
+            desired: {
+                [key: string]: unknown;
+            };
+            effective: {
+                [key: string]: unknown;
+            };
+            observed: {
+                [key: string]: unknown;
+            };
+            drift: components["schemas"]["ConfigDrift"];
+        };
     };
     responses: {
         /** @description Validation error. */
@@ -1324,6 +1386,31 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    getAgentConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent config snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentConfigResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     applyAgentConfig: {
         parameters: {
             query?: never;
@@ -1339,6 +1426,8 @@ export interface operations {
                     /** @enum {string} */
                     reload_mode?: "instant" | "drain";
                     reload_timeout_secs?: number;
+                    /** @description Optional dotted config paths to restrict the apply to. Absent or empty pushes every drifted leaf. */
+                    paths?: string[];
                 };
             };
         };

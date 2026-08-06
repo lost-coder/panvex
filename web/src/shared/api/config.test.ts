@@ -25,7 +25,7 @@ function makeAgentConfigShape(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
-    override: {},
+    desired: {},
     effective: { listen_port: 1080 },
     observed: { listen_port: 1080 },
     drift: { status: "in_sync", fields: [] },
@@ -77,11 +77,11 @@ describe("configApi.getAgentConfig", () => {
     expect(call[1]).toMatchObject({ credentials: "include" });
   });
 
-  it("applies defaults for missing override / observed fields", async () => {
+  it("applies defaults for missing desired / observed fields", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          // override and observed omitted — schema should default to {}
+          // desired and observed omitted — schema should default to {}
           effective: {},
           drift: { status: "drifted", fields: ["listen_port"] },
         }),
@@ -91,7 +91,7 @@ describe("configApi.getAgentConfig", () => {
 
     const result = await configApi.getAgentConfig("a-2");
 
-    expect(result.override).toEqual({});
+    expect(result.desired).toEqual({});
     expect(result.observed).toEqual({});
     expect(result.drift.status).toBe("drifted");
     expect(result.drift.fields).toEqual(["listen_port"]);
@@ -100,7 +100,7 @@ describe("configApi.getAgentConfig", () => {
   it("throws ApiSchemaError when drift is missing", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       new Response(
-        JSON.stringify({ override: {}, effective: {}, observed: {} }),
+        JSON.stringify({ desired: {}, effective: {}, observed: {} }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
     );

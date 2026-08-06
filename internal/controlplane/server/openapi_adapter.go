@@ -90,6 +90,10 @@ func (a *oapiAdapter) RevokeAgentCertificateRecoveryGrant(w http.ResponseWriter,
 	a.s.handleRevokeAgentCertificateRecoveryGrant().ServeHTTP(w, r)
 }
 
+func (a *oapiAdapter) GetAgentConfig(w http.ResponseWriter, r *http.Request, _ string) {
+	a.s.handleGetAgentConfigTarget().ServeHTTP(w, r)
+}
+
 func (a *oapiAdapter) ApplyAgentConfig(w http.ResponseWriter, r *http.Request, _ string) {
 	a.s.handleApplyAgentConfig().ServeHTTP(w, r)
 }
