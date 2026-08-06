@@ -140,4 +140,11 @@ export interface ServerDetailPageProps {
    * QueryClient + WebSocket dependencies the hook pulls in.
    */
   runtimeEventsSlot?: import("react").ReactNode;
+  /**
+   * Task 13: render slot for the "Обновление Telemt" update-strategy
+   * editor. The container supplies a wired `<TelemtUpdateSection
+   * agentId=… />`; accepted as a node for the same QueryClient-decoupling
+   * reason as the other slots above.
+   */
+  telemtUpdateSlot?: import("react").ReactNode;
 }

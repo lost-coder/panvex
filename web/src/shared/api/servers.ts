@@ -8,6 +8,8 @@ import {
   provisionOutboundAgentRequestSchema,
   provisionOutboundAgentResponseSchema,
   renameAgentRequestSchema,
+  telemtUpdateStrategySchema,
+  telemtUpdateStrategyResponseSchema,
   updateAgentFleetGroupRequestSchema,
 } from "./schemas";
 
@@ -43,6 +45,15 @@ export type AgentCertificateRecovery = LoosenOptional<
 // DELETE /agents/{id} on cancel).
 export type ProvisionOutboundAgentResponse = LoosenOptional<
   Gen["ProvisionOutboundAgentResponse"]
+>;
+
+// Task 9/13: operator-configured Telemt update strategy + the agent's live
+// probe. All fields on TelemtUpdateStrategy are required strings/enum on
+// the wire (no optionals), so no LoosenOptional wrapping is needed there.
+export type TelemtUpdateStrategy = Gen["TelemtUpdateStrategy"];
+export type TelemtUpdateProbe = Gen["TelemtUpdateProbe"];
+export type TelemtUpdateStrategyResponse = LoosenOptional<
+  Gen["TelemtUpdateStrategyResponse"]
 >;
 
 // Instance has no OpenAPI counterpart yet (GET /api/instances is not in
@@ -147,4 +158,23 @@ export const serversApi = {
       { method: "POST" },
       agentCertificateRecoverySchema,
     ),
+
+  // Task 9/13: GET returns both the persisted strategy (null when never
+  // configured) and the agent's live probe (null until the agent has
+  // reported one) in one round trip.
+  getTelemtUpdateStrategy: (agentID: string, opts?: RequestOpts) =>
+    api<TelemtUpdateStrategyResponse>(
+      `${apiBasePath}/agents/${agentID}/telemt/update-strategy`,
+      { signal: opts?.signal },
+      telemtUpdateStrategyResponseSchema,
+    ),
+  putTelemtUpdateStrategy: (agentID: string, strategy: TelemtUpdateStrategy) =>
+    api<void>(`${apiBasePath}/agents/${agentID}/telemt/update-strategy`, {
+      method: "PUT",
+      body: encodeRequest(
+        `${apiBasePath}/agents/${agentID}/telemt/update-strategy`,
+        telemtUpdateStrategySchema,
+        strategy,
+      ),
+    }),
 };

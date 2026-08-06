@@ -10,6 +10,7 @@ import { useServerLoadHistory } from "./hooks/useServerHistory";
 import { useFleetGroups } from "./hooks/useFleetGroups";
 import { EnrollmentHistory } from "./enrollment/EnrollmentHistory";
 import { RuntimeEvents } from "./runtime-events/RuntimeEvents";
+import { TelemtUpdateSection } from "./server-detail/TelemtUpdateSection";
 import { useUpdates } from "@/shared/hooks/useUpdates";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { apiClient, type ServerLoadPoint } from "@/shared/api/api";
@@ -155,6 +156,7 @@ export function ServerDetailContainer() {
       }}
       enrollmentHistorySlot={<EnrollmentHistory agentId={server.id} />}
       runtimeEventsSlot={<RuntimeEvents agentId={server.id} />}
+      telemtUpdateSlot={<TelemtUpdateSection agentId={server.id} />}
     />
   );
 }

@@ -511,5 +511,56 @@
     },
     "nodesTitle": "Nodes",
     "noNodes": "No nodes in this group yet"
+  },
+  "telemtUpdate": {
+    "title": "Telemt update",
+    "loading": "Loading update strategy…",
+    "error": "Failed to load the update strategy",
+    "probe": {
+      "title": "Auto-detected",
+      "mode": "Mode: {{mode}}",
+      "restartSpec": "Restart command: {{spec}}",
+      "binaryPath": "Binary path: {{path}}",
+      "apply": "Apply suggested",
+      "unavailable": "In-place update unavailable"
+    },
+    "reason": {
+      "no_service_manager_detected": "No supported process supervisor detected (systemd, OpenRC, procd, runit)",
+      "docker_only": "Telemt runs in Docker — update via the image instead"
+    },
+    "form": {
+      "modeLabel": "Update mode",
+      "mode": {
+        "binary": "Binary",
+        "docker": "Docker",
+        "none": "Do not update"
+      },
+      "presetLabel": "Process supervisor",
+      "preset": {
+        "systemd": "systemd",
+        "procd": "procd (OpenWrt)",
+        "openrc": "OpenRC",
+        "runit": "runit",
+        "custom": "Custom command"
+      },
+      "unitNameLabel": "Unit / service name",
+      "unitNamePlaceholder": "telemt",
+      "customCommandLabel": "Restart command",
+      "customCommandPlaceholder": "/usr/local/bin/restart-telemt.sh",
+      "binaryPathLabel": "Telemt binary path",
+      "binaryPathPlaceholder": "/usr/local/bin/telemt",
+      "flavorV3Label": "CPU-optimised build (v3)",
+      "flavorV3Hint": "Use the release asset built for the CPU v3 instruction-set baseline",
+      "save": "Save strategy",
+      "saving": "Saving…",
+      "saved": "Update strategy saved",
+      "validation": {
+        "unitNameRequired": "Enter a unit or service name",
+        "unitNameInvalid": "Name must not contain whitespace, \"/\", or \"..\"",
+        "commandRequired": "Enter a restart command",
+        "binaryPathRequired": "Enter the Telemt binary path",
+        "invalid": "Check the highlighted fields"
+      }
+    }
   }
 }

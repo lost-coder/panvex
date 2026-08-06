@@ -89,6 +89,7 @@ export function ServerDetailPage({
   metricsChart,
   enrollmentHistorySlot,
   runtimeEventsSlot,
+  telemtUpdateSlot,
 }: Readonly<ServerDetailPageProps>) {
   const { t } = useTranslation("servers");
   const { t: tc } = useTranslation("common");
@@ -486,6 +487,14 @@ export function ServerDetailPage({
             onRevokeGrant={onRevokeGrant ?? noop}
           />
         )}
+
+        {/*
+          Task 13: "Обновление Telemt" — probe hint + update-strategy form.
+          Slot-supplied for the same reason as enrollmentHistorySlot /
+          runtimeEventsSlot below (keeps this presentational page free of
+          the QueryClient dependency its own hooks pull in).
+        */}
+        {telemtUpdateSlot}
 
         {/*
           Phase-1 observability: the container passes an EnrollmentHistory

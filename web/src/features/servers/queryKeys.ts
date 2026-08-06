@@ -50,6 +50,11 @@ export const controlRoomKeys = {
   all: ["control-room"] as const,
 };
 
+export const telemtUpdateKeys = {
+  /** Per-agent update strategy + probe (GET/PUT .../telemt/update-strategy). */
+  strategy: (agentId: string) => ["telemt-update-strategy", agentId] as const,
+};
+
 export const configKeys = {
   /** Per-agent override/effective/observed config + drift. */
   agent: (agentId: string) => ["config", "agent", agentId] as const,

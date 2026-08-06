@@ -522,5 +522,56 @@
     },
     "nodesTitle": "Ноды",
     "noNodes": "В этой группе пока нет нод"
+  },
+  "telemtUpdate": {
+    "title": "Обновление Telemt",
+    "loading": "Загрузка стратегии обновления…",
+    "error": "Не удалось загрузить стратегию обновления",
+    "probe": {
+      "title": "Обнаружено автоматически",
+      "mode": "Режим: {{mode}}",
+      "restartSpec": "Команда перезапуска: {{spec}}",
+      "binaryPath": "Путь к бинарю: {{path}}",
+      "apply": "Применить предложенное",
+      "unavailable": "Обновление на месте недоступно"
+    },
+    "reason": {
+      "no_service_manager_detected": "Не обнаружен поддерживаемый супервизор процессов (systemd, OpenRC, procd, runit)",
+      "docker_only": "Telemt запущен в Docker — обновляйте через образ"
+    },
+    "form": {
+      "modeLabel": "Режим обновления",
+      "mode": {
+        "binary": "Бинарный файл",
+        "docker": "Docker",
+        "none": "Не обновлять"
+      },
+      "presetLabel": "Супервизор процессов",
+      "preset": {
+        "systemd": "systemd",
+        "procd": "procd (OpenWrt)",
+        "openrc": "OpenRC",
+        "runit": "runit",
+        "custom": "Своя команда"
+      },
+      "unitNameLabel": "Имя юнита / сервиса",
+      "unitNamePlaceholder": "telemt",
+      "customCommandLabel": "Команда перезапуска",
+      "customCommandPlaceholder": "/usr/local/bin/restart-telemt.sh",
+      "binaryPathLabel": "Путь к бинарю Telemt",
+      "binaryPathPlaceholder": "/usr/local/bin/telemt",
+      "flavorV3Label": "Оптимизированная сборка (v3)",
+      "flavorV3Hint": "Использовать вариант релиза, собранный под набор инструкций CPU v3",
+      "save": "Сохранить стратегию",
+      "saving": "Сохранение…",
+      "saved": "Стратегия обновления сохранена",
+      "validation": {
+        "unitNameRequired": "Укажите имя юнита или сервиса",
+        "unitNameInvalid": "Имя не должно содержать пробелов, «/» или «..»",
+        "commandRequired": "Укажите команду перезапуска",
+        "binaryPathRequired": "Укажите путь к бинарю Telemt",
+        "invalid": "Проверьте заполненные поля"
+      }
+    }
   }
 }

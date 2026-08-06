@@ -17,9 +17,15 @@ export {
   agentSchema,
   instanceListSchema,
   instanceSchema,
+  telemtUpdateProbeSchema,
+  telemtUpdateStrategySchema,
+  telemtUpdateStrategyResponseSchema,
   type AgentCertificateRecoveryParsed,
   type AgentParsed,
   type InstanceParsed,
+  type TelemtUpdateProbeParsed,
+  type TelemtUpdateStrategyParsed,
+  type TelemtUpdateStrategyResponseParsed,
 } from "./agent.ts";
 export {
   agentCertificateRecoveryGrantRequestSchema,

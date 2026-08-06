@@ -50,6 +50,9 @@ export type {
   Instance,
   ProvisionOutboundAgentResponse,
   RuntimeEvent,
+  TelemtUpdateProbe,
+  TelemtUpdateStrategy,
+  TelemtUpdateStrategyResponse,
 } from "./servers";
 export type {
   ControlRoomResponse,
