@@ -144,6 +144,7 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 		transportDriftAt:           map[string]time.Time{},
 		transportDriftReenqueuedAt: map[string]time.Time{},
 		selfUpdateReenqueuedAt:     map[string]time.Time{},
+		telemtUpdateReenqueuedAt:   map[string]time.Time{},
 		retentionDisabledWarned:    make(map[string]bool),
 		// live (A2/A1): single owner of agent live-state + instances. The
 		// clone funcs deep-copy every reference-type field of Agent/Instance
@@ -176,7 +177,10 @@ func newServerFromOptions(options Options, now func() time.Time, csrfManager *cs
 	}
 	// P8.1: the client supersession rule lives in the clients layer; jobs.Service
 	// receives it via injection and does not know about the clients domain itself.
-	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
+	// Task 11: composed with the updates-layer rule (telemt.update) via
+	// jobSupersedeKey — jobs.Service accepts exactly one function, so the
+	// composition root chains the two domain rules here.
+	s.jobs.SetSupersedeKeyFunc(jobSupersedeKey)
 	// R10b: surface expired client jobs as awaiting_node. Same injection style —
 	// jobs stays free of the clients/server domains. The hook resolves
 	// s.clientsSvc at call time (via the closure) so it always targets the
@@ -235,10 +239,10 @@ func (s *Server) initStoreBackedSubsystems(options Options, vault *secretvault.V
 	store := options.Store
 	s.jobs = jobs.NewServiceWithStore(s.serverCtx, store)
 	// P8.1: the store-backed service is created fresh here, replacing the one
-	// built in newServerFromOptions — re-attach the clients supersede rule
-	// before background workers start (satisfies SetSupersedeKeyFunc's boot
+	// built in newServerFromOptions — re-attach the supersede rule before
+	// background workers start (satisfies SetSupersedeKeyFunc's boot
 	// contract).
-	s.jobs.SetSupersedeKeyFunc(clients.JobSupersedeKey)
+	s.jobs.SetSupersedeKeyFunc(jobSupersedeKey)
 	// R10b: re-attach the expiry hook onto the freshly-constructed store-backed
 	// jobs service before background workers start (same boot contract). The
 	// closure resolves s.clientsSvc at call time so it targets the store-backed
@@ -939,4 +943,17 @@ func (s *Server) seedUsers(users []auth.User) error {
 	}
 
 	return nil
+}
+
+// jobSupersedeKey is the composition root's single supersede rule, chaining
+// the two domain-level rules jobs.Service is injected with: clients.* jobs
+// (clients.JobSupersedeKey) and telemt.update jobs (updates.JobSupersedeKey,
+// Task 11). jobs.Service accepts exactly one func(action, payloadJSON)
+// string, so this is where the two independently-owned rules meet — neither
+// domain package imports the other.
+func jobSupersedeKey(action jobs.Action, payloadJSON string) string {
+	if key := clients.JobSupersedeKey(action, payloadJSON); key != "" {
+		return key
+	}
+	return updates.JobSupersedeKey(action, payloadJSON)
 }

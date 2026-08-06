@@ -262,6 +262,60 @@ func runSettingsContract(t *testing.T, open OpenStore) {
 		}
 	})
 
+	t.Run("pending telemt updates round trip", func(t *testing.T) {
+		store := open(t)
+		defer store.Close()
+
+		ctx := context.Background()
+
+		empty, err := store.GetPendingTelemtUpdates(ctx)
+		if err != nil {
+			t.Fatalf("GetPendingTelemtUpdates() error = %v", err)
+		}
+		if empty != nil {
+			t.Fatalf("GetPendingTelemtUpdates() on empty store = %s, want nil", empty)
+		}
+
+		pending := json.RawMessage(`{"agent-1":"3.4.25","agent-2":"3.4.24"}`)
+		if err := store.PutPendingTelemtUpdates(ctx, pending); err != nil {
+			t.Fatalf("PutPendingTelemtUpdates() error = %v", err)
+		}
+
+		gotPending, err := store.GetPendingTelemtUpdates(ctx)
+		if err != nil {
+			t.Fatalf("GetPendingTelemtUpdates() error = %v", err)
+		}
+		if string(gotPending) != string(pending) {
+			t.Fatalf("GetPendingTelemtUpdates() = %s, want %s", gotPending, pending)
+		}
+
+		// Overwriting must replace the blob, not append to it.
+		replacement := json.RawMessage(`{"agent-2":"3.4.26"}`)
+		if err := store.PutPendingTelemtUpdates(ctx, replacement); err != nil {
+			t.Fatalf("PutPendingTelemtUpdates() overwrite error = %v", err)
+		}
+		gotReplaced, err := store.GetPendingTelemtUpdates(ctx)
+		if err != nil {
+			t.Fatalf("GetPendingTelemtUpdates() error = %v", err)
+		}
+		if string(gotReplaced) != string(replacement) {
+			t.Fatalf("GetPendingTelemtUpdates() after overwrite = %s, want %s", gotReplaced, replacement)
+		}
+
+		// The telemt-pending key is independent of the agent-pending key.
+		agentPending := json.RawMessage(`{"agent-3":"1.4.0"}`)
+		if err := store.PutPendingAgentUpdates(ctx, agentPending); err != nil {
+			t.Fatalf("PutPendingAgentUpdates() error = %v", err)
+		}
+		gotTelemtAfter, err := store.GetPendingTelemtUpdates(ctx)
+		if err != nil {
+			t.Fatalf("GetPendingTelemtUpdates() error = %v", err)
+		}
+		if string(gotTelemtAfter) != string(replacement) {
+			t.Fatalf("GetPendingTelemtUpdates() after agent-pending write = %s, want %s", gotTelemtAfter, replacement)
+		}
+	})
+
 	runGeoIPSettingsContract(t, open)
 }
 

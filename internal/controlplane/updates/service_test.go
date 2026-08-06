@@ -6,12 +6,13 @@ import (
 	"testing"
 )
 
-// memStore is an in-memory SettingsStore: four independent nil-able blobs.
+// memStore is an in-memory SettingsStore: five independent nil-able blobs.
 type memStore struct {
-	settings   json.RawMessage
-	state      json.RawMessage
-	selfUpdate json.RawMessage
-	pending    json.RawMessage
+	settings      json.RawMessage
+	state         json.RawMessage
+	selfUpdate    json.RawMessage
+	pending       json.RawMessage
+	pendingTelemt json.RawMessage
 }
 
 func (m *memStore) GetUpdateSettings(context.Context) (json.RawMessage, error) {
@@ -38,6 +39,13 @@ func (m *memStore) GetPendingAgentUpdates(context.Context) (json.RawMessage, err
 }
 func (m *memStore) PutPendingAgentUpdates(_ context.Context, b json.RawMessage) error {
 	m.pending = b
+	return nil
+}
+func (m *memStore) GetPendingTelemtUpdates(context.Context) (json.RawMessage, error) {
+	return m.pendingTelemt, nil
+}
+func (m *memStore) PutPendingTelemtUpdates(_ context.Context, b json.RawMessage) error {
+	m.pendingTelemt = b
 	return nil
 }
 
@@ -208,6 +216,132 @@ func TestClearPendingAgentUpdateAbsentIsNoOp(t *testing.T) {
 	}
 	if store.pending != nil {
 		t.Fatalf("a no-op clear must not write a blob, got %s", store.pending)
+	}
+}
+
+// Task 11: telemt.update's pending-desired-state map mirrors agent
+// self-update's exactly (same generic accessor underneath, different
+// update_config key) — set/get/clear round trip, failures give up on the
+// Nth attempt, and a new click resets the budget.
+
+func TestPendingTelemtUpdateRoundTrip(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&memStore{})
+	ctx := context.Background()
+
+	if _, ok, err := svc.PendingTelemtUpdate(ctx, "agent-1"); err != nil || ok {
+		t.Fatalf("empty store must have no pending update: ok=%v err=%v", ok, err)
+	}
+	if err := svc.SetPendingTelemtUpdate(ctx, "agent-1", "3.4.25"); err != nil {
+		t.Fatalf("SetPendingTelemtUpdate: %v", err)
+	}
+	version, ok, err := svc.PendingTelemtUpdate(ctx, "agent-1")
+	if err != nil || !ok || version != "3.4.25" {
+		t.Fatalf("want 3.4.25/true, got %q/%v/%v", version, ok, err)
+	}
+	if err := svc.ClearPendingTelemtUpdate(ctx, "agent-1"); err != nil {
+		t.Fatalf("ClearPendingTelemtUpdate: %v", err)
+	}
+	if _, ok, _ := svc.PendingTelemtUpdate(ctx, "agent-1"); ok {
+		t.Fatal("cleared entry must be gone")
+	}
+}
+
+// The telemt.update pending map is independent of the agent self-update
+// pending map: writing one must never disturb the other, even for the same
+// agent ID.
+func TestPendingTelemtUpdateIndependentOfAgentUpdate(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&memStore{})
+	ctx := context.Background()
+
+	if err := svc.SetPendingAgentUpdate(ctx, "agent-1", "1.4.0"); err != nil {
+		t.Fatalf("SetPendingAgentUpdate: %v", err)
+	}
+	if err := svc.SetPendingTelemtUpdate(ctx, "agent-1", "3.4.25"); err != nil {
+		t.Fatalf("SetPendingTelemtUpdate: %v", err)
+	}
+
+	if got, _, _ := svc.PendingAgentUpdate(ctx, "agent-1"); got != "1.4.0" {
+		t.Fatalf("agent pending = %q, want 1.4.0 (telemt write must not disturb it)", got)
+	}
+	if got, _, _ := svc.PendingTelemtUpdate(ctx, "agent-1"); got != "3.4.25" {
+		t.Fatalf("telemt pending = %q, want 3.4.25", got)
+	}
+
+	if err := svc.ClearPendingTelemtUpdate(ctx, "agent-1"); err != nil {
+		t.Fatalf("ClearPendingTelemtUpdate: %v", err)
+	}
+	if got, ok, _ := svc.PendingAgentUpdate(ctx, "agent-1"); !ok || got != "1.4.0" {
+		t.Fatalf("clearing telemt pending must not touch agent pending, got %q/%v", got, ok)
+	}
+}
+
+// A pending Telemt target the node can never reach must not be retried
+// forever: after MaxPendingAgentUpdateFailures failed deliveries the panel
+// gives up and drops the desired state (same budget as agent self-update).
+func TestRecordPendingTelemtUpdateFailureGivesUpAfterMaxAttempts(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&memStore{})
+	ctx := context.Background()
+
+	if err := svc.SetPendingTelemtUpdate(ctx, "agent-1", "3.4.25"); err != nil {
+		t.Fatalf("SetPendingTelemtUpdate: %v", err)
+	}
+
+	for attempt := 1; attempt < MaxPendingAgentUpdateFailures; attempt++ {
+		failures, gaveUp, err := svc.RecordPendingTelemtUpdateFailure(ctx, "agent-1", "3.4.25")
+		if err != nil {
+			t.Fatalf("RecordPendingTelemtUpdateFailure(%d): %v", attempt, err)
+		}
+		if gaveUp {
+			t.Fatalf("gave up after %d failures, want it to hold until %d", attempt, MaxPendingAgentUpdateFailures)
+		}
+		if failures != attempt {
+			t.Fatalf("failures = %d, want %d", failures, attempt)
+		}
+		if _, ok, _ := svc.PendingTelemtUpdate(ctx, "agent-1"); !ok {
+			t.Fatalf("target must survive failure %d", attempt)
+		}
+	}
+
+	failures, gaveUp, err := svc.RecordPendingTelemtUpdateFailure(ctx, "agent-1", "3.4.25")
+	if err != nil {
+		t.Fatalf("final RecordPendingTelemtUpdateFailure: %v", err)
+	}
+	if !gaveUp || failures != MaxPendingAgentUpdateFailures {
+		t.Fatalf("failures = %d, gaveUp = %v; want %d/true", failures, gaveUp, MaxPendingAgentUpdateFailures)
+	}
+	if _, ok, _ := svc.PendingTelemtUpdate(ctx, "agent-1"); ok {
+		t.Fatal("giving up must drop the pending target")
+	}
+}
+
+// A fresh operator click resets the telemt.update failure budget, same as
+// agent self-update.
+func TestSetPendingTelemtUpdateResetsFailureCount(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&memStore{})
+	ctx := context.Background()
+
+	if err := svc.SetPendingTelemtUpdate(ctx, "agent-1", "3.4.25"); err != nil {
+		t.Fatalf("SetPendingTelemtUpdate: %v", err)
+	}
+	for range MaxPendingAgentUpdateFailures - 1 {
+		if _, _, err := svc.RecordPendingTelemtUpdateFailure(ctx, "agent-1", "3.4.25"); err != nil {
+			t.Fatalf("RecordPendingTelemtUpdateFailure: %v", err)
+		}
+	}
+	if err := svc.SetPendingTelemtUpdate(ctx, "agent-1", "3.4.26"); err != nil {
+		t.Fatalf("SetPendingTelemtUpdate (new click): %v", err)
+	}
+
+	failures, gaveUp, err := svc.RecordPendingTelemtUpdateFailure(ctx, "agent-1", "3.4.26")
+	if err != nil {
+		t.Fatalf("RecordPendingTelemtUpdateFailure after new click: %v", err)
+	}
+	if gaveUp || failures != 1 {
+		t.Fatalf("a new click must restart the budget, got failures=%d gaveUp=%v", failures, gaveUp)
 	}
 }
 

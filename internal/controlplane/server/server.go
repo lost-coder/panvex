@@ -284,6 +284,12 @@ type Server struct {
 	// the time of the last reconcile-triggered re-enqueue. In-memory only: a
 	// panel restart simply allows one immediate re-enqueue per agent.
 	selfUpdateReenqueuedAt map[string]time.Time
+	// telemtUpdateReenqueuedAt mirrors selfUpdateReenqueuedAt for the
+	// pending-telemt-update self-heal (Task 11): at most one telemt.update
+	// job per telemtUpdateJobTTL per agent. Independent map/key from the
+	// agent self-update throttle above — the two desired-state kinds never
+	// share a throttle window.
+	telemtUpdateReenqueuedAt map[string]time.Time
 	// live is the single owner of agent live-state (full Agent value:
 	// identity + runtime telemetry) and per-agent Telemt instances, with
 	// replace/prune semantics and deep-copy isolation (A2/A1). It replaces

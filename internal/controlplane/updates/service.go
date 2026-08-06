@@ -89,8 +89,8 @@ type SelfUpdateState struct {
 }
 
 // SettingsStore is the subset of storage.Store the service needs. storage.Store
-// satisfies it structurally. Settings, State, SelfUpdate and PendingAgentUpdates
-// are four independent keys.
+// satisfies it structurally. Settings, State, SelfUpdate, PendingAgentUpdates
+// and PendingTelemtUpdates are five independent keys.
 type SettingsStore interface {
 	GetUpdateSettings(ctx context.Context) (json.RawMessage, error)
 	PutUpdateSettings(ctx context.Context, settings json.RawMessage) error
@@ -100,6 +100,14 @@ type SettingsStore interface {
 	PutPanelSelfUpdate(ctx context.Context, raw json.RawMessage) error
 	GetPendingAgentUpdates(ctx context.Context) (json.RawMessage, error)
 	PutPendingAgentUpdates(ctx context.Context, raw json.RawMessage) error
+	// GetPendingTelemtUpdates and PutPendingTelemtUpdates mirror
+	// GetPendingAgentUpdates/PutPendingAgentUpdates for telemt.update jobs
+	// (Task 11): an independent agent-ID -> requested-Telemt-version map
+	// under its own update_config key, so the two desired-state blobs
+	// (agent binary vs. managed Telemt binary) never collide or share a
+	// failure budget.
+	GetPendingTelemtUpdates(ctx context.Context) (json.RawMessage, error)
+	PutPendingTelemtUpdates(ctx context.Context, raw json.RawMessage) error
 }
 
 // Service owns the persistence of the update Settings and State blobs. The
@@ -194,7 +202,11 @@ func (s *Service) SaveSelfUpdate(ctx context.Context, st SelfUpdateState) error 
 }
 
 // MaxPendingAgentUpdateFailures bounds how many times a pending target may be
-// delivered and REPORTED FAILED before the panel gives up and drops it.
+// delivered and REPORTED FAILED before the panel gives up and drops it. Also
+// governs telemt.update's pending failure budget (Task 11) — the same
+// "five genuine failures is well past a transient blip" reasoning applies to
+// both, and a second constant would only invite the two to drift apart for
+// no reason.
 //
 // Without a bound, a target the node can never reach (an agent built without
 // version ldflags, a 404 release asset, a checksum mismatch) is re-enqueued on
@@ -206,29 +218,48 @@ func (s *Service) SaveSelfUpdate(ctx context.Context, st SelfUpdateState) error 
 // and must never consume the budget.
 const MaxPendingAgentUpdateFailures = 5
 
-// pendingAgentUpdate is one agent's desired update: the version an operator
+// pendingUpdateEntry is one agent's desired update: the version an operator
 // asked for and the node has not reported yet, plus how many delivered
-// attempts have come back failed.
-type pendingAgentUpdate struct {
+// attempts have come back failed. Shared shape for both pending-update kinds
+// below (Task 11) — they differ only in which update_config key backs them.
+type pendingUpdateEntry struct {
 	Version string `json:"version"`
 	// Failures counts consecutive failed deliveries of THIS version. Reset by
 	// a new operator click (a new decision earns a fresh budget).
 	Failures int `json:"failures,omitempty"`
 }
 
-// pendingAgentUpdates maps agent ID -> its desired update. It is the desired
-// state behind the one-shot agent.self-update job: the job itself expires after
-// its TTL, so an offline node would otherwise lose the request silently.
-type pendingAgentUpdates map[string]pendingAgentUpdate
+// pendingUpdateMap maps agent ID -> its desired update. It is the desired
+// state behind a one-shot job (agent.self-update or telemt.update): the job
+// itself expires after its TTL, so an offline node would otherwise lose the
+// request silently.
+type pendingUpdateMap map[string]pendingUpdateEntry
 
-// loadPendingLocked reads the persisted map. An absent blob is an empty map,
-// not an error. Callers must hold pendingMu.
-func (s *Service) loadPendingLocked(ctx context.Context) (pendingAgentUpdates, error) {
-	data, err := s.store.GetPendingAgentUpdates(ctx)
+// pendingUpdateAccessor binds the generic load/save/mutate logic below to one
+// of the two independent update_config keys — agent self-update
+// (agentPendingAccessor) or telemt.update (telemtPendingAccessor, Task 11) —
+// so the mutation logic itself is written once instead of twice.
+type pendingUpdateAccessor struct {
+	get func(ctx context.Context) (json.RawMessage, error)
+	put func(ctx context.Context, raw json.RawMessage) error
+}
+
+func (s *Service) agentPendingAccessor() pendingUpdateAccessor {
+	return pendingUpdateAccessor{get: s.store.GetPendingAgentUpdates, put: s.store.PutPendingAgentUpdates}
+}
+
+func (s *Service) telemtPendingAccessor() pendingUpdateAccessor {
+	return pendingUpdateAccessor{get: s.store.GetPendingTelemtUpdates, put: s.store.PutPendingTelemtUpdates}
+}
+
+// loadPendingLocked reads the persisted map behind acc. An absent blob is an
+// empty map, not an error. Callers must hold pendingMu.
+func (s *Service) loadPendingLocked(ctx context.Context, acc pendingUpdateAccessor) (pendingUpdateMap, error) {
+	data, err := acc.get(ctx)
 	if err != nil {
 		return nil, err
 	}
-	pending := pendingAgentUpdates{}
+	pending := pendingUpdateMap{}
 	if len(data) > 0 {
 		if err := json.Unmarshal(data, &pending); err != nil {
 			return nil, err
@@ -237,38 +268,39 @@ func (s *Service) loadPendingLocked(ctx context.Context) (pendingAgentUpdates, e
 	return pending, nil
 }
 
-// savePendingLocked persists the map. Callers must hold pendingMu.
-func (s *Service) savePendingLocked(ctx context.Context, pending pendingAgentUpdates) error {
+// savePendingLocked persists the map behind acc. Callers must hold pendingMu.
+func (s *Service) savePendingLocked(ctx context.Context, acc pendingUpdateAccessor, pending pendingUpdateMap) error {
 	data, err := json.Marshal(pending)
 	if err != nil {
 		return err
 	}
-	return s.store.PutPendingAgentUpdates(ctx, data)
+	return acc.put(ctx, data)
 }
 
-// SetPendingAgentUpdate records that agentID should reach version. A later call
-// for the same agent replaces the older target — the newest operator click wins
-// and restarts the failure budget, because a fresh click is a fresh decision.
-func (s *Service) SetPendingAgentUpdate(ctx context.Context, agentID, version string) error {
+// setPendingUpdate records that agentID should reach version in the map
+// behind acc. A later call for the same agent replaces the older target —
+// the newest operator click wins and restarts the failure budget, because a
+// fresh click is a fresh decision.
+func (s *Service) setPendingUpdate(ctx context.Context, acc pendingUpdateAccessor, agentID, version string) error {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
-	pending, err := s.loadPendingLocked(ctx)
+	pending, err := s.loadPendingLocked(ctx, acc)
 	if err != nil {
 		return err
 	}
-	pending[agentID] = pendingAgentUpdate{Version: version}
-	return s.savePendingLocked(ctx, pending)
+	pending[agentID] = pendingUpdateEntry{Version: version}
+	return s.savePendingLocked(ctx, acc, pending)
 }
 
-// RecordPendingAgentUpdateFailure counts one FAILED delivery of the pending
-// target and reports the running total plus whether the panel has now given up
-// (target dropped). A failure for a version that is no longer pending is stale
-// — the operator re-clicked while the old job was in flight — and is ignored,
-// as is a failure for an agent with nothing pending.
-func (s *Service) RecordPendingAgentUpdateFailure(ctx context.Context, agentID, version string) (failures int, gaveUp bool, err error) {
+// recordPendingUpdateFailure counts one FAILED delivery of the pending target
+// in the map behind acc and reports the running total plus whether the panel
+// has now given up (target dropped). A failure for a version that is no
+// longer pending is stale — the operator re-clicked while the old job was in
+// flight — and is ignored, as is a failure for an agent with nothing pending.
+func (s *Service) recordPendingUpdateFailure(ctx context.Context, acc pendingUpdateAccessor, agentID, version string) (failures int, gaveUp bool, err error) {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
-	pending, err := s.loadPendingLocked(ctx)
+	pending, err := s.loadPendingLocked(ctx, acc)
 	if err != nil {
 		return 0, false, err
 	}
@@ -280,25 +312,26 @@ func (s *Service) RecordPendingAgentUpdateFailure(ctx context.Context, agentID, 
 	entry.Failures++
 	if entry.Failures >= MaxPendingAgentUpdateFailures {
 		delete(pending, agentID)
-		if err := s.savePendingLocked(ctx, pending); err != nil {
+		if err := s.savePendingLocked(ctx, acc, pending); err != nil {
 			return entry.Failures, false, err
 		}
 		return entry.Failures, true, nil
 	}
 	pending[agentID] = entry
-	if err := s.savePendingLocked(ctx, pending); err != nil {
+	if err := s.savePendingLocked(ctx, acc, pending); err != nil {
 		return entry.Failures, false, err
 	}
 	return entry.Failures, false, nil
 }
 
-// ClearPendingAgentUpdate drops agentID's pending target. Clearing an agent
-// that has none is a no-op and writes nothing: the reconcile path calls this
-// on every reconnect where the reported version already matches.
-func (s *Service) ClearPendingAgentUpdate(ctx context.Context, agentID string) error {
+// clearPendingUpdate drops agentID's pending target in the map behind acc.
+// Clearing an agent that has none is a no-op and writes nothing: the
+// reconcile path calls this on every reconnect where the reported version
+// already matches.
+func (s *Service) clearPendingUpdate(ctx context.Context, acc pendingUpdateAccessor, agentID string) error {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
-	pending, err := s.loadPendingLocked(ctx)
+	pending, err := s.loadPendingLocked(ctx, acc)
 	if err != nil {
 		return err
 	}
@@ -306,18 +339,66 @@ func (s *Service) ClearPendingAgentUpdate(ctx context.Context, agentID string) e
 		return nil
 	}
 	delete(pending, agentID)
-	return s.savePendingLocked(ctx, pending)
+	return s.savePendingLocked(ctx, acc, pending)
 }
 
-// PendingAgentUpdate returns the version agentID was asked to reach, and
-// whether such a request is outstanding.
-func (s *Service) PendingAgentUpdate(ctx context.Context, agentID string) (string, bool, error) {
+// pendingUpdateVersion returns the version agentID was asked to reach in the
+// map behind acc, and whether such a request is outstanding.
+func (s *Service) pendingUpdateVersion(ctx context.Context, acc pendingUpdateAccessor, agentID string) (string, bool, error) {
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
-	pending, err := s.loadPendingLocked(ctx)
+	pending, err := s.loadPendingLocked(ctx, acc)
 	if err != nil {
 		return "", false, err
 	}
 	entry, ok := pending[agentID]
 	return entry.Version, ok, nil
+}
+
+// SetPendingAgentUpdate records that agentID should reach version via a
+// pending agent.self-update. See setPendingUpdate for the overwrite/budget
+// contract.
+func (s *Service) SetPendingAgentUpdate(ctx context.Context, agentID, version string) error {
+	return s.setPendingUpdate(ctx, s.agentPendingAccessor(), agentID, version)
+}
+
+// RecordPendingAgentUpdateFailure counts one FAILED agent.self-update
+// delivery. See recordPendingUpdateFailure for the stale/no-op rules.
+func (s *Service) RecordPendingAgentUpdateFailure(ctx context.Context, agentID, version string) (failures int, gaveUp bool, err error) {
+	return s.recordPendingUpdateFailure(ctx, s.agentPendingAccessor(), agentID, version)
+}
+
+// ClearPendingAgentUpdate drops agentID's pending agent.self-update target.
+func (s *Service) ClearPendingAgentUpdate(ctx context.Context, agentID string) error {
+	return s.clearPendingUpdate(ctx, s.agentPendingAccessor(), agentID)
+}
+
+// PendingAgentUpdate returns the version agentID was asked to reach via
+// agent.self-update, and whether such a request is outstanding.
+func (s *Service) PendingAgentUpdate(ctx context.Context, agentID string) (string, bool, error) {
+	return s.pendingUpdateVersion(ctx, s.agentPendingAccessor(), agentID)
+}
+
+// SetPendingTelemtUpdate records that agentID should reach version via a
+// pending telemt.update (Task 11). See setPendingUpdate for the
+// overwrite/budget contract.
+func (s *Service) SetPendingTelemtUpdate(ctx context.Context, agentID, version string) error {
+	return s.setPendingUpdate(ctx, s.telemtPendingAccessor(), agentID, version)
+}
+
+// RecordPendingTelemtUpdateFailure counts one FAILED telemt.update delivery.
+// See recordPendingUpdateFailure for the stale/no-op rules.
+func (s *Service) RecordPendingTelemtUpdateFailure(ctx context.Context, agentID, version string) (failures int, gaveUp bool, err error) {
+	return s.recordPendingUpdateFailure(ctx, s.telemtPendingAccessor(), agentID, version)
+}
+
+// ClearPendingTelemtUpdate drops agentID's pending telemt.update target.
+func (s *Service) ClearPendingTelemtUpdate(ctx context.Context, agentID string) error {
+	return s.clearPendingUpdate(ctx, s.telemtPendingAccessor(), agentID)
+}
+
+// PendingTelemtUpdate returns the version agentID was asked to reach via
+// telemt.update, and whether such a request is outstanding.
+func (s *Service) PendingTelemtUpdate(ctx context.Context, agentID string) (string, bool, error) {
+	return s.pendingUpdateVersion(ctx, s.telemtPendingAccessor(), agentID)
 }

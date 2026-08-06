@@ -187,6 +187,7 @@ func copyUpdateConfigSingletons(ctx context.Context, source, target storage.Migr
 		{source.GetGeoIPState, target.PutGeoIPState},
 		{source.GetPanelSelfUpdate, target.PutPanelSelfUpdate},
 		{source.GetPendingAgentUpdates, target.PutPendingAgentUpdates},
+		{source.GetPendingTelemtUpdates, target.PutPendingTelemtUpdates},
 	}
 
 	count := 0
@@ -330,6 +331,7 @@ func countUpdateConfigSingletons(ctx context.Context, store storage.MigrationSto
 		store.GetGeoIPState,
 		store.GetPanelSelfUpdate,
 		store.GetPendingAgentUpdates,
+		store.GetPendingTelemtUpdates,
 	}
 	count := 0
 	for _, get := range getters {

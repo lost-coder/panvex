@@ -391,6 +391,60 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/agents/{id}/telemt/update:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: dispatchTelemtUpdate
+      summary: Enqueue a telemt.update job for an agent's managed Telemt install
+      description: |
+        Schedules a `telemt.update` job that downloads, verifies, and swaps
+        the agent's MANAGED Telemt binary in place (distinct from
+        `POST /api/agents/{id}/update`, which replaces the AGENT's own
+        binary), then runs a supervised restart per the agent's configured
+        update strategy (`PUT /api/agents/{id}/telemt/update-strategy`).
+        `version` defaults to the panel's cached latest known Telemt
+        release when omitted. A guard chain (see `DispatchTelemtUpdateError`)
+        rejects the request with 409 before enqueueing when the strategy is
+        unconfigured, does not support a binary swap, the agent's live probe
+        reports the update as unavailable, or no version is known — checked
+        in that order. Admin-only, same trust bar as the update-strategy
+        endpoints.
+      tags: [agents]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DispatchTelemtUpdateRequest'
+      responses:
+        '202':
+          description: Update job dispatched.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DispatchTelemtUpdateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            The update cannot be dispatched right now — see `code` in the
+            response body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DispatchTelemtUpdateError'
+
   /api/agents/provision-outbound:
     post:
       operationId: provisionOutboundAgent
@@ -1184,6 +1238,59 @@ components:
           allOf:
             - $ref: '#/components/schemas/TelemtUpdateProbe'
           nullable: true
+
+    DispatchTelemtUpdateRequest:
+      type: object
+      description: |
+        Body of `POST /api/agents/{id}/telemt/update`. Both fields are
+        optional — an empty body dispatches the panel's cached latest known
+        Telemt release with no downgrade allowance.
+      properties:
+        version:
+          type: string
+          description: |
+            Target Telemt version (bare semver, e.g. "3.4.25"). Omit to use
+            the panel's cached latest known Telemt release
+            (`telemt_latest_version` in the updates state); a 409
+            `no_known_release` is returned if neither is available.
+        allow_downgrade:
+          type: boolean
+          description: |
+            Allow installing a version older than the one currently
+            running (e.g. an emergency rollback). Defaults to false.
+
+    DispatchTelemtUpdateResponse:
+      type: object
+      required: [job_id]
+      properties:
+        job_id:
+          type: string
+
+    DispatchTelemtUpdateError:
+      type: object
+      description: |
+        409 error envelope for `POST /api/agents/{id}/telemt/update`: `code`
+        is the machine-readable guard that rejected the request.
+      required: [error, code]
+      properties:
+        error:
+          type: string
+          description: Human-readable message; safe to display to operators.
+        code:
+          type: string
+          enum:
+            - strategy_not_configured
+            - mode_not_binary
+            - update_unavailable
+            - no_known_release
+          description: |
+            strategy_not_configured: no update strategy has been PUT for
+            this agent yet. mode_not_binary: the configured strategy's mode
+            is "docker" or "none" — no in-place binary swap path exists.
+            update_unavailable: the agent's live probe reports it cannot
+            offer an in-place update right now. no_known_release: no
+            version was given and the panel has never cached a latest
+            Telemt release.
 
     EnrollmentTokenList:
       type: array

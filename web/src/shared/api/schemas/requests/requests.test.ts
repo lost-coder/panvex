@@ -12,6 +12,7 @@ import {
   createFleetGroupRequestSchema,
   createJobRequestSchema,
   createUserRequestSchema,
+  dispatchTelemtUpdateRequestSchema,
   geoipSettingsRequestSchema,
   loginRequestSchema,
   panelUpdateRequestSchema,
@@ -422,6 +423,20 @@ describe("agentUpdateRequestSchema", () => {
   });
   it("defaults version to empty when omitted", () => {
     expect(agentUpdateRequestSchema.parse({})).toEqual({ version: "" });
+  });
+});
+
+describe("dispatchTelemtUpdateRequestSchema", () => {
+  it("accepts an explicit version and allow_downgrade", () => {
+    expect(
+      dispatchTelemtUpdateRequestSchema.parse({ version: "3.4.25", allow_downgrade: true }),
+    ).toEqual({ version: "3.4.25", allow_downgrade: true });
+  });
+  it("defaults version/allow_downgrade when omitted", () => {
+    expect(dispatchTelemtUpdateRequestSchema.parse({})).toEqual({
+      version: "",
+      allow_downgrade: false,
+    });
   });
 });
 

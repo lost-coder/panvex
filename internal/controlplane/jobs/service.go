@@ -58,6 +58,15 @@ const (
 	// are currently unconditional. Wiring the node's live Telemt revision through
 	// is a follow-up (see the config-editing spec).
 	ActionConfigApply Action = "config.apply"
+	// ActionTelemtUpdate instructs the agent to update its MANAGED Telemt
+	// install in place (download the requested release, verify, swap the
+	// binary, supervised restart, health-gate) — distinct from
+	// ActionAgentSelfUpdate, which replaces the agent's OWN binary. Payload:
+	// internal/agent/telemtupdate.Payload (Task 5) — {version,
+	// release_base_url, allow_downgrade, restart_spec, binary_path,
+	// asset_flavor}, built from the agent's configured update strategy
+	// (updates.StrategyService) plus the requested/latest-known version.
+	ActionTelemtUpdate Action = "telemt.update"
 )
 
 // IsValidAction reports whether the action is a recognized job type.
@@ -71,7 +80,8 @@ func IsValidAction(a Action) bool {
 		ActionTelemetryRefreshDiagnostics,
 		ActionAgentSelfUpdate,
 		ActionSwitchTransportMode,
-		ActionConfigApply:
+		ActionConfigApply,
+		ActionTelemtUpdate:
 		return true
 	default:
 		return false

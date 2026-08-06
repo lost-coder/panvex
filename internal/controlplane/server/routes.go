@@ -242,6 +242,11 @@ func (s *Server) routes() http.Handler {
 					// as the panel/agent update settings above.
 					admin.Get("/agents/{id}/telemt/update-strategy", s.handleGetTelemtUpdateStrategy())
 					admin.Put("/agents/{id}/telemt/update-strategy", s.handlePutTelemtUpdateStrategy())
+					// Task 11: dispatches the actual binary swap the strategy
+					// above governs — same admin-only trust bar, plus the
+					// sensitive rate limit (it enqueues a job and writes
+					// desired-state).
+					admin.With(sensitive).Post("/agents/{id}/telemt/update", s.handleDispatchTelemtUpdate())
 					// PR-2c: one-shot provisioning for outbound (reverse-mode)
 					// agents. Combines the agent-row INSERT and the install-
 					// command issuance into a single round-trip so the wizard's

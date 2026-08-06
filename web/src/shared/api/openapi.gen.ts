@@ -275,6 +275,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/{id}/telemt/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enqueue a telemt.update job for an agent's managed Telemt install
+         * @description Schedules a `telemt.update` job that downloads, verifies, and swaps
+         *     the agent's MANAGED Telemt binary in place (distinct from
+         *     `POST /api/agents/{id}/update`, which replaces the AGENT's own
+         *     binary), then runs a supervised restart per the agent's configured
+         *     update strategy (`PUT /api/agents/{id}/telemt/update-strategy`).
+         *     `version` defaults to the panel's cached latest known Telemt
+         *     release when omitted. A guard chain (see `DispatchTelemtUpdateError`)
+         *     rejects the request with 409 before enqueueing when the strategy is
+         *     unconfigured, does not support a binary swap, the agent's live probe
+         *     reports the update as unavailable, or no version is known — checked
+         *     in that order. Admin-only, same trust bar as the update-strategy
+         *     endpoints.
+         */
+        post: operations["dispatchTelemtUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/provision-outbound": {
         parameters: {
             query?: never;
@@ -828,6 +861,47 @@ export interface components {
         TelemtUpdateStrategyResponse: {
             strategy: components["schemas"]["TelemtUpdateStrategy"] | null;
             probe: components["schemas"]["TelemtUpdateProbe"] | null;
+        };
+        /**
+         * @description Body of `POST /api/agents/{id}/telemt/update`. Both fields are
+         *     optional — an empty body dispatches the panel's cached latest known
+         *     Telemt release with no downgrade allowance.
+         */
+        DispatchTelemtUpdateRequest: {
+            /**
+             * @description Target Telemt version (bare semver, e.g. "3.4.25"). Omit to use
+             *     the panel's cached latest known Telemt release
+             *     (`telemt_latest_version` in the updates state); a 409
+             *     `no_known_release` is returned if neither is available.
+             */
+            version?: string;
+            /**
+             * @description Allow installing a version older than the one currently
+             *     running (e.g. an emergency rollback). Defaults to false.
+             */
+            allow_downgrade?: boolean;
+        };
+        DispatchTelemtUpdateResponse: {
+            job_id: string;
+        };
+        /**
+         * @description 409 error envelope for `POST /api/agents/{id}/telemt/update`: `code`
+         *     is the machine-readable guard that rejected the request.
+         */
+        DispatchTelemtUpdateError: {
+            /** @description Human-readable message; safe to display to operators. */
+            error: string;
+            /**
+             * @description strategy_not_configured: no update strategy has been PUT for
+             *     this agent yet. mode_not_binary: the configured strategy's mode
+             *     is "docker" or "none" — no in-place binary swap path exists.
+             *     update_unavailable: the agent's live probe reports it cannot
+             *     offer an in-place update right now. no_known_release: no
+             *     version was given and the panel has never cached a latest
+             *     Telemt release.
+             * @enum {string}
+             */
+            code: "strategy_not_configured" | "mode_not_binary" | "update_unavailable" | "no_known_release";
         };
         EnrollmentTokenList: components["schemas"]["EnrollmentTokenListItem"][];
         /**
@@ -1462,6 +1536,48 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    dispatchTelemtUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DispatchTelemtUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Update job dispatched. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DispatchTelemtUpdateResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /**
+             * @description The update cannot be dispatched right now — see `code` in the
+             *     response body.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DispatchTelemtUpdateError"];
+                };
+            };
         };
     };
     provisionOutboundAgent: {

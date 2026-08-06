@@ -215,6 +215,21 @@ export const telemtUpdateStrategyResponseSchema = z.object({
   probe: telemtUpdateProbeSchema.nullable(),
 }) satisfies z.ZodType<Gen["TelemtUpdateStrategyResponse"]>;
 
+// dispatchTelemtUpdateResponseSchema is the 202 response of
+// POST /api/agents/{id}/telemt/update (Task 11).
+export const dispatchTelemtUpdateResponseSchema = z.object({
+  job_id: z.string(),
+}) satisfies z.ZodType<Gen["DispatchTelemtUpdateResponse"]>;
+
+// dispatchTelemtUpdateErrorSchema is the 409 error envelope for
+// POST /api/agents/{id}/telemt/update: `code` is the guard that rejected
+// the request, checked in a fixed order server-side (see
+// internal/controlplane/server/http_telemt_update.go).
+export const dispatchTelemtUpdateErrorSchema = z.object({
+  error: z.string(),
+  code: z.enum(["strategy_not_configured", "mode_not_binary", "update_unavailable", "no_known_release"]),
+}) satisfies z.ZodType<Gen["DispatchTelemtUpdateError"]>;
+
 export const agentCertificateRecoverySchema = z.object({
   // P8.3: agent_id was silently STRIPPED before (Zod drops unknown keys);
   // the wire always carries it (Go json tag without omitempty) and the
@@ -292,3 +307,5 @@ export type AgentCertificateRecoveryParsed = z.infer<typeof agentCertificateReco
 export type TelemtUpdateProbeParsed = z.infer<typeof telemtUpdateProbeSchema>;
 export type TelemtUpdateStrategyParsed = z.infer<typeof telemtUpdateStrategySchema>;
 export type TelemtUpdateStrategyResponseParsed = z.infer<typeof telemtUpdateStrategyResponseSchema>;
+export type DispatchTelemtUpdateResponseParsed = z.infer<typeof dispatchTelemtUpdateResponseSchema>;
+export type DispatchTelemtUpdateErrorParsed = z.infer<typeof dispatchTelemtUpdateErrorSchema>;

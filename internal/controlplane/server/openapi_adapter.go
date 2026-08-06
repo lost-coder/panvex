@@ -102,6 +102,10 @@ func (a *oapiAdapter) PutTelemtUpdateStrategy(w http.ResponseWriter, r *http.Req
 	a.s.handlePutTelemtUpdateStrategy().ServeHTTP(w, r)
 }
 
+func (a *oapiAdapter) DispatchTelemtUpdate(w http.ResponseWriter, r *http.Request, _ string) {
+	a.s.handleDispatchTelemtUpdate().ServeHTTP(w, r)
+}
+
 func (a *oapiAdapter) ApplyAgentConfig(w http.ResponseWriter, r *http.Request, _ string) {
 	a.s.handleApplyAgentConfig().ServeHTTP(w, r)
 }

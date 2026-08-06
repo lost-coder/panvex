@@ -31,6 +31,8 @@ import type {
   AgentCertificateRecoveryParsed,
   AgentParsed,
   AgentRuntimeParsed,
+  DispatchTelemtUpdateErrorParsed,
+  DispatchTelemtUpdateResponseParsed,
   TelemtUpdateProbeParsed,
   TelemtUpdateStrategyParsed,
   TelemtUpdateStrategyResponseParsed,
@@ -87,6 +89,16 @@ const _telemtUpdateStrategyResponseKeys: AssertNoUnspecKeys<
   OpenAPISchemas["TelemtUpdateStrategyResponse"]
 > = true;
 
+const _dispatchTelemtUpdateResponseKeys: AssertNoUnspecKeys<
+  DispatchTelemtUpdateResponseParsed,
+  OpenAPISchemas["DispatchTelemtUpdateResponse"]
+> = true;
+
+const _dispatchTelemtUpdateErrorKeys: AssertNoUnspecKeys<
+  DispatchTelemtUpdateErrorParsed,
+  OpenAPISchemas["DispatchTelemtUpdateError"]
+> = true;
+
 const _enrollmentListKeys: AssertNoUnspecKeys<
   EnrollmentTokenListItemParsed,
   OpenAPISchemas["EnrollmentTokenListItem"]
@@ -110,6 +122,8 @@ export const __openapiDriftGuards = [
   _telemtUpdateProbeKeys,
   _telemtUpdateStrategyKeys,
   _telemtUpdateStrategyResponseKeys,
+  _dispatchTelemtUpdateResponseKeys,
+  _dispatchTelemtUpdateErrorKeys,
   _enrollmentListKeys,
   _enrollmentCreateKeys,
   _selfUpdateStateKeys,

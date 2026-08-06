@@ -433,6 +433,11 @@ type UpdateConfigStore interface {
 	// update_config key.
 	PutPendingAgentUpdates(ctx context.Context, raw json.RawMessage) error
 	GetPendingAgentUpdates(ctx context.Context) (json.RawMessage, error)
+	// PutPendingTelemtUpdates and GetPendingTelemtUpdates mirror
+	// PutPendingAgentUpdates/GetPendingAgentUpdates for telemt.update jobs
+	// (Task 11), under their own update_config key.
+	PutPendingTelemtUpdates(ctx context.Context, raw json.RawMessage) error
+	GetPendingTelemtUpdates(ctx context.Context) (json.RawMessage, error)
 	PutGeoIPSettings(ctx context.Context, settings json.RawMessage) error
 	GetGeoIPSettings(ctx context.Context) (json.RawMessage, error)
 	PutGeoIPState(ctx context.Context, state json.RawMessage) error

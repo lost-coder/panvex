@@ -211,6 +211,12 @@ func (s *Server) persistAgentDeregister(w http.ResponseWriter, r *http.Request, 
 			s.logger.WarnContext(r.Context(), "clear pending agent self-update on deregister failed",
 				"agent_id", agentID, "error", err)
 		}
+		// Same reasoning for a pending telemt.update (Task 11) — independent
+		// persisted key, same leaked-tombstone risk.
+		if err := s.updatesSvc.ClearPendingTelemtUpdate(r.Context(), agentID); err != nil {
+			s.logger.WarnContext(r.Context(), "clear pending telemt update on deregister failed",
+				"agent_id", agentID, "error", err)
+		}
 	}
 	return true
 }
@@ -238,6 +244,8 @@ func (s *Server) purgeAgentInMemory(agentID string) {
 	// The self-update re-enqueue throttle is keyed by agent ID: without this a
 	// re-registered agent inherits the dead one's throttle window.
 	delete(s.selfUpdateReenqueuedAt, agentID)
+	// Same reasoning for the telemt.update re-enqueue throttle (Task 11).
+	delete(s.telemtUpdateReenqueuedAt, agentID)
 	// Drop the agent's usage rows from the clients.Service mirror — the
 	// single owner of usage state. Service.mu is acquired while holding
 	// Server.mu, matching the documented Server.mu -> Service.mu lock ordering.

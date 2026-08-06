@@ -316,6 +316,20 @@ func telemtReleaseBaseURL(tag string) string {
 	return fmt.Sprintf("https://github.com/%s/releases/download/%s", telemtRepo, tag)
 }
 
+// TelemtReleaseBaseURLForVersion builds the release asset base URL for an
+// EXPLICIT version (Task 11's telemt.update dispatch): always derived from
+// the fixed telemtRepo constant, never from State.TelemtReleaseBaseURL —
+// that field is pinned to whatever tag was newest at the last check, so
+// reusing it for an operator-chosen version (a downgrade, or a release the
+// checker hasn't observed yet) would silently point at the wrong release.
+// State.TelemtReleaseBaseURL is itself exactly telemtReleaseBaseURL(latest
+// tag), so calling this with the cached latest version reproduces it
+// byte-for-byte — callers may use this helper unconditionally instead of
+// branching on whether the version was defaulted or requested explicitly.
+func TelemtReleaseBaseURLForVersion(version string) string {
+	return telemtReleaseBaseURL(version)
+}
+
 // ApplyTelemtCheckResult merges the outcome of a Telemt release check into
 // state, following the "failure preserves, success clears" contract: an
 // error leaves the previously known TelemtLatestVersion/TelemtReleaseBaseURL

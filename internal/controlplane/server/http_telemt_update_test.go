@@ -8,9 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lost-coder/panvex/internal/agent/telemtupdate"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
+	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
+	"github.com/lost-coder/panvex/internal/controlplane/updates"
 )
 
 // newTelemtUpdateStrategyTestServer builds a sqlite-backed server with a
@@ -227,5 +230,263 @@ func TestTelemtUpdateStrategyUnknownAgentReturns404(t *testing.T) {
 	putResp := performJSONRequest(t, srv, http.MethodPut, "/api/agents/does-not-exist/telemt/update-strategy", body, adminCookies)
 	if putResp.Code != http.StatusNotFound {
 		t.Fatalf("PUT status = %d, want %d", putResp.Code, http.StatusNotFound)
+	}
+}
+
+// --- POST /api/agents/{id}/telemt/update (Task 11) -------------------------
+
+// availableBinaryProbe is a live probe reporting an in-place update path.
+func availableBinaryProbe() *TelemtUpdateProbe {
+	return &TelemtUpdateProbe{
+		Mode:                 "binary",
+		SuggestedRestartSpec: "systemd:telemt",
+		BinaryPath:           "/usr/local/bin/telemt",
+		Available:            true,
+	}
+}
+
+// dispatchErrorBody decodes the {error, code} envelope a guard 409 writes.
+func dispatchErrorBody(t *testing.T, resp interface{ Bytes() []byte }) errorResponse {
+	t.Helper()
+	var got errorResponse
+	if err := json.Unmarshal(resp.Bytes(), &got); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	return got
+}
+
+func TestDispatchTelemtUpdateUnknownAgentReturns404(t *testing.T) {
+	srv, adminCookies, _ := newTelemtUpdateStrategyTestServer(t)
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/agents/does-not-exist/telemt/update", map[string]string{}, adminCookies)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("POST status = %d, want %d (body=%s)", resp.Code, http.StatusNotFound, resp.Body.String())
+	}
+}
+
+func TestDispatchTelemtUpdateRejectsNonAdmin(t *testing.T) {
+	srv, _, operatorCookies := newTelemtUpdateStrategyTestServer(t)
+	seedLiveAgentWithProbe(srv, "agent-1", availableBinaryProbe())
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/agents/agent-1/telemt/update", map[string]string{}, operatorCookies)
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("POST status = %d, want %d (body=%s)", resp.Code, http.StatusForbidden, resp.Body.String())
+	}
+}
+
+func TestDispatchTelemtUpdateStrategyNotConfiguredReturns409(t *testing.T) {
+	srv, adminCookies, _ := newTelemtUpdateStrategyTestServer(t)
+	seedLiveAgentWithProbe(srv, "agent-1", availableBinaryProbe())
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/agents/agent-1/telemt/update", map[string]string{}, adminCookies)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("POST status = %d, want %d (body=%s)", resp.Code, http.StatusConflict, resp.Body.String())
+	}
+	if got := dispatchErrorBody(t, resp.Body); got.Code != "strategy_not_configured" {
+		t.Fatalf("error code = %q, want %q (body=%s)", got.Code, "strategy_not_configured", resp.Body.String())
+	}
+}
+
+func TestDispatchTelemtUpdateModeNotBinaryReturns409(t *testing.T) {
+	srv, adminCookies, _ := newTelemtUpdateStrategyTestServer(t)
+	now := time.Date(2026, time.August, 6, 10, 0, 0, 0, time.UTC)
+	seedLiveAgentWithProbe(srv, "agent-1", availableBinaryProbe())
+	seedTestAgentRow(t, srv, "agent-1", now)
+	if err := srv.telemtStrategySvc.Put(context.Background(), "agent-1", updates.Strategy{Mode: updates.StrategyModeDocker}); err != nil {
+		t.Fatalf("Put strategy: %v", err)
+	}
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/agents/agent-1/telemt/update", map[string]string{}, adminCookies)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("POST status = %d, want %d (body=%s)", resp.Code, http.StatusConflict, resp.Body.String())
+	}
+	if got := dispatchErrorBody(t, resp.Body); got.Code != "mode_not_binary" {
+		t.Fatalf("error code = %q, want %q (body=%s)", got.Code, "mode_not_binary", resp.Body.String())
+	}
+}
+
+func TestDispatchTelemtUpdateUnavailableReturns409(t *testing.T) {
+	srv, adminCookies, _ := newTelemtUpdateStrategyTestServer(t)
+	now := time.Date(2026, time.August, 6, 10, 0, 0, 0, time.UTC)
+	// Live probe reports no in-place path available, even though a binary
+	// strategy is configured — the guard must trust the LIVE probe.
+	seedLiveAgentWithProbe(srv, "agent-1", &TelemtUpdateProbe{Mode: "none", Available: false, Reason: "no supported supervisor detected"})
+	seedTestAgentRow(t, srv, "agent-1", now)
+	if err := srv.telemtStrategySvc.Put(context.Background(), "agent-1", updates.Strategy{
+		Mode:        updates.StrategyModeBinary,
+		RestartSpec: "systemd:telemt",
+		BinaryPath:  "/usr/local/bin/telemt",
+	}); err != nil {
+		t.Fatalf("Put strategy: %v", err)
+	}
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/agents/agent-1/telemt/update", map[string]string{}, adminCookies)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("POST status = %d, want %d (body=%s)", resp.Code, http.StatusConflict, resp.Body.String())
+	}
+	if got := dispatchErrorBody(t, resp.Body); got.Code != "update_unavailable" {
+		t.Fatalf("error code = %q, want %q (body=%s)", got.Code, "update_unavailable", resp.Body.String())
+	}
+}
+
+func TestDispatchTelemtUpdateNoKnownReleaseReturns409(t *testing.T) {
+	srv, adminCookies, _ := newTelemtUpdateStrategyTestServer(t)
+	now := time.Date(2026, time.August, 6, 10, 0, 0, 0, time.UTC)
+	seedLiveAgentWithProbe(srv, "agent-1", availableBinaryProbe())
+	seedTestAgentRow(t, srv, "agent-1", now)
+	if err := srv.telemtStrategySvc.Put(context.Background(), "agent-1", updates.Strategy{
+		Mode:        updates.StrategyModeBinary,
+		RestartSpec: "systemd:telemt",
+		BinaryPath:  "/usr/local/bin/telemt",
+	}); err != nil {
+		t.Fatalf("Put strategy: %v", err)
+	}
+	// No version in the request, and the panel has never cached a latest
+	// Telemt release (zero-value updateState).
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/agents/agent-1/telemt/update", map[string]string{}, adminCookies)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("POST status = %d, want %d (body=%s)", resp.Code, http.StatusConflict, resp.Body.String())
+	}
+	if got := dispatchErrorBody(t, resp.Body); got.Code != "no_known_release" {
+		t.Fatalf("error code = %q, want %q (body=%s)", got.Code, "no_known_release", resp.Body.String())
+	}
+}
+
+// seedTelemtUpdateHappyPathAgent wires agent-1 with a binary strategy and an
+// available probe — the common precondition for every non-guard test below.
+func seedTelemtUpdateHappyPathAgent(t *testing.T, srv *Server, now time.Time) {
+	t.Helper()
+	seedLiveAgentWithProbe(srv, "agent-1", availableBinaryProbe())
+	seedTestAgentRow(t, srv, "agent-1", now)
+	if err := srv.telemtStrategySvc.Put(context.Background(), "agent-1", updates.Strategy{
+		Mode:        updates.StrategyModeBinary,
+		RestartSpec: "systemd:telemt",
+		BinaryPath:  "/usr/local/bin/telemt",
+		AssetFlavor: "v3",
+	}); err != nil {
+		t.Fatalf("Put strategy: %v", err)
+	}
+}
+
+// TestDispatchTelemtUpdateHappyPathExplicitVersion is the contract test: the
+// job payload must unmarshal into telemtupdate.Payload (Task 5's exact-keys
+// contract, imported here as the agent package the panel targets), the job
+// must land in jobs.Service under jobs.ActionTelemtUpdate, and the pending
+// desired-state map must record the resolved version.
+func TestDispatchTelemtUpdateHappyPathExplicitVersion(t *testing.T) {
+	srv, adminCookies, _ := newTelemtUpdateStrategyTestServer(t)
+	now := time.Date(2026, time.August, 6, 10, 0, 0, 0, time.UTC)
+	seedTelemtUpdateHappyPathAgent(t, srv, now)
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/agents/agent-1/telemt/update",
+		map[string]any{"version": "v3.4.25", "allow_downgrade": true}, adminCookies)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("POST status = %d, want %d (body=%s)", resp.Code, http.StatusAccepted, resp.Body.String())
+	}
+	var got dispatchTelemtUpdateResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.JobID == "" {
+		t.Fatal("job_id is empty")
+	}
+
+	job, ok := srv.jobs.Get(got.JobID)
+	if !ok {
+		t.Fatalf("job %q not found in jobs.Service", got.JobID)
+	}
+	if job.Action != jobs.ActionTelemtUpdate {
+		t.Fatalf("job.Action = %q, want %q", job.Action, jobs.ActionTelemtUpdate)
+	}
+	if len(job.TargetAgentIDs) != 1 || job.TargetAgentIDs[0] != "agent-1" {
+		t.Fatalf("job.TargetAgentIDs = %v, want [agent-1]", job.TargetAgentIDs)
+	}
+
+	// Contract guarantee: unmarshal straight into the agent's own Payload
+	// type. A "v" prefix in the request must be stripped (Telemt tags are
+	// bare semver).
+	var payload telemtupdate.Payload
+	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
+		t.Fatalf("unmarshal job payload into telemtupdate.Payload: %v", err)
+	}
+	want := telemtupdate.Payload{
+		Version:        "3.4.25",
+		ReleaseBaseURL: "https://github.com/telemt/telemt/releases/download/3.4.25",
+		AllowDowngrade: true,
+		RestartSpec:    "systemd:telemt",
+		BinaryPath:     "/usr/local/bin/telemt",
+		AssetFlavor:    "v3",
+	}
+	if payload != want {
+		t.Fatalf("job payload = %+v, want %+v", payload, want)
+	}
+
+	// Exact-keys contract: re-marshal the decoded struct and diff against the
+	// wire JSON as a set of keys, so an accidental extra field (e.g. a leaked
+	// agent_id) is caught even though it would silently survive the
+	// unmarshal above.
+	var wireKeys map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(job.PayloadJSON), &wireKeys); err != nil {
+		t.Fatalf("unmarshal job payload as map: %v", err)
+	}
+	wantKeys := []string{"version", "release_base_url", "allow_downgrade", "restart_spec", "binary_path", "asset_flavor"}
+	if len(wireKeys) != len(wantKeys) {
+		t.Fatalf("job payload has %d keys (%v), want exactly %v", len(wireKeys), wireKeys, wantKeys)
+	}
+	for _, k := range wantKeys {
+		if _, ok := wireKeys[k]; !ok {
+			t.Fatalf("job payload missing key %q: %s", k, job.PayloadJSON)
+		}
+	}
+
+	version, ok, err := srv.updatesSvc.PendingTelemtUpdate(context.Background(), "agent-1")
+	if err != nil {
+		t.Fatalf("PendingTelemtUpdate() error = %v", err)
+	}
+	if !ok || version != "3.4.25" {
+		t.Fatalf("pending target after dispatch = %q/%v, want 3.4.25/true", version, ok)
+	}
+}
+
+// TestDispatchTelemtUpdateDefaultsToLatestKnownVersion covers the
+// version-resolution fallback: an empty request body must fall back to the
+// panel's cached TelemtLatestVersion/TelemtReleaseBaseURL.
+func TestDispatchTelemtUpdateDefaultsToLatestKnownVersion(t *testing.T) {
+	srv, adminCookies, _ := newTelemtUpdateStrategyTestServer(t)
+	now := time.Date(2026, time.August, 6, 10, 0, 0, 0, time.UTC)
+	seedTelemtUpdateHappyPathAgent(t, srv, now)
+
+	srv.settingsMu.Lock()
+	srv.updateState = UpdateState{
+		TelemtLatestVersion:  "3.4.24",
+		TelemtReleaseBaseURL: "https://github.com/telemt/telemt/releases/download/3.4.24",
+	}
+	srv.settingsMu.Unlock()
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/agents/agent-1/telemt/update", map[string]any{}, adminCookies)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("POST status = %d, want %d (body=%s)", resp.Code, http.StatusAccepted, resp.Body.String())
+	}
+	var got dispatchTelemtUpdateResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	job, ok := srv.jobs.Get(got.JobID)
+	if !ok {
+		t.Fatalf("job %q not found", got.JobID)
+	}
+	var payload telemtupdate.Payload
+	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
+		t.Fatalf("unmarshal job payload: %v", err)
+	}
+	if payload.Version != "3.4.24" {
+		t.Fatalf("payload.Version = %q, want 3.4.24 (the cached latest)", payload.Version)
+	}
+	if payload.ReleaseBaseURL != "https://github.com/telemt/telemt/releases/download/3.4.24" {
+		t.Fatalf("payload.ReleaseBaseURL = %q, want the release download base for 3.4.24", payload.ReleaseBaseURL)
+	}
+	if payload.AllowDowngrade {
+		t.Fatal("AllowDowngrade must default to false when omitted")
 	}
 }
