@@ -87,6 +87,18 @@ func (s *Server) enqueueConfigApplyJob(ctx context.Context, actorID, agentID str
 	}
 	observed, _ := s.observedConfigForAgent(agentID)
 	patch := applyDiff(strippedSnapshot(desired), observed, restrictPaths)
+	return s.enqueueConfigApplyJobWithPatch(ctx, actorID, agentID, policy, patch)
+}
+
+// enqueueConfigApplyJobWithPatch is the patch-agnostic core of
+// enqueueConfigApplyJob: given an already-resolved patch, it marshals the
+// job payload and enqueues it WITHOUT blocking on the result, returning an
+// empty job id when the patch is empty (no-op — the agent is already in
+// sync, or has nothing to receive). Split out so applyGroupToAgent can push a
+// patch that was never derived from applyDiff — see that function's doc
+// comment for why a diff against the agent's own snapshot is the wrong
+// source when the sections come from a group the agent just joined.
+func (s *Server) enqueueConfigApplyJobWithPatch(ctx context.Context, actorID, agentID string, policy reloadPolicy, patch map[string]any) (string, error) {
 	if len(patch) == 0 {
 		return "", nil
 	}

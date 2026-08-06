@@ -40,6 +40,31 @@ import (
 // handleApplyGroupConfig — the operator sees each agent's own outcome via the
 // batch/status views rather than the whole request failing atomically.
 func (s *Server) createConfigApplyBatch(ctx context.Context, actorID, fleetGroupID string, agentIDs []string, policy reloadPolicy, restrictPaths []string) (string, error) {
+	return s.createConfigApplyBatchCore(ctx, fleetGroupID, agentIDs, func(ctx context.Context, agentID string) (string, error) {
+		return s.enqueueConfigApplyJob(ctx, actorID, agentID, policy, restrictPaths)
+	})
+}
+
+// createConfigApplyBatchWithPatch is the createConfigApplyBatch variant for
+// callers that already know the exact patch to push — e.g. applyGroupToAgent,
+// which hands a group's config sections directly rather than one derived
+// from applyDiff against the agent's own desired snapshot (see that
+// function's doc comment for why applyDiff is the wrong source there). Every
+// target in agentIDs receives the SAME patch verbatim; an empty patch is a
+// no-op per agent, matching enqueueConfigApplyJobWithPatch.
+func (s *Server) createConfigApplyBatchWithPatch(ctx context.Context, actorID, fleetGroupID string, agentIDs []string, policy reloadPolicy, patch map[string]any) (string, error) {
+	return s.createConfigApplyBatchCore(ctx, fleetGroupID, agentIDs, func(ctx context.Context, agentID string) (string, error) {
+		return s.enqueueConfigApplyJobWithPatch(ctx, actorID, agentID, policy, patch)
+	})
+}
+
+// createConfigApplyBatchCore holds the persistence + fan-out logic shared by
+// createConfigApplyBatch and createConfigApplyBatchWithPatch: it persists the
+// batch/target rows, then calls enqueueJob once per agent to obtain that
+// agent's job id (or "" for a no-op), recording the outcome on the target
+// row. The two callers differ only in how enqueueJob derives its patch —
+// applyDiff against the agent's own snapshot, vs. a patch handed in verbatim.
+func (s *Server) createConfigApplyBatchCore(ctx context.Context, fleetGroupID string, agentIDs []string, enqueueJob func(ctx context.Context, agentID string) (string, error)) (string, error) {
 	if len(agentIDs) == 0 {
 		return "", nil
 	}
@@ -68,7 +93,7 @@ func (s *Server) createConfigApplyBatch(ctx context.Context, actorID, fleetGroup
 	}
 
 	for _, agentID := range agentIDs {
-		jobID, err := s.enqueueConfigApplyJob(ctx, actorID, agentID, policy, restrictPaths)
+		jobID, err := enqueueJob(ctx, agentID)
 		if err != nil {
 			slog.ErrorContext(ctx, "config-apply batch: enqueue failed",
 				"batch_id", batchID, "fleet_group_id", fleetGroupID, "agent_id", agentID, "error", err)
