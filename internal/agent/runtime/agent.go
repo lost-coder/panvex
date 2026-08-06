@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/agent/telemtupdate"
 	"github.com/lost-coder/panvex/internal/agent/updater"
 	"github.com/lost-coder/panvex/internal/clientjob"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
@@ -146,6 +147,17 @@ type Agent struct {
 	// under that epoch's watermark — so the first tick adopts current
 	// telemt counters as the delta baseline and counts from there.
 	usageBaselinePrimed bool
+	// telemtUpdateProbe caches the result of probing the node's process
+	// supervisor for telemt (systemd, OpenRC/procd, runit, docker, or
+	// none), set once via SetTelemtUpdateProbe at agent startup and
+	// stamped on every snapshot from this cache. RunProbe is deliberately
+	// NOT re-run per snapshot cycle: the environment it inspects (which
+	// supervisor owns the telemt unit) does not change across an agent
+	// process's lifetime. Stored as the plain (mutex-free) ProbeResult
+	// rather than the generated proto type so baseSnapshot can build a
+	// fresh *gatewayrpc.TelemtUpdateProbe per snapshot without copying a
+	// protobuf message value (which embeds a sync.Mutex via MessageState).
+	telemtUpdateProbe telemtupdate.ProbeResult
 }
 
 // New constructs a runtime agent bound to one local Telemt client.
@@ -818,7 +830,25 @@ func (a *Agent) baseSnapshot(observedAt time.Time) *gatewayrpc.Snapshot {
 		Version:        a.config.Version,
 		ObservedAtUnix: observedAt.UTC().Unix(),
 		AgentBootId:    a.bootID,
+		TelemtUpdateProbe: &gatewayrpc.TelemtUpdateProbe{
+			Mode:                 a.telemtUpdateProbe.Mode,
+			SuggestedRestartSpec: a.telemtUpdateProbe.SuggestedRestartSpec,
+			BinaryPath:           a.telemtUpdateProbe.BinaryPath,
+			Available:            a.telemtUpdateProbe.Available,
+			Reason:               a.telemtUpdateProbe.Reason,
+		},
 	}
+}
+
+// SetTelemtUpdateProbe caches the result of probing the node's process
+// supervisor for telemt. The caller (cmd/agent) runs telemtupdate.RunProbe
+// exactly once at agent startup, before the connection loop begins
+// building snapshots, and hands the result here; every snapshot built
+// afterwards stamps this cached value. RunProbe must NOT be re-run per
+// snapshot cycle — the environment it inspects does not change across an
+// agent process's lifetime.
+func (a *Agent) SetTelemtUpdateProbe(probe telemtupdate.ProbeResult) {
+	a.telemtUpdateProbe = probe
 }
 
 // HandleJob executes a supported job command and returns an execution result envelope.

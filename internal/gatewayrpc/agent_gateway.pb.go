@@ -65,7 +65,7 @@ func (x ClientDataRequest_RequestType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ClientDataRequest_RequestType.Descriptor instead.
 func (ClientDataRequest_RequestType) EnumDescriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{24, 0}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{25, 0}
 }
 
 type RenewCertificateRequest struct {
@@ -2260,9 +2260,14 @@ type Snapshot struct {
 	// in `clients`: a changed agent_boot_id tells the control-plane the
 	// totals restarted from zero. Stamped on every snapshot; only the
 	// client-usage path consumes it (P4).
-	AgentBootId   string `protobuf:"bytes,20,opt,name=agent_boot_id,json=agentBootId,proto3" json:"agent_boot_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	AgentBootId string `protobuf:"bytes,20,opt,name=agent_boot_id,json=agentBootId,proto3" json:"agent_boot_id,omitempty"`
+	// Result of probing the node's process supervisor for telemt (systemd,
+	// OpenRC/procd, runit, docker, or none) once at agent startup. Cached on
+	// the agent process and stamped on every snapshot so the control-plane
+	// knows whether an in-place telemt update is safe to offer for this node.
+	TelemtUpdateProbe *TelemtUpdateProbe `protobuf:"bytes,21,opt,name=telemt_update_probe,json=telemtUpdateProbe,proto3" json:"telemt_update_probe,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Snapshot) Reset() {
@@ -2428,6 +2433,104 @@ func (x *Snapshot) GetAgentBootId() string {
 	return ""
 }
 
+func (x *Snapshot) GetTelemtUpdateProbe() *TelemtUpdateProbe {
+	if x != nil {
+		return x.TelemtUpdateProbe
+	}
+	return nil
+}
+
+// TelemtUpdateProbe reports how (and whether) the agent can update the
+// local telemt install: which supervisor fronts the process, and — when
+// no in-place update path exists — why.
+type TelemtUpdateProbe struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// "binary" (a supported supervisor owns telemt; a binary swap +
+	// supervised restart is safe), "docker" (telemt runs in a container;
+	// updates must go through the image), or "none" (nothing detected).
+	Mode string `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
+	// telemtrestart spec ("systemd:telemt", "openrc:telemt", "procd:telemt",
+	// "runit:telemt") to use for the supervised restart after a binary swap.
+	// Empty when mode != "binary".
+	SuggestedRestartSpec string `protobuf:"bytes,2,opt,name=suggested_restart_spec,json=suggestedRestartSpec,proto3" json:"suggested_restart_spec,omitempty"`
+	// Best-effort resolved path to the telemt executable, used as the swap
+	// target. May be empty if it could not be resolved.
+	BinaryPath string `protobuf:"bytes,3,opt,name=binary_path,json=binaryPath,proto3" json:"binary_path,omitempty"`
+	// Whether an in-place update is offered at all.
+	Available bool `protobuf:"varint,4,opt,name=available,proto3" json:"available,omitempty"`
+	// Localizable CODE (not a human-readable phrase) explaining why
+	// available is false, e.g. "docker_only", "no_service_manager_detected".
+	// Empty when available is true.
+	Reason        string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TelemtUpdateProbe) Reset() {
+	*x = TelemtUpdateProbe{}
+	mi := &file_agent_gateway_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TelemtUpdateProbe) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TelemtUpdateProbe) ProtoMessage() {}
+
+func (x *TelemtUpdateProbe) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_gateway_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TelemtUpdateProbe.ProtoReflect.Descriptor instead.
+func (*TelemtUpdateProbe) Descriptor() ([]byte, []int) {
+	return file_agent_gateway_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *TelemtUpdateProbe) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *TelemtUpdateProbe) GetSuggestedRestartSpec() string {
+	if x != nil {
+		return x.SuggestedRestartSpec
+	}
+	return ""
+}
+
+func (x *TelemtUpdateProbe) GetBinaryPath() string {
+	if x != nil {
+		return x.BinaryPath
+	}
+	return ""
+}
+
+func (x *TelemtUpdateProbe) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+func (x *TelemtUpdateProbe) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 type JobResult struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	AgentId        string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
@@ -2442,7 +2545,7 @@ type JobResult struct {
 
 func (x *JobResult) Reset() {
 	*x = JobResult{}
-	mi := &file_agent_gateway_proto_msgTypes[21]
+	mi := &file_agent_gateway_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2454,7 +2557,7 @@ func (x *JobResult) String() string {
 func (*JobResult) ProtoMessage() {}
 
 func (x *JobResult) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[21]
+	mi := &file_agent_gateway_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2467,7 +2570,7 @@ func (x *JobResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobResult.ProtoReflect.Descriptor instead.
 func (*JobResult) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{21}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *JobResult) GetAgentId() string {
@@ -2523,7 +2626,7 @@ type JobAcknowledgement struct {
 
 func (x *JobAcknowledgement) Reset() {
 	*x = JobAcknowledgement{}
-	mi := &file_agent_gateway_proto_msgTypes[22]
+	mi := &file_agent_gateway_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2535,7 +2638,7 @@ func (x *JobAcknowledgement) String() string {
 func (*JobAcknowledgement) ProtoMessage() {}
 
 func (x *JobAcknowledgement) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[22]
+	mi := &file_agent_gateway_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2548,7 +2651,7 @@ func (x *JobAcknowledgement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobAcknowledgement.ProtoReflect.Descriptor instead.
 func (*JobAcknowledgement) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{22}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *JobAcknowledgement) GetAgentId() string {
@@ -2585,7 +2688,7 @@ type JobCommand struct {
 
 func (x *JobCommand) Reset() {
 	*x = JobCommand{}
-	mi := &file_agent_gateway_proto_msgTypes[23]
+	mi := &file_agent_gateway_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2597,7 +2700,7 @@ func (x *JobCommand) String() string {
 func (*JobCommand) ProtoMessage() {}
 
 func (x *JobCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[23]
+	mi := &file_agent_gateway_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2610,7 +2713,7 @@ func (x *JobCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobCommand.ProtoReflect.Descriptor instead.
 func (*JobCommand) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{23}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *JobCommand) GetId() string {
@@ -2659,7 +2762,7 @@ type ClientDataRequest struct {
 
 func (x *ClientDataRequest) Reset() {
 	*x = ClientDataRequest{}
-	mi := &file_agent_gateway_proto_msgTypes[24]
+	mi := &file_agent_gateway_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2671,7 +2774,7 @@ func (x *ClientDataRequest) String() string {
 func (*ClientDataRequest) ProtoMessage() {}
 
 func (x *ClientDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[24]
+	mi := &file_agent_gateway_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2684,7 +2787,7 @@ func (x *ClientDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientDataRequest.ProtoReflect.Descriptor instead.
 func (*ClientDataRequest) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{24}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ClientDataRequest) GetType() ClientDataRequest_RequestType {
@@ -2722,7 +2825,7 @@ type ClientDataResponse struct {
 
 func (x *ClientDataResponse) Reset() {
 	*x = ClientDataResponse{}
-	mi := &file_agent_gateway_proto_msgTypes[25]
+	mi := &file_agent_gateway_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2734,7 +2837,7 @@ func (x *ClientDataResponse) String() string {
 func (*ClientDataResponse) ProtoMessage() {}
 
 func (x *ClientDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[25]
+	mi := &file_agent_gateway_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2747,7 +2850,7 @@ func (x *ClientDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientDataResponse.ProtoReflect.Descriptor instead.
 func (*ClientDataResponse) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{25}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ClientDataResponse) GetRequestId() string {
@@ -2793,7 +2896,7 @@ type ClientDetailRecord struct {
 
 func (x *ClientDetailRecord) Reset() {
 	*x = ClientDetailRecord{}
-	mi := &file_agent_gateway_proto_msgTypes[26]
+	mi := &file_agent_gateway_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2805,7 +2908,7 @@ func (x *ClientDetailRecord) String() string {
 func (*ClientDetailRecord) ProtoMessage() {}
 
 func (x *ClientDetailRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[26]
+	mi := &file_agent_gateway_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2818,7 +2921,7 @@ func (x *ClientDetailRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientDetailRecord.ProtoReflect.Descriptor instead.
 func (*ClientDetailRecord) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{26}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ClientDetailRecord) GetClientId() string {
@@ -2933,7 +3036,7 @@ type RenewalRequest struct {
 
 func (x *RenewalRequest) Reset() {
 	*x = RenewalRequest{}
-	mi := &file_agent_gateway_proto_msgTypes[27]
+	mi := &file_agent_gateway_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2945,7 +3048,7 @@ func (x *RenewalRequest) String() string {
 func (*RenewalRequest) ProtoMessage() {}
 
 func (x *RenewalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[27]
+	mi := &file_agent_gateway_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2958,7 +3061,7 @@ func (x *RenewalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewalRequest.ProtoReflect.Descriptor instead.
 func (*RenewalRequest) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{27}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *RenewalRequest) GetAgentId() string {
@@ -2991,7 +3094,7 @@ type RenewalResponse struct {
 
 func (x *RenewalResponse) Reset() {
 	*x = RenewalResponse{}
-	mi := &file_agent_gateway_proto_msgTypes[28]
+	mi := &file_agent_gateway_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3003,7 +3106,7 @@ func (x *RenewalResponse) String() string {
 func (*RenewalResponse) ProtoMessage() {}
 
 func (x *RenewalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[28]
+	mi := &file_agent_gateway_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3016,7 +3119,7 @@ func (x *RenewalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewalResponse.ProtoReflect.Descriptor instead.
 func (*RenewalResponse) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{28}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RenewalResponse) GetCertificatePem() string {
@@ -3065,7 +3168,7 @@ type ConnectClientMessage struct {
 
 func (x *ConnectClientMessage) Reset() {
 	*x = ConnectClientMessage{}
-	mi := &file_agent_gateway_proto_msgTypes[29]
+	mi := &file_agent_gateway_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3077,7 +3180,7 @@ func (x *ConnectClientMessage) String() string {
 func (*ConnectClientMessage) ProtoMessage() {}
 
 func (x *ConnectClientMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[29]
+	mi := &file_agent_gateway_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3090,7 +3193,7 @@ func (x *ConnectClientMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectClientMessage.ProtoReflect.Descriptor instead.
 func (*ConnectClientMessage) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{29}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ConnectClientMessage) GetBody() isConnectClientMessage_Body {
@@ -3229,7 +3332,7 @@ type AgentRuntimeEvent struct {
 
 func (x *AgentRuntimeEvent) Reset() {
 	*x = AgentRuntimeEvent{}
-	mi := &file_agent_gateway_proto_msgTypes[30]
+	mi := &file_agent_gateway_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3241,7 +3344,7 @@ func (x *AgentRuntimeEvent) String() string {
 func (*AgentRuntimeEvent) ProtoMessage() {}
 
 func (x *AgentRuntimeEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[30]
+	mi := &file_agent_gateway_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3254,7 +3357,7 @@ func (x *AgentRuntimeEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentRuntimeEvent.ProtoReflect.Descriptor instead.
 func (*AgentRuntimeEvent) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{30}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AgentRuntimeEvent) GetTs() *timestamppb.Timestamp {
@@ -3303,7 +3406,7 @@ type RuntimeEventsBatch struct {
 
 func (x *RuntimeEventsBatch) Reset() {
 	*x = RuntimeEventsBatch{}
-	mi := &file_agent_gateway_proto_msgTypes[31]
+	mi := &file_agent_gateway_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3315,7 +3418,7 @@ func (x *RuntimeEventsBatch) String() string {
 func (*RuntimeEventsBatch) ProtoMessage() {}
 
 func (x *RuntimeEventsBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[31]
+	mi := &file_agent_gateway_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3328,7 +3431,7 @@ func (x *RuntimeEventsBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeEventsBatch.ProtoReflect.Descriptor instead.
 func (*RuntimeEventsBatch) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{31}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RuntimeEventsBatch) GetAgentId() string {
@@ -3359,7 +3462,7 @@ type ConnectServerMessage struct {
 
 func (x *ConnectServerMessage) Reset() {
 	*x = ConnectServerMessage{}
-	mi := &file_agent_gateway_proto_msgTypes[32]
+	mi := &file_agent_gateway_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3371,7 +3474,7 @@ func (x *ConnectServerMessage) String() string {
 func (*ConnectServerMessage) ProtoMessage() {}
 
 func (x *ConnectServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[32]
+	mi := &file_agent_gateway_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3384,7 +3487,7 @@ func (x *ConnectServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectServerMessage.ProtoReflect.Descriptor instead.
 func (*ConnectServerMessage) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{32}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ConnectServerMessage) GetBody() isConnectServerMessage_Body {
@@ -3458,7 +3561,7 @@ type EnrollClientMessage struct {
 
 func (x *EnrollClientMessage) Reset() {
 	*x = EnrollClientMessage{}
-	mi := &file_agent_gateway_proto_msgTypes[33]
+	mi := &file_agent_gateway_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3470,7 +3573,7 @@ func (x *EnrollClientMessage) String() string {
 func (*EnrollClientMessage) ProtoMessage() {}
 
 func (x *EnrollClientMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[33]
+	mi := &file_agent_gateway_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3483,7 +3586,7 @@ func (x *EnrollClientMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollClientMessage.ProtoReflect.Descriptor instead.
 func (*EnrollClientMessage) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{33}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *EnrollClientMessage) GetBody() isEnrollClientMessage_Body {
@@ -3523,7 +3626,7 @@ type EnrollCertificate struct {
 
 func (x *EnrollCertificate) Reset() {
 	*x = EnrollCertificate{}
-	mi := &file_agent_gateway_proto_msgTypes[34]
+	mi := &file_agent_gateway_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3535,7 +3638,7 @@ func (x *EnrollCertificate) String() string {
 func (*EnrollCertificate) ProtoMessage() {}
 
 func (x *EnrollCertificate) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[34]
+	mi := &file_agent_gateway_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3548,7 +3651,7 @@ func (x *EnrollCertificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollCertificate.ProtoReflect.Descriptor instead.
 func (*EnrollCertificate) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{34}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *EnrollCertificate) GetCertificatePem() string {
@@ -3586,7 +3689,7 @@ type EnrollServerMessage struct {
 
 func (x *EnrollServerMessage) Reset() {
 	*x = EnrollServerMessage{}
-	mi := &file_agent_gateway_proto_msgTypes[35]
+	mi := &file_agent_gateway_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3598,7 +3701,7 @@ func (x *EnrollServerMessage) String() string {
 func (*EnrollServerMessage) ProtoMessage() {}
 
 func (x *EnrollServerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[35]
+	mi := &file_agent_gateway_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3611,7 +3714,7 @@ func (x *EnrollServerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollServerMessage.ProtoReflect.Descriptor instead.
 func (*EnrollServerMessage) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{35}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *EnrollServerMessage) GetBody() isEnrollServerMessage_Body {
@@ -3651,7 +3754,7 @@ type EnrollOpening struct {
 
 func (x *EnrollOpening) Reset() {
 	*x = EnrollOpening{}
-	mi := &file_agent_gateway_proto_msgTypes[36]
+	mi := &file_agent_gateway_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3663,7 +3766,7 @@ func (x *EnrollOpening) String() string {
 func (*EnrollOpening) ProtoMessage() {}
 
 func (x *EnrollOpening) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[36]
+	mi := &file_agent_gateway_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3676,7 +3779,7 @@ func (x *EnrollOpening) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollOpening.ProtoReflect.Descriptor instead.
 func (*EnrollOpening) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{36}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *EnrollOpening) GetBootstrapToken() string {
@@ -3718,7 +3821,7 @@ type AgentEnrollmentEvent struct {
 
 func (x *AgentEnrollmentEvent) Reset() {
 	*x = AgentEnrollmentEvent{}
-	mi := &file_agent_gateway_proto_msgTypes[37]
+	mi := &file_agent_gateway_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3730,7 +3833,7 @@ func (x *AgentEnrollmentEvent) String() string {
 func (*AgentEnrollmentEvent) ProtoMessage() {}
 
 func (x *AgentEnrollmentEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[37]
+	mi := &file_agent_gateway_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3743,7 +3846,7 @@ func (x *AgentEnrollmentEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentEnrollmentEvent.ProtoReflect.Descriptor instead.
 func (*AgentEnrollmentEvent) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{37}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *AgentEnrollmentEvent) GetStep() string {
@@ -3791,7 +3894,7 @@ type ReportEnrollmentStepsRequest struct {
 
 func (x *ReportEnrollmentStepsRequest) Reset() {
 	*x = ReportEnrollmentStepsRequest{}
-	mi := &file_agent_gateway_proto_msgTypes[38]
+	mi := &file_agent_gateway_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3803,7 +3906,7 @@ func (x *ReportEnrollmentStepsRequest) String() string {
 func (*ReportEnrollmentStepsRequest) ProtoMessage() {}
 
 func (x *ReportEnrollmentStepsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[38]
+	mi := &file_agent_gateway_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3816,7 +3919,7 @@ func (x *ReportEnrollmentStepsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportEnrollmentStepsRequest.ProtoReflect.Descriptor instead.
 func (*ReportEnrollmentStepsRequest) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{38}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ReportEnrollmentStepsRequest) GetAttemptId() string {
@@ -3841,7 +3944,7 @@ type ReportEnrollmentStepsResponse struct {
 
 func (x *ReportEnrollmentStepsResponse) Reset() {
 	*x = ReportEnrollmentStepsResponse{}
-	mi := &file_agent_gateway_proto_msgTypes[39]
+	mi := &file_agent_gateway_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3853,7 +3956,7 @@ func (x *ReportEnrollmentStepsResponse) String() string {
 func (*ReportEnrollmentStepsResponse) ProtoMessage() {}
 
 func (x *ReportEnrollmentStepsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_gateway_proto_msgTypes[39]
+	mi := &file_agent_gateway_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3866,7 +3969,7 @@ func (x *ReportEnrollmentStepsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportEnrollmentStepsResponse.ProtoReflect.Descriptor instead.
 func (*ReportEnrollmentStepsResponse) Descriptor() ([]byte, []int) {
-	return file_agent_gateway_proto_rawDescGZIP(), []int{39}
+	return file_agent_gateway_proto_rawDescGZIP(), []int{40}
 }
 
 var File_agent_gateway_proto protoreflect.FileDescriptor
@@ -4084,7 +4187,7 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\aenabled\x18\x03 \x01(\bR\aenabled\x12#\n" +
 	"\rentries_total\x18\x04 \x01(\x05R\fentriesTotal\x12!\n" +
 	"\fentries_json\x18\x05 \x01(\tR\ventriesJson\x12!\n" +
-	"\fcontent_hash\x18\x06 \x01(\tR\vcontentHash\"\x99\b\n" +
+	"\fcontent_hash\x18\x06 \x01(\tR\vcontentHash\"\xef\b\n" +
 	"\bSnapshot\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x1b\n" +
 	"\tnode_name\x18\x02 \x01(\tR\bnodeName\x12$\n" +
@@ -4106,10 +4209,18 @@ const file_agent_gateway_proto_rawDesc = "" +
 	"\x13runtime_diagnostics\x18\x11 \x01(\v2-.panvex.gateway.v1.RuntimeDiagnosticsSnapshotR\x12runtimeDiagnostics\x12q\n" +
 	"\x1aruntime_security_inventory\x18\x12 \x01(\v23.panvex.gateway.v1.RuntimeSecurityInventorySnapshotR\x18runtimeSecurityInventory\x12\x18\n" +
 	"\apartial\x18\x13 \x01(\bR\apartial\x12\"\n" +
-	"\ragent_boot_id\x18\x14 \x01(\tR\vagentBootId\x1a:\n" +
+	"\ragent_boot_id\x18\x14 \x01(\tR\vagentBootId\x12T\n" +
+	"\x13telemt_update_probe\x18\x15 \x01(\v2$.panvex.gateway.v1.TelemtUpdateProbeR\x11telemtUpdateProbe\x1a:\n" +
 	"\fMetricsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xbc\x01\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"\xb4\x01\n" +
+	"\x11TelemtUpdateProbe\x12\x12\n" +
+	"\x04mode\x18\x01 \x01(\tR\x04mode\x124\n" +
+	"\x16suggested_restart_spec\x18\x02 \x01(\tR\x14suggestedRestartSpec\x12\x1f\n" +
+	"\vbinary_path\x18\x03 \x01(\tR\n" +
+	"binaryPath\x12\x1c\n" +
+	"\tavailable\x18\x04 \x01(\bR\tavailable\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xbc\x01\n" +
 	"\tJobResult\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x15\n" +
 	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x18\n" +
@@ -4244,7 +4355,7 @@ func file_agent_gateway_proto_rawDescGZIP() []byte {
 }
 
 var file_agent_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_agent_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_agent_gateway_proto_goTypes = []any{
 	(ClientDataRequest_RequestType)(0),       // 0: panvex.gateway.v1.ClientDataRequest.RequestType
 	(*RenewCertificateRequest)(nil),          // 1: panvex.gateway.v1.RenewCertificateRequest
@@ -4268,29 +4379,30 @@ var file_agent_gateway_proto_goTypes = []any{
 	(*RuntimeDiagnosticsSnapshot)(nil),       // 19: panvex.gateway.v1.RuntimeDiagnosticsSnapshot
 	(*RuntimeSecurityInventorySnapshot)(nil), // 20: panvex.gateway.v1.RuntimeSecurityInventorySnapshot
 	(*Snapshot)(nil),                         // 21: panvex.gateway.v1.Snapshot
-	(*JobResult)(nil),                        // 22: panvex.gateway.v1.JobResult
-	(*JobAcknowledgement)(nil),               // 23: panvex.gateway.v1.JobAcknowledgement
-	(*JobCommand)(nil),                       // 24: panvex.gateway.v1.JobCommand
-	(*ClientDataRequest)(nil),                // 25: panvex.gateway.v1.ClientDataRequest
-	(*ClientDataResponse)(nil),               // 26: panvex.gateway.v1.ClientDataResponse
-	(*ClientDetailRecord)(nil),               // 27: panvex.gateway.v1.ClientDetailRecord
-	(*RenewalRequest)(nil),                   // 28: panvex.gateway.v1.RenewalRequest
-	(*RenewalResponse)(nil),                  // 29: panvex.gateway.v1.RenewalResponse
-	(*ConnectClientMessage)(nil),             // 30: panvex.gateway.v1.ConnectClientMessage
-	(*AgentRuntimeEvent)(nil),                // 31: panvex.gateway.v1.AgentRuntimeEvent
-	(*RuntimeEventsBatch)(nil),               // 32: panvex.gateway.v1.RuntimeEventsBatch
-	(*ConnectServerMessage)(nil),             // 33: panvex.gateway.v1.ConnectServerMessage
-	(*EnrollClientMessage)(nil),              // 34: panvex.gateway.v1.EnrollClientMessage
-	(*EnrollCertificate)(nil),                // 35: panvex.gateway.v1.EnrollCertificate
-	(*EnrollServerMessage)(nil),              // 36: panvex.gateway.v1.EnrollServerMessage
-	(*EnrollOpening)(nil),                    // 37: panvex.gateway.v1.EnrollOpening
-	(*AgentEnrollmentEvent)(nil),             // 38: panvex.gateway.v1.AgentEnrollmentEvent
-	(*ReportEnrollmentStepsRequest)(nil),     // 39: panvex.gateway.v1.ReportEnrollmentStepsRequest
-	(*ReportEnrollmentStepsResponse)(nil),    // 40: panvex.gateway.v1.ReportEnrollmentStepsResponse
-	nil,                                      // 41: panvex.gateway.v1.Snapshot.MetricsEntry
-	nil,                                      // 42: panvex.gateway.v1.AgentRuntimeEvent.FieldsEntry
-	nil,                                      // 43: panvex.gateway.v1.AgentEnrollmentEvent.FieldsEntry
-	(*timestamppb.Timestamp)(nil),            // 44: google.protobuf.Timestamp
+	(*TelemtUpdateProbe)(nil),                // 22: panvex.gateway.v1.TelemtUpdateProbe
+	(*JobResult)(nil),                        // 23: panvex.gateway.v1.JobResult
+	(*JobAcknowledgement)(nil),               // 24: panvex.gateway.v1.JobAcknowledgement
+	(*JobCommand)(nil),                       // 25: panvex.gateway.v1.JobCommand
+	(*ClientDataRequest)(nil),                // 26: panvex.gateway.v1.ClientDataRequest
+	(*ClientDataResponse)(nil),               // 27: panvex.gateway.v1.ClientDataResponse
+	(*ClientDetailRecord)(nil),               // 28: panvex.gateway.v1.ClientDetailRecord
+	(*RenewalRequest)(nil),                   // 29: panvex.gateway.v1.RenewalRequest
+	(*RenewalResponse)(nil),                  // 30: panvex.gateway.v1.RenewalResponse
+	(*ConnectClientMessage)(nil),             // 31: panvex.gateway.v1.ConnectClientMessage
+	(*AgentRuntimeEvent)(nil),                // 32: panvex.gateway.v1.AgentRuntimeEvent
+	(*RuntimeEventsBatch)(nil),               // 33: panvex.gateway.v1.RuntimeEventsBatch
+	(*ConnectServerMessage)(nil),             // 34: panvex.gateway.v1.ConnectServerMessage
+	(*EnrollClientMessage)(nil),              // 35: panvex.gateway.v1.EnrollClientMessage
+	(*EnrollCertificate)(nil),                // 36: panvex.gateway.v1.EnrollCertificate
+	(*EnrollServerMessage)(nil),              // 37: panvex.gateway.v1.EnrollServerMessage
+	(*EnrollOpening)(nil),                    // 38: panvex.gateway.v1.EnrollOpening
+	(*AgentEnrollmentEvent)(nil),             // 39: panvex.gateway.v1.AgentEnrollmentEvent
+	(*ReportEnrollmentStepsRequest)(nil),     // 40: panvex.gateway.v1.ReportEnrollmentStepsRequest
+	(*ReportEnrollmentStepsResponse)(nil),    // 41: panvex.gateway.v1.ReportEnrollmentStepsResponse
+	nil,                                      // 42: panvex.gateway.v1.Snapshot.MetricsEntry
+	nil,                                      // 43: panvex.gateway.v1.AgentRuntimeEvent.FieldsEntry
+	nil,                                      // 44: panvex.gateway.v1.AgentEnrollmentEvent.FieldsEntry
+	(*timestamppb.Timestamp)(nil),            // 45: google.protobuf.Timestamp
 }
 var file_agent_gateway_proto_depIdxs = []int32{
 	9,  // 0: panvex.gateway.v1.RuntimeUpstreamSnapshot.rows:type_name -> panvex.gateway.v1.RuntimeUpstreamRowSnapshot
@@ -4307,45 +4419,46 @@ var file_agent_gateway_proto_depIdxs = []int32{
 	17, // 11: panvex.gateway.v1.RuntimeSnapshot.connections_bad_by_class:type_name -> panvex.gateway.v1.ConnectionsClassCount
 	17, // 12: panvex.gateway.v1.RuntimeSnapshot.handshake_failures_by_class:type_name -> panvex.gateway.v1.ConnectionsClassCount
 	4,  // 13: panvex.gateway.v1.Snapshot.instances:type_name -> panvex.gateway.v1.InstanceSnapshot
-	41, // 14: panvex.gateway.v1.Snapshot.metrics:type_name -> panvex.gateway.v1.Snapshot.MetricsEntry
+	42, // 14: panvex.gateway.v1.Snapshot.metrics:type_name -> panvex.gateway.v1.Snapshot.MetricsEntry
 	5,  // 15: panvex.gateway.v1.Snapshot.clients:type_name -> panvex.gateway.v1.ClientUsageSnapshot
 	16, // 16: panvex.gateway.v1.Snapshot.runtime:type_name -> panvex.gateway.v1.RuntimeSnapshot
 	6,  // 17: panvex.gateway.v1.Snapshot.client_ips:type_name -> panvex.gateway.v1.ClientIPSnapshot
 	19, // 18: panvex.gateway.v1.Snapshot.runtime_diagnostics:type_name -> panvex.gateway.v1.RuntimeDiagnosticsSnapshot
 	20, // 19: panvex.gateway.v1.Snapshot.runtime_security_inventory:type_name -> panvex.gateway.v1.RuntimeSecurityInventorySnapshot
-	0,  // 20: panvex.gateway.v1.ClientDataRequest.type:type_name -> panvex.gateway.v1.ClientDataRequest.RequestType
-	27, // 21: panvex.gateway.v1.ClientDataResponse.clients:type_name -> panvex.gateway.v1.ClientDetailRecord
-	3,  // 22: panvex.gateway.v1.ConnectClientMessage.heartbeat:type_name -> panvex.gateway.v1.Heartbeat
-	21, // 23: panvex.gateway.v1.ConnectClientMessage.snapshot:type_name -> panvex.gateway.v1.Snapshot
-	22, // 24: panvex.gateway.v1.ConnectClientMessage.job_result:type_name -> panvex.gateway.v1.JobResult
-	23, // 25: panvex.gateway.v1.ConnectClientMessage.job_acknowledgement:type_name -> panvex.gateway.v1.JobAcknowledgement
-	26, // 26: panvex.gateway.v1.ConnectClientMessage.client_data_response:type_name -> panvex.gateway.v1.ClientDataResponse
-	28, // 27: panvex.gateway.v1.ConnectClientMessage.renewal_request:type_name -> panvex.gateway.v1.RenewalRequest
-	32, // 28: panvex.gateway.v1.ConnectClientMessage.runtime_events:type_name -> panvex.gateway.v1.RuntimeEventsBatch
-	44, // 29: panvex.gateway.v1.AgentRuntimeEvent.ts:type_name -> google.protobuf.Timestamp
-	42, // 30: panvex.gateway.v1.AgentRuntimeEvent.fields:type_name -> panvex.gateway.v1.AgentRuntimeEvent.FieldsEntry
-	31, // 31: panvex.gateway.v1.RuntimeEventsBatch.events:type_name -> panvex.gateway.v1.AgentRuntimeEvent
-	24, // 32: panvex.gateway.v1.ConnectServerMessage.job:type_name -> panvex.gateway.v1.JobCommand
-	25, // 33: panvex.gateway.v1.ConnectServerMessage.client_data_request:type_name -> panvex.gateway.v1.ClientDataRequest
-	29, // 34: panvex.gateway.v1.ConnectServerMessage.renewal_response:type_name -> panvex.gateway.v1.RenewalResponse
-	35, // 35: panvex.gateway.v1.EnrollClientMessage.certificate:type_name -> panvex.gateway.v1.EnrollCertificate
-	37, // 36: panvex.gateway.v1.EnrollServerMessage.opening:type_name -> panvex.gateway.v1.EnrollOpening
-	44, // 37: panvex.gateway.v1.AgentEnrollmentEvent.ts:type_name -> google.protobuf.Timestamp
-	43, // 38: panvex.gateway.v1.AgentEnrollmentEvent.fields:type_name -> panvex.gateway.v1.AgentEnrollmentEvent.FieldsEntry
-	38, // 39: panvex.gateway.v1.ReportEnrollmentStepsRequest.events:type_name -> panvex.gateway.v1.AgentEnrollmentEvent
-	1,  // 40: panvex.gateway.v1.AgentGateway.RenewCertificate:input_type -> panvex.gateway.v1.RenewCertificateRequest
-	30, // 41: panvex.gateway.v1.AgentGateway.Connect:input_type -> panvex.gateway.v1.ConnectClientMessage
-	34, // 42: panvex.gateway.v1.AgentGateway.EnrollOutbound:input_type -> panvex.gateway.v1.EnrollClientMessage
-	39, // 43: panvex.gateway.v1.AgentGateway.ReportEnrollmentSteps:input_type -> panvex.gateway.v1.ReportEnrollmentStepsRequest
-	2,  // 44: panvex.gateway.v1.AgentGateway.RenewCertificate:output_type -> panvex.gateway.v1.RenewCertificateResponse
-	33, // 45: panvex.gateway.v1.AgentGateway.Connect:output_type -> panvex.gateway.v1.ConnectServerMessage
-	36, // 46: panvex.gateway.v1.AgentGateway.EnrollOutbound:output_type -> panvex.gateway.v1.EnrollServerMessage
-	40, // 47: panvex.gateway.v1.AgentGateway.ReportEnrollmentSteps:output_type -> panvex.gateway.v1.ReportEnrollmentStepsResponse
-	44, // [44:48] is the sub-list for method output_type
-	40, // [40:44] is the sub-list for method input_type
-	40, // [40:40] is the sub-list for extension type_name
-	40, // [40:40] is the sub-list for extension extendee
-	0,  // [0:40] is the sub-list for field type_name
+	22, // 20: panvex.gateway.v1.Snapshot.telemt_update_probe:type_name -> panvex.gateway.v1.TelemtUpdateProbe
+	0,  // 21: panvex.gateway.v1.ClientDataRequest.type:type_name -> panvex.gateway.v1.ClientDataRequest.RequestType
+	28, // 22: panvex.gateway.v1.ClientDataResponse.clients:type_name -> panvex.gateway.v1.ClientDetailRecord
+	3,  // 23: panvex.gateway.v1.ConnectClientMessage.heartbeat:type_name -> panvex.gateway.v1.Heartbeat
+	21, // 24: panvex.gateway.v1.ConnectClientMessage.snapshot:type_name -> panvex.gateway.v1.Snapshot
+	23, // 25: panvex.gateway.v1.ConnectClientMessage.job_result:type_name -> panvex.gateway.v1.JobResult
+	24, // 26: panvex.gateway.v1.ConnectClientMessage.job_acknowledgement:type_name -> panvex.gateway.v1.JobAcknowledgement
+	27, // 27: panvex.gateway.v1.ConnectClientMessage.client_data_response:type_name -> panvex.gateway.v1.ClientDataResponse
+	29, // 28: panvex.gateway.v1.ConnectClientMessage.renewal_request:type_name -> panvex.gateway.v1.RenewalRequest
+	33, // 29: panvex.gateway.v1.ConnectClientMessage.runtime_events:type_name -> panvex.gateway.v1.RuntimeEventsBatch
+	45, // 30: panvex.gateway.v1.AgentRuntimeEvent.ts:type_name -> google.protobuf.Timestamp
+	43, // 31: panvex.gateway.v1.AgentRuntimeEvent.fields:type_name -> panvex.gateway.v1.AgentRuntimeEvent.FieldsEntry
+	32, // 32: panvex.gateway.v1.RuntimeEventsBatch.events:type_name -> panvex.gateway.v1.AgentRuntimeEvent
+	25, // 33: panvex.gateway.v1.ConnectServerMessage.job:type_name -> panvex.gateway.v1.JobCommand
+	26, // 34: panvex.gateway.v1.ConnectServerMessage.client_data_request:type_name -> panvex.gateway.v1.ClientDataRequest
+	30, // 35: panvex.gateway.v1.ConnectServerMessage.renewal_response:type_name -> panvex.gateway.v1.RenewalResponse
+	36, // 36: panvex.gateway.v1.EnrollClientMessage.certificate:type_name -> panvex.gateway.v1.EnrollCertificate
+	38, // 37: panvex.gateway.v1.EnrollServerMessage.opening:type_name -> panvex.gateway.v1.EnrollOpening
+	45, // 38: panvex.gateway.v1.AgentEnrollmentEvent.ts:type_name -> google.protobuf.Timestamp
+	44, // 39: panvex.gateway.v1.AgentEnrollmentEvent.fields:type_name -> panvex.gateway.v1.AgentEnrollmentEvent.FieldsEntry
+	39, // 40: panvex.gateway.v1.ReportEnrollmentStepsRequest.events:type_name -> panvex.gateway.v1.AgentEnrollmentEvent
+	1,  // 41: panvex.gateway.v1.AgentGateway.RenewCertificate:input_type -> panvex.gateway.v1.RenewCertificateRequest
+	31, // 42: panvex.gateway.v1.AgentGateway.Connect:input_type -> panvex.gateway.v1.ConnectClientMessage
+	35, // 43: panvex.gateway.v1.AgentGateway.EnrollOutbound:input_type -> panvex.gateway.v1.EnrollClientMessage
+	40, // 44: panvex.gateway.v1.AgentGateway.ReportEnrollmentSteps:input_type -> panvex.gateway.v1.ReportEnrollmentStepsRequest
+	2,  // 45: panvex.gateway.v1.AgentGateway.RenewCertificate:output_type -> panvex.gateway.v1.RenewCertificateResponse
+	34, // 46: panvex.gateway.v1.AgentGateway.Connect:output_type -> panvex.gateway.v1.ConnectServerMessage
+	37, // 47: panvex.gateway.v1.AgentGateway.EnrollOutbound:output_type -> panvex.gateway.v1.EnrollServerMessage
+	41, // 48: panvex.gateway.v1.AgentGateway.ReportEnrollmentSteps:output_type -> panvex.gateway.v1.ReportEnrollmentStepsResponse
+	45, // [45:49] is the sub-list for method output_type
+	41, // [41:45] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_agent_gateway_proto_init() }
@@ -4353,7 +4466,7 @@ func file_agent_gateway_proto_init() {
 	if File_agent_gateway_proto != nil {
 		return
 	}
-	file_agent_gateway_proto_msgTypes[29].OneofWrappers = []any{
+	file_agent_gateway_proto_msgTypes[30].OneofWrappers = []any{
 		(*ConnectClientMessage_Heartbeat)(nil),
 		(*ConnectClientMessage_Snapshot)(nil),
 		(*ConnectClientMessage_JobResult)(nil),
@@ -4362,15 +4475,15 @@ func file_agent_gateway_proto_init() {
 		(*ConnectClientMessage_RenewalRequest)(nil),
 		(*ConnectClientMessage_RuntimeEvents)(nil),
 	}
-	file_agent_gateway_proto_msgTypes[32].OneofWrappers = []any{
+	file_agent_gateway_proto_msgTypes[33].OneofWrappers = []any{
 		(*ConnectServerMessage_Job)(nil),
 		(*ConnectServerMessage_ClientDataRequest)(nil),
 		(*ConnectServerMessage_RenewalResponse)(nil),
 	}
-	file_agent_gateway_proto_msgTypes[33].OneofWrappers = []any{
+	file_agent_gateway_proto_msgTypes[34].OneofWrappers = []any{
 		(*EnrollClientMessage_Certificate)(nil),
 	}
-	file_agent_gateway_proto_msgTypes[35].OneofWrappers = []any{
+	file_agent_gateway_proto_msgTypes[36].OneofWrappers = []any{
 		(*EnrollServerMessage_Opening)(nil),
 	}
 	type x struct{}
@@ -4379,7 +4492,7 @@ func file_agent_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_gateway_proto_rawDesc), len(file_agent_gateway_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   43,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -20,6 +20,7 @@ import (
 	"github.com/lost-coder/panvex/internal/agent/runtimeevents"
 	agentstate "github.com/lost-coder/panvex/internal/agent/state"
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/agent/telemtupdate"
 	"github.com/lost-coder/panvex/internal/controlplane/enrollment"
 	"github.com/lost-coder/panvex/internal/logutil"
 	"github.com/lost-coder/panvex/internal/updatehosts"
@@ -233,6 +234,12 @@ func runRuntime(args []string) error {
 		},
 	}, telemtClient)
 
+	// Probe which process supervisor (if any) fronts the local telemt
+	// process exactly once at startup, before the connection loop begins
+	// building snapshots, and cache the result on the agent — RunProbe must
+	// not be re-run per snapshot cycle (see Agent.SetTelemtUpdateProbe).
+	agent.SetTelemtUpdateProbe(telemtupdate.RunProbe(exec.LookPath, os.Stat, runProbeCommandOutput))
+
 	schedule := conn.NewSchedule(cfg.heartbeat, cfg.runtimePoll, cfg.runtimeUpload, cfg.usageSnapshot, cfg.ipPoll, cfg.ipUpload)
 	slog.Info("agent starting",
 		"agent_id", credentialsState.AgentID,
@@ -288,4 +295,17 @@ func runRuntime(args []string) error {
 		return nil
 	}
 	return err
+}
+
+// runProbeCommandOutput adapts exec.Command to the output func signature
+// telemtupdate.RunProbe expects, so probe.go stays free of an os/exec import
+// (and therefore stays trivially unit-testable with fakes).
+// probeCommandTimeout bounds each shell-out RunProbe makes (systemctl cat,
+// docker ps) so a hung service manager can't stall agent startup.
+const probeCommandTimeout = 5 * time.Second
+
+func runProbeCommandOutput(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), probeCommandTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output() //nolint:gosec // G204: fixed set of probe commands (systemctl cat telemt, docker ps --filter ...) hardcoded by telemtupdate.RunProbe's call sites, not untrusted input
 }

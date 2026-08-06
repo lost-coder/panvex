@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/lost-coder/panvex/internal/agent/telemt"
+	"github.com/lost-coder/panvex/internal/agent/telemtupdate"
 	"github.com/lost-coder/panvex/internal/gatewayrpc"
 )
 
@@ -366,6 +367,12 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 		FleetGroupID: "ams-1",
 		Version:      "1.0.0",
 	}, client)
+	agent.SetTelemtUpdateProbe(telemtupdate.ProbeResult{
+		Mode:                 "binary",
+		SuggestedRestartSpec: "systemd:telemt",
+		BinaryPath:           "/usr/local/bin/telemt",
+		Available:            true,
+	})
 
 	// First tick is the process baseline (delta 0); advance traffic and take
 	// a second tick to observe a real delta.
@@ -389,6 +396,14 @@ func TestAgentBuildSnapshotIncludesClientUsageEntries(t *testing.T) {
 	}
 	if snapshot.AgentBootId == "" {
 		t.Fatal("snapshot.AgentBootId is empty")
+	}
+	// The probe result is computed once at agent startup and cached, so it
+	// must be stamped on every subsequently-built snapshot from that cache.
+	if got := snapshot.GetTelemtUpdateProbe(); got == nil {
+		t.Fatal("snapshot.TelemtUpdateProbe is nil")
+	} else if got.Mode != "binary" || got.SuggestedRestartSpec != "systemd:telemt" ||
+		got.BinaryPath != "/usr/local/bin/telemt" || !got.Available {
+		t.Fatalf("snapshot.TelemtUpdateProbe = %+v, want cached SetTelemtUpdateProbe value", got)
 	}
 }
 

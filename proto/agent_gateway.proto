@@ -350,6 +350,34 @@ message Snapshot {
   // totals restarted from zero. Stamped on every snapshot; only the
   // client-usage path consumes it (P4).
   string agent_boot_id = 20;
+  // Result of probing the node's process supervisor for telemt (systemd,
+  // OpenRC/procd, runit, docker, or none) once at agent startup. Cached on
+  // the agent process and stamped on every snapshot so the control-plane
+  // knows whether an in-place telemt update is safe to offer for this node.
+  TelemtUpdateProbe telemt_update_probe = 21;
+}
+
+// TelemtUpdateProbe reports how (and whether) the agent can update the
+// local telemt install: which supervisor fronts the process, and — when
+// no in-place update path exists — why.
+message TelemtUpdateProbe {
+  // "binary" (a supported supervisor owns telemt; a binary swap +
+  // supervised restart is safe), "docker" (telemt runs in a container;
+  // updates must go through the image), or "none" (nothing detected).
+  string mode = 1;
+  // telemtrestart spec ("systemd:telemt", "openrc:telemt", "procd:telemt",
+  // "runit:telemt") to use for the supervised restart after a binary swap.
+  // Empty when mode != "binary".
+  string suggested_restart_spec = 2;
+  // Best-effort resolved path to the telemt executable, used as the swap
+  // target. May be empty if it could not be resolved.
+  string binary_path = 3;
+  // Whether an in-place update is offered at all.
+  bool available = 4;
+  // Localizable CODE (not a human-readable phrase) explaining why
+  // available is false, e.g. "docker_only", "no_service_manager_detected".
+  // Empty when available is true.
+  string reason = 5;
 }
 
 message JobResult {
