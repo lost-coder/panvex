@@ -129,6 +129,97 @@ func TestSwapBinary_MissingBinaryPathFailsWithoutSideEffects(t *testing.T) {
 	}
 }
 
+func TestSwapBinary_OverwritesStaleBackup(t *testing.T) {
+	// Pins the accepted semantics: if a previous update crashed between
+	// swapBinary and removeBackup, a stale .bak can already be sitting next
+	// to binaryPath. swapBinary must not error on that — it overwrites the
+	// stale backup with whatever is at binaryPath right now, which by
+	// swapBinary's documented precondition is always the live, running
+	// binary and therefore at least as trustworthy as the stale one.
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "telemt")
+	if err := os.WriteFile(binaryPath, []byte("current-binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binaryPath+backupSuffix, []byte("stale-backup"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	tmpPath := filepath.Join(dir, ".telemt-update-bin-new")
+	if err := os.WriteFile(tmpPath, []byte("new-binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	backupPath, err := swapBinary(tmpPath, binaryPath)
+	if err != nil {
+		t.Fatalf("swapBinary: %v", err)
+	}
+
+	got, err := os.ReadFile(backupPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "current-binary" {
+		t.Fatalf("backup content = %q, want %q (the binary running at swap time, not the stale one)", got, "current-binary")
+	}
+}
+
+// ---- swapBinaryWith rollback ----
+
+func TestSwapBinaryWith_SecondRenameFailureRollsBackFirst(t *testing.T) {
+	dir := t.TempDir()
+	binaryPath := filepath.Join(dir, "telemt")
+	if err := os.WriteFile(binaryPath, []byte("old-binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tmpPath := filepath.Join(dir, ".telemt-update-bin-new")
+	if err := os.WriteFile(tmpPath, []byte("new-binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	wantErr := errors.New("simulated install rename failure")
+	calls := 0
+	rename := func(oldpath, newpath string) error {
+		calls++
+		if calls == 2 {
+			// This is the binTmpPath -> binaryPath rename (the "install"
+			// step); fail it so the rollback branch runs.
+			return wantErr
+		}
+		return os.Rename(oldpath, newpath)
+	}
+
+	_, err := swapBinaryWith(tmpPath, binaryPath, rename)
+	if err == nil || !errors.Is(err, wantErr) {
+		t.Fatalf("err = %v, want wrapping %v", err, wantErr)
+	}
+	if calls != 3 {
+		t.Fatalf("renameFn called %d times, want 3 (backup, failed install, rollback)", calls)
+	}
+
+	got, err := os.ReadFile(binaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "old-binary" {
+		t.Fatalf("binaryPath content after rollback = %q, want %q", got, "old-binary")
+	}
+	if _, statErr := os.Stat(binaryPath + backupSuffix); !os.IsNotExist(statErr) {
+		t.Fatalf(".bak should be gone after rollback (renamed back onto binaryPath), stat err = %v", statErr)
+	}
+	// A failed rename (real os.Rename semantics, e.g. EXDEV) leaves its
+	// source untouched; the fake renameFn mirrors that by not touching the
+	// filesystem on the call it fails, so binTmpPath must still hold the
+	// new binary's content, unconsumed.
+	gotTmp, err := os.ReadFile(tmpPath)
+	if err != nil {
+		t.Fatalf("tmpPath should still exist untouched: %v", err)
+	}
+	if string(gotTmp) != "new-binary" {
+		t.Fatalf("tmpPath content = %q, want %q", gotTmp, "new-binary")
+	}
+}
+
 // ---- restoreBackup / removeBackup ----
 
 func TestRestoreBackup_RestoresOldBinary(t *testing.T) {
