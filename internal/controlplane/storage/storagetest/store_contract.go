@@ -44,6 +44,7 @@ func RunStoreContract(t *testing.T, open OpenStore) {
 	runSessionsContract(t, open)
 	runFallbackContract(t, open)
 	runAgentConfigTargetContract(t, open)
+	runAgentUpdateStrategyContract(t, open)
 	runConfigApplyBatchContract(t, open)
 
 	// Transact contract (P2-ARCH-01) lives in store_contract_transact.go.

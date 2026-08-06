@@ -600,6 +600,21 @@ const (
 	ConfigScopeAgent = "agent"
 )
 
+// AgentUpdateStrategyRecord is the persisted Telemt update strategy for one
+// agent (Telemt Update v1, Task 8): how `telemt.update` jobs should be
+// applied on that agent. Mode is one of "binary" | "docker" | "none".
+// RestartSpec / BinaryPath carry the resolved telemtrestart.Spec fields;
+// AssetFlavor distinguishes release-asset variants (e.g. "" | "v3").
+type AgentUpdateStrategyRecord struct {
+	AgentID     string
+	Mode        string
+	RestartSpec string
+	BinaryPath  string
+	AssetFlavor string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 // ConfigApplyBatchRecord tracks one group-wide config-apply rollout: the
 // operator triggers a config push to every agent in FleetGroupID, and the
 // batch coordinates delivery across one or more waves (see

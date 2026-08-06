@@ -219,6 +219,15 @@ type FleetStore interface {
 	UpsertAgentConfigTarget(ctx context.Context, rec AgentConfigTargetRecord) error
 	// DeleteAgentConfigTarget removes the config target for a scope; returns rows deleted.
 	DeleteAgentConfigTarget(ctx context.Context, scopeType, scopeID string) (int64, error)
+	// GetAgentUpdateStrategy returns the persisted Telemt update strategy for
+	// one agent, or storage.ErrNotFound when none is set.
+	GetAgentUpdateStrategy(ctx context.Context, agentID string) (AgentUpdateStrategyRecord, error)
+	// UpsertAgentUpdateStrategy creates or replaces the update strategy for an
+	// agent. CreatedAt is preserved across replaces of an existing row.
+	UpsertAgentUpdateStrategy(ctx context.Context, rec AgentUpdateStrategyRecord) error
+	// DeleteAgentUpdateStrategy removes the update strategy for an agent.
+	// Idempotent: deleting an absent row is not an error.
+	DeleteAgentUpdateStrategy(ctx context.Context, agentID string) error
 }
 
 // JobStore persists orchestration jobs and per-target result state.

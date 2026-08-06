@@ -65,6 +65,7 @@ type memoryStore struct {
 	integrationProviders           map[string]storage.IntegrationProviderRecord
 	fleetGroupIntegrations         map[string]storage.FleetGroupIntegrationRecord
 	agentConfigTargets             map[string]storage.AgentConfigTargetRecord
+	agentUpdateStrategies          map[string]storage.AgentUpdateStrategyRecord
 	configApplyBatches             map[string]storage.ConfigApplyBatchRecord
 	configApplyBatchTargets        map[string][]storage.ConfigApplyBatchTargetRecord
 	cpSecrets                      map[string][]byte
@@ -102,6 +103,7 @@ func newMemoryStore() *memoryStore {
 		integrationProviders:           make(map[string]storage.IntegrationProviderRecord),
 		fleetGroupIntegrations:         make(map[string]storage.FleetGroupIntegrationRecord),
 		agentConfigTargets:             make(map[string]storage.AgentConfigTargetRecord),
+		agentUpdateStrategies:          make(map[string]storage.AgentUpdateStrategyRecord),
 		configApplyBatches:             make(map[string]storage.ConfigApplyBatchRecord),
 		configApplyBatchTargets:        make(map[string][]storage.ConfigApplyBatchTargetRecord),
 		cpSecrets:                      make(map[string][]byte),
@@ -140,6 +142,27 @@ func (s *memoryStore) DeleteAgentConfigTarget(_ context.Context, scopeType, scop
 	}
 	delete(s.agentConfigTargets, key)
 	return 1, nil
+}
+
+func (s *memoryStore) GetAgentUpdateStrategy(_ context.Context, agentID string) (storage.AgentUpdateStrategyRecord, error) {
+	rec, ok := s.agentUpdateStrategies[agentID]
+	if !ok {
+		return storage.AgentUpdateStrategyRecord{}, storage.ErrNotFound
+	}
+	return rec, nil
+}
+
+func (s *memoryStore) UpsertAgentUpdateStrategy(_ context.Context, rec storage.AgentUpdateStrategyRecord) error {
+	if existing, ok := s.agentUpdateStrategies[rec.AgentID]; ok {
+		rec.CreatedAt = existing.CreatedAt
+	}
+	s.agentUpdateStrategies[rec.AgentID] = rec
+	return nil
+}
+
+func (s *memoryStore) DeleteAgentUpdateStrategy(_ context.Context, agentID string) error {
+	delete(s.agentUpdateStrategies, agentID)
+	return nil
 }
 
 func (s *memoryStore) CreateConfigApplyBatch(_ context.Context, b storage.ConfigApplyBatchRecord, targets []storage.ConfigApplyBatchTargetRecord) error {
@@ -674,6 +697,7 @@ func (s *memoryStore) DeleteAgent(_ context.Context, agentID string) error {
 	// stays contract-compatible.
 	delete(s.agentCertificateRecoveryGrants, agentID)
 	delete(s.agentFallbackState, agentID)
+	delete(s.agentUpdateStrategies, agentID)
 	for id, dc := range s.discoveredClients {
 		if dc.AgentID == agentID {
 			delete(s.discoveredClients, id)

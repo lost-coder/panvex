@@ -87,4 +87,10 @@ var skippedTables = map[string]string{
 	// a later phase needs full batch-history parity across backends.
 	"config_apply_batches":       "not yet covered by offline migrate-schema copy — see comment above",
 	"config_apply_batch_targets": "child of config_apply_batches (FK ON DELETE CASCADE); skipped alongside its parent",
+
+	// Telemt Update v1 (Task 8): only per-agent Get/Upsert/Delete exist
+	// (brief scope); no bulk List method, so the offline migrate-schema
+	// copy cannot enumerate every agent's strategy. Revisit alongside a
+	// future admin-listing need.
+	"agent_update_strategies": "not yet covered by offline migrate-schema copy — see comment above",
 }
