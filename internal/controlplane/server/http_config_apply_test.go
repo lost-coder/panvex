@@ -502,8 +502,15 @@ func TestGroupApplySuccessFoldsIntoSnapshot(t *testing.T) {
 	srv, _ := newConfigTargetTestServer(t)
 	ctx := context.Background()
 	const agentID = "agent-fold-ok"
+	// The marker is stamped alongside real sections by seedDesiredConfig
+	// (config_seed.go) in production; seed it here too so this test can
+	// prove the fold preserves it. P2 had a marker-leak bug that all
+	// per-task reviews missed, so this is cheap insurance against a future
+	// fold change stripping it.
+	const markerValue = "telemt-3.4.25"
 	seedAgentConfigTarget(t, srv, agentID, map[string]any{
-		"general": map[string]any{"fast_mode": true},
+		"general":           map[string]any{"fast_mode": true},
+		schemaVersionMarker: markerValue,
 	})
 
 	patch := map[string]any{"general": map[string]any{"fast_mode": false}}
@@ -524,6 +531,9 @@ func TestGroupApplySuccessFoldsIntoSnapshot(t *testing.T) {
 	general, _ := sections["general"].(map[string]any)
 	if general["fast_mode"] != false {
 		t.Fatalf("general.fast_mode after successful apply = %v, want false", general["fast_mode"])
+	}
+	if got := sections[schemaVersionMarker]; got != markerValue {
+		t.Fatalf("%s after successful fold = %v, want unchanged %q", schemaVersionMarker, got, markerValue)
 	}
 
 	// Reset the snapshot and repeat with a FAILED job: it must leave the

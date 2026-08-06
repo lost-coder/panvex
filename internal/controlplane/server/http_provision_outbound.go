@@ -154,6 +154,23 @@ func (s *Server) handleProvisionOutboundAgent() http.HandlerFunc {
 			"script_source":  scriptSource,
 		})
 
+		// P3: an outbound-provisioned node dropped straight into a group
+		// that already carries config has never seen it (no prior desired
+		// snapshot to have picked it up from). Push the group's sections
+		// now instead of leaving the node bare until an unrelated
+		// config-apply run. Best-effort and after every other provisioning
+		// side effect: provisioning itself has already succeeded and must
+		// not be rolled back over an apply failure. Unlike enrollAgent,
+		// this handler has a real operator session, so the actor is
+		// session.UserID (same as the reassign path).
+		if batchID, err := s.applyGroupToAgent(r.Context(), session.UserID, agentID, fleetGroupID); err != nil {
+			s.logger.WarnContext(r.Context(), "auto-apply group config on outbound provision failed",
+				"agent_id", agentID, "group_id", fleetGroupID, "error", err)
+		} else if batchID != "" {
+			s.appendAuditWithContext(r.Context(), session.UserID, "config.group_auto_apply", agentID,
+				map[string]any{"group_id": fleetGroupID, "batch_id": batchID})
+		}
+
 		writeJSON(w, http.StatusCreated, provisionOutboundAgentResponse{
 			AgentID:       agentID,
 			Command:       cmd,

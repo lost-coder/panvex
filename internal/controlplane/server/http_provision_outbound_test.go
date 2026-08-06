@@ -565,3 +565,71 @@ func TestProvisionOutboundAgentRequiresAdminRole(t *testing.T) {
 		t.Fatalf("operator status = %d, want 403 (body=%s)", resp.Code, resp.Body.String())
 	}
 }
+
+// TestProvisionOutboundAutoAppliesGroupConfig verifies the P3 final-review
+// fix: provisioning an outbound agent straight into a fleet group that
+// already carries config auto-applies that config to the new agent
+// (config_group_apply.go's applyGroupToAgent), matching the standard-enroll
+// (http_enrollment.go) and reassign (http_agents.go) paths. Before the fix,
+// handleProvisionOutboundAgent persisted the agent row with its
+// fleet_group_id but never called applyGroupToAgent, leaving an
+// outbound-provisioned node bare until an unrelated config-apply run.
+func TestProvisionOutboundAutoAppliesGroupConfig(t *testing.T) {
+	f := setupProvisionOutboundFixture(t, nil)
+
+	// Target group "g2" has config — a node provisioned straight into it
+	// should get that config pushed automatically.
+	if err := f.store.CreateFleetGroup(context.Background(), storage.FleetGroupRecord{
+		ID:        "g2",
+		Name:      "g2",
+		Label:     "Group 2",
+		CreatedAt: time.Date(2026, time.May, 14, 12, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, time.May, 14, 12, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("CreateFleetGroup(g2) error = %v", err)
+	}
+	if err := f.srv.configTargets.Upsert(context.Background(), storage.ConfigScopeGroup, "g2",
+		map[string]any{"general": map[string]any{"fast_mode": false}}); err != nil {
+		t.Fatalf("seed group config: %v", err)
+	}
+
+	resp := performJSONRequest(t, f.srv, http.MethodPost,
+		"/api/agents/provision-outbound",
+		map[string]any{
+			"node_name":      "edge-fra-02",
+			"dial_address":   "203.0.113.11:8443",
+			"script_source":  "github",
+			"fleet_group_id": "g2",
+		},
+		f.cookies)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body=%s)", resp.Code, resp.Body.String())
+	}
+	var body provisionOutboundAgentResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v (raw=%s)", err, resp.Body.String())
+	}
+	if body.AgentID == "" {
+		t.Fatal("agent_id is empty")
+	}
+
+	batches, err := f.srv.store.ListRunningConfigApplyBatches(context.Background())
+	if err != nil {
+		t.Fatalf("ListRunningConfigApplyBatches() error = %v", err)
+	}
+	found := false
+	for _, b := range batches {
+		_, targets, err := f.srv.store.GetConfigApplyBatch(context.Background(), b.ID)
+		if err != nil {
+			t.Fatalf("GetConfigApplyBatch(%s) error = %v", b.ID, err)
+		}
+		for _, target := range targets {
+			if target.AgentID == body.AgentID {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected a config_apply batch targeting %s after outbound provision into g2, found none", body.AgentID)
+	}
+}
