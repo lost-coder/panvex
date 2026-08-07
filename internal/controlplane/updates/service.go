@@ -16,17 +16,26 @@ type Settings struct {
 	GitHubRepo          string `json:"github_repo"`
 	GitHubToken         string `json:"github_token,omitempty"`
 	AgentDownloadSource string `json:"agent_download_source"`
+	// TelemtVersionsToShow is the operator-configurable depth of the Telemt
+	// version picker (Task 2, Telemt Version Selection): how many of the
+	// newest stable Telemt releases checkTelemtRelease keeps in
+	// State.TelemtAvailableVersions. Clamped via ClampTelemtVersionsToShow
+	// both on PUT (mergeUpdateSettings) and defensively on load (LoadSettings)
+	// so a legacy persisted blob without this field, or a corrupted one,
+	// never surfaces 0 or an absurdly large value to the UI.
+	TelemtVersionsToShow int `json:"telemt_versions_to_show"`
 }
 
 // DefaultSettings is the check-every-6h, manual-apply baseline used when no
 // settings blob has been persisted yet.
 func DefaultSettings() Settings {
 	return Settings{
-		CheckIntervalHours:  6,
-		AutoUpdatePanel:     false,
-		AutoUpdateAgents:    false,
-		GitHubRepo:          "lost-coder/panvex",
-		AgentDownloadSource: "github",
+		CheckIntervalHours:   6,
+		AutoUpdatePanel:      false,
+		AutoUpdateAgents:     false,
+		GitHubRepo:           "lost-coder/panvex",
+		AgentDownloadSource:  "github",
+		TelemtVersionsToShow: DefaultTelemtVersionsToShow,
 	}
 }
 
@@ -146,6 +155,12 @@ func (s *Service) LoadSettings(ctx context.Context) (Settings, error) {
 			return Settings{}, err
 		}
 	}
+	// A settings blob persisted before TelemtVersionsToShow existed unmarshals
+	// the field as 0 (json.Unmarshal only touches keys present in the input,
+	// but an explicit 0 — or an out-of-range value from some other source —
+	// must still be normalized rather than surfaced verbatim to the UI).
+	// Mirrors LoadState's TelemtAvailableVersions nil-normalization above.
+	settings.TelemtVersionsToShow = ClampTelemtVersionsToShow(settings.TelemtVersionsToShow)
 	return settings, nil
 }
 

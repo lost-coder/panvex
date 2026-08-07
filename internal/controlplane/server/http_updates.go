@@ -49,12 +49,13 @@ func (s *Server) handleVersion() http.HandlerFunc {
 // (flat) response shapes cannot drift apart — the drift that previously made
 // the dashboard's Updates panel silently disappear.
 type updateSettingsPayload struct {
-	CheckIntervalHours  int    `json:"check_interval_hours"`
-	AutoUpdatePanel     bool   `json:"auto_update_panel"`
-	AutoUpdateAgents    bool   `json:"auto_update_agents"`
-	GitHubRepo          string `json:"github_repo"`
-	GitHubToken         string `json:"github_token"`
-	AgentDownloadSource string `json:"agent_download_source"`
+	CheckIntervalHours   int    `json:"check_interval_hours"`
+	AutoUpdatePanel      bool   `json:"auto_update_panel"`
+	AutoUpdateAgents     bool   `json:"auto_update_agents"`
+	GitHubRepo           string `json:"github_repo"`
+	GitHubToken          string `json:"github_token"`
+	AgentDownloadSource  string `json:"agent_download_source"`
+	TelemtVersionsToShow int    `json:"telemt_versions_to_show"`
 }
 
 // updateSettingsResponse is the JSON returned by PUT /settings/updates: the
@@ -85,23 +86,25 @@ func updateSettingsPayloadFrom(s UpdateSettings) updateSettingsPayload {
 		token = maskToken(s.GitHubToken)
 	}
 	return updateSettingsPayload{
-		CheckIntervalHours:  s.CheckIntervalHours,
-		AutoUpdatePanel:     s.AutoUpdatePanel,
-		AutoUpdateAgents:    s.AutoUpdateAgents,
-		GitHubRepo:          s.GitHubRepo,
-		GitHubToken:         token,
-		AgentDownloadSource: s.AgentDownloadSource,
+		CheckIntervalHours:   s.CheckIntervalHours,
+		AutoUpdatePanel:      s.AutoUpdatePanel,
+		AutoUpdateAgents:     s.AutoUpdateAgents,
+		GitHubRepo:           s.GitHubRepo,
+		GitHubToken:          token,
+		AgentDownloadSource:  s.AgentDownloadSource,
+		TelemtVersionsToShow: s.TelemtVersionsToShow,
 	}
 }
 
 // updateSettingsRequest is the JSON payload accepted by PUT /settings/updates.
 type updateSettingsRequest struct {
-	CheckIntervalHours  *int    `json:"check_interval_hours,omitempty"`
-	AutoUpdatePanel     *bool   `json:"auto_update_panel,omitempty"`
-	AutoUpdateAgents    *bool   `json:"auto_update_agents,omitempty"`
-	GitHubRepo          *string `json:"github_repo,omitempty"`
-	GitHubToken         *string `json:"github_token,omitempty"`
-	AgentDownloadSource *string `json:"agent_download_source,omitempty"`
+	CheckIntervalHours   *int    `json:"check_interval_hours,omitempty"`
+	AutoUpdatePanel      *bool   `json:"auto_update_panel,omitempty"`
+	AutoUpdateAgents     *bool   `json:"auto_update_agents,omitempty"`
+	GitHubRepo           *string `json:"github_repo,omitempty"`
+	GitHubToken          *string `json:"github_token,omitempty"`
+	AgentDownloadSource  *string `json:"agent_download_source,omitempty"`
+	TelemtVersionsToShow *int    `json:"telemt_versions_to_show,omitempty"`
 }
 
 // mergeUpdateSettings applies non-nil fields from req onto current. Caller
@@ -128,6 +131,9 @@ func mergeUpdateSettings(current *UpdateSettings, req updateSettingsRequest) {
 	}
 	if req.AgentDownloadSource != nil {
 		current.AgentDownloadSource = *req.AgentDownloadSource
+	}
+	if req.TelemtVersionsToShow != nil {
+		current.TelemtVersionsToShow = updates.ClampTelemtVersionsToShow(*req.TelemtVersionsToShow)
 	}
 }
 

@@ -263,6 +263,30 @@ var telemtStableTagPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 // FetchTelemtReleaseOverview.
 const DefaultTelemtVersionsToShow = 5
 
+// maxTelemtVersionsToShow bounds how deep the version picker can go — a
+// large N (an operator fat-fingering a settings PUT, or a stale/corrupted
+// persisted value) would otherwise pad every checkTelemtRelease tick's
+// GitHub response parsing and the dashboard's dropdown for no real benefit.
+const maxTelemtVersionsToShow = 20
+
+// ClampTelemtVersionsToShow normalizes an operator- or storage-supplied
+// Settings.TelemtVersionsToShow value into the valid [1, 20] range: n <= 0
+// (including the zero value a legacy persisted settings blob without this
+// field unmarshals to) falls back to DefaultTelemtVersionsToShow, and
+// anything above maxTelemtVersionsToShow is capped there. Used both by
+// mergeUpdateSettings (server, on PUT) and Service.LoadSettings (defensive
+// normalization on load), and by checkTelemtRelease immediately before
+// calling FetchTelemtReleaseOverview.
+func ClampTelemtVersionsToShow(n int) int {
+	if n <= 0 {
+		return DefaultTelemtVersionsToShow
+	}
+	if n > maxTelemtVersionsToShow {
+		return maxTelemtVersionsToShow
+	}
+	return n
+}
+
 // FetchTelemtReleaseOverview queries the GitHub Releases API for telemtRepo
 // once and returns both the newest stable release (see pickLatestTelemtRelease)
 // and the top topN stable version tags (see pickTopTelemtVersions), so the

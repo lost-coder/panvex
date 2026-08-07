@@ -393,12 +393,13 @@ func TestSettingsRoundTrip(t *testing.T) {
 	t.Parallel()
 	svc := NewService(&memStore{})
 	want := Settings{
-		CheckIntervalHours:  12,
-		AutoUpdatePanel:     true,
-		AutoUpdateAgents:    true,
-		GitHubRepo:          "acme/panvex",
-		GitHubToken:         "ghp_x",
-		AgentDownloadSource: "mirror",
+		CheckIntervalHours:   12,
+		AutoUpdatePanel:      true,
+		AutoUpdateAgents:     true,
+		GitHubRepo:           "acme/panvex",
+		GitHubToken:          "ghp_x",
+		AgentDownloadSource:  "mirror",
+		TelemtVersionsToShow: 10,
 	}
 	if err := svc.SaveSettings(context.Background(), want); err != nil {
 		t.Fatalf("SaveSettings: %v", err)
@@ -472,5 +473,34 @@ func TestLoadStateNormalizesNilAvailableVersions(t *testing.T) {
 	}
 	if got.LatestPanelVersion != "1.2.3" {
 		t.Fatalf("LatestPanelVersion = %q, want %q", got.LatestPanelVersion, "1.2.3")
+	}
+}
+
+// TestLoadSettingsNormalizesOutOfRangeTelemtVersionsToShow covers the Task 2
+// LoadSettings normalization contract: a settings blob persisted before
+// TelemtVersionsToShow existed (or one carrying an out-of-range value from
+// some other source) must load back clamped, mirroring
+// TestLoadStateNormalizesNilAvailableVersions for State. Without this, GET
+// /settings/updates could surface 0 (or an absurdly large value) straight to
+// the UI instead of a usable default.
+func TestLoadSettingsNormalizesOutOfRangeTelemtVersionsToShow(t *testing.T) {
+	t.Parallel()
+
+	zero := &memStore{settings: json.RawMessage(`{"telemt_versions_to_show":0}`)}
+	got, err := NewService(zero).LoadSettings(context.Background())
+	if err != nil {
+		t.Fatalf("LoadSettings: %v", err)
+	}
+	if got.TelemtVersionsToShow != DefaultTelemtVersionsToShow {
+		t.Fatalf("TelemtVersionsToShow = %d, want default %d", got.TelemtVersionsToShow, DefaultTelemtVersionsToShow)
+	}
+
+	tooLarge := &memStore{settings: json.RawMessage(`{"telemt_versions_to_show":999}`)}
+	got2, err := NewService(tooLarge).LoadSettings(context.Background())
+	if err != nil {
+		t.Fatalf("LoadSettings: %v", err)
+	}
+	if got2.TelemtVersionsToShow != 20 {
+		t.Fatalf("TelemtVersionsToShow = %d, want clamped 20", got2.TelemtVersionsToShow)
 	}
 }

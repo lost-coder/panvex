@@ -59,12 +59,13 @@ func (s *Server) checkForUpdates(ctx context.Context) {
 	s.settingsMu.RLock()
 	repo := s.updateSettings.GitHubRepo
 	token := s.updateSettings.GitHubToken
+	telemtVersionsToShow := s.updateSettings.TelemtVersionsToShow
 	s.settingsMu.RUnlock()
 
 	if repo != "" {
 		s.checkPanelAndAgentUpdates(ctx, repo, token)
 	}
-	s.checkTelemtRelease(ctx, token)
+	s.checkTelemtRelease(ctx, token, telemtVersionsToShow)
 }
 
 // updateCheckFetchTimeout bounds a single release-check's GitHub round trip.
@@ -141,11 +142,17 @@ func (s *Server) checkPanelAndAgentUpdates(ctx context.Context, repo, token stri
 // TelemtReleaseBaseURL / TelemtLastCheckError / TelemtAvailableVersions),
 // reading the current s.updateState as its base so the panel/agent result
 // from earlier in the same tick is never clobbered.
-func (s *Server) checkTelemtRelease(ctx context.Context, token string) {
+//
+// versionsToShow is the operator-configured Settings.TelemtVersionsToShow,
+// read by the caller under s.settingsMu alongside token. It is re-clamped
+// here (not just trusted from the caller) so a settings blob persisted
+// before this field existed — which unmarshals to 0 — never asks GitHub for
+// a zero-length top-N instead of the default.
+func (s *Server) checkTelemtRelease(ctx context.Context, token string, versionsToShow int) {
 	fetchCtx, cancel := context.WithTimeout(ctx, updateCheckFetchTimeout)
 	defer cancel()
 
-	release, versions, err := updates.FetchTelemtReleaseOverview(fetchCtx, token, updates.DefaultTelemtVersionsToShow)
+	release, versions, err := updates.FetchTelemtReleaseOverview(fetchCtx, token, updates.ClampTelemtVersionsToShow(versionsToShow))
 	if err != nil {
 		s.logger.WarnContext(ctx, "telemt update check failed", "error", err)
 	}

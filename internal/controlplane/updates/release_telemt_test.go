@@ -189,6 +189,20 @@ func TestApplyTelemtCheckResult_ErrorPreservesAvailableVersions(t *testing.T) {
 	}
 }
 
+// TestClampTelemtVersionsToShow pins the Task 2 clamp contract used both by
+// mergeUpdateSettings (server, on PUT) and Service.LoadSettings (defensive
+// normalization of a legacy persisted blob without the field, which
+// unmarshals as 0): non-positive falls back to the default, above 20 is
+// capped at 20, everything else passes through unchanged.
+func TestClampTelemtVersionsToShow(t *testing.T) {
+	cases := map[int]int{0: 5, -3: 5, 1: 1, 5: 5, 20: 20, 21: 20, 100: 20}
+	for in, want := range cases {
+		if got := ClampTelemtVersionsToShow(in); got != want {
+			t.Fatalf("Clamp(%d) = %d, want %d", in, got, want)
+		}
+	}
+}
+
 func errGithubRateLimit(t *testing.T) error {
 	t.Helper()
 	resp := respWith(http.StatusForbidden,
