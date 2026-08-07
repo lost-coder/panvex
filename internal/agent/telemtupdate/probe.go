@@ -112,8 +112,10 @@ func resolveBinaryPath(parsed string, lookPath func(string) (string, error), fal
 }
 
 // parseExecStart extracts the executable from a `systemctl cat` unit dump:
-// the first whitespace-separated token following an "ExecStart=" line's "=".
-// Returns "" if no such line is present.
+// the first whitespace-separated token following an "ExecStart=" line's "=",
+// with any systemd command-line modifier prefixes and surrounding quotes
+// stripped (see stripExecStartPrefixes). Returns "" if no such line is
+// present.
 func parseExecStart(catOutput []byte) string {
 	const prefix = "ExecStart="
 	for _, line := range strings.Split(string(catOutput), "\n") {
@@ -125,7 +127,34 @@ func parseExecStart(catOutput []byte) string {
 		if len(fields) == 0 {
 			continue
 		}
-		return fields[0]
+		return stripExecStartPrefixes(fields[0])
 	}
 	return ""
+}
+
+// execStartModifierChars are the special characters systemd allows
+// immediately before the executable path in an ExecStart= command line, in
+// any combination — see systemd.service(5) "Command Lines": "-" ignores the
+// command's exit status, "@" overrides the reported argv[0], ":" disables
+// environment variable substitution, "+"/"!"/"!!" adjust the privileges the
+// command runs with. Without stripping these, a unit like
+// "ExecStart=-/usr/local/bin/telemt" would resolve BinaryPath to
+// "-/usr/local/bin/telemt", a path swapBinary can never open.
+const execStartModifierChars = "-@:+!"
+
+// stripExecStartPrefixes removes any leading systemd ExecStart= modifier
+// characters, then any surrounding matching quotes, from a parsed
+// executable token: "-/usr/local/bin/telemt" -> "/usr/local/bin/telemt";
+// `"-@/opt/telemt/telemt"` -> "/opt/telemt/telemt".
+func stripExecStartPrefixes(token string) string {
+	for len(token) > 0 && strings.ContainsRune(execStartModifierChars, rune(token[0])) {
+		token = token[1:]
+	}
+	if len(token) >= 2 {
+		first, last := token[0], token[len(token)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			token = token[1 : len(token)-1]
+		}
+	}
+	return token
 }

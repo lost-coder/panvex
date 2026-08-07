@@ -278,6 +278,51 @@ func TestParseExecStart(t *testing.T) {
 			in:   "ExecStart=/usr/local/bin/telemt\n",
 			want: "/usr/local/bin/telemt",
 		},
+		{
+			name: "dash prefix (ignore exit status)",
+			in:   "ExecStart=-/usr/local/bin/telemt --config /etc/telemt/config.toml\n",
+			want: "/usr/local/bin/telemt",
+		},
+		{
+			name: "at prefix (argv0 override)",
+			in:   "ExecStart=@/usr/local/bin/telemt\n",
+			want: "/usr/local/bin/telemt",
+		},
+		{
+			name: "colon prefix (no variable substitution)",
+			in:   "ExecStart=:/usr/local/bin/telemt\n",
+			want: "/usr/local/bin/telemt",
+		},
+		{
+			name: "plus prefix (full privileges)",
+			in:   "ExecStart=+/usr/local/bin/telemt\n",
+			want: "/usr/local/bin/telemt",
+		},
+		{
+			name: "bang prefix (no NNP/private/etc)",
+			in:   "ExecStart=!/usr/local/bin/telemt\n",
+			want: "/usr/local/bin/telemt",
+		},
+		{
+			name: "double bang prefix (fully unprivileged)",
+			in:   "ExecStart=!!/usr/local/bin/telemt\n",
+			want: "/usr/local/bin/telemt",
+		},
+		{
+			name: "combined prefixes",
+			in:   "ExecStart=-@:/usr/local/bin/telemt --config /etc/telemt/config.toml\n",
+			want: "/usr/local/bin/telemt",
+		},
+		{
+			name: "quoted path, no prefix",
+			in:   `ExecStart="/usr/local/bin/telemt" --config /etc/telemt/config.toml` + "\n",
+			want: "/usr/local/bin/telemt",
+		},
+		{
+			name: "prefix then quoted path",
+			in:   `ExecStart=-"/opt/telemt/telemt"` + "\n",
+			want: "/opt/telemt/telemt",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
