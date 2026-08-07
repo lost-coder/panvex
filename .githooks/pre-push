@@ -13,19 +13,36 @@
 #   3. `git push --no-verify` — git's built-in escape hatch.
 set -e
 
-# ── Tag-only push short-circuit ──────────────────────────────────────────────
+# ── Tag-only / delete-only push short-circuit ────────────────────────────────
 # git passes one line per ref on stdin:
 #   <local-ref> <local-sha> <remote-ref> <remote-sha>
+# A branch DELETION arrives as local_ref="(delete)" with an all-zero
+# local_sha — no code moves, so it must not trigger the suite (observed
+# 2026-08-08: cleaning 21 stale remote branches ran the full gate per
+# deletion, ~3 min each).
 any_ref=0
 any_non_tag=0
-while read -r local_ref _local_sha _remote_ref _remote_sha; do
+any_delete=0
+while read -r local_ref local_sha _remote_ref _remote_sha; do
     [ -z "$local_ref" ] && continue
+    case "$local_ref,$local_sha" in
+        "(delete)",*|*,0000000000000000000000000000000000000000)
+            any_delete=1
+            continue ;;
+    esac
     any_ref=1
     case "$local_ref" in
         refs/tags/*) ;;
         *) any_non_tag=1 ;;
     esac
 done
+
+# Delete-only push: refs were listed but every one is a deletion.
+# Empty stdin (dry-run) still falls through to the suite, as before.
+if [ "$any_ref" = 0 ] && [ "$any_delete" = 1 ]; then
+    echo "=== Pre-push: delete-only push — skipping CI mirror checks ==="
+    exit 0
+fi
 
 if [ "$any_ref" = 1 ] && [ "$any_non_tag" = 0 ]; then
     echo "=== Pre-push: tag-only push — skipping CI mirror checks ==="
