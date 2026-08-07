@@ -62,6 +62,16 @@ type AgentRevocation struct {
 	CertExpiresAt time.Time
 }
 
+type AgentUpdateStrategy struct {
+	AgentID     string
+	Mode        string
+	RestartSpec string
+	BinaryPath  string
+	AssetFlavor string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 type AuditEvent struct {
 	ID        string
 	ActorID   string
