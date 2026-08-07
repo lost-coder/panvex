@@ -74,13 +74,14 @@ func TestServerServesRecentMetricSnapshotsFromStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listMetricSnapshots() error = %v", err)
 	}
-	metricsLen := len(metrics)
+	// Assert the length BEFORE indexing: an unexpected short read has to
+	// report "len(metrics) = 0, want 512", not panic with an index-out-of-
+	// range that says nothing about what went wrong.
+	if len(metrics) != testMaxInMemoryMetricSnapshots {
+		t.Fatalf("len(metrics) = %d, want %d", len(metrics), testMaxInMemoryMetricSnapshots)
+	}
 	first := metrics[0]
 	last := metrics[len(metrics)-1]
-
-	if metricsLen != testMaxInMemoryMetricSnapshots {
-		t.Fatalf("len(metrics) = %d, want %d", metricsLen, testMaxInMemoryMetricSnapshots)
-	}
 	expectedFirstValue := uint64(totalSnapshots - testMaxInMemoryMetricSnapshots)
 	if first.Values["requests_total"] != expectedFirstValue {
 		t.Fatalf("first metric requests_total = %d, want %d", first.Values["requests_total"], expectedFirstValue)

@@ -120,7 +120,12 @@ type MetricsSink interface {
 // bounded memory of ~2×capLimit elements. capLimit <= 0 disables the bound
 // (unbounded, prior behaviour).
 type batchBuffer[T any] struct {
-	mu       sync.Mutex
+	mu sync.Mutex
+	// drainMu serialises whole drains, flushFn included, so a caller that
+	// finds the buffer already empty still waits for the in-flight write to
+	// land. mu alone only protects the swap; it is released before flushFn
+	// runs. Always taken BEFORE mu — Enqueue takes mu only, so no cycle.
+	drainMu  sync.Mutex
 	stream   string // metrics/log label, e.g. "agents"
 	items    []T
 	start    int // logical head: items[start:] are live
@@ -247,10 +252,19 @@ func (b *batchBuffer[T]) RemoveMatching(pred func(T) bool) int {
 	return removed
 }
 
-// Drain swaps out the current live window and flushes accumulated items. Safe
-// to call concurrently — only one drain runs at a time because items are
-// swapped under the lock before the flush function is invoked.
+// Drain swaps out the current live window and flushes accumulated items.
+//
+// Safe to call concurrently, and — because drainMu spans flushFn — a drain
+// that arrives while another is mid-write blocks until that write finishes
+// instead of returning on a buffer that merely LOOKS empty. That guarantee is
+// what makes Flush() meaningful: once it returns, everything buffered when it
+// was called is in the store. Without it the background flushLoop could hold
+// the batch while a concurrent Flush returned early, which is exactly how
+// TestServerServesRecentMetricSnapshotsFromStore flaked in CI.
 func (b *batchBuffer[T]) Drain(ctx context.Context) {
+	b.drainMu.Lock()
+	defer b.drainMu.Unlock()
+
 	b.mu.Lock()
 	if len(b.items)-b.start == 0 {
 		b.mu.Unlock()
