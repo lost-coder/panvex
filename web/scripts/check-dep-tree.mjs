@@ -31,12 +31,22 @@ const ALLOWLIST = [
   },
 ]
 
+// Resolve npm through the two absolute paths the running npm hands us rather
+// than looking up a bare "npm" on PATH, which would be attacker-controllable
+// on a shared machine (sonar javascript:S4036). npm_execpath is set by npm for
+// every `npm run` script; process.execPath is this node binary.
+const npmCli = process.env.npm_execpath
+if (!npmCli) {
+  console.error('npm_execpath is unset — run this through `npm run check:deps`.')
+  process.exit(2)
+}
+
 // npm exits non-zero whenever the tree has ANY problem, extraneous included —
 // which is the normal state here. The JSON on stdout is still complete and is
 // what we actually judge, so a non-zero exit must not abort the check.
 let raw
 try {
-  raw = execFileSync('npm', ['ls', '--all', '--json'], {
+  raw = execFileSync(process.execPath, [npmCli, 'ls', '--all', '--json'], {
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'ignore'],
@@ -67,7 +77,7 @@ function walk(node) {
         name,
         version: dep.version,
         requiredBy: [...new Set([...(existing?.requiredBy ?? []), ...requirers])],
-        range: String(dep.invalid).match(/^"([^"]+)"/)?.[1] ?? String(dep.invalid),
+        range: /^"([^"]+)"/.exec(String(dep.invalid))?.[1] ?? String(dep.invalid),
       })
     }
     walk(dep)
