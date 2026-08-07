@@ -294,12 +294,14 @@ export interface paths {
          *     binary), then runs a supervised restart per the agent's configured
          *     update strategy (`PUT /api/agents/{id}/telemt/update-strategy`).
          *     `version` defaults to the panel's cached latest known Telemt
-         *     release when omitted. A guard chain (see `DispatchTelemtUpdateError`)
-         *     rejects the request with 409 before enqueueing when the strategy is
-         *     unconfigured, does not support a binary swap, the agent's live probe
-         *     reports the update as unavailable, or no version is known — checked
-         *     in that order. Admin-only, same trust bar as the update-strategy
-         *     endpoints.
+         *     release when omitted; if given (after trimming an optional leading
+         *     `v`) it must match `^\d+\.\d+\.\d+$`, or the request is rejected with
+         *     400 `invalid_version` before anything else runs. A guard chain (see
+         *     `DispatchTelemtUpdateError`) then rejects the request with 409
+         *     before enqueueing when the strategy is unconfigured, does not
+         *     support a binary swap, the agent's live probe reports the update as
+         *     unavailable, or no version is known — checked in that order.
+         *     Admin-only, same trust bar as the update-strategy endpoints.
          */
         post: operations["dispatchTelemtUpdate"];
         delete?: never;
