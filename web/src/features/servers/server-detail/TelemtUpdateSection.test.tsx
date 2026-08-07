@@ -626,6 +626,34 @@ describe("TelemtUpdateSection", () => {
       );
     });
 
+    it("substitutes a placeholder for an empty currentVersion in the forced-install confirm body (review-wave fix)", async () => {
+      // currentVersion is "" on a fresh enroll, before Telemt has reported
+      // system_info — forcedBody wraps {{current}} in literal parens, which
+      // must not render as empty "()".
+      useTelemtUpdateStrategy.mockReturnValue({
+        data: { strategy: binaryStrategy, probe: availableProbe },
+        isLoading: false,
+        isError: false,
+      });
+      confirmMock.mockResolvedValueOnce(true);
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion=""
+          latestVersion="3.4.25"
+          availableVersions={versions}
+        />,
+      );
+      openFold();
+
+      fireEvent.click(screen.getByRole("button", { name: "Install 3.4.25" }));
+
+      await waitFor(() => expect(confirmMock).toHaveBeenCalled());
+      const call = confirmMock.mock.calls[0]?.[0] as { body: string };
+      expect(call.body).not.toContain("()");
+      expect(call.body).toContain("—");
+    });
+
     it("does not dispatch the forced install when the operator cancels", async () => {
       useTelemtUpdateStrategy.mockReturnValue({
         data: { strategy: binaryStrategy, probe: availableProbe },

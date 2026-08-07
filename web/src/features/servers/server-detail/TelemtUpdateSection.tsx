@@ -261,7 +261,12 @@ export function TelemtUpdateSection({
         ? {
             title: t("telemtUpdate.action.forcedTitle"),
             body: t("telemtUpdate.action.forcedBody", {
-              current: currentVersion,
+              // forcedBody wraps {{current}} in literal parens ("(...)")
+              // for display — currentVersion is "" whenever isForced is hit
+              // via a blank version (fresh enroll, before Telemt has
+              // reported system_info), which would otherwise render empty
+              // "()" instead of a readable placeholder.
+              current: currentVersion || "—",
               version: selectedVersion,
             }),
             confirmLabel: t("telemtUpdate.action.forcedConfirm"),
