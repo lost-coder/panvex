@@ -8,7 +8,7 @@ import (
 )
 
 // assetName resolves a Telemt release asset name from runtime architecture,
-// libc type (gnu vs musl), and optional CPU feature level (v3 for x86_64 VAES+VPCLMULQDQ).
+// libc type (gnu vs musl), and optional CPU feature level (v3 for x86-64-v3, i.e. AVX2/BMI2/FMA and friends).
 // Returns a name like "telemt-x86_64-v3-linux-musl" or "telemt-aarch64-linux-gnu".
 // Error if goarch is unsupported (only amd64, arm64) or if flavor=="v3" is
 // requested on arm64 (not available upstream).
