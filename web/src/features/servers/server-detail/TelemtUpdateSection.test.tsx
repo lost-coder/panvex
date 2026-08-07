@@ -564,5 +564,85 @@ describe("TelemtUpdateSection", () => {
       await waitFor(() => expect(confirmMock).toHaveBeenCalled());
       expect(dispatchMutate).not.toHaveBeenCalled();
     });
+
+    it("forces allowDowngrade with a dedicated confirm when currentVersion is unparseable (dev build)", async () => {
+      // The agent's own downgrade gate is fail-closed: if it can't parse
+      // its own reported version it requires allow_downgrade for ANY
+      // install, not just a real downgrade — so the UI must always force
+      // it here, even though the picker's default pick (3.4.25) is
+      // "newer" by no meaningful comparison against "dev".
+      useTelemtUpdateStrategy.mockReturnValue({
+        data: { strategy: binaryStrategy, probe: availableProbe },
+        isLoading: false,
+        isError: false,
+      });
+      confirmMock.mockResolvedValueOnce(true);
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="dev"
+          latestVersion="3.4.25"
+          availableVersions={versions}
+        />,
+      );
+      openFold();
+
+      fireEvent.click(screen.getByRole("button", { name: "Install 3.4.25" }));
+
+      await waitFor(() =>
+        expect(dispatchMutate).toHaveBeenCalledWith({ version: "3.4.25", allowDowngrade: true }),
+      );
+      expect(confirmMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Forced install",
+          confirmLabel: "Install anyway",
+        }),
+      );
+    });
+
+    it("does not dispatch the forced install when the operator cancels", async () => {
+      useTelemtUpdateStrategy.mockReturnValue({
+        data: { strategy: binaryStrategy, probe: availableProbe },
+        isLoading: false,
+        isError: false,
+      });
+      confirmMock.mockResolvedValueOnce(false);
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="dev"
+          latestVersion="3.4.25"
+          availableVersions={versions}
+        />,
+      );
+      openFold();
+
+      fireEvent.click(screen.getByRole("button", { name: "Install 3.4.25" }));
+
+      await waitFor(() => expect(confirmMock).toHaveBeenCalled());
+      expect(dispatchMutate).not.toHaveBeenCalled();
+    });
+
+    it("does not tag any option (current) when currentVersion is unparseable", () => {
+      useTelemtUpdateStrategy.mockReturnValue({
+        data: { strategy: binaryStrategy, probe: availableProbe },
+        isLoading: false,
+        isError: false,
+      });
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="dev"
+          latestVersion="3.4.25"
+          availableVersions={versions}
+        />,
+      );
+      openFold();
+
+      const select = screen.getByRole("combobox", { name: "Version" }) as HTMLSelectElement;
+      const optionLabels = Array.from(select.options).map((o) => o.text);
+      expect(optionLabels).toEqual(["3.4.25 (latest)", "3.4.24", "3.4.23"]);
+      expect(Array.from(select.options).some((o) => o.disabled)).toBe(false);
+    });
   });
 });

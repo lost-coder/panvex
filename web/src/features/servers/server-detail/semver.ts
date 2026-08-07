@@ -38,7 +38,15 @@ export function compareSemver(a: string, b: string): -1 | 0 | 1 {
 // "update available" badge on dev builds.
 const STRICT_SEMVER_PATTERN = /^\d+\.\d+\.\d+$/;
 
-function isStrictSemver(version: string): boolean {
+/**
+ * Task 4 fix: exported so the version picker can detect an unparseable
+ * `currentVersion` (blank, "dev", a git SHA) up front and switch to a
+ * forced-install confirm instead of the normal/downgrade one — the agent's
+ * downgrade gate is fail-closed and requires `allow_downgrade` for *any*
+ * install when it can't parse its own reported version, not just an actual
+ * downgrade.
+ */
+export function isStrictSemver(version: string): boolean {
   return STRICT_SEMVER_PATTERN.test(version.trim().replace(/^v/i, ""));
 }
 

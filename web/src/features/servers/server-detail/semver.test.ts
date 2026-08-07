@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compareSemver, semverLt } from "./semver";
+import { compareSemver, isStrictSemver, semverLt } from "./semver";
 
 describe("compareSemver", () => {
   it("orders by major, then minor, then patch", () => {
@@ -52,5 +52,23 @@ describe("semverLt", () => {
     expect(semverLt("3", "3.4.25")).toBe(false);
     expect(semverLt("3.4.25-rc1", "3.4.26")).toBe(false);
     expect(semverLt("3.4.25+build.1", "3.4.26")).toBe(false);
+  });
+});
+
+// Task 4 fix: exported so the version picker can detect an unparseable
+// currentVersion up front (forced-install confirm, see
+// TelemtUpdateSection.test.tsx).
+describe("isStrictSemver", () => {
+  it("is true for a well-formed major.minor.patch tag, with or without a leading v", () => {
+    expect(isStrictSemver("3.4.25")).toBe(true);
+    expect(isStrictSemver("v3.4.25")).toBe(true);
+  });
+
+  it("is false for anything else", () => {
+    expect(isStrictSemver("")).toBe(false);
+    expect(isStrictSemver("dev")).toBe(false);
+    expect(isStrictSemver("g1a2b3c4")).toBe(false);
+    expect(isStrictSemver("3.4")).toBe(false);
+    expect(isStrictSemver("3.4.25-rc1")).toBe(false);
   });
 });
