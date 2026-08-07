@@ -195,6 +195,8 @@ describe("UpdatesSettingsSection telemt_versions_to_show field", () => {
       expect(apiClient.putUpdateSettings).toHaveBeenCalledTimes(1);
     });
     const putMock = apiClient.putUpdateSettings as ReturnType<typeof vi.fn>;
-    expect(putMock.mock.calls[0][0]).toMatchObject({ telemt_versions_to_show: 10 });
+    const call = putMock.mock.calls[0];
+    expect(call).toBeDefined();
+    expect(call?.[0]).toMatchObject({ telemt_versions_to_show: 10 });
   });
 });
