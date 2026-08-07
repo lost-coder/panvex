@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 
 	"github.com/lost-coder/panvex/internal/agent/telemtrestart"
 	"github.com/lost-coder/panvex/internal/agent/telemtupdate"
@@ -35,7 +34,7 @@ func (a *Agent) handleTelemtUpdateJob(ctx context.Context, job *gatewayrpc.JobCo
 		return result
 	}
 
-	outcome, err := telemtUpdateExecute(ctx, payload, info.Version, a.telemt, telemtrestart.ExecRunner{}, slog.Default())
+	outcome, err := telemtUpdateExecute(ctx, payload, info.Version, a.telemt, telemtrestart.ExecRunner{}, a.logger)
 	if err != nil {
 		// Not every error branch inside Execute populates Outcome.Message
 		// (e.g. the downgrade gate, asset resolution, download, checksum,

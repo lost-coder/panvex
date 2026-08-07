@@ -104,6 +104,10 @@ type Agent struct {
 	config Config
 	telemt telemtClient
 	mu     sync.RWMutex
+	// logger is the agent's slog handle, defaulted to slog.Default() in New
+	// so every call site (e.g. handleTelemtUpdateJob) goes through a.logger
+	// instead of re-fetching the process-global default ad hoc.
+	logger *slog.Logger
 
 	observedConfig  observedConfigReporter
 	diagnosticsGate contentHashGate
@@ -165,6 +169,7 @@ func New(config Config, client telemtClient) *Agent {
 	a := &Agent{
 		config:                config,
 		telemt:                client,
+		logger:                slog.Default(),
 		clientNames:           make(map[string]string),
 		lastOctets:            make(map[string]uint64),
 		lastConnections:       make(map[string]int),
