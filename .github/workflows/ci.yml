@@ -331,6 +331,14 @@ jobs:
       - name: Install and build frontend
         working-directory: web
         run: npm ci && npm run build
+      # Catches a package moving without the peer it is pinned against —
+      # the 2026-08-07 sweep produced two such trees (@storybook/* without
+      # storybook, size-limit without @size-limit/file) and every other job
+      # here stayed green. See web/scripts/check-dep-tree.mjs for why plain
+      # `npm ls` cannot do this.
+      - name: Check dependency tree
+        working-directory: web
+        run: npm run check:deps
       # Phase-3 §3.3: size-limit gates the bundle so a careless
       # `npm install` of a heavy dep, or a forgotten manualChunks
       # override, fails CI instead of silently bloating first-paint.

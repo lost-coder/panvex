@@ -107,6 +107,12 @@ npm run check:i18n
 echo "=== Pre-push: Frontend state tests (node --test) ==="
 npm run test:state
 
+echo "=== Pre-push: Frontend dependency tree (peer ranges) ==="
+# Mirrors the CI "Check dependency tree" step: a package that moved without
+# the peer it is pinned against installs and builds fine, so nothing else
+# here would notice.
+npm run check:deps
+
 echo "=== Pre-push: Frontend audit (moderate severity) ==="
 # L-22: stay in lock-step with the CI workflow's --audit-level=moderate
 # so a hook-passing push cannot still fail the equivalent CI step.

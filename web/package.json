@@ -21,6 +21,7 @@
     "test:e2e:install:all": "playwright install --with-deps chromium firefox webkit",
     "test:e2e:integration": "playwright test --config=playwright.integration.config.ts",
     "size": "size-limit",
+    "check:deps": "node scripts/check-dep-tree.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },
