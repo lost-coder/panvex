@@ -109,24 +109,30 @@ func TestUpdateAgentRecordFromSnapshotPropagatesTelemtUpdateProbe(t *testing.T) 
 	}
 
 	// Commit to the live store so the next call reads back this probe as
-	// its "previous value" — otherwise the carry-forward check below would
-	// pass trivially against a zero-value agent.
+	// its "previous value" — the carry-forward check below reads it from
+	// there.
 	srv.live.ApplySnapshot(snapshot.AgentID, agent, nil)
 
-	// A subsequent snapshot without a probe (pre-probe agent, or a
-	// transient wire drop) overwrites rather than carrying the old value
-	// forward — TelemtUpdateProbe is always fully re-stamped, unlike
-	// version/read_only under `partial`.
-	snapshotNoProbe := gateway.AgentSnapshot{
+	// A subsequent snapshot that carries NO probe — the shape a heartbeat
+	// takes (gateway_messages.go hand-builds a Partial snapshot with only
+	// liveness fields) — must CARRY FORWARD the last-known probe, not blank
+	// it to nil. An unconditional overwrite here made the probe flap between
+	// the real value (full snapshot) and nil (heartbeat), which in turn made
+	// the telemt.update dispatch guard reject a valid update ~half the time.
+	// Verified live on the dev fleet 2026-08-07.
+	heartbeat := gateway.AgentSnapshot{
 		AgentID:    "test-agent-probe",
-		Snap:       &gatewayrpc.Snapshot{NodeName: "node-probe", Version: "1.0.0"},
+		Snap:       &gatewayrpc.Snapshot{NodeName: "node-probe", Version: "1.0.0", Partial: true},
 		ObservedAt: now,
 	}
 	srv.mu.Lock()
-	agentAfter := srv.updateAgentRecordFromSnapshot(snapshotNoProbe)
+	agentAfter := srv.updateAgentRecordFromSnapshot(heartbeat)
 	srv.mu.Unlock()
 
-	if agentAfter.TelemtUpdateProbe != nil {
-		t.Fatalf("agent.TelemtUpdateProbe = %+v, want nil", agentAfter.TelemtUpdateProbe)
+	if agentAfter.TelemtUpdateProbe == nil {
+		t.Fatal("heartbeat blanked TelemtUpdateProbe to nil; want last-known probe carried forward")
+	}
+	if agentAfter.TelemtUpdateProbe.Mode != "binary" || !agentAfter.TelemtUpdateProbe.Available {
+		t.Errorf("carried-forward probe = %+v, want the prior binary/available probe", agentAfter.TelemtUpdateProbe)
 	}
 }

@@ -67,10 +67,20 @@ func (s *Server) updateAgentRecordFromSnapshot(snapshot gateway.AgentSnapshot) A
 		s.refreshInitializationWatchCooldown(snapshot, agent.Runtime, previousRuntime, receivedAt)
 	}
 	// Cached once by the agent at process startup and stamped on every
-	// snapshot regardless of partial-fetch status (unlike version/read_only
-	// above, this never depends on the slow Telemt sub-endpoint fetches), so
-	// it is always safe to overwrite outright rather than carry forward.
-	agent.TelemtUpdateProbe = telemtUpdateProbeFromSnapshot(snap.TelemtUpdateProbe)
+	// snapshot built via baseSnapshot (runtime / usage / IP). A heartbeat,
+	// however, is a hand-built liveness ping (see gateway_messages.go) that
+	// carries NO probe — so an unconditional overwrite would blank the probe
+	// to nil on every heartbeat and only restore it on the next full snapshot,
+	// making agent.TelemtUpdateProbe flap between the real value and nil. That
+	// flap makes the telemt.update dispatch guard (which requires
+	// probe.Available) reject a valid update roughly half the time. Carry the
+	// last-known probe forward when a snapshot does not report one, exactly as
+	// version/read_only are preserved on partial snapshots above. A genuinely
+	// pre-probe agent never sets it (stays nil); a probe-aware agent sets it on
+	// its first full snapshot and heartbeats no longer clear it.
+	if snap.TelemtUpdateProbe != nil {
+		agent.TelemtUpdateProbe = telemtUpdateProbeFromSnapshot(snap.TelemtUpdateProbe)
+	}
 	return agent
 }
 
