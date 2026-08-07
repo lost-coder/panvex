@@ -209,6 +209,54 @@ func TestTelemtUpdateSuccessClearsPendingTargetAndAudits(t *testing.T) {
 	}
 }
 
+// TestTelemtUpdateStaleSuccessDoesNotClearNewerPendingTarget: an operator
+// dispatches version A, then clicks again for version B before A's job
+// result comes back (e.g. A was slow, or re-dispatched by reconcile). A's
+// success report must not clear B's still-outstanding pending target — that
+// would silently drop the operator's most recent request. B's own success
+// report must clear it.
+func TestTelemtUpdateStaleSuccessDoesNotClearNewerPendingTarget(t *testing.T) {
+	srv, _ := setupTransportModeServer(t)
+	ctx := t.Context()
+	seedTelemtUpdateReconcileAgent(t, srv, "agent-tu")
+
+	strategy := updates.Strategy{
+		Mode: updates.StrategyModeBinary, RestartSpec: "systemd:telemt", BinaryPath: "/usr/local/bin/telemt",
+	}
+	payloadA, err := buildTelemtUpdateJobPayload(strategy, "3.4.25", false)
+	if err != nil {
+		t.Fatalf("buildTelemtUpdateJobPayload(A): %v", err)
+	}
+	jobA, err := srv.jobs.Enqueue(ctx, telemtUpdateJobInput("agent-tu", payloadA, "user-1"), srv.now())
+	if err != nil {
+		t.Fatalf("Enqueue(A): %v", err)
+	}
+
+	// The operator clicks again for a newer version before A's result lands.
+	if err := srv.updatesSvc.SetPendingTelemtUpdate(ctx, "agent-tu", "3.4.26"); err != nil {
+		t.Fatalf("SetPendingTelemtUpdate(B): %v", err)
+	}
+
+	// A's (stale) success result must not clear B's pending target.
+	srv.RecordClientJobResult(ctx, "agent-tu", jobA.ID, true, "telemt update applied", "", srv.now())
+	if version, ok, _ := srv.updatesSvc.PendingTelemtUpdate(ctx, "agent-tu"); !ok || version != "3.4.26" {
+		t.Fatalf("stale success must not disturb the newer pending target, got %q/%v", version, ok)
+	}
+
+	payloadB, err := buildTelemtUpdateJobPayload(strategy, "3.4.26", false)
+	if err != nil {
+		t.Fatalf("buildTelemtUpdateJobPayload(B): %v", err)
+	}
+	jobB, err := srv.jobs.Enqueue(ctx, telemtUpdateJobInput("agent-tu", payloadB, "user-1"), srv.now())
+	if err != nil {
+		t.Fatalf("Enqueue(B): %v", err)
+	}
+	srv.RecordClientJobResult(ctx, "agent-tu", jobB.ID, true, "telemt update applied", "", srv.now())
+	if _, ok, _ := srv.updatesSvc.PendingTelemtUpdate(ctx, "agent-tu"); ok {
+		t.Fatal("B's own success must clear the pending target")
+	}
+}
+
 // TestTelemtUpdateFailuresGiveUpAndStopReenqueueing: a target the node can
 // never reach (bad release asset, unwritable binary path) must not be
 // re-dispatched on every reconnect forever. After the shared failure budget

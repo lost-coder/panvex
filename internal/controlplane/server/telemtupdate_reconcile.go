@@ -23,10 +23,16 @@ const telemtUpdateReconcileActor = "system:telemtupdate-reconcile"
 // is throttled to one per TTL per agent, mirroring reconcileAgentSelfUpdate.
 //
 // Unlike reconcileAgentSelfUpdate this does not compare a live-reported
-// version to decide whether to clear the pending target: Agent.Version is
-// the AGENT's own binary version, not Telemt's, and the job-result path
-// already clears on success — there is nothing this function needs to
-// pre-empt. Its only job is "re-send if still pending and not throttled".
+// Telemt version to decide whether to clear the pending target. That signal
+// does exist — s.live.InstancesForAgent(agentID) surfaces each managed
+// instance's live api.Instance.Version, see http_config_targets.go — but
+// recordTelemtUpdateJobOutcome's version-checked clear on the job result
+// (ClearPendingTelemtUpdateIfVersion) is simpler and fully deterministic: it
+// fires exactly once, keyed off the version the job itself carried, instead
+// of a lazy per-reconnect comparison that would need its own
+// staleness/ordering reasoning. Wiring InstancesForAgent into this path is a
+// possible defense-in-depth follow-up, not a correctness requirement. Its
+// only job here is "re-send if still pending and not throttled".
 //
 // Every failure path returns silently: reconcile is best-effort and a later
 // reconnect retries. The throttle is stamped before the enqueue, so a
@@ -115,10 +121,12 @@ func (s *Server) reconcileTelemtUpdate(ctx context.Context, agentID string) {
 // Unlike recordSelfUpdateJobOutcome (which only tracks failures — the
 // pending target clears lazily via a live-version comparison on reconnect),
 // this handles BOTH outcomes explicitly: success clears the pending target
-// immediately (there is no reliable "live Telemt version" signal to compare
-// against on reconnect — see reconcileTelemtUpdate's doc comment), and
-// failure counts against the shared MaxPendingAgentUpdateFailures budget,
-// giving up (dropping the desired state) once it is spent.
+// immediately if it still matches the job's own version
+// (ClearPendingTelemtUpdateIfVersion — a live Telemt version signal does
+// exist, see reconcileTelemtUpdate's doc comment, but this version-checked
+// clear on the job result is simpler and avoids a second lazy comparison
+// path), and failure counts against the shared MaxPendingAgentUpdateFailures
+// budget, giving up (dropping the desired state) once it is spent.
 func (s *Server) recordTelemtUpdateJobOutcome(ctx context.Context, agentID, jobID string, success bool) {
 	if s.updatesSvc == nil || jobID == "" {
 		return
@@ -127,8 +135,13 @@ func (s *Server) recordTelemtUpdateJobOutcome(ctx context.Context, agentID, jobI
 	if err != nil || !ok || job.Action != jobs.ActionTelemtUpdate {
 		return
 	}
-	// The target version comes from the job's own payload, so a result for a
-	// superseded click cannot spend/clear the current target's budget.
+	// The target version comes from the job's own payload. Both outcomes
+	// below version-check against the pending target before mutating it
+	// (ClearPendingTelemtUpdateIfVersion on success,
+	// RecordPendingTelemtUpdateFailure's own check on failure), so a result
+	// for a superseded click — an operator re-clicked with a newer version
+	// while this job was still in flight — can neither spend the failure
+	// budget nor clear the newer pending target.
 	var payload struct {
 		Version string `json:"version"`
 	}
@@ -137,7 +150,7 @@ func (s *Server) recordTelemtUpdateJobOutcome(ctx context.Context, agentID, jobI
 	}
 
 	if success {
-		if err := s.updatesSvc.ClearPendingTelemtUpdate(ctx, agentID); err != nil {
+		if err := s.updatesSvc.ClearPendingTelemtUpdateIfVersion(ctx, agentID, payload.Version); err != nil {
 			s.logger.WarnContext(ctx, "telemt update: clear pending target on success failed",
 				"agent_id", agentID, "error", err)
 			return

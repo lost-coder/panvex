@@ -342,6 +342,28 @@ func (s *Service) clearPendingUpdate(ctx context.Context, acc pendingUpdateAcces
 	return s.savePendingLocked(ctx, acc, pending)
 }
 
+// clearPendingUpdateIfVersion drops agentID's pending target in the map
+// behind acc only if it is still set to version. A stale/superseded caller —
+// a result for a version that is no longer the current pending target
+// because a later click already replaced it — is a no-op, mirroring
+// recordPendingUpdateFailure's same version check. Unlike
+// clearPendingUpdate this must never clear a newer target out from under a
+// later operator click.
+func (s *Service) clearPendingUpdateIfVersion(ctx context.Context, acc pendingUpdateAccessor, agentID, version string) error {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	pending, err := s.loadPendingLocked(ctx, acc)
+	if err != nil {
+		return err
+	}
+	entry, ok := pending[agentID]
+	if !ok || entry.Version != version {
+		return nil
+	}
+	delete(pending, agentID)
+	return s.savePendingLocked(ctx, acc, pending)
+}
+
 // pendingUpdateVersion returns the version agentID was asked to reach in the
 // map behind acc, and whether such a request is outstanding.
 func (s *Service) pendingUpdateVersion(ctx context.Context, acc pendingUpdateAccessor, agentID string) (string, bool, error) {
@@ -395,6 +417,17 @@ func (s *Service) RecordPendingTelemtUpdateFailure(ctx context.Context, agentID,
 // ClearPendingTelemtUpdate drops agentID's pending telemt.update target.
 func (s *Service) ClearPendingTelemtUpdate(ctx context.Context, agentID string) error {
 	return s.clearPendingUpdate(ctx, s.telemtPendingAccessor(), agentID)
+}
+
+// ClearPendingTelemtUpdateIfVersion drops agentID's pending telemt.update
+// target only if it is still set to version. A telemt.update job's success
+// result must use this instead of ClearPendingTelemtUpdate: without the
+// version check, a success report for a stale/superseded job (version A)
+// would clear a newer pending target (version B) that a later operator
+// click set while the stale job was still in flight, silently dropping the
+// operator's most recent request.
+func (s *Service) ClearPendingTelemtUpdateIfVersion(ctx context.Context, agentID, version string) error {
+	return s.clearPendingUpdateIfVersion(ctx, s.telemtPendingAccessor(), agentID, version)
 }
 
 // PendingTelemtUpdate returns the version agentID was asked to reach via

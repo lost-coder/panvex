@@ -247,6 +247,37 @@ func TestPendingTelemtUpdateRoundTrip(t *testing.T) {
 	}
 }
 
+// TestClearPendingTelemtUpdateIfVersionKeepsNewerTarget: a success result for
+// a stale/superseded job (version A) must not clear a newer pending target
+// (version B) set by a later operator click while the stale job was still
+// in flight. A matching version, on the other hand, must clear.
+func TestClearPendingTelemtUpdateIfVersionKeepsNewerTarget(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&memStore{})
+	ctx := context.Background()
+
+	if err := svc.SetPendingTelemtUpdate(ctx, "agent-1", "3.4.26"); err != nil {
+		t.Fatalf("SetPendingTelemtUpdate: %v", err)
+	}
+
+	// A stale success report for the superseded version A must be a no-op.
+	if err := svc.ClearPendingTelemtUpdateIfVersion(ctx, "agent-1", "3.4.25"); err != nil {
+		t.Fatalf("ClearPendingTelemtUpdateIfVersion(stale): %v", err)
+	}
+	version, ok, err := svc.PendingTelemtUpdate(ctx, "agent-1")
+	if err != nil || !ok || version != "3.4.26" {
+		t.Fatalf("stale clear must not touch the newer pending target, got %q/%v/%v", version, ok, err)
+	}
+
+	// A success report for the CURRENT pending version clears it.
+	if err := svc.ClearPendingTelemtUpdateIfVersion(ctx, "agent-1", "3.4.26"); err != nil {
+		t.Fatalf("ClearPendingTelemtUpdateIfVersion(current): %v", err)
+	}
+	if _, ok, _ := svc.PendingTelemtUpdate(ctx, "agent-1"); ok {
+		t.Fatal("clearing the current pending version must remove it")
+	}
+}
+
 // The telemt.update pending map is independent of the agent self-update
 // pending map: writing one must never disturb the other, even for the same
 // agent ID.
