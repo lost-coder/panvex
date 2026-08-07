@@ -28,7 +28,8 @@ jobs:
       # Pinned to a commit SHA per the SonarCloud hotspot guidance —
       # third-party actions can have their tags rewritten to point at
       # a malicious commit, so consume the action by immutable hash.
-      # Tag at the time of pinning: v3 (commit d1c1ffe).
+      # The trailing comment on each `uses:` line records the tag that
+      # SHA resolved to when it was pinned — keep it in step with the hash.
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706  # v4.0.2
         id: filter
         with:
