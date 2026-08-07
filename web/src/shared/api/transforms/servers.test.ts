@@ -241,6 +241,10 @@ describe("transformServerDetail", () => {
     const result = transformServerDetail(resp);
 
     expect(result.systemInfo.telemtVersion).toBe("NEW");
+    // The DISPLAYED version (hero badge, subtitle) must also prefer the fast
+    // source — otherwise the header keeps showing the old version after the
+    // update badge has already cleared.
+    expect(result.systemInfo.version).toBe("NEW");
   });
 
   it("derives state onto the detail server", () => {

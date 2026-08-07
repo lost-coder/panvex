@@ -415,7 +415,14 @@ export function transformServerDetail(
   // Build systemInfo from diagnostics if available
   const sysInfoRaw = detail.diagnostics?.system_info ?? {};
   const systemInfo: ServerDetailPageProps["server"]["systemInfo"] = {
-    version: str(sysInfoRaw.version) || str(agent?.version),
+    // Prefer the FAST live Telemt version (detail.telemt_version, refreshed
+    // every agent report) for the displayed version (hero badge, subtitle) too
+    // — the slow diagnostics.system_info.version lags a successful update by up
+    // to its 2-minute cache, which made the header keep showing the old version
+    // after the update badge had already cleared. Fall back to the slow
+    // diagnostics value, then the agent version, only when the fast one is
+    // absent (pre-report / no instances).
+    version: str(detail.telemt_version) || str(sysInfoRaw.version) || str(agent?.version),
     // Task 14 fix: no agent-version fallback here — a Telemt-version
     // comparison (update badge) must never silently compare against the
     // panvex-agent's own version when Telemt hasn't reported system_info yet.
