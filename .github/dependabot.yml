@@ -32,6 +32,14 @@ updates:
     # A silently truncated queue is worse than a long one — it looks like
     # "nothing else to update".
     open-pull-requests-limit: 10
+    # TypeScript majors are gated by the lint toolchain, not by us:
+    # typescript-eslint pins `typescript >=4.8.4 <6.1.0` (checked at
+    # 8.66.0, 2026-08-08), so a TS major PR can only ever be red (#224:
+    # typescript-estree crashes against TS 7). REMOVE this entry once
+    # typescript-eslint publishes support for the next TS major.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     # react and react-dom must move in lockstep — react-dom hard-fails on a
     # version skew ("Incompatible React versions"). Group them (with their
     # @types) so a bump is one coherent PR instead of a react-only PR that
