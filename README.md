@@ -519,6 +519,57 @@ The control plane checks GitHub Releases for new versions automatically.
 
 Agents can be updated individually or in bulk. The panel sends an update job via gRPC — the agent downloads and installs the new binary automatically.
 
+### Telemt updates
+
+Separately from the panel/agent self-update above, the panel can also update
+the **Telemt proxy binary itself** on a node (admin-only, Server Detail →
+"Telemt update"). The panel polls the upstream `telemt/telemt` GitHub repo
+for the latest release and shows a badge when a node is behind.
+
+- **Modes.** Each node has a persisted update strategy:
+  - `binary` — the agent downloads the release asset, verifies it, and
+    swaps the local Telemt binary in place.
+  - `docker` — Telemt runs in a container; the panel shows a
+    `docker compose pull && up -d` hint instead of dispatching a job, and
+    the "update available" badge clears itself automatically once the
+    node's next telemetry snapshot reports the new version.
+  - `none` — no supervisor was detected; updates are disabled for the node.
+
+  The agent probes its own host (systemd unit, OpenRC/procd `init.d`
+  script, runit service, or a running `telemt` container) and suggests a
+  strategy; the operator can accept it as-is or edit it.
+
+- **Restart command presets** (`binary` mode only) — one of
+  `systemd:<unit>`, `procd:<service>` (OpenWrt), `openrc:<service>`,
+  `runit:<service>`, or a raw `command:<argv>` escape hatch for other
+  supervisors. The configured command is what restarts Telemt after the
+  binary swap; it does not depend on the supervisor's own restart policy.
+
+- **Permissions.** The agent process must be able to run the configured
+  restart command itself — either as root, or via sudoers/polkit rules
+  scoped to that one command. Without that, the binary swap succeeds but
+  the restart step fails.
+
+- **OpenWrt / musl.** The agent detects musl libc (`/lib/ld-musl-*`) and
+  downloads the matching `*-musl` release asset instead of the `*-gnu`
+  one. Before downloading, it fail-closed preflight-checks that the target
+  filesystem has at least **3× the downloaded archive's size** free (room
+  for the archive, the extracted binary, and the `.bak` of the binary
+  being replaced) — the update is refused up front rather than left
+  half-installed on a full disk, which matters most on small OpenWrt
+  flash/overlay partitions.
+
+- **Safety.** Downloads are HTTPS-only against an allowlisted host, verified
+  against a `.sha256` sidecar, capped at 128 MiB, and gated against
+  downgrading below the currently-running version (overridable per-dispatch).
+  After the swap, the agent watches the Telemt API for up to 60s to confirm
+  the process is alive and reports the target version before declaring
+  success; a failed health check rolls the binary back automatically.
+
+> This is independent of the Telemt 3.4.25+ requirement noted above for
+> in-process config-reload — the binary-update feature itself has no
+> minimum Telemt version.
+
 ---
 
 <p align="center">
