@@ -11,7 +11,8 @@
 // stays intact while apiClient.getUpdateSettings is stubbed.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -55,6 +56,7 @@ function makeResponse(
       github_repo: "lost-coder/panvex",
       github_token: "",
       agent_download_source: "github",
+      telemt_versions_to_show: 5,
     },
     state: {
       latest_panel_version: "",
@@ -66,6 +68,7 @@ function makeResponse(
       telemt_latest_version: "",
       telemt_release_base_url: "",
       telemt_last_check_error: "",
+      telemt_available_versions: [],
     },
     current_version: "1.0.0",
     self_update: {
@@ -126,6 +129,7 @@ describe("UpdatesSettingsSection self-update phase", () => {
             telemt_latest_version: "",
             telemt_release_base_url: "",
             telemt_last_check_error: "",
+            telemt_available_versions: [],
           },
         },
       ),
@@ -152,5 +156,45 @@ describe("UpdatesSettingsSection self-update phase", () => {
     render(<UpdatesSettingsSection />, { wrapper: Wrapper });
 
     expect(await screen.findByText("Updated to 1.1.0")).toBeInTheDocument();
+  });
+});
+
+// Telemt Version Selection, Task 3 — the "Show latest N Telemt versions"
+// field: renders the persisted value, edits go into the draft, and Save PUTs
+// the new value alongside the rest of the settings blob.
+describe("UpdatesSettingsSection telemt_versions_to_show field", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders the persisted value and PUTs an edited value on save", async () => {
+    (apiClient.getUpdateSettings as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeResponse({}),
+    );
+    (apiClient.putUpdateSettings as ReturnType<typeof vi.fn>).mockResolvedValue(
+      undefined,
+    );
+
+    render(<UpdatesSettingsSection />, { wrapper: Wrapper });
+
+    const input = await screen.findByDisplayValue("5");
+    expect(input).toBeInTheDocument();
+
+    // A single atomic change event (rather than userEvent.clear + type)
+    // avoids the intermediate empty-string state, which the handler's
+    // `Number(e.target.value) || 5` fallback would otherwise snap back to 5.
+    fireEvent.change(input, { target: { value: "10" } });
+    expect(input).toHaveValue(10);
+
+    const user = userEvent.setup();
+    const save = screen.getByRole("button", { name: /^save$/i });
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
+
+    await waitFor(() => {
+      expect(apiClient.putUpdateSettings).toHaveBeenCalledTimes(1);
+    });
+    const putMock = apiClient.putUpdateSettings as ReturnType<typeof vi.fn>;
+    expect(putMock.mock.calls[0][0]).toMatchObject({ telemt_versions_to_show: 10 });
   });
 });

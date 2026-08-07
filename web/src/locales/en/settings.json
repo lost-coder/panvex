@@ -191,6 +191,8 @@
     "autoUpdateLabel": "Auto-Update",
     "checkIntervalLabel": "Check Interval",
     "hours": "hours",
+    "telemtVersionsToShowLabel": "Show latest N Telemt versions",
+    "telemtVersionsToShowHint": "Depth of the version list on the node detail page (1–20)",
     "cancel": "Cancel",
     "save": "Save",
     "saving": "Saving…",

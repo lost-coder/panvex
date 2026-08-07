@@ -189,6 +189,24 @@ export function UpdatesSettingsSection() {
         </div>
       </SettingsRow>
 
+      {/* Telemt versions-to-show: depth of the recent-versions list on the
+          node detail page (Telemt Version Selection, Task 3). */}
+      <SettingsRow
+        label={t("updates.telemtVersionsToShowLabel")}
+        description={t("updates.telemtVersionsToShowHint")}
+      >
+        <Input
+          type="number"
+          min={1}
+          max={20}
+          className="w-16"
+          value={settings.telemt_versions_to_show}
+          onChange={(e) =>
+            applyDraft({ telemt_versions_to_show: Number(e.target.value) || 5 })
+          }
+        />
+      </SettingsRow>
+
       {/* GitHub source: repository + API token. The token is returned masked
           (e.g. "ghp_abcd…"); leaving it unchanged round-trips the mask, which
           the backend preserves instead of overwriting the real token. */}

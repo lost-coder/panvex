@@ -26,6 +26,11 @@ export const updateSettingsSchema = z.object({
   github_repo: z.string(),
   github_token: z.string(),
   agent_download_source: z.string(),
+  // Telemt version-selection (Task 2): depth of the recent-versions list
+  // shown on the node detail page. Always present — LoadSettings normalizes
+  // any pre-existing persisted value to 5, and the server clamps writes to
+  // 1..20.
+  telemt_versions_to_show: z.number(),
 });
 
 export const updateStateSchema = z.object({
@@ -45,6 +50,10 @@ export const updateStateSchema = z.object({
   telemt_latest_version: z.string(),
   telemt_release_base_url: z.string(),
   telemt_last_check_error: z.string(),
+  // Telemt version-selection (Task 1): top-N stable release tags, newest
+  // first. Always an array — LoadState/Apply normalization guarantees
+  // non-nil, so this is required rather than optional/defaulted.
+  telemt_available_versions: z.array(z.string()),
 });
 
 // Server-persisted panel self-update lifecycle. Defensive defaults so a phase

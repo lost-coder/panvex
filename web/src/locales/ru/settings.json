@@ -193,6 +193,8 @@
     "autoUpdateLabel": "Автообновление",
     "checkIntervalLabel": "Интервал проверки",
     "hours": "часов",
+    "telemtVersionsToShowLabel": "Показывать последние N версий Telemt",
+    "telemtVersionsToShowHint": "Глубина списка версий на странице ноды (1–20)",
     "cancel": "Отмена",
     "save": "Сохранить",
     "saving": "Сохраняем…",

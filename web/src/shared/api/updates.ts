@@ -16,6 +16,7 @@ export interface UpdateSettings {
   github_repo: string;
   github_token: string;
   agent_download_source: string;
+  telemt_versions_to_show: number;
 }
 
 export interface UpdateState {
@@ -30,6 +31,7 @@ export interface UpdateState {
   telemt_latest_version: string;
   telemt_release_base_url: string;
   telemt_last_check_error: string;
+  telemt_available_versions: string[];
 }
 
 export type SelfUpdatePhase =
