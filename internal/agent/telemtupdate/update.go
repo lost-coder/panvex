@@ -12,34 +12,18 @@ import (
 
 	"github.com/lost-coder/panvex/internal/agent/telemt"
 	"github.com/lost-coder/panvex/internal/agent/telemtrestart"
+	"github.com/lost-coder/panvex/internal/telemtjob"
 	"golang.org/x/sys/unix"
 )
 
-// Payload is the JSON payload of a telemt.update job. The panel serializes
-// exactly these keys (contract for Task 11's job producer and Task 12's
-// agent-side job handler). Mirrors internal/agent/updater.Payload's shape:
-// the panel supplies the release directory and target version, the agent
-// resolves its own architecture/libc via ResolveAsset so the panel can never
-// pick the wrong asset.
-type Payload struct {
-	Version        string `json:"version"`
-	ReleaseBaseURL string `json:"release_base_url"`
-	// AllowDowngrade lets an operator install an older binary on purpose
-	// (e.g. emergency rollback). Without it Execute refuses any version
-	// below the running one.
-	AllowDowngrade bool `json:"allow_downgrade,omitempty"`
-	// RestartSpec is parsed by telemtrestart.New — see internal/restartspec
-	// for the accepted strategies (systemd/procd/openrc/runit/command).
-	RestartSpec string `json:"restart_spec"`
-	// BinaryPath is the path to the currently-running Telemt binary. Execute
-	// stages downloads in filepath.Dir(BinaryPath) so the final swap stays
-	// on one filesystem (see swapBinary's doc comment).
-	BinaryPath string `json:"binary_path"`
-	// AssetFlavor selects a CPU-feature-level release variant (currently
-	// only "v3" on x86_64); "" means the architecture baseline. Passed
-	// through to ResolveAsset verbatim.
-	AssetFlavor string `json:"asset_flavor,omitempty"`
-}
+// Payload is the JSON payload of a telemt.update job. Defined in
+// internal/telemtjob so the control-plane can depend on the wire shape
+// without pulling this package's os/exec-carrying dependencies
+// (telemtrestart, the Telemt HTTP client, golang.org/x/sys/unix) into the
+// panel binary — see that package's doc comment. Aliased here so every
+// existing agent-side call site (Execute, executeWith, ...) keeps compiling
+// unchanged.
+type Payload = telemtjob.Payload
 
 // TelemtInfo is the subset of *telemt.Client the health-gate needs,
 // satisfied structurally so tests can supply a fake without standing up an

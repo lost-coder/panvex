@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lost-coder/panvex/internal/agent/telemtupdate"
 	"github.com/lost-coder/panvex/internal/controlplane/auth"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/storage"
 	"github.com/lost-coder/panvex/internal/controlplane/storage/sqlite"
 	"github.com/lost-coder/panvex/internal/controlplane/updates"
+	"github.com/lost-coder/panvex/internal/telemtjob"
 )
 
 // newTelemtUpdateStrategyTestServer builds a sqlite-backed server with a
@@ -264,6 +264,59 @@ func TestDispatchTelemtUpdateUnknownAgentReturns404(t *testing.T) {
 	}
 }
 
+// TestDispatchTelemtUpdateInvalidVersionReturns400: version flows
+// unvalidated into the release URL and the job's download path
+// (updates.TelemtReleaseBaseURLForVersion, buildTelemtUpdateJobPayload), so
+// anything that is not a bare semver string — in particular a path-traversal
+// payload — must be rejected before any of the 409 guards run.
+func TestDispatchTelemtUpdateInvalidVersionReturns400(t *testing.T) {
+	srv, adminCookies, _ := newTelemtUpdateStrategyTestServer(t)
+	seedLiveAgentWithProbe(srv, "agent-1", availableBinaryProbe())
+
+	cases := []string{
+		"../../evil/1.0.0",
+		"v../../evil/1.0.0",
+		"3.4",
+		"3.4.25-rc1",
+		"3.4.25/../x",
+		"not-a-version",
+	}
+	for _, version := range cases {
+		t.Run(version, func(t *testing.T) {
+			resp := performJSONRequest(t, srv, http.MethodPost, "/api/agents/agent-1/telemt/update",
+				map[string]string{"version": version}, adminCookies)
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("POST status = %d, want %d (body=%s)", resp.Code, http.StatusBadRequest, resp.Body.String())
+			}
+			if got := dispatchErrorBody(t, resp.Body); got.Code != "invalid_version" {
+				t.Fatalf("error code = %q, want %q (body=%s)", got.Code, "invalid_version", resp.Body.String())
+			}
+		})
+	}
+}
+
+// TestDispatchTelemtUpdateValidVersionWithVPrefixAccepted: the "v" prefix is
+// trimmed before validation, mirroring the resolution logic below.
+func TestDispatchTelemtUpdateValidVersionWithVPrefixAccepted(t *testing.T) {
+	srv, adminCookies, _ := newTelemtUpdateStrategyTestServer(t)
+	now := time.Date(2026, time.August, 6, 10, 0, 0, 0, time.UTC)
+	seedLiveAgentWithProbe(srv, "agent-1", availableBinaryProbe())
+	seedTestAgentRow(t, srv, "agent-1", now)
+	if err := srv.telemtStrategySvc.Put(context.Background(), "agent-1", updates.Strategy{
+		Mode:        updates.StrategyModeBinary,
+		RestartSpec: "systemd:telemt",
+		BinaryPath:  "/usr/local/bin/telemt",
+	}); err != nil {
+		t.Fatalf("Put strategy: %v", err)
+	}
+
+	resp := performJSONRequest(t, srv, http.MethodPost, "/api/agents/agent-1/telemt/update",
+		map[string]string{"version": "v3.4.25"}, adminCookies)
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("POST status = %d, want %d (body=%s)", resp.Code, http.StatusAccepted, resp.Body.String())
+	}
+}
+
 func TestDispatchTelemtUpdateRejectsNonAdmin(t *testing.T) {
 	srv, _, operatorCookies := newTelemtUpdateStrategyTestServer(t)
 	seedLiveAgentWithProbe(srv, "agent-1", availableBinaryProbe())
@@ -370,7 +423,7 @@ func seedTelemtUpdateHappyPathAgent(t *testing.T, srv *Server, now time.Time) {
 }
 
 // TestDispatchTelemtUpdateHappyPathExplicitVersion is the contract test: the
-// job payload must unmarshal into telemtupdate.Payload (Task 5's exact-keys
+// job payload must unmarshal into telemtjob.Payload (Task 5's exact-keys
 // contract, imported here as the agent package the panel targets), the job
 // must land in jobs.Service under jobs.ActionTelemtUpdate, and the pending
 // desired-state map must record the resolved version.
@@ -406,11 +459,11 @@ func TestDispatchTelemtUpdateHappyPathExplicitVersion(t *testing.T) {
 	// Contract guarantee: unmarshal straight into the agent's own Payload
 	// type. A "v" prefix in the request must be stripped (Telemt tags are
 	// bare semver).
-	var payload telemtupdate.Payload
+	var payload telemtjob.Payload
 	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
-		t.Fatalf("unmarshal job payload into telemtupdate.Payload: %v", err)
+		t.Fatalf("unmarshal job payload into telemtjob.Payload: %v", err)
 	}
-	want := telemtupdate.Payload{
+	want := telemtjob.Payload{
 		Version:        "3.4.25",
 		ReleaseBaseURL: "https://github.com/telemt/telemt/releases/download/3.4.25",
 		AllowDowngrade: true,
@@ -476,7 +529,7 @@ func TestDispatchTelemtUpdateDefaultsToLatestKnownVersion(t *testing.T) {
 	if !ok {
 		t.Fatalf("job %q not found", got.JobID)
 	}
-	var payload telemtupdate.Payload
+	var payload telemtjob.Payload
 	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
 		t.Fatalf("unmarshal job payload: %v", err)
 	}

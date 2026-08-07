@@ -4,15 +4,23 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/lost-coder/panvex/internal/agent/telemtupdate"
 	"github.com/lost-coder/panvex/internal/controlplane/jobs"
 	"github.com/lost-coder/panvex/internal/controlplane/updates"
+	"github.com/lost-coder/panvex/internal/telemtjob"
 )
+
+// telemtVersionPattern matches a bare semver version (e.g. "3.4.25") after
+// the leading "v" is trimmed. version ends up embedded verbatim in
+// updates.TelemtReleaseBaseURLForVersion's release URL and in the job
+// payload the agent uses to build a download path, so a value like
+// "../../evil/1.0.0" must be rejected up front rather than reaching either.
+var telemtVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
 // telemtUpdateStrategyPayload is the wire shape of an
 // updates.Strategy — used both as the PUT request body and nested in the
@@ -145,11 +153,12 @@ type dispatchTelemtUpdateResponse struct {
 
 // buildTelemtUpdateJobPayload assembles the telemt.update job payload from
 // the agent's configured strategy and the resolved target version. Marshals
-// the actual telemtupdate.Payload struct (not a hand-built map) so the wire
-// JSON carries EXACTLY its six keys by construction — the contract Task 5
-// fixed and Task 12's agent-side handler decodes against.
+// the actual telemtjob.Payload struct (not a hand-built map) so the wire
+// JSON carries EXACTLY its six keys by construction — the contract the
+// agent-side handler (internal/agent/telemtupdate, via its Payload alias)
+// decodes against.
 func buildTelemtUpdateJobPayload(strategy updates.Strategy, version string, allowDowngrade bool) (string, error) {
-	payload := telemtupdate.Payload{
+	payload := telemtjob.Payload{
 		Version:        version,
 		ReleaseBaseURL: updates.TelemtReleaseBaseURLForVersion(version),
 		AllowDowngrade: allowDowngrade,
@@ -178,8 +187,12 @@ func telemtUpdateJobInput(agentID, payloadJSON, actorID string) jobs.CreateJobIn
 }
 
 // handleDispatchTelemtUpdate enqueues a telemt.update job for one agent's
-// managed Telemt install. Guard chain (each a 409 with a typed `code` the
-// dashboard can branch on, checked in this fixed order):
+// managed Telemt install. An explicit `version` is first validated as a bare
+// semver string (400 invalid_version) — it flows unvalidated into
+// updates.TelemtReleaseBaseURLForVersion's release URL and the job payload's
+// download path otherwise, so a value like "../../evil/1.0.0" must be
+// rejected before it reaches either. Then a guard chain (each a 409 with a
+// typed `code` the dashboard can branch on, checked in this fixed order):
 //
 //  1. strategy_not_configured — no updates.Strategy has been PUT for this
 //     agent yet (see handlePutTelemtUpdateStrategy).
@@ -215,6 +228,13 @@ func (s *Server) handleDispatchTelemtUpdate() http.HandlerFunc {
 			return
 		}
 
+		version := strings.TrimPrefix(strings.TrimSpace(req.Version), "v")
+		if version != "" && !telemtVersionPattern.MatchString(version) {
+			writeErrorWithCode(w, http.StatusBadRequest,
+				"version must be a bare semver string, e.g. 3.4.25", "invalid_version")
+			return
+		}
+
 		strategy, ok, err := s.telemtStrategySvc.Get(r.Context(), agentID)
 		if err != nil {
 			writeErrorLogged(r.Context(), w, http.StatusInternalServerError, "failed to read update strategy", err)
@@ -236,7 +256,6 @@ func (s *Server) handleDispatchTelemtUpdate() http.HandlerFunc {
 			return
 		}
 
-		version := strings.TrimPrefix(strings.TrimSpace(req.Version), "v")
 		if version == "" {
 			s.settingsMu.RLock()
 			version = s.updateState.TelemtLatestVersion
