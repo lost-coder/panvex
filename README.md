@@ -566,6 +566,16 @@ for the latest release and shows a badge when a node is behind.
   the process is alive and reports the target version before declaring
   success; a failed health check rolls the binary back automatically.
 
+- **Version selection.** Instead of only "latest", the Server Detail update
+  control offers a dropdown of the most recent stable Telemt releases
+  (source: the same GitHub poll, surfaced per-node via telemetry); how many
+  versions to list is configured in Settings → Updates
+  (`telemt_versions_to_show`, default 5, clamped to 1–20). Picking an older
+  version than the one currently running shows a warning confirm dialog and
+  dispatches the job with the downgrade override enabled; the same override
+  is forced automatically when the node's current version can't be parsed,
+  since the panel has no baseline to compare against.
+
 > This is independent of the Telemt 3.4.25+ requirement noted above for
 > in-process config-reload — the binary-update feature itself has no
 > minimum Telemt version.
