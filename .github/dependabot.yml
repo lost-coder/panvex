@@ -6,6 +6,18 @@ updates:
       interval: weekly
     labels:
       - enhancement
+    # Ungrouped, a weekly sweep files one PR per module and they all edit
+    # go.sum — so merging any one of them leaves the rest BEHIND and the
+    # queue has to be rebased serially. Observed 2026-08-04 (#195-#199)
+    # and 2026-07-31 (16 PRs). Batch the safe half; majors stay solo so a
+    # breaking bump gets its own review instead of hiding among patches.
+    groups:
+      go-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: npm
     directory: /web
@@ -17,6 +29,10 @@ updates:
     # version skew ("Incompatible React versions"). Group them (with their
     # @types) so a bump is one coherent PR instead of a react-only PR that
     # breaks the build against the lagging react-dom.
+    #
+    # Group order matters: a dependency lands in the FIRST group it matches,
+    # so `react` must stay above the catch-all patterns below or the lockstep
+    # rule above is silently defeated.
     groups:
       react:
         patterns:
@@ -24,6 +40,25 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
+      # Runtime deps ship in the bundle — keep them in their own PR so a
+      # Radix/lucide bump gets looked at with bundle-size and visual
+      # regressions in mind.
+      web-prod-minor-patch:
+        dependency-type: production
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      # Dev deps (types, vitest, playwright, eslint) never reach production,
+      # so they can ride together on a lower review bar.
+      web-dev-minor-patch:
+        dependency-type: development
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
@@ -39,10 +74,20 @@ updates:
     # Observed on 2026-08-04 with PRs #185/#182/#174 (v4.36.3); resolved by
     # bumping all three in one commit. Same failure class as the react group
     # above.
+    #
+    # As with npm: codeql-action must stay first, ahead of the catch-all.
     groups:
       codeql-action:
         patterns:
           - "github/codeql-action*"
+      # Everything else is a SHA-pin refresh — mechanical, and cheaper to
+      # verify against the upstream tag objects in one pass than five.
+      actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   # Phase-3 §3.3: track Dockerfile base images so a CVE in
   # node/golang/alpine/nginx surfaces as a Dependabot PR within a
