@@ -84,7 +84,19 @@ function walk(node) {
   }
 }
 
-walk(JSON.parse(raw))
+let tree
+try {
+  tree = JSON.parse(raw)
+} catch (err) {
+  // A truncated or non-JSON body means npm itself failed; surface that
+  // instead of a bare parse stack trace, and use a distinct exit code so
+  // "guard broke" never reads as "tree is bad".
+  console.error('could not parse `npm ls --all --json` output:', err.message)
+  console.error('first 500 chars:', String(raw).slice(0, 500))
+  process.exit(2)
+}
+
+walk(tree)
 
 // A finding is allowed only if EVERY package demanding the unmet range is
 // allowlisted — one unexpected requirer is enough to fail.

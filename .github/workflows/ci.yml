@@ -728,6 +728,9 @@ jobs:
   # diff during review. dependency-review-action does exactly that.
   dependency-review:
     name: Dependency Review
+    # Not on push: post-merge there is nothing to review and the job would
+    # report a green check that scanned nothing.
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     permissions:
       contents: read

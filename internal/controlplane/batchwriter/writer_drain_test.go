@@ -41,16 +41,24 @@ func TestDrainWaitsForConcurrentFlush(t *testing.T) {
 	// Stand in for Flush(): the buffer now looks empty, but the data is not
 	// durable yet.
 	secondDrainReturned := make(chan struct{})
+	secondDrainEntered := make(chan struct{})
 	go func() {
+		close(secondDrainEntered)
 		buf.Drain(context.Background())
 		close(secondDrainReturned)
 	}()
+	<-secondDrainEntered
 
+	// The risk here is a false PASS, not a false failure: with the bug the
+	// second drain returns in microseconds, so no amount of CI load makes
+	// this window too short to catch it. What load could do is delay the
+	// goroutine so far that the window expires before it even calls Drain —
+	// hence the explicit entered-signal above, and a second of headroom.
 	select {
 	case <-secondDrainReturned:
 		t.Fatal("Drain returned while a concurrent flush was still writing; " +
 			"Flush() cannot guarantee the buffered items reached the store")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(time.Second):
 		// Expected: the second drain blocks until the first one finishes.
 	}
 
