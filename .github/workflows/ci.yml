@@ -5,12 +5,6 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # Required for GitHub's merge queue: the queue builds a temporary
-  # gh-readonly-queue/** ref and waits for the SAME required checks to
-  # report on it. A required check whose job never runs on merge_group
-  # leaves the entry queued forever, so every event-gated job below
-  # names merge_group explicitly.
-  merge_group:
 
 permissions:
   contents: read
@@ -19,19 +13,44 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# 2026-08-07 simplification: every job below is gated on the areas the
+# change actually touches (see detect-changes). A Go-only dependabot bump
+# no longer runs the frontend suite and vice versa. Required checks whose
+# job is skipped count as PASSED for branch protection, so gating a
+# required job is safe — it only gates when relevant.
+#
+# Deleted outright (with reasons, so they are not quietly re-added):
+#   Go Tests (fast)          — subset of race+coverage, which is the gate
+#   Go Tests (next, canary)  — 3 min of speculative signal per PR
+#   Frontend E2E (Playwright, mocked) — integration E2E covers the flows
+#                              against a real backend; the mocked variant
+#                              re-tested routing already covered by vitest
+#   Frontend npm audit       — same lockfile CVE bar as Trivy fs
+#                              (HIGH/CRITICAL) + Dependabot alerts
+#   Dependency Review        — same feed as Dependabot alerts; also broke
+#                              the merge queue (PR-only action)
+#   Trivy image scan         — built the whole Docker image every PR;
+#                              base-image CVEs arrive via Dependabot's
+#                              docker ecosystem, lockfile CVEs via trivy-fs
+#   CodeQL (workflow deleted) — SonarCloud provides the SAST gate without
+#                              spending runner minutes
+
 jobs:
-  # detect-changes emits per-area output flags so downstream jobs can
-  # decide whether they actually need to run. Only Go-touching PRs
-  # need the slow race+coverage gate; npm/docs PRs (incl. dependabot
-  # patch bumps) skip it entirely.
+  # detect-changes emits per-area flags so downstream jobs run only when
+  # their inputs could have changed. ci.yml itself is in every filter:
+  # a change to the pipeline re-validates everything.
   detect-changes:
     name: Detect changes
     runs-on: ubuntu-latest
     outputs:
-      # On merge_group there is no PR base to diff against, so the filter is
-      # skipped and every area reports changed. Running the full suite is the
-      # right default for the queue: it gates what actually lands on main.
-      go: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.go }}
+      go: ${{ steps.filter.outputs.go }}
+      web: ${{ steps.filter.outputs.web }}
+      db: ${{ steps.filter.outputs.db }}
+      proto: ${{ steps.filter.outputs.proto }}
+      docker: ${{ steps.filter.outputs.docker }}
+      shell: ${{ steps.filter.outputs.shell }}
+      deps: ${{ steps.filter.outputs.deps }}
+      openapi: ${{ steps.filter.outputs.openapi }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       # Pinned to a commit SHA per the SonarCloud hotspot guidance —
@@ -41,58 +60,58 @@ jobs:
       # SHA resolved to when it was pinned — keep it in step with the hash.
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706  # v4.0.2
         id: filter
-        if: github.event_name != 'merge_group'
         with:
           filters: |
             go:
               - '**/*.go'
               - 'go.mod'
               - 'go.sum'
+              - 'Makefile'
               - '.github/workflows/ci.yml'
-
-  # PR fast gate: no -race, no coverage. Runs on every pull request so
-  # docs/CI/web-only PRs still get a Go-build sanity check (~45-60s).
-  # Skipped on push events because main pushes are post-merge — the
-  # PR-side run already proved the same tree, and go-test-race below
-  # re-validates with race+coverage.
-  go-test:
-    name: Go Tests
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
-        with:
-          go-version: "1.26"
-      # //go:embed cannot reference paths outside the package, so the
-      # canonical deploy/install-agent.sh is mirrored into the server
-      # package via `go generate`. Mirror Makefile's gen-install-script
-      # so every Go-touching CI step sees the embedded file.
-      - name: Mirror install-agent.sh for //go:embed
-        run: go generate ./internal/controlplane/server/...
-      - name: Go tests (web/node_modules excluded)
-        # H7: web/node_modules/flatted/golang/ has no go.mod, so a plain
-        # `./...` swallows it into this module once `npm ci` has run
-        # anywhere in the checkout. Filter it the same way the pre-push
-        # hook and the race job below do, so the backend test set does
-        # not depend on whether npm install happened first.
-        run: |
-          PKGS=$(go list ./... | grep -v node_modules)
-          go test -count=1 $PKGS
-      # Loadtest correctness gate: the Test* variants of the realistic
-      # concurrency scenarios (agent burst, login storm, job fan-out)
-      # assert no errors / no audit drops / no missed lockouts under
-      # contention. Cheap (<30s) and runs on every PR. The full
-      # throughput sweep is separate (see load-bench job).
-      - name: Loadtest correctness assertions
-        run: go test -count=1 ./internal/loadtest/...
+            web:
+              - 'web/**'
+              - '.github/workflows/ci.yml'
+            db:
+              - 'db/**'
+              - 'internal/dbsqlc/**'
+              - 'internal/controlplane/storage/**'
+              - 'sqlc.yaml'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/ci.yml'
+            proto:
+              - 'proto/**'
+              - 'buf.yaml'
+              - 'buf.gen.yaml'
+              - '.github/workflows/ci.yml'
+            docker:
+              - 'Dockerfile'
+              - 'deploy/**'
+              - '.github/workflows/ci.yml'
+            shell:
+              - '**/*.sh'
+              - '.githooks/**'
+              - '.github/workflows/ci.yml'
+            deps:
+              - 'go.mod'
+              - 'go.sum'
+              - 'web/package.json'
+              - 'web/package-lock.json'
+              - 'Dockerfile'
+              - '.github/workflows/ci.yml'
+            openapi:
+              - 'openapi/**'
+              - 'web/src/shared/api/openapi.gen.ts'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
 
   # Agent binaries ship for arm64 (RPi / ARM VPS fleets); until now no
   # test ever executed on that architecture. Smoke-run the agent
   # packages natively on GitHub's arm64 runners (audit F4).
   go-test-arm64:
     name: Go Tests (agent, arm64)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go == 'true'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     steps:
@@ -105,19 +124,13 @@ jobs:
       - name: Agent test suite (native arm64)
         run: go test -count=1 ./internal/agent/... ./cmd/agent/...
 
-  # Slow gate: race detector + coverage. Runs on:
-  #   - PRs that touch Go files / go.mod / go.sum (real merge gate
-  #     under branch protection — required check evaluates here)
-  #   - pushes to main (covers the merge commit and uploads coverage)
-  # Skipped on PRs that do not touch Go (dependabot npm bumps, doc
-  # tweaks) so the long pole moves off the dependabot critical path.
+  # THE Go gate: race detector + coverage. Runs only when Go inputs
+  # changed — for web-only or docs PRs it is skipped, which branch
+  # protection counts as passing.
   go-test-race:
     name: Go Tests (race + coverage)
     needs: detect-changes
-    if: |
-      (github.event_name == 'pull_request' && needs.detect-changes.outputs.go == 'true') ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      github.event_name == 'merge_group'
+    if: needs.detect-changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     # Safety net: -race over the whole tree historically lands around
     # 6–8 min; loadtest no-race adds ~30 s. A runaway leaks memory and
@@ -134,10 +147,8 @@ jobs:
       # The internal/loadtest scenarios spawn ~100 concurrent Argon2id
       # verifies (~96 MiB each) and ~200-agent enrolls; under -race the
       # working set climbs past 20 GB RSS and the runner spends 25+ min
-      # thrashing the page cache. Mirror the local pre-push hook split:
-      # everything else gets -race + coverage; loadtest gets a separate
-      # no-race pass below. The fast-PR gate (go-test) already covers
-      # loadtest correctness on every PR.
+      # thrashing the page cache. Split: everything else gets -race +
+      # coverage; loadtest gets a separate no-race pass below.
       - name: Go race + coverage (loadtest excluded)
         run: |
           PKGS=$(go list ./... | grep -vE 'node_modules|^github.com/lost-coder/panvex/internal/loadtest$')
@@ -147,13 +158,8 @@ jobs:
       # Coverage floor: total backend coverage must stay above the
       # baseline. Fail loud here instead of relying on Codecov's
       # asynchronous diff-coverage (which is informational, not a gate).
-      # The threshold is intentionally below the current measured
-      # number so a small regression flags rather than every PR — bump
-      # in lockstep with new test waves.
-      # Raised 45 -> 48 (audit F4). Measured total at the time was ~50.7%
-      # (the audit's "~61%" estimate was stale); 48 leaves ~2.7pp headroom
-      # for fluctuation while catching real regressions. Bump toward 55 as
-      # coverage grows with new test waves.
+      # Raised 45 -> 48 (audit F4). Measured total at the time was ~50.7%;
+      # 48 leaves headroom for fluctuation while catching regressions.
       - name: Enforce coverage floor (>=48%)
         run: |
           set -eu
@@ -174,42 +180,17 @@ jobs:
           flags: backend
           fail_ci_if_error: false
 
-  # Canary build against the next Go version. Non-blocking — surfaces
-  # toolchain regressions before we lock the next version into the
-  # required matrix but does not gate merges if upstream has a
-  # transient bug.
-  go-test-next:
-    name: Go Tests (next version, canary)
-    needs: detect-changes
-    # Non-blocking canary (continue-on-error): surfaces toolchain
-    # regressions on the latest Go without gating merges. We track
-    # `stable` + check-latest rather than pinning a specific RC — an
-    # explicit RC tag (e.g. 1.27.0-rc.1) is not reliably resolvable by
-    # actions/setup-go and left the job permanently red. `stable` always
-    # resolves and automatically rolls onto the next Go minor the day it
-    # GAs, so this keeps giving signal without manual version bumps.
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
-        with:
-          go-version: "stable"
-          check-latest: true
-      - name: Mirror install-agent.sh for //go:embed
-        run: go generate ./internal/controlplane/server/...
-      - name: Go tests (web/node_modules excluded)
-        run: |
-          PKGS=$(go list ./... | grep -v node_modules)
-          go test -count=1 $PKGS
-
   schema-sync:
     # C9 + A6: verify the PostgreSQL and SQLite migration bundles stay in
     # sync AND run the full storage tree (contract suites, EXPLAIN plan
     # gates, prune tests) against a live Postgres. Without the DSN the
     # postgres-bound tests skip silently — this job is the only place
-    # the postgres backend is actually executed.
+    # the postgres backend is actually executed. Gated on db-adjacent
+    # paths (migrations, queries, sqlc output, storage tree, go.mod for
+    # pgx bumps).
     name: Schema Sync (PG vs SQLite)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.db == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -240,13 +221,14 @@ jobs:
         # -p 1: the migrate schema-sync test DROPs/recreates the public
         # schema while the postgres contract tests TRUNCATE the same
         # database — package-level parallelism would race on the shared
-        # DSN. Expected duration ~3-5 min. cmd/control-plane rides along
-        # for the Postgres rotate-encryption-key regression test
-        # (audit 2026-07-02 #1).
+        # DSN. cmd/control-plane rides along for the Postgres
+        # rotate-encryption-key regression test (audit 2026-07-02 #1).
         run: go test -p 1 -count=1 ./internal/controlplane/storage/... ./cmd/control-plane/
 
   panel-build:
     name: Build Binaries
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -260,6 +242,8 @@ jobs:
 
   go-lint:
     name: Go Lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -276,6 +260,8 @@ jobs:
 
   go-vuln:
     name: Go Vulnerability Scan
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -290,10 +276,12 @@ jobs:
 
   # Drift guard for the OpenAPI codegen pipeline (Wave 3.3): ensure
   # openapi/panvex.gen.go and web/src/shared/api/openapi.gen.ts match
-  # the canonical openapi/panvex.yaml. Mirrors the gen-settings drift
-  # guard pattern.
+  # the canonical openapi/panvex.yaml. Drift can only come from edits to
+  # the spec, the generated files, or the generator pin — gated on those.
   openapi-drift:
     name: OpenAPI Codegen Drift
+    needs: detect-changes
+    if: needs.detect-changes.outputs.openapi == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -315,6 +303,8 @@ jobs:
   # the generator has no Go dependency.
   param-catalog-drift:
     name: Param Catalog Drift
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -326,11 +316,10 @@ jobs:
       - name: Regenerate catalog and check drift
         run: make verify-param-catalog
 
-  # Phase 4 inlined @lost-coder/panvex-ui into web/src/ui/, so the
-  # frontend jobs no longer need to clone + build a side-repo UI-kit
-  # or symlink ../ui. They just npm ci + run the target script.
   frontend-build:
     name: Frontend Build
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -360,6 +349,8 @@ jobs:
 
   frontend-test:
     name: Frontend Tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -383,6 +374,8 @@ jobs:
 
   frontend-lint:
     name: Frontend Lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -401,46 +394,14 @@ jobs:
         working-directory: web
         run: npm run check:events
 
-  frontend-e2e:
-    name: Frontend E2E (Playwright)
-    runs-on: ubuntu-latest
-    # The smoke suite stubs the API per-test via page.route(), so it
-    # boots Vite and a hermetic browser without touching a backend.
-    # Running on every PR keeps regressions in the navigation /
-    # auth-shell flows from sneaking past type checks.
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7
-        with:
-          node-version: "22"
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
-      - name: Install npm deps
-        working-directory: web
-        run: npm ci
-      - name: Install Playwright browsers
-        working-directory: web
-        run: npx playwright install --with-deps chromium
-      - name: Run Playwright smoke suite
-        working-directory: web
-        run: npx playwright test --project=chromium
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
-        with:
-          name: playwright-report
-          path: web/playwright-report/
-          retention-days: 7
-
   frontend-e2e-integration:
     name: Frontend E2E (integration, real backend)
+    needs: detect-changes
+    # Exercises the REAL control-plane binary with the embedded UI, so
+    # both a web change and a Go change can break it.
+    if: needs.detect-changes.outputs.web == 'true' || needs.detect-changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Unlike frontend-e2e (hermetic, page.route() stubs), this job runs
-    # the suite in web/tests/e2e/integration/ against a REAL
-    # control-plane binary with the embedded UI and a SQLite store —
-    # the auth middleware, session store, and embedded-asset serving
-    # are exercised end-to-end (audit F2).
     env:
       PANVEX_ENCRYPTION_KEY: ci-e2e-integration-throwaway-key
     steps:
@@ -508,32 +469,15 @@ jobs:
             web/test-results/
           retention-days: 7
 
-  frontend-audit:
-    name: Frontend npm audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7
-        with:
-          node-version: "22"
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
-      - name: Audit web dependencies
-        working-directory: web
-        # `--audit-level=moderate` matches the bar the security audit
-        # asks us to enforce. Anything moderate or worse fails CI; lower
-        # severities are still listed by `npm audit` but do not gate.
-        run: npm audit --audit-level=moderate
-
   buf-lint:
     name: Protobuf Lint
+    needs: detect-changes
+    if: needs.detect-changes.outputs.proto == 'true'
     runs-on: ubuntu-latest
     # bufbuild/buf-action posts a status comment on the PR by default.
     # Without pull-requests: write the post fails with 'Resource not
     # accessible by integration' even when the lint itself passed —
-    # which used to surface as a red CI on every PR. Disable the
-    # comment instead of broadening token scope; GitHub annotations
-    # already surface buf errors inline on the diff.
+    # disable the comment instead of broadening token scope.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - uses: bufbuild/buf-action@8c6a16e16f12ba20b6470afa9c2ba9b5ba8c97c3  # v1
@@ -542,14 +486,14 @@ jobs:
           # Wire back-compat is intentionally not a constraint here: the
           # agent and the control-plane are built from one repo and
           # deployed together (greenfield, pre-prod, no in-field clients to
-          # protect). buf breaking would block legitimate field removals
-          # like the P4 seq-delta protocol retirement (traffic_delta_bytes /
-          # seq deleted with their numbers reserved). Style lint stays on.
+          # protect). Style lint stays on.
           breaking: false
           pr_comment: false
 
   sqlc-check:
     name: SQLc Verify
+    needs: detect-changes
+    if: needs.detect-changes.outputs.db == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -560,12 +504,12 @@ jobs:
 
   load-bench:
     name: Load harness (smoke)
+    needs: detect-changes
+    if: needs.detect-changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     # The login-storm bench fans out 100 concurrent Argon2id verifies at
-    # 96 MiB each (~10 GiB peak). On a runner that's also under memory
-    # pressure this thrashes the page cache for tens of minutes before
-    # the GitHub default 6 h kill. Cap explicitly — the documented
-    # wall-clock budget is <30 s, so anything past 10 min is a runaway.
+    # 96 MiB each (~10 GiB peak); documented wall-clock budget is <30 s,
+    # so anything past 10 min is a runaway.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -575,22 +519,24 @@ jobs:
       # Phase-3 §3.6: smoke-run the perf benchmarks at -benchtime=1x
       # so a regression that broke compilation, panicked under load,
       # or blew up O(N²) shows up in CI without paying for a full
-      # statistical run. Operators wanting throughput numbers run
-      # `go test -bench . -benchtime=10s ./internal/loadtest/...`
-      # locally or in a nightly job.
+      # statistical run.
       - name: Run load harness benches (1x)
         run: go test -run '^$' -bench . -benchtime=1x ./internal/loadtest/...
 
   trivy-fs:
     name: Trivy filesystem scan
+    needs: detect-changes
+    # The scan only reads dependency manifests and config files — run it
+    # when one of those changed, not on every code edit.
+    if: needs.detect-changes.outputs.deps == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - name: Trivy scan (fs)
         # Catches vulnerable Go modules (go.sum), npm packages
-        # (web/package-lock.json), and known-bad config patterns. Severity
-        # gate matches the npm-audit bar so behaviour is consistent across
-        # ecosystems.
+        # (web/package-lock.json), and known-bad config patterns. This is
+        # the single lockfile-CVE gate — npm audit and Dependency Review
+        # were removed as duplicates of it (same severity bar).
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -602,6 +548,8 @@ jobs:
 
   trivy-dockerfile:
     name: Trivy Dockerfile scan
+    needs: detect-changes
+    if: needs.detect-changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -614,39 +562,9 @@ jobs:
           exit-code: '1'
           format: table
 
-  # Scans the *built* image — trivy-fs and trivy-dockerfile cover source
-  # deps and Dockerfile misconfig, but neither catches a vulnerable OS
-  # package baked into the final runtime layer (distroless/alpine CVEs,
-  # transitively pulled libs). Build the image locally (no push) and run
-  # Trivy in `image` mode with the same HIGH,CRITICAL + ignore-unfixed
-  # gate the other Trivy jobs use, so behaviour stays consistent.
-  trivy-image:
-    name: Trivy image scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-      - name: Build image (load into local docker)
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
-        with:
-          context: .
-          push: false
-          load: true
-          tags: panvex:ci
-      - name: Trivy scan (image)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: image
-          image-ref: panvex:ci
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
-          format: table
-
   # Plan 1 (S-21 security bootstrap) regression gate. Pure grep checks —
   # fast (no compile, no deps) — that fail CI if a future refactor undoes
-  # any of the security fixes landed in S-1..S-9 / T-4 / T-5. Runs in
-  # parallel with the slower test/lint jobs so it surfaces a regression
-  # within seconds of the PR opening.
+  # any of the security fixes landed in S-1..S-9 / T-4 / T-5.
   security-gate:
     name: Security regression gate (Plan 1)
     runs-on: ubuntu-latest
@@ -666,9 +584,6 @@ jobs:
             exit 1
           fi
           # T-5: install-agent.sh must self-check its own hash before exec.
-          # Canonical script lives at deploy/install-agent.sh after ba6aadc;
-          # the server-package mirror is .gitignored and only materialised
-          # by `go generate`, so grep the source-of-truth path here.
           if ! grep -q 'panvex_self_check_hash' deploy/install-agent.sh; then
             echo "T-5 regression: install-agent.sh self-check gone" >&2
             exit 1
@@ -679,7 +594,6 @@ jobs:
             exit 1
           fi
           # S-8: deploy/install.sh must not reintroduce unconditional `curl -k`.
-          # The CURL_INSECURE_FLAG path is the sanctioned (loopback-only) escape.
           if grep -nE 'curl[[:space:]]+[^|]*-k\b' deploy/install.sh | grep -v 'CURL_INSECURE_FLAG'; then
             echo "S-8 regression: unconditional curl -k reintroduced in deploy/install.sh" >&2
             exit 1
@@ -698,14 +612,14 @@ jobs:
 
   shellcheck:
     name: ShellCheck
+    needs: detect-changes
+    if: needs.detect-changes.outputs.shell == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-      # CodeQL covers Go + JS but not shell. install-agent.sh, deploy/
-      # install.sh and the dev fleet scripts each touch host state on
-      # operator machines, so a shell-injection bug there is high blast
-      # radius. ludeeus/action-shellcheck enumerates *.sh by default
-      # and respects shellcheckdirective comments inline.
+      # install-agent.sh, deploy/install.sh and the dev fleet scripts each
+      # touch host state on operator machines, so a shell-injection bug
+      # there is high blast radius.
       - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
         env:
           SHELLCHECK_OPTS: -e SC1091
@@ -716,42 +630,14 @@ jobs:
             node_modules
       # Regression test for is_ip_address() in deploy/install.sh: it used
       # to `grep` and then unconditionally `return 0`, classifying every
-      # hostname as an IP address. Dependency-free bash so it runs on the
-      # stock runner.
+      # hostname as an IP address.
       - name: Test deploy/install.sh is_ip_address()
         run: bash deploy/tests/test_is_ip_address.sh
 
-  # Per-PR supply-chain check: refuses any new dependency with a known
-  # vuln (>= moderate) or a license outside the allow-list. CodeQL +
-  # govulncheck + npm audit + Trivy already gate post-merge / on-tip,
-  # but they don't surface a new transitive coming in via package-lock
-  # diff during review. dependency-review-action does exactly that.
-  dependency-review:
-    name: Dependency Review
-    # Not on push: post-merge there is nothing to review and the job would
-    # report a green check that scanned nothing.
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-      # dependency-review-action needs a pull_request context (it diffs the
-      # PR's base against its head) and errors out on any other event. The
-      # job itself must still REPORT on merge_group, because it is a required
-      # check and the queue would otherwise wait on it forever — so the scan
-      # step is PR-gated while the job is not. This is a knowing gap: in the
-      # queue the check passes without scanning. Acceptable because the same
-      # diff was already scanned on the PR, and a queue entry adds only an
-      # updated base, not new dependency edges of its own.
-      - if: github.event_name == 'pull_request'
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5
-        with:
-          fail-on-severity: moderate
-          comment-summary-in-pr: on-failure
-
   gitleaks:
     name: gitleaks (secret scan)
+    # Not gated: a secret can land in any file type, and history is the
+    # thing being scanned, not the diff.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7

@@ -65,8 +65,11 @@ db/
 proto/               Protobuf definitions for gRPC gateway
 web/                 React dashboard (web/src/ui/ is the in-tree UI kit)
 deploy/              Docker Compose, nginx, install scripts
-.githooks/pre-push   Mirrors CI: golangci-lint + race tests + govulncheck +
-                     frontend build/lint/audit. Bypass: PANVEX_SKIP_PREPUSH=1.
+.githooks/pre-push   Fast local gate (SUBSET of CI): golangci-lint, settings
+                     codegen drift, Go unit tests (no -race), frontend
+                     build/lint/state tests. Slow + scan checks (-race,
+                     govulncheck, Trivy, E2E, PG contracts) are CI-only and
+                     path-gated there. Bypass: PANVEX_SKIP_PREPUSH=1.
 ```
 
 Workspace-level dirs live one level up: `../scripts/` (dev fleet), `../.tmp/`

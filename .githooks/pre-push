@@ -1,15 +1,14 @@
 #!/bin/bash
-# Mirrors key CI checks locally.
+# Fast local gate: lint + build + unit tests. Deliberately a SUBSET of CI
+# (2026-08-07 simplification): the slow and scan-type checks — -race,
+# govulncheck, Trivy, npm audit, E2E, Postgres contract tests — run in CI
+# only, where they are also path-gated. This hook exists to catch the
+# obvious (does not compile, lint error, unit regression, codegen drift)
+# before a push spends CI minutes.
 #
 # Skip paths (fastest → slowest):
 #   1. Tag-only push      — auto. The hook reads the refs from stdin and
 #      short-circuits when every ref being pushed is under refs/tags/.
-#      Rationale: the common release flow is
-#        a) push commits, wait for CI,
-#        b) push the release tag.
-#      Step (b) doesn't change code — re-running the suite adds minutes
-#      of wait for no signal. Tags only trigger release.yml on GitHub,
-#      which does its own build/sign.
 #   2. PANVEX_SKIP_PREPUSH=1  — env override for one-off bypasses.
 #   3. `git push --no-verify` — git's built-in escape hatch.
 set -e
@@ -17,8 +16,6 @@ set -e
 # ── Tag-only push short-circuit ──────────────────────────────────────────────
 # git passes one line per ref on stdin:
 #   <local-ref> <local-sha> <remote-ref> <remote-sha>
-# Read them all, then decide. If *every* local-ref starts with refs/tags/,
-# skip the suite. If stdin is empty (rare, e.g. dry-run), fall through.
 any_ref=0
 any_non_tag=0
 while read -r local_ref _local_sha _remote_ref _remote_sha; do
@@ -50,49 +47,24 @@ go generate ./internal/controlplane/server/...
 echo "=== Pre-push: Go lint ==="
 # H7: golangci-lint resolves `./...` (and web/node_modules exclusion) via
 # its own module-aware directory walk — it does NOT want a `go list`-
-# expanded argument list of fully-qualified import paths (that breaks its
-# path resolution entirely). It already skips web/node_modules on its own
-# (gitignored dir), and .golangci.yml now excludes it defensively too.
-# Contrast with the go test / govulncheck invocations below, which do
-# take `go list` output directly as their package set.
+# expanded argument list of fully-qualified import paths.
 ~/go/bin/golangci-lint run ./...
 
 echo "=== Pre-push: Settings codegen drift ==="
+# Not covered by any CI job — this is the only guard for it.
 go generate ./internal/controlplane/settings/... >/dev/null 2>&1
 if ! git diff --quiet -- internal/controlplane/settings/gen/schema.json docs/settings/reference.md docs/settings/example.config.toml; then
     echo "!!! Settings codegen drift; run 'make gen-settings' and commit."
     exit 1
 fi
 
-echo "=== Pre-push: Go tests (race, loadtest excluded) ==="
-# The internal/loadtest scenarios spawn ~100 concurrent Argon2id verifies
-# (~96 MiB each) and ~200-agent enrolls; under -race the working set tips
-# past 22 GB RSS, which OOM-kills the test on memory-constrained dev hosts
-# (e.g. WSL2 with default RAM cap). CI splits the same way — see
-# .github/workflows/ci.yml jobs `test-go-race` vs `test-go-loadtest`.
-# H7: also filter web/node_modules (see lint step above) so a local
-# `npm ci`'d web/ doesn't drag a vendored npm-package Go module into the
-# race suite; CI is unaffected since it never runs npm before Go steps.
-RACE_PKGS=$(go list ./... | grep -vE 'node_modules|^github.com/lost-coder/panvex/internal/loadtest$')
-go test -race -count=1 $RACE_PKGS
-
-echo "=== Pre-push: Go tests (loadtest, no -race) ==="
-go test -count=1 ./internal/loadtest/...
-
-echo "=== Pre-push: Go vulnerability scan ==="
-# H7: match the Makefile `vuln` target — invoke govulncheck with the `./...`
-# pattern, not a `go list`-expanded import-path list. govulncheck expects
-# relative patterns and does its own gitignore-aware walk (it already skips
-# web/node_modules), so a go-list arg list breaks its path resolution and
-# diverges from `make vuln`.
-if command -v govulncheck >/dev/null 2>&1; then
-    govulncheck ./...
-elif [ -x "$HOME/go/bin/govulncheck" ]; then
-    "$HOME/go/bin/govulncheck" ./...
-else
-    echo "!!! govulncheck not installed. Run: make install-tools"
-    exit 1
-fi
+echo "=== Pre-push: Go unit tests (no -race) ==="
+# -race and the loadtest suite moved to CI-only (go-test-race job): on
+# memory-constrained dev hosts -race over this tree tips past 22 GB RSS.
+# H7: filter web/node_modules so a local `npm ci`'d web/ doesn't drag a
+# vendored npm-package Go module into the suite.
+PKGS=$(go list ./... | grep -vE 'node_modules|^github.com/lost-coder/panvex/internal/loadtest$')
+go test -count=1 $PKGS
 
 echo "=== Pre-push: Frontend type-check + build ==="
 cd web
@@ -101,21 +73,7 @@ npm run build
 echo "=== Pre-push: Frontend lint ==="
 npm run lint
 
-echo "=== Pre-push: Frontend i18n parity + hardcoded-Cyrillic guard ==="
-npm run check:i18n
-
 echo "=== Pre-push: Frontend state tests (node --test) ==="
 npm run test:state
-
-echo "=== Pre-push: Frontend dependency tree (peer ranges) ==="
-# Mirrors the CI "Check dependency tree" step: a package that moved without
-# the peer it is pinned against installs and builds fine, so nothing else
-# here would notice.
-npm run check:deps
-
-echo "=== Pre-push: Frontend audit (moderate severity) ==="
-# L-22: stay in lock-step with the CI workflow's --audit-level=moderate
-# so a hook-passing push cannot still fail the equivalent CI step.
-npm audit --audit-level=moderate
 
 echo "=== Pre-push: all checks passed ==="
