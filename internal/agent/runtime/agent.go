@@ -109,6 +109,14 @@ type Agent struct {
 	// instead of re-fetching the process-global default ad hoc.
 	logger *slog.Logger
 
+	// forceRuntimePoll signals the runtime poll loop to build and send a
+	// snapshot immediately instead of waiting for the next tick. Buffered at 1
+	// so a request coalesces rather than blocking. Written by
+	// RequestImmediateRuntimePoll (e.g. right after a successful telemt.update
+	// so the panel reflects the new Telemt version at once, not on the next
+	// poll cycle), read by the poll loop via ForceRuntimePollChan.
+	forceRuntimePoll chan struct{}
+
 	observedConfig  observedConfigReporter
 	diagnosticsGate contentHashGate
 	securityGate    contentHashGate
@@ -178,8 +186,28 @@ func New(config Config, client telemtClient) *Agent {
 		ipCollector:           telemt.NewIPCollector(),
 		bootID:                uuid.NewString(),
 		usageTotals:           make(map[string]uint64),
+		forceRuntimePoll:      make(chan struct{}, 1),
 	}
 	return a
+}
+
+// RequestImmediateRuntimePoll asks the runtime poll loop to build and send a
+// snapshot right away instead of waiting for the next scheduled tick. Used
+// after a successful telemt.update so the panel reflects the node's new Telemt
+// version immediately rather than after the next poll interval. Non-blocking:
+// the buffered channel coalesces a pending request, so repeated calls before
+// the loop wakes collapse into one extra poll.
+func (a *Agent) RequestImmediateRuntimePoll() {
+	select {
+	case a.forceRuntimePoll <- struct{}{}:
+	default:
+	}
+}
+
+// ForceRuntimePollChan exposes the immediate-poll signal so the poll loop can
+// select on it alongside its interval timer.
+func (a *Agent) ForceRuntimePollChan() <-chan struct{} {
+	return a.forceRuntimePoll
 }
 
 // AgentID returns the persistent control-plane identity of the agent.

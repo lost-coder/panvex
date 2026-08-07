@@ -110,6 +110,13 @@ func TestHandleTelemtUpdateJobSuccess(t *testing.T) {
 	if _, send := a.diagnosticsGate.next("diag-body"); !send {
 		t.Fatal("expected ResetDeltaGates on success so diagnostics body re-sends; gate still suppressed")
 	}
+	// A successful update must wake the poll loop immediately so the new
+	// version reaches the panel at once rather than on the next interval.
+	select {
+	case <-a.ForceRuntimePollChan():
+	default:
+		t.Fatal("expected RequestImmediateRuntimePoll on success; no immediate-poll signal queued")
+	}
 }
 
 // TestHandleTelemtUpdateJobExecuteError guards the failure path: Execute's

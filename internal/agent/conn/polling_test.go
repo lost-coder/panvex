@@ -225,3 +225,33 @@ func TestStartPollingWorkersRoutesHeartbeatToCriticalChannel(t *testing.T) {
 		t.Fatal("heartbeat never arrived on the critical channel")
 	}
 }
+
+// TestWaitRuntimePollTickForceWakesImmediately verifies the immediate-poll
+// signal (RequestImmediateRuntimePoll, used after a successful telemt.update)
+// wakes the poll loop right away instead of waiting out the interval.
+func TestWaitRuntimePollTickForceWakesImmediately(t *testing.T) {
+	force := make(chan struct{}, 1)
+	force <- struct{}{}
+	start := time.Now()
+	// A long delay would make this test hang for 10s if force were ignored.
+	observedAt, ok := waitRuntimePollTick(context.Background(), 10*time.Second, force)
+	if !ok {
+		t.Fatal("waitRuntimePollTick returned ok=false on a forced wake")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("forced wake took %v, expected immediate", elapsed)
+	}
+	if observedAt.IsZero() {
+		t.Fatal("forced wake returned a zero observedAt")
+	}
+}
+
+// TestWaitRuntimePollTickTimerStillFires guards the normal path: with no force
+// signal, the interval timer still drives the tick.
+func TestWaitRuntimePollTickTimerStillFires(t *testing.T) {
+	force := make(chan struct{}) // never signalled
+	observedAt, ok := waitRuntimePollTick(context.Background(), 10*time.Millisecond, force)
+	if !ok || observedAt.IsZero() {
+		t.Fatalf("timer tick failed: ok=%v observedAt=%v", ok, observedAt)
+	}
+}

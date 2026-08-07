@@ -180,7 +180,7 @@ func runRuntimePollLoop(
 	tracker := &telemtReachabilityTracker{}
 	for {
 		delay := nextRuntimePollDelay(agent, config, consecutiveFailures)
-		observedAt, ok := waitRuntimePollTick(connectionCtx, delay)
+		observedAt, ok := waitRuntimePollTick(connectionCtx, delay, agent.ForceRuntimePollChan())
 		if !ok {
 			return
 		}
@@ -201,17 +201,26 @@ func nextRuntimePollDelay(agent *runtime.Agent, config pollingGroupConfig, conse
 	return delay
 }
 
-func waitRuntimePollTick(connectionCtx context.Context, delay time.Duration) (time.Time, bool) {
+func waitRuntimePollTick(connectionCtx context.Context, delay time.Duration, force <-chan struct{}) (time.Time, bool) {
 	timer := time.NewTimer(delay)
-	select {
-	case <-connectionCtx.Done():
+	drainTimer := func() {
 		if !timer.Stop() {
 			select {
 			case <-timer.C:
 			default:
 			}
 		}
+	}
+	select {
+	case <-connectionCtx.Done():
+		drainTimer()
 		return time.Time{}, false
+	case <-force:
+		// An immediate poll was requested (e.g. after a telemt.update) — wake
+		// now instead of waiting out the interval so the panel sees the change
+		// at once. Stamp the observation with the current time.
+		drainTimer()
+		return time.Now().UTC(), true
 	case observedAt := <-timer.C:
 		return observedAt, true
 	}

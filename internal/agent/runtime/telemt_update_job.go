@@ -71,5 +71,11 @@ func (a *Agent) handleTelemtUpdateJob(ctx context.Context, job *gatewayrpc.JobCo
 	// next snapshot; this closes the slow diagnostics path the UI badge reads.
 	a.telemt.InvalidateSlowDataCache()
 	a.ResetDeltaGates()
+	// Wake the runtime poll loop now so the refreshed snapshot (carrying the
+	// new Telemt version) is sent immediately, instead of after the next poll
+	// interval. Without this the panel keeps showing the old version — and the
+	// "update available" badge — for up to a full poll cycle after a successful
+	// update, which reads as "the update did nothing".
+	a.RequestImmediateRuntimePoll()
 	return result
 }
