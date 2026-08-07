@@ -180,6 +180,12 @@ cd web && npm run build:embed  # build into cmd/control-plane/.embedded-ui
 # sqlc
 sqlc generate
 
+# Tier-3 deep local analysis (semgrep offline-cache, osv-scanner,
+# govulncheck, npm audit, gitleaks over FULL history) — manual, free,
+# spends dev-machine time instead of CI minutes. Triaged-FP allowlists:
+# scripts/semgrep-filter.py (rule classes) + .gitleaksignore (fingerprints).
+make deep-scan
+
 # Docker
 docker compose -f deploy/docker-compose.sqlite.yml up --build -d
 docker compose -f deploy/docker-compose.postgres.yml up --build -d  # dev — default creds
