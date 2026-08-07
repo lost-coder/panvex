@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -255,16 +256,25 @@ const telemtRepo = "telemt/telemt"
 // a pre-release by construction and never matches.
 var telemtStableTagPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
-// FetchLatestTelemtRelease queries the GitHub Releases API for telemtRepo and
-// returns the newest stable release (not a draft, not flagged prerelease by
-// GitHub, and tagged as a bare "X.Y.Z") found in the first page of results.
-// Returns a nil release with a nil error when only pre-releases/drafts exist.
-func FetchLatestTelemtRelease(ctx context.Context, token string) (*GitHubRelease, error) {
+// DefaultTelemtVersionsToShow is the default number of most-recent stable
+// Telemt versions the panel tracks for the version picker. Task 2 adds an
+// operator-configurable Settings.TelemtVersionsToShow field seeded from this
+// same value; until that lands, checkTelemtRelease passes it directly to
+// FetchTelemtReleaseOverview.
+const DefaultTelemtVersionsToShow = 5
+
+// FetchTelemtReleaseOverview queries the GitHub Releases API for telemtRepo
+// once and returns both the newest stable release (see pickLatestTelemtRelease)
+// and the top topN stable version tags (see pickTopTelemtVersions), so the
+// periodic checker never issues two requests for the same page. Returns a nil
+// release and an empty versions slice, both with a nil error, when only
+// pre-releases/drafts exist.
+func FetchTelemtReleaseOverview(ctx context.Context, token string, topN int) (*GitHubRelease, []string, error) {
 	releases, err := fetchTelemtReleasesPage(ctx, token)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return pickLatestTelemtRelease(releases), nil
+	return pickLatestTelemtRelease(releases), pickTopTelemtVersions(releases, topN), nil
 }
 
 // fetchTelemtReleasesPage validates the resolved URL and delegates to
@@ -309,6 +319,30 @@ func pickLatestTelemtRelease(releases []GitHubRelease) *GitHubRelease {
 	return best
 }
 
+// pickTopTelemtVersions returns up to n stable Telemt release tags sorted
+// newest-first by semver. Same eligibility rules as pickLatestTelemtRelease
+// (bare-semver tag, not draft, not prerelease); GitHub's publish-date order is
+// ignored. Always returns a non-nil slice: the value is serialized into the
+// updates state JSON, and a nil slice would marshal as null, breaking the
+// frontend's z.array() contract.
+func pickTopTelemtVersions(releases []GitHubRelease, n int) []string {
+	versions := make([]string, 0, n)
+	for _, r := range releases {
+		if r.Draft || r.Prerelease || !telemtStableTagPattern.MatchString(r.TagName) {
+			continue
+		}
+		versions = append(versions, r.TagName)
+	}
+	sort.Slice(versions, func(i, j int) bool {
+		cmp, err := CompareVersions(versions[i], versions[j])
+		return err == nil && cmp > 0
+	})
+	if len(versions) > n {
+		versions = versions[:n]
+	}
+	return versions
+}
+
 // telemtReleaseBaseURL builds the download base URL for a Telemt release tag:
 // https://github.com/telemt/telemt/releases/download/<tag> — the agent
 // appends its own per-platform asset name to this when it self-updates.
@@ -332,14 +366,17 @@ func TelemtReleaseBaseURLForVersion(version string) string {
 
 // ApplyTelemtCheckResult merges the outcome of a Telemt release check into
 // state, following the "failure preserves, success clears" contract: an
-// error leaves the previously known TelemtLatestVersion/TelemtReleaseBaseURL
-// untouched and records the message so the dashboard can surface it, while a
+// error leaves the previously known
+// TelemtLatestVersion/TelemtReleaseBaseURL/TelemtAvailableVersions untouched
+// and records the message so the dashboard can surface it, while a
 // successful check always clears the previous error. A successful check that
 // found no stable release (release == nil, err == nil) clears the error but
-// otherwise leaves the previously known version/URL alone — the same "no
-// signal, no change" behavior FetchLatestTelemtRelease's nil-nil return
-// implies.
-func ApplyTelemtCheckResult(state *State, release *GitHubRelease, err error) {
+// otherwise leaves the previously known version/URL/versions alone — the
+// same "no signal, no change" behavior FetchTelemtReleaseOverview's nil-nil
+// release return implies. versions is copied into state rather than
+// referenced, and is always normalized to a non-nil slice (an empty
+// successful result clears the list, it does not leave a stale one behind).
+func ApplyTelemtCheckResult(state *State, release *GitHubRelease, versions []string, err error) {
 	if err != nil {
 		state.TelemtLastCheckError = err.Error()
 		return
@@ -350,4 +387,5 @@ func ApplyTelemtCheckResult(state *State, release *GitHubRelease, err error) {
 	}
 	state.TelemtLatestVersion = release.TagName
 	state.TelemtReleaseBaseURL = telemtReleaseBaseURL(release.TagName)
+	state.TelemtAvailableVersions = append([]string{}, versions...)
 }

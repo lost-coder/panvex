@@ -186,7 +186,7 @@ func TestCheckTelemtReleaseIndependentOfPanelAgentCheck(t *testing.T) {
 	}
 
 	// A failing Telemt check must not disturb the panel/agent fields.
-	updates.ApplyTelemtCheckResult(&state, nil, errors.New("github api returned status 403: rate limit exceeded"))
+	updates.ApplyTelemtCheckResult(&state, nil, nil, errors.New("github api returned status 403: rate limit exceeded"))
 	if state.LatestPanelVersion != "1.2.3" || state.LatestAgentVersion != "1.2.3" {
 		t.Fatalf("panel/agent fields disturbed by a failing Telemt check: %+v", state)
 	}

@@ -138,21 +138,21 @@ func (s *Server) checkPanelAndAgentUpdates(ctx context.Context, repo, token stri
 // the newest stable release and merges the result into s.updateState. It is
 // its own try within the tick — see checkForUpdates — and only ever touches
 // the Telemt-owned fields on State (TelemtLatestVersion /
-// TelemtReleaseBaseURL / TelemtLastCheckError), reading the current
-// s.updateState as its base so the panel/agent result from earlier in the
-// same tick is never clobbered.
+// TelemtReleaseBaseURL / TelemtLastCheckError / TelemtAvailableVersions),
+// reading the current s.updateState as its base so the panel/agent result
+// from earlier in the same tick is never clobbered.
 func (s *Server) checkTelemtRelease(ctx context.Context, token string) {
 	fetchCtx, cancel := context.WithTimeout(ctx, updateCheckFetchTimeout)
 	defer cancel()
 
-	release, err := updates.FetchLatestTelemtRelease(fetchCtx, token)
+	release, versions, err := updates.FetchTelemtReleaseOverview(fetchCtx, token, updates.DefaultTelemtVersionsToShow)
 	if err != nil {
 		s.logger.WarnContext(ctx, "telemt update check failed", "error", err)
 	}
 
 	s.settingsMu.Lock()
 	state := s.updateState
-	updates.ApplyTelemtCheckResult(&state, release, err)
+	updates.ApplyTelemtCheckResult(&state, release, versions, err)
 	state.LastCheckedAt = s.now().Unix()
 	s.updateState = state
 	s.settingsMu.Unlock()

@@ -3,8 +3,10 @@ package updates
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -108,7 +110,7 @@ func TestApplyTelemtCheckResult_ErrorPreservesPreviousVersion(t *testing.T) {
 		TelemtLatestVersion:  "3.4.20",
 		TelemtReleaseBaseURL: telemtReleaseBaseURL("3.4.20"),
 	}
-	ApplyTelemtCheckResult(&state, nil, errGithubRateLimit(t))
+	ApplyTelemtCheckResult(&state, nil, nil, errGithubRateLimit(t))
 
 	if state.TelemtLatestVersion != "3.4.20" {
 		t.Fatalf("TelemtLatestVersion = %q, want preserved %q", state.TelemtLatestVersion, "3.4.20")
@@ -127,7 +129,7 @@ func TestApplyTelemtCheckResult_SuccessClearsError(t *testing.T) {
 	state := State{TelemtLastCheckError: "GitHub API rate limit exceeded (limit 60/hour)"}
 	release := &GitHubRelease{TagName: "3.4.25"}
 
-	ApplyTelemtCheckResult(&state, release, nil)
+	ApplyTelemtCheckResult(&state, release, nil, nil)
 
 	if state.TelemtLastCheckError != "" {
 		t.Fatalf("TelemtLastCheckError = %q, want cleared", state.TelemtLastCheckError)
@@ -138,6 +140,52 @@ func TestApplyTelemtCheckResult_SuccessClearsError(t *testing.T) {
 	wantURL := "https://github.com/telemt/telemt/releases/download/3.4.25"
 	if state.TelemtReleaseBaseURL != wantURL {
 		t.Fatalf("TelemtReleaseBaseURL = %q, want %q", state.TelemtReleaseBaseURL, wantURL)
+	}
+}
+
+func TestPickTopTelemtVersions(t *testing.T) {
+	releases := []GitHubRelease{
+		{TagName: "3.4.24"},                   // stable, старее
+		{TagName: "3.5.0-rc1"},                // prerelease-тег — отбрасывается паттерном
+		{TagName: "3.4.25"},                   // stable, новее (порядок в списке НЕ по semver)
+		{TagName: "3.4.23", Draft: true},      // draft — отбрасывается
+		{TagName: "3.4.22", Prerelease: true}, // prerelease-флаг — отбрасывается
+		{TagName: "3.4.21"},
+		{TagName: "3.4.20"},
+	}
+	got := pickTopTelemtVersions(releases, 3)
+	want := []string{"3.4.25", "3.4.24", "3.4.21"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pickTopTelemtVersions = %v, want %v", got, want)
+	}
+	// n больше числа кандидатов — вернуть всех, без паники
+	if got := pickTopTelemtVersions(releases, 99); len(got) != 4 {
+		t.Fatalf("len = %d, want 4", len(got))
+	}
+	// ноль кандидатов — пустой НЕ-nil срез
+	if got := pickTopTelemtVersions(nil, 5); got == nil || len(got) != 0 {
+		t.Fatalf("want empty non-nil slice, got %#v", got)
+	}
+}
+
+func TestApplyTelemtCheckResult_SetsAvailableVersions(t *testing.T) {
+	state := State{}
+	ApplyTelemtCheckResult(&state, &GitHubRelease{TagName: "3.4.25"}, []string{"3.4.25", "3.4.24"}, nil)
+	if !reflect.DeepEqual(state.TelemtAvailableVersions, []string{"3.4.25", "3.4.24"}) {
+		t.Fatalf("TelemtAvailableVersions = %v", state.TelemtAvailableVersions)
+	}
+	// успех с nil versions → пустой не-nil срез (JSON-инвариант: [] а не null)
+	ApplyTelemtCheckResult(&state, &GitHubRelease{TagName: "3.4.25"}, nil, nil)
+	if state.TelemtAvailableVersions == nil {
+		t.Fatal("TelemtAvailableVersions = nil, want empty slice")
+	}
+}
+
+func TestApplyTelemtCheckResult_ErrorPreservesAvailableVersions(t *testing.T) {
+	state := State{TelemtAvailableVersions: []string{"3.4.25", "3.4.24"}}
+	ApplyTelemtCheckResult(&state, nil, nil, errors.New("rate limit"))
+	if !reflect.DeepEqual(state.TelemtAvailableVersions, []string{"3.4.25", "3.4.24"}) {
+		t.Fatalf("versions not preserved on error: %v", state.TelemtAvailableVersions)
 	}
 }
 

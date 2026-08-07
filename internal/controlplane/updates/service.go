@@ -57,6 +57,12 @@ type State struct {
 	// check, which runs as its own try in the same tick: a failure here (or in
 	// LastCheckError) never affects the other's fields or clears its error.
 	TelemtLastCheckError string `json:"telemt_last_check_error"`
+	// TelemtAvailableVersions holds the top-N stable Telemt release tags,
+	// newest-first, known to the panel as of the last successful check
+	// (see pickTopTelemtVersions). Backs the panel's version picker (Task 3/4).
+	// Always non-nil once normalized by LoadState — a nil slice marshals as
+	// JSON null, breaking the frontend's z.array() contract.
+	TelemtAvailableVersions []string `json:"telemt_available_versions"`
 }
 
 // SelfUpdatePhase enumerates the lifecycle of one panel self-update run.
@@ -154,6 +160,14 @@ func (s *Service) LoadState(ctx context.Context) (State, error) {
 		if err := json.Unmarshal(data, &state); err != nil {
 			return State{}, err
 		}
+	}
+	// A state blob persisted before TelemtAvailableVersions existed (or a
+	// successful check that genuinely found zero candidates) unmarshals the
+	// field as nil. Normalize it here so every caller sees the same
+	// non-nil-slice invariant ApplyTelemtCheckResult maintains going forward,
+	// rather than each caller having to nil-check.
+	if state.TelemtAvailableVersions == nil {
+		state.TelemtAvailableVersions = []string{}
 	}
 	return state, nil
 }

@@ -3,6 +3,7 @@ package updates
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -418,14 +419,21 @@ func TestStateRoundTripAndEmptyIsZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadState: %v", err)
 	}
-	if zero != (State{}) {
-		t.Fatalf("empty store should yield zero State, got %#v", zero)
+	// State is no longer comparable with == (TelemtAvailableVersions is a
+	// slice): compare fields via reflect.DeepEqual instead. An empty store
+	// still yields an otherwise-zero State, but LoadState normalizes
+	// TelemtAvailableVersions to a non-nil empty slice (see
+	// TestLoadStateNormalizesNilAvailableVersions for the dedicated case).
+	wantZero := State{TelemtAvailableVersions: []string{}}
+	if !reflect.DeepEqual(zero, wantZero) {
+		t.Fatalf("empty store should yield zero State, got %#v want %#v", zero, wantZero)
 	}
 	want := State{
-		LatestPanelVersion: "1.2.3",
-		PanelDownloadURL:   "https://x/panel",
-		LastCheckedAt:      1730000000,
-		LastCheckError:     "rate limited",
+		LatestPanelVersion:      "1.2.3",
+		PanelDownloadURL:        "https://x/panel",
+		LastCheckedAt:           1730000000,
+		LastCheckError:          "rate limited",
+		TelemtAvailableVersions: []string{"3.4.25", "3.4.24"},
 	}
 	if err := svc.SaveState(context.Background(), want); err != nil {
 		t.Fatalf("SaveState: %v", err)
@@ -434,7 +442,35 @@ func TestStateRoundTripAndEmptyIsZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadState: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("state round-trip mismatch:\n got %#v\nwant %#v", got, want)
+	}
+}
+
+// TestLoadStateNormalizesNilAvailableVersions covers the brief's LoadState
+// normalization contract: a state blob persisted before
+// TelemtAvailableVersions existed (or one where a successful check found no
+// candidates, which json.Marshal's zero-value nil slice renders the same
+// way) must load back with a non-nil empty slice, never nil — a nil slice
+// would marshal as JSON null through the HTTP layer, breaking the frontend's
+// z.array() contract.
+func TestLoadStateNormalizesNilAvailableVersions(t *testing.T) {
+	t.Parallel()
+	store := &memStore{
+		state: json.RawMessage(`{"latest_panel_version":"1.2.3","last_checked_at":1730000000}`),
+	}
+	svc := NewService(store)
+	got, err := svc.LoadState(context.Background())
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	if got.TelemtAvailableVersions == nil {
+		t.Fatal("TelemtAvailableVersions = nil, want non-nil empty slice")
+	}
+	if len(got.TelemtAvailableVersions) != 0 {
+		t.Fatalf("TelemtAvailableVersions = %v, want empty", got.TelemtAvailableVersions)
+	}
+	if got.LatestPanelVersion != "1.2.3" {
+		t.Fatalf("LatestPanelVersion = %q, want %q", got.LatestPanelVersion, "1.2.3")
 	}
 }
