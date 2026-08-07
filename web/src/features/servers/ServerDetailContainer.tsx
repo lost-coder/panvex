@@ -79,6 +79,10 @@ export function ServerDetailContainer() {
   // above already reads (admin-gated by the same `isAdmin` this hook's
   // result is only *displayed* behind, not additionally re-fetched here).
   const latestTelemtVersion = updatesQuery.data?.state.telemt_latest_version;
+  // Task 4: the version picker's option list — always sorted descending
+  // by the checker (Task 1), so index 0 is "latest" without a client-side
+  // sort.
+  const availableTelemtVersions = updatesQuery.data?.state.telemt_available_versions ?? [];
   const navigate = useNavigate();
   const confirm = useConfirm();
   const [timeRange, setTimeRange] = useState("6h");
@@ -173,6 +177,7 @@ export function ServerDetailContainer() {
             agentId={server.id}
             currentVersion={server.systemInfo?.telemtVersion ?? ""}
             latestVersion={latestTelemtVersion}
+            availableVersions={availableTelemtVersions}
           />
         ) : undefined
       }

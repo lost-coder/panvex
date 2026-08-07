@@ -53,7 +53,7 @@ describe("useDispatchTelemtUpdate", () => {
     dispatchMock.mockResolvedValue({ job_id: "job-1" });
     const { result } = renderHook(() => useDispatchTelemtUpdate("agent-1"), { wrapper: wrapper() });
 
-    result.current.mutate("3.4.25");
+    result.current.mutate({ version: "3.4.25" });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(dispatchMock).toHaveBeenCalledWith("agent-1", { version: "3.4.25" });
@@ -69,7 +69,7 @@ describe("useDispatchTelemtUpdate", () => {
     dispatchMock.mockRejectedValue(new ApiError("conflict", code, 409));
     const { result } = renderHook(() => useDispatchTelemtUpdate("agent-1"), { wrapper: wrapper() });
 
-    result.current.mutate("3.4.25");
+    result.current.mutate({ version: "3.4.25" });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toastApi.error).toHaveBeenCalledWith(expected);
@@ -79,7 +79,7 @@ describe("useDispatchTelemtUpdate", () => {
     dispatchMock.mockRejectedValue(new ApiError("agent not found", "not_found", 404));
     const { result } = renderHook(() => useDispatchTelemtUpdate("agent-1"), { wrapper: wrapper() });
 
-    result.current.mutate("3.4.25");
+    result.current.mutate({ version: "3.4.25" });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(toastApi.error).toHaveBeenCalledWith("agent not found");

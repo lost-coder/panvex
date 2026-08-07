@@ -309,7 +309,7 @@ describe("TelemtUpdateSection", () => {
     expect(screen.getByText("Failed to load the update strategy")).toBeInTheDocument();
   });
 
-  describe("version badge + update action (Task 14)", () => {
+  describe("version badge (Task 14)", () => {
     const binaryStrategy = {
       mode: "binary" as const,
       restart_spec: "systemd:telemt",
@@ -348,11 +348,9 @@ describe("TelemtUpdateSection", () => {
       });
       render(<TelemtUpdateSection agentId="agent-1" currentVersion="" latestVersion="3.4.25" />);
       expect(screen.queryByText(/→/)).not.toBeInTheDocument();
-      openFold();
-      expect(screen.queryByRole("button", { name: /Update Telemt/ })).not.toBeInTheDocument();
     });
 
-    it("shows no badge and no update action when already on the latest known version", () => {
+    it("shows no badge when already on the latest known version", () => {
       useTelemtUpdateStrategy.mockReturnValue({
         data: { strategy: binaryStrategy, probe: availableProbe },
         isLoading: false,
@@ -360,81 +358,187 @@ describe("TelemtUpdateSection", () => {
       });
       render(<TelemtUpdateSection agentId="agent-1" currentVersion="3.4.25" latestVersion="3.4.25" />);
       expect(screen.queryByText(/→/)).not.toBeInTheDocument();
-      openFold();
-      expect(screen.queryByRole("button", { name: /Update Telemt/ })).not.toBeInTheDocument();
     });
+  });
 
-    it("enables the update button when strategy + probe both support an in-place update", () => {
+  describe("version picker + install action (Task 4)", () => {
+    const binaryStrategy = {
+      mode: "binary" as const,
+      restart_spec: "systemd:telemt",
+      binary_path: "/usr/local/bin/telemt",
+      asset_flavor: "",
+    };
+    const availableProbe = {
+      mode: "binary",
+      suggested_restart_spec: "systemd:telemt",
+      binary_path: "/usr/local/bin/telemt",
+      available: true,
+      reason: "",
+    };
+    const versions = ["3.4.25", "3.4.24", "3.4.23"];
+
+    it("does not render the version picker when availableVersions is empty", () => {
       useTelemtUpdateStrategy.mockReturnValue({
         data: { strategy: binaryStrategy, probe: availableProbe },
         isLoading: false,
         isError: false,
       });
-      render(<TelemtUpdateSection agentId="agent-1" currentVersion="3.4.10" latestVersion="3.4.25" />);
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="3.4.24"
+          latestVersion="3.4.25"
+          availableVersions={[]}
+        />,
+      );
       openFold();
-      expect(screen.getByRole("button", { name: "Update Telemt to 3.4.25" })).toBeEnabled();
+      expect(screen.queryByRole("combobox", { name: "Version" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Install/ })).not.toBeInTheDocument();
     });
 
-    it("disables the update button when no strategy has been configured", () => {
+    it("renders the picker with (latest)/(current) labels and disables the current entry", () => {
+      useTelemtUpdateStrategy.mockReturnValue({
+        data: { strategy: binaryStrategy, probe: availableProbe },
+        isLoading: false,
+        isError: false,
+      });
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="3.4.24"
+          latestVersion="3.4.25"
+          availableVersions={versions}
+        />,
+      );
+      openFold();
+
+      const select = screen.getByRole("combobox", { name: "Version" }) as HTMLSelectElement;
+      const optionLabels = Array.from(select.options).map((o) => o.text);
+      expect(optionLabels).toEqual(["3.4.25 (latest)", "3.4.24 (current)", "3.4.23"]);
+
+      const currentOption = Array.from(select.options).find((o) => o.value === "3.4.24");
+      expect(currentOption).toBeDisabled();
+      // Defaults to the first (latest) entry.
+      expect(select).toHaveValue("3.4.25");
+    });
+
+    it("disables the install button when the selected version equals the current version", () => {
+      useTelemtUpdateStrategy.mockReturnValue({
+        data: { strategy: binaryStrategy, probe: availableProbe },
+        isLoading: false,
+        isError: false,
+      });
+      // Only the current version is in the list — the default selection
+      // equals currentVersion, so the install action must stay disabled.
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="3.4.24"
+          latestVersion="3.4.24"
+          availableVersions={["3.4.24"]}
+        />,
+      );
+      openFold();
+      expect(screen.getByRole("button", { name: "Install 3.4.24" })).toBeDisabled();
+    });
+
+    it("disables the install button when the existing strategy/probe guard blocks the action", () => {
       useTelemtUpdateStrategy.mockReturnValue({
         data: { strategy: null, probe: null },
         isLoading: false,
         isError: false,
       });
-      render(<TelemtUpdateSection agentId="agent-1" currentVersion="3.4.10" latestVersion="3.4.25" />);
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="3.4.10"
+          latestVersion="3.4.25"
+          availableVersions={versions}
+        />,
+      );
       openFold();
-      expect(screen.getByRole("button", { name: "Update Telemt to 3.4.25" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Install 3.4.25" })).toBeDisabled();
     });
 
-    it("disables the update button when the configured strategy mode is not binary (e.g. none)", () => {
-      useTelemtUpdateStrategy.mockReturnValue({
-        data: { strategy: { ...binaryStrategy, mode: "none" as const }, probe: availableProbe },
-        isLoading: false,
-        isError: false,
-      });
-      render(<TelemtUpdateSection agentId="agent-1" currentVersion="3.4.10" latestVersion="3.4.25" />);
-      openFold();
-      expect(screen.getByRole("button", { name: "Update Telemt to 3.4.25" })).toBeDisabled();
-    });
-
-    it("disables the update button when the probe reports the update unavailable", () => {
-      useTelemtUpdateStrategy.mockReturnValue({
-        data: { strategy: binaryStrategy, probe: { ...availableProbe, available: false, reason: "no_service_manager_detected" } },
-        isLoading: false,
-        isError: false,
-      });
-      render(<TelemtUpdateSection agentId="agent-1" currentVersion="3.4.10" latestVersion="3.4.25" />);
-      openFold();
-      expect(screen.getByRole("button", { name: "Update Telemt to 3.4.25" })).toBeDisabled();
-    });
-
-    it("shows the docker hint instead of an update button when the strategy mode is docker", () => {
+    it("shows the docker hint instead of the picker when the strategy mode is docker", () => {
       useTelemtUpdateStrategy.mockReturnValue({
         data: { strategy: { ...binaryStrategy, mode: "docker" as const }, probe: null },
         isLoading: false,
         isError: false,
       });
-      render(<TelemtUpdateSection agentId="agent-1" currentVersion="3.4.10" latestVersion="3.4.25" />);
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="3.4.10"
+          latestVersion="3.4.25"
+          availableVersions={versions}
+        />,
+      );
       openFold();
       expect(screen.getByText("docker compose pull && docker compose up -d")).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /Update Telemt/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Version" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Install/ })).not.toBeInTheDocument();
     });
 
-    it("dispatches the resolved version after the operator confirms", async () => {
+    it("installs a newer version with the standard confirm and no downgrade flag", async () => {
       useTelemtUpdateStrategy.mockReturnValue({
         data: { strategy: binaryStrategy, probe: availableProbe },
         isLoading: false,
         isError: false,
       });
       confirmMock.mockResolvedValueOnce(true);
-      render(<TelemtUpdateSection agentId="agent-1" currentVersion="3.4.10" latestVersion="3.4.25" />);
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="3.4.10"
+          latestVersion="3.4.25"
+          availableVersions={versions}
+        />,
+      );
       openFold();
 
-      fireEvent.click(screen.getByRole("button", { name: "Update Telemt to 3.4.25" }));
+      // Default selection is "3.4.25" (the first/latest entry), newer than
+      // currentVersion "3.4.10".
+      fireEvent.click(screen.getByRole("button", { name: "Install 3.4.25" }));
 
-      await waitFor(() => expect(dispatchMutate).toHaveBeenCalledWith("3.4.25"));
+      await waitFor(() =>
+        expect(dispatchMutate).toHaveBeenCalledWith({ version: "3.4.25" }),
+      );
       expect(confirmMock).toHaveBeenCalledWith(
         expect.objectContaining({ title: "Update Telemt?", confirmLabel: "Update" }),
+      );
+    });
+
+    it("installs an older version with the downgrade confirm and allowDowngrade: true", async () => {
+      useTelemtUpdateStrategy.mockReturnValue({
+        data: { strategy: binaryStrategy, probe: availableProbe },
+        isLoading: false,
+        isError: false,
+      });
+      confirmMock.mockResolvedValueOnce(true);
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="3.4.24"
+          latestVersion="3.4.25"
+          availableVersions={versions}
+        />,
+      );
+      openFold();
+
+      fireEvent.change(screen.getByRole("combobox", { name: "Version" }), {
+        target: { value: "3.4.23" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Install 3.4.23" }));
+
+      await waitFor(() =>
+        expect(dispatchMutate).toHaveBeenCalledWith({ version: "3.4.23", allowDowngrade: true }),
+      );
+      expect(confirmMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Roll back Telemt version",
+          confirmLabel: "Roll back",
+        }),
       );
     });
 
@@ -445,10 +549,17 @@ describe("TelemtUpdateSection", () => {
         isError: false,
       });
       confirmMock.mockResolvedValueOnce(false);
-      render(<TelemtUpdateSection agentId="agent-1" currentVersion="3.4.10" latestVersion="3.4.25" />);
+      render(
+        <TelemtUpdateSection
+          agentId="agent-1"
+          currentVersion="3.4.10"
+          latestVersion="3.4.25"
+          availableVersions={versions}
+        />,
+      );
       openFold();
 
-      fireEvent.click(screen.getByRole("button", { name: "Update Telemt to 3.4.25" }));
+      fireEvent.click(screen.getByRole("button", { name: "Install 3.4.25" }));
 
       await waitFor(() => expect(confirmMock).toHaveBeenCalled());
       expect(dispatchMutate).not.toHaveBeenCalled();

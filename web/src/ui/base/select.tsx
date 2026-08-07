@@ -4,6 +4,7 @@ import { cn } from "@/ui/lib/cn";
 export interface SelectOption {
   value: string;
   label: string;
+  disabled?: boolean | undefined;
 }
 
 export interface SelectProps {
@@ -36,7 +37,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         >
           {!value && <option value="">{placeholder}</option>}
           {options.map((opt) => (
-            <option key={opt.value} value={opt.value}>
+            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
               {opt.label}
             </option>
           ))}

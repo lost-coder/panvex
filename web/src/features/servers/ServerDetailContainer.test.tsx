@@ -129,6 +129,7 @@ describe("ServerDetailContainer — telemt update strategy admin gating", () => 
       agentId: "agent-1",
       currentVersion: "",
       latestVersion: undefined,
+      availableVersions: [],
     });
   });
 });

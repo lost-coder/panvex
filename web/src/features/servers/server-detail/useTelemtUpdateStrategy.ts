@@ -63,7 +63,8 @@ export function useDispatchTelemtUpdate(agentId: string) {
   const toast = useToast();
   const { t } = useTranslation("servers");
   return useMutation({
-    mutationFn: (version: string) => apiClient.dispatchTelemtUpdate(agentId, { version }),
+    mutationFn: (input: { version: string; allowDowngrade?: boolean }) =>
+      apiClient.dispatchTelemtUpdate(agentId, input),
     onSuccess: () => {
       toast.success(t("telemtUpdate.action.queued"));
     },
