@@ -26,6 +26,12 @@ updates:
       interval: weekly
     labels:
       - enhancement
+    # The default cap is 5 open PRs per ecosystem, and the 2026-08-07 sweep
+    # hit it exactly: two dev-dependency majors took slots, so the pending
+    # @size-limit/file bump never got a PR at all and only surfaced by hand.
+    # A silently truncated queue is worse than a long one — it looks like
+    # "nothing else to update".
+    open-pull-requests-limit: 10
     # react and react-dom must move in lockstep — react-dom hard-fails on a
     # version skew ("Incompatible React versions"). Group them (with their
     # @types) so a bump is one coherent PR instead of a react-only PR that
@@ -41,6 +47,26 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
+      # size-limit plugins declare a peer range on the core package, so a
+      # core-only major leaves `npm ls` reporting an invalid tree. Measured
+      # 2026-08-07: `npm run size` still exits 0 with core 13 against
+      # plugin 12, so this is hygiene rather than a broken gate — but there
+      # is no reason to carry a knowingly unsatisfiable peer range. No
+      # update-types filter: majors are exactly the case worth pairing.
+      size-limit:
+        patterns:
+          - "size-limit"
+          - "@size-limit/*"
+      # Same shape, sharper teeth: every @storybook/* package pins a peer
+      # range of `storybook: ^<its own version>`, so a scoped-only bump
+      # leaves the tree invalid. The 2026-08-07 sweep did exactly that —
+      # the web-dev group moved @storybook/react, react-vite and addon-a11y
+      # to 10.5.6 while the root `storybook` stayed at 10.4.2 (caught in
+      # review on #220, not by CI).
+      storybook:
+        patterns:
+          - "storybook"
+          - "@storybook/*"
       # Runtime deps ship in the bundle — keep them in their own PR so a
       # Radix/lucide bump gets looked at with bundle-size and visual
       # regressions in mind.
