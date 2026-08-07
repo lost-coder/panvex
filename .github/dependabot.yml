@@ -6,11 +6,12 @@ updates:
       interval: weekly
     labels:
       - enhancement
-    # Ungrouped, a weekly sweep files one PR per module and they all edit
-    # go.sum — so merging any one of them leaves the rest BEHIND and the
-    # queue has to be rebased serially. Observed 2026-08-04 (#195-#199)
-    # and 2026-07-31 (16 PRs). Batch the safe half; majors stay solo so a
-    # breaking bump gets its own review instead of hiding among patches.
+    # Without the group below, a weekly sweep files one PR per module and
+    # they all edit go.sum — so merging any one of them leaves the rest
+    # BEHIND and the queue has to be rebased serially. Observed 2026-08-04
+    # (#195-#199) and 2026-07-31 (16 PRs). Batch the safe half; majors stay
+    # solo so a breaking bump gets its own review, not a hiding place among
+    # patch updates.
     groups:
       go-minor-patch:
         patterns:
