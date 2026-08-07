@@ -70,6 +70,12 @@ lint:
 vuln:
 	govulncheck ./...
 
+# Tier-3 deep local analysis (semgrep, osv-scanner, npm audit, gitleaks
+# full-history). Heavy/free tools that run on the dev machine instead of
+# CI — see scripts/deep-scan.sh header for the tiering rationale.
+deep-scan:
+	bash scripts/deep-scan.sh
+
 check: lint test vuln
 
 build: gen-install-script

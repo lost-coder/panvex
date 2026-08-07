@@ -138,6 +138,13 @@ func ReverseBootstrap(cfg ReverseBootstrapConfig) error {
 		// short-lived and accepts a single connection, so the cost of
 		// disabling resumption is negligible.
 		SessionTicketsDisabled: true,
+		// Same TLS 1.3 floor as the long-lived agent listener (S-7,
+		// internal/agent/transport/listen.go). Without an explicit
+		// MinVersion this bootstrap listener silently accepted TLS 1.2 —
+		// found by the deep-scan semgrep pass, 2026-08-08. The only
+		// legitimate peer is the panel dialing with a modern Go TLS
+		// stack, so there is no compatibility cost.
+		MinVersion: tls.VersionTLS13,
 	}
 
 	// Reverse-bootstrap is bounded by reverseBootstrapTimeout end-to-end; tie

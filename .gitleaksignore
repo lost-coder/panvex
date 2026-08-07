@@ -1,0 +1,8 @@
+# Confirmed false positives, pinned by fingerprint (commit:file:rule:line).
+# Verify before adding: `git show <commit> -- <file>` and check the match
+# is not a real secret.
+
+# generic-api-key matched the parameter list of buildAdoptedClientState —
+# literally `secret, expirationRFC3339 string` in a function signature;
+# the "high-entropy token" is the identifier expirationRFC3339.
+e4dfe3964fd35aadf360015a4aea9df26bba4992:internal/controlplane/server/clients_discovery.go:generic-api-key:303
