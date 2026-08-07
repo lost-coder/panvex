@@ -419,7 +419,12 @@ export function transformServerDetail(
     // Task 14 fix: no agent-version fallback here — a Telemt-version
     // comparison (update badge) must never silently compare against the
     // panvex-agent's own version when Telemt hasn't reported system_info yet.
-    telemtVersion: str(sysInfoRaw.version),
+    // Source is the FAST live Instance.Version (via detail.telemt_version,
+    // refreshed every agent report, ~13s), not the slow
+    // diagnostics.system_info.version (2-minute TTL) — otherwise the update
+    // badge/section keeps showing the old version for up to 2 minutes after
+    // a successful Telemt update.
+    telemtVersion: str(detail.telemt_version),
     targetArch: str(sysInfoRaw.target_arch),
     targetOs: str(sysInfoRaw.target_os),
     buildProfile: str(sysInfoRaw.build_profile),

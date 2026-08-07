@@ -114,6 +114,15 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 	}); err != nil {
 		t.Fatalf("PutTelemetrySecurityInventoryCurrent() error = %v", err)
 	}
+	// The live Instance.Version ("2026.04") deliberately differs from the
+	// slow diagnostics.system_info.version ("2026.03") seeded above: the
+	// detail endpoint's telemt_version field must come from the fast live
+	// snapshot, not the slow-TTL diagnostics blob.
+	server.seedLiveInstanceKeyed("agent-a-primary", Instance{
+		AgentID: "agent-a",
+		Name:    "telemt-primary",
+		Version: "2026.04",
+	})
 
 	loginResponse := performJSONRequest(t, server, http.MethodPost, "/api/auth/login", map[string]string{
 		"username": "admin",
@@ -205,6 +214,9 @@ func TestHTTPTelemetryEndpointsExposeOperatorSummariesAndDetailBoost(t *testing.
 	}
 	if len(detailPayload.SecurityInventory.Entries) != 2 {
 		t.Fatalf("len(detail.security_inventory.entries) = %d, want %d", len(detailPayload.SecurityInventory.Entries), 2)
+	}
+	if detailPayload.TelemtVersion != "2026.04" {
+		t.Fatalf("detail.telemt_version = %q, want %q (fast live Instance.Version, not slow diagnostics.system_info.version)", detailPayload.TelemtVersion, "2026.04")
 	}
 
 	jobsList := server.jobs.ListWithContext(context.Background())

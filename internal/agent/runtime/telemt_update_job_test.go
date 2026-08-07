@@ -78,6 +78,20 @@ func TestHandleTelemtUpdateJobSuccess(t *testing.T) {
 	}
 	t.Cleanup(func() { telemtUpdateExecute = orig })
 
+	// Prime the diagnostics delta-gate so it remembers a hash: the second
+	// next() with the same fields returns sendBody=false. A successful update
+	// must reset it (ResetDeltaGates) so the next snapshot re-sends the full
+	// diagnostics body — carrying the new Telemt version to the panel even
+	// though the restart's unreachable snapshots left the gate holding a stale
+	// hash. Without the reset the "update available" badge sticks on the old
+	// version after a successful upgrade.
+	if _, send := a.diagnosticsGate.next("diag-body"); !send {
+		t.Fatal("priming: first next() should send body")
+	}
+	if _, send := a.diagnosticsGate.next("diag-body"); send {
+		t.Fatal("priming: second identical next() should NOT send body")
+	}
+
 	job := &gatewayrpc.JobCommand{
 		Id:          "job-ok",
 		Action:      "telemt.update",
@@ -92,6 +106,9 @@ func TestHandleTelemtUpdateJobSuccess(t *testing.T) {
 	}
 	if client.invalidateSlowDataCalls != 1 {
 		t.Fatalf("expected InvalidateSlowDataCache to be called once, got %d", client.invalidateSlowDataCalls)
+	}
+	if _, send := a.diagnosticsGate.next("diag-body"); !send {
+		t.Fatal("expected ResetDeltaGates on success so diagnostics body re-sends; gate still suppressed")
 	}
 }
 

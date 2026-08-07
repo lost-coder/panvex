@@ -91,6 +91,11 @@ export const telemetryServerDetailResponseSchema = z.object({
     entries_total: z.number(),
     entries: z.array(z.string()),
   }),
+  // Fast-updating Telemt version, read from the live Instance snapshot
+  // (refreshed every agent report, ~13s) rather than the slow
+  // diagnostics.system_info.version (2-minute TTL). Optional so older
+  // panel builds without this field still parse.
+  telemt_version: z.string().optional(),
 });
 
 const serverLoadPointSchema = z.object({

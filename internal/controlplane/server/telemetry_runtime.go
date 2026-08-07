@@ -112,6 +112,13 @@ type telemetryServerDetailResponse struct {
 	InitializationWatch telemetryInitializationWatchResponse `json:"initialization_watch"`
 	Diagnostics         telemetryDiagnosticsResponse         `json:"diagnostics"`
 	SecurityInventory   telemetrySecurityInventoryResponse   `json:"security_inventory"`
+	// TelemtVersion is the fast-updating Telemt version (from the live
+	// Instance snapshot, refreshed every agent report, ~13s) rather than the
+	// slow diagnostics.system_info.version (2-minute TTL). The update badge
+	// and "Update Telemt" section read this field so a successful update is
+	// reflected immediately instead of appearing to hang for up to 2 minutes.
+	// Empty when the agent has no live instances yet.
+	TelemtVersion string `json:"telemt_version"`
 }
 
 type telemetryInitializationWatchResponse struct {

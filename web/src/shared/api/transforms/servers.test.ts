@@ -209,7 +209,7 @@ describe("transformServerDetail", () => {
     expect(result.fallbackEnteredAtUnix).toBeNull();
   });
 
-  it("does not fall back to the agent version for telemtVersion when Telemt hasn't reported system_info yet", () => {
+  it("does not fall back to the agent version for telemtVersion when Telemt hasn't reported a live version yet", () => {
     // Task 14 fix: `version` keeps the agent-version fallback (fresh
     // enroll / partial diagnostics — other consumers rely on always
     // having *something* to show), but `telemtVersion` is the raw
@@ -218,22 +218,29 @@ describe("transformServerDetail", () => {
     // version — the two version spaces aren't comparable.
     const runtime = makeRuntime();
     const resp = makeDetailResponse(runtime);
-    // makeDetailResponse's diagnostics.system_info is already `{}` (no
-    // version reported) and its agent.version is "1.0.0".
+    // makeDetailResponse has no top-level telemt_version and its
+    // diagnostics.system_info is `{}` (no version reported); agent.version
+    // is "1.0.0".
     const result = transformServerDetail(resp);
 
     expect(result.systemInfo.version).toBe("1.0.0");
     expect(result.systemInfo.telemtVersion).toBe("");
   });
 
-  it("populates telemtVersion straight from system_info.version when Telemt has reported it", () => {
+  it("populates telemtVersion from the fast top-level telemt_version field, not diagnostics.system_info.version", () => {
+    // UX bug fix: diagnostics.system_info.version is refreshed on a slow
+    // (2-minute) TTL, so right after a successful Telemt update the update
+    // badge/section would keep showing the OLD version for up to 2 minutes.
+    // telemt_version comes from the live Instance snapshot instead, which
+    // refreshes every agent report (~13s) — it must be the sole source for
+    // telemtVersion, even when the slow diagnostics blob is stale.
     const runtime = makeRuntime();
     const resp = makeDetailResponse(runtime);
-    resp.diagnostics = { ...resp.diagnostics, system_info: { version: "3.4.10" } };
+    resp.diagnostics = { ...resp.diagnostics, system_info: { version: "OLD" } };
+    resp.telemt_version = "NEW";
     const result = transformServerDetail(resp);
 
-    expect(result.systemInfo.version).toBe("3.4.10");
-    expect(result.systemInfo.telemtVersion).toBe("3.4.10");
+    expect(result.systemInfo.telemtVersion).toBe("NEW");
   });
 
   it("derives state onto the detail server", () => {

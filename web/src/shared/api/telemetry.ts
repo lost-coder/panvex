@@ -144,6 +144,9 @@ export type TelemetryServerDetailResponse = {
     entries_total: number;
     entries: string[];
   };
+  /** Fast-updating Telemt version (live Instance snapshot, ~13s refresh),
+   * not the slow diagnostics.system_info.version (2-minute TTL). */
+  telemt_version?: string | undefined;
 };
 
 export type ServerLoadPoint = {

@@ -401,11 +401,25 @@ func (s *Server) handleTelemetryServerDetail() http.HandlerFunc {
 			}
 		}
 
+		// Fast Telemt version: read from the live Instance snapshot (updated
+		// every agent report, ~13s) rather than diagnostics.system_info.version
+		// (slow-data TTL, up to 2 minutes stale). Take the first instance with
+		// a non-empty Version — normally there is a single "telemt-primary"
+		// instance per agent.
+		var telemtVersion string
+		for _, inst := range s.live.InstancesForAgent(agentID) {
+			if inst.Version != "" {
+				telemtVersion = inst.Version
+				break
+			}
+		}
+
 		writeJSON(w, http.StatusOK, telemetryServerDetailResponse{
 			Server:              summary,
 			InitializationWatch: telemetryInitializationWatchForAgent(summaryAgent, now, initializationCooldownExpiresAt),
 			Diagnostics:         diagnostics,
 			SecurityInventory:   securityInventory,
+			TelemtVersion:       telemtVersion,
 		})
 	}
 }

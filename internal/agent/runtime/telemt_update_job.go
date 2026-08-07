@@ -51,9 +51,25 @@ func (a *Agent) handleTelemtUpdateJob(ctx context.Context, job *gatewayrpc.JobCo
 
 	result.Success = true
 	result.Message = outcome.Message
-	// Force the next runtime-snapshot cycle to refetch slow diagnostics
-	// (which includes Telemt's reported version) instead of serving the
-	// pre-update value out of the slow-data cache until its TTL expires.
+	// After a successful in-place update, the panel must show the new Telemt
+	// version promptly — otherwise the "update available" badge and the
+	// displayed version keep showing the old release even though the node is
+	// already upgraded, which reads as "the update did nothing".
+	//
+	// Two things gate that version reaching the panel:
+	//   1. The agent serves Telemt's reported version out of a slow-data cache
+	//      until its TTL expires — invalidate it so the next runtime snapshot
+	//      refetches /v1/system/info and sees the new version.
+	//   2. The diagnostics body (which carries system_info.version) is
+	//      delta-gated by content hash. The restart during the update drops
+	//      the agent<->Telemt connection and emits unreachable snapshots, and
+	//      the panel blanks its stored diagnostics row on unreachable; the
+	//      agent-side gate, however, still remembers the last-sent hash, so a
+	//      plain refetch may not re-send the body. Reset the delta gates so the
+	//      next snapshot re-sends the full diagnostics body unconditionally.
+	// Instance.version (the fast, non-gated path) already updates on the very
+	// next snapshot; this closes the slow diagnostics path the UI badge reads.
 	a.telemt.InvalidateSlowDataCache()
+	a.ResetDeltaGates()
 	return result
 }
