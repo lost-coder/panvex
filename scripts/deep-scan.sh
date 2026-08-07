@@ -32,7 +32,7 @@ run_section() {
     if ! command -v "$tool" >/dev/null 2>&1; then
         echo "--- $tool not installed, skipping (see header for install source)"
         RESULT[$name]="SKIPPED (no $tool)"
-        return
+        return 0
     fi
     if "$@"; then
         RESULT[$name]="OK"
@@ -40,6 +40,7 @@ run_section() {
         RESULT[$name]="FAILED"
         FAILED=1
     fi
+    return 0
 }
 
 # ── SAST: semgrep over Go + TS with community security rules ─────────────
@@ -57,17 +58,18 @@ refresh_semgrep_rules() {
     mkdir -p "$SEMGREP_CACHE"
     local p
     for p in golang typescript security-audit; do
-        curl -sSfL --max-time 30 "https://semgrep.dev/c/p/$p" \
+        curl -sSfL --proto '=https' --tlsv1.2 --max-time 30 "https://semgrep.dev/c/p/$p" \
             -o "$SEMGREP_CACHE/$p.yml.tmp" \
             && mv "$SEMGREP_CACHE/$p.yml.tmp" "$SEMGREP_CACHE/$p.yml" \
             || echo "--- refresh of p/$p failed, keeping cached copy (if any)"
     done
+    return 0
 }
 semgrep_scan() {
     # Refresh only when a pack is missing entirely; otherwise scan from
     # cache (refresh by hand: rm ~/.cache/semgrep-rules/*.yml).
-    [ -s "$SEMGREP_CACHE/golang.yml" ] || refresh_semgrep_rules
-    if ! [ -s "$SEMGREP_CACHE/golang.yml" ]; then
+    [[ -s "$SEMGREP_CACHE/golang.yml" ]] || refresh_semgrep_rules
+    if ! [[ -s "$SEMGREP_CACHE/golang.yml" ]]; then
         echo "--- no cached rules and semgrep.dev unreachable"
         return 2
     fi
@@ -79,6 +81,7 @@ semgrep_scan() {
         --exclude '*.pb.go' \
         --exclude 'internal/dbsqlc' --exclude 'web/dist' --exclude 'web/storybook-static' \
         | python3 scripts/semgrep-filter.py
+    return $?
 }
 run_section "semgrep (SAST Go+TS)" semgrep semgrep_scan
 
@@ -88,18 +91,19 @@ run_section "govulncheck" govulncheck govulncheck ./...
 # ── Lockfile CVEs from the OSV database (Go + npm in one pass) ───────────
 osv_scan() {
     osv-scanner scan source --lockfile go.mod --lockfile web/package-lock.json
+    return $?
 }
 run_section "osv-scanner (go.mod + npm lock)" osv-scanner osv_scan
 
 # ── npm advisories (removed from CI as a Trivy duplicate; free locally) ──
-npm_audit() { (cd web && npm audit --audit-level=moderate); }
+npm_audit() { (cd web && npm audit --audit-level=moderate); return $?; }
 run_section "npm audit" npm npm_audit
 
 # ── Secrets over the ENTIRE git history ──────────────────────────────────
 # The CI gitleaks action only scans the commit range of a push/PR, so a
 # secret that landed long ago never resurfaces there. This scans all
 # commits every time.
-gitleaks_scan() { gitleaks detect --source . --redact --exit-code 1; }
+gitleaks_scan() { gitleaks detect --source . --redact --exit-code 1; return $?; }
 run_section "gitleaks (full history)" gitleaks gitleaks_scan
 
 # ── Summary ──────────────────────────────────────────────────────────────
@@ -108,5 +112,5 @@ echo "═══ deep-scan summary ═══"
 for name in "${!RESULT[@]}"; do
     printf "  %-32s %s\n" "$name" "${RESULT[$name]}"
 done
-[ "$FAILED" = 0 ] && echo "deep-scan: clean" || echo "deep-scan: FINDINGS ABOVE"
-exit $FAILED
+if [[ "$FAILED" = 0 ]]; then echo "deep-scan: clean"; else echo "deep-scan: FINDINGS ABOVE"; fi
+exit "$FAILED"

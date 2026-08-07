@@ -2,7 +2,12 @@
 # Verify before adding: `git show <commit> -- <file>` and check the match
 # is not a real secret.
 
-# generic-api-key matched the parameter list of buildAdoptedClientState —
-# literally `secret, expirationRFC3339 string` in a function signature;
-# the "high-entropy token" is the identifier expirationRFC3339.
+# generic-api-key matched a FUNCTION SIGNATURE in buildAdoptedClientState:
+# a parameter named like a credential followed by a long camelCase
+# identifier that the rule scored as a high-entropy token. No value of
+# any kind is present at that line — only parameter names and types.
 e4dfe3964fd35aadf360015a4aea9df26bba4992:internal/controlplane/server/clients_discovery.go:generic-api-key:303
+
+# The previous revision of THIS file quoted the trigger text in its
+# comment, which itself matched generic-api-key once committed.
+7d9e0f14db7aae79fe2c284c6023ac5888025ea6:.gitleaksignore:generic-api-key:6
