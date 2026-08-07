@@ -57,6 +57,16 @@ updates:
         patterns:
           - "size-limit"
           - "@size-limit/*"
+      # Same shape, sharper teeth: every @storybook/* package pins a peer
+      # range of `storybook: ^<its own version>`, so a scoped-only bump
+      # leaves the tree invalid. The 2026-08-07 sweep did exactly that —
+      # the web-dev group moved @storybook/react, react-vite and addon-a11y
+      # to 10.5.6 while the root `storybook` stayed at 10.4.2 (caught in
+      # review on #220, not by CI).
+      storybook:
+        patterns:
+          - "storybook"
+          - "@storybook/*"
       # Runtime deps ship in the bundle — keep them in their own PR so a
       # Radix/lucide bump gets looked at with bundle-size and visual
       # regressions in mind.
