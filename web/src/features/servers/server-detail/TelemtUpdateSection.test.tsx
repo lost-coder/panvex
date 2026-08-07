@@ -377,7 +377,25 @@ describe("TelemtUpdateSection", () => {
     };
     const versions = ["3.4.25", "3.4.24", "3.4.23"];
 
-    it("does not render the version picker when availableVersions is empty", () => {
+    it("does not render the version picker when there is no release data at all", () => {
+      useTelemtUpdateStrategy.mockReturnValue({
+        data: { strategy: binaryStrategy, probe: availableProbe },
+        isLoading: false,
+        isError: false,
+      });
+      render(
+        <TelemtUpdateSection agentId="agent-1" currentVersion="3.4.24" availableVersions={[]} />,
+      );
+      openFold();
+      expect(screen.queryByRole("combobox", { name: "Version" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Install/ })).not.toBeInTheDocument();
+    });
+
+    it("falls back to a single-entry picker built from latestVersion when availableVersions is empty (review-wave fix)", async () => {
+      // Regression guard: a badge-with-nothing-to-install window opens up
+      // whenever availableVersions is empty but latestVersion is known —
+      // e.g. a persisted state predating the release-list field, or the
+      // periodic checker disabled/failing (GitHub 403 without a token).
       useTelemtUpdateStrategy.mockReturnValue({
         data: { strategy: binaryStrategy, probe: availableProbe },
         isLoading: false,
@@ -386,14 +404,22 @@ describe("TelemtUpdateSection", () => {
       render(
         <TelemtUpdateSection
           agentId="agent-1"
-          currentVersion="3.4.24"
+          currentVersion="3.4.10"
           latestVersion="3.4.25"
           availableVersions={[]}
         />,
       );
       openFold();
-      expect(screen.queryByRole("combobox", { name: "Version" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /Install/ })).not.toBeInTheDocument();
+
+      const select = screen.getByRole("combobox", { name: "Version" }) as HTMLSelectElement;
+      const optionLabels = Array.from(select.options).map((o) => o.text);
+      expect(optionLabels).toEqual(["3.4.25 (latest)"]);
+      expect(select).toHaveValue("3.4.25");
+
+      fireEvent.click(screen.getByRole("button", { name: "Install 3.4.25" }));
+      await waitFor(() =>
+        expect(dispatchMutate).toHaveBeenCalledWith({ version: "3.4.25" }),
+      );
     });
 
     it("renders the picker with (latest)/(current) labels and disables the current entry", () => {

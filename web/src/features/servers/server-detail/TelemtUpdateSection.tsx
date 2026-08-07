@@ -124,6 +124,16 @@ export function TelemtUpdateSection({
   const [validationError, setValidationError] = useState<string | null>(null);
   const seededRef = useRef(false);
 
+  // Review-wave fix: availableVersions can be empty while latestVersion is
+  // still known — e.g. a persisted state written before the release-list
+  // field existed, or the periodic checker disabled (check_interval_hours
+  // <= 0) or failing (GitHub rate-limits unauthenticated requests with a
+  // 403). Without this fallback the badge ("Telemt X → Y", gated on
+  // latestVersion alone below) can be visible while the picker that would
+  // let the operator act on it stays hidden. A single-entry list keeps the
+  // picker usable in that case.
+  const pickerVersions = availableVersions.length > 0 ? availableVersions : latestVersion ? [latestVersion] : [];
+
   // Task 4: the operator's pick from the version picker, defaulting to
   // index 0 ("latest"). Re-synced whenever the list's *content* changes
   // (e.g. it loads in after mount) unless the current selection is still a
@@ -134,13 +144,13 @@ export function TelemtUpdateSection({
   // Keyed by content (not array identity): the container's `?? []`
   // fallback hands back a fresh array reference on every render, which
   // would otherwise re-trigger this on every single render.
-  const availableVersionsKey = availableVersions.join("\n");
-  const [selectedVersion, setSelectedVersion] = useState(() => availableVersions[0] ?? "");
-  const [prevAvailableVersionsKey, setPrevAvailableVersionsKey] = useState(availableVersionsKey);
-  if (prevAvailableVersionsKey !== availableVersionsKey) {
-    setPrevAvailableVersionsKey(availableVersionsKey);
-    if (availableVersions.length > 0 && !availableVersions.includes(selectedVersion)) {
-      setSelectedVersion(availableVersions[0] ?? "");
+  const pickerVersionsKey = pickerVersions.join("\n");
+  const [selectedVersion, setSelectedVersion] = useState(() => pickerVersions[0] ?? "");
+  const [prevPickerVersionsKey, setPrevPickerVersionsKey] = useState(pickerVersionsKey);
+  if (prevPickerVersionsKey !== pickerVersionsKey) {
+    setPrevPickerVersionsKey(pickerVersionsKey);
+    if (pickerVersions.length > 0 && !pickerVersions.includes(selectedVersion)) {
+      setSelectedVersion(pickerVersions[0] ?? "");
     }
   }
 
@@ -222,7 +232,7 @@ export function TelemtUpdateSection({
   // when a node is already on the newest known release, since "this is
   // your current version" (and therefore disabled) is the more actionable
   // read than "this is latest" for that one entry.
-  const versionOptions = availableVersions.map((version, index) => {
+  const versionOptions = pickerVersions.map((version, index) => {
     const isCurrent = !isForced && version === currentVersion;
     return {
       value: version,
@@ -309,7 +319,7 @@ export function TelemtUpdateSection({
         <div className="text-sm text-status-error">{t("telemtUpdate.error")}</div>
       ) : (
         <div className="flex flex-col gap-4">
-          {availableVersions.length > 0 && (
+          {pickerVersions.length > 0 && (
             <div className="flex flex-col gap-2 rounded-md border border-divider bg-bg-card/50 p-3">
               {strategy?.mode === "docker" ? (
                 <>
