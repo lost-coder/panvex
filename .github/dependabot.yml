@@ -32,6 +32,19 @@ updates:
     # A silently truncated queue is worse than a long one — it looks like
     # "nothing else to update".
     open-pull-requests-limit: 10
+    # TypeScript majors AND minors are gated by the lint toolchain, not
+    # by us: typescript-eslint pins `typescript >=4.8.4 <6.1.0` (checked
+    # at 8.66.0, 2026-08-08), so even a 6.1 minor lands outside the peer
+    # range — a TS bump PR beyond patch level can only ever be red
+    # (#224: typescript-estree crashes against TS 7). Patches stay
+    # allowed. LIFT this entry (or bump TS by hand) whenever
+    # typescript-eslint's peer range moves — check
+    # `npm view typescript-eslint peerDependencies`.
+    ignore:
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
     # react and react-dom must move in lockstep — react-dom hard-fails on a
     # version skew ("Incompatible React versions"). Group them (with their
     # @types) so a bump is one coherent PR instead of a react-only PR that
