@@ -52,7 +52,9 @@ echo "=== Pre-push: Go lint ==="
 
 echo "=== Pre-push: Settings codegen drift ==="
 # Not covered by any CI job — this is the only guard for it.
-go generate ./internal/controlplane/settings/... >/dev/null 2>&1
+# stdout only — stderr must stay visible or a generation failure aborts
+# the hook (set -e) with no explanation.
+go generate ./internal/controlplane/settings/... >/dev/null
 if ! git diff --quiet -- internal/controlplane/settings/gen/schema.json docs/settings/reference.md docs/settings/example.config.toml; then
     echo "!!! Settings codegen drift; run 'make gen-settings' and commit."
     exit 1

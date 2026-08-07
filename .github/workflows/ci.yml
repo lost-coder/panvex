@@ -70,6 +70,9 @@ jobs:
               - '.github/workflows/ci.yml'
             web:
               - 'web/**'
+              # Makefile drives make verify-param-catalog (gated on web),
+              # so a Makefile-only change must not skip that drift check.
+              - 'Makefile'
               - '.github/workflows/ci.yml'
             db:
               - 'db/**'
