@@ -257,9 +257,9 @@ const telemtRepo = "telemt/telemt"
 var telemtStableTagPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // DefaultTelemtVersionsToShow is the default number of most-recent stable
-// Telemt versions the panel tracks for the version picker. Task 2 adds an
-// operator-configurable Settings.TelemtVersionsToShow field seeded from this
-// same value; until that lands, checkTelemtRelease passes it directly to
+// Telemt versions the panel tracks for the version picker. It seeds the
+// operator-configurable Settings.TelemtVersionsToShow field; checkTelemtRelease
+// passes the setting through ClampTelemtVersionsToShow before calling
 // FetchTelemtReleaseOverview.
 const DefaultTelemtVersionsToShow = 5
 
