@@ -436,6 +436,13 @@
       "hotHint": "Applied immediately",
       "reloadHint": "Applied via an in-process Telemt reload (no process restart)"
     },
+    "upstreams": {
+      "title": "Upstreams",
+      "empty": "No upstreams configured — Telemt connects to Telegram directly.",
+      "add": "Add upstream",
+      "remove": "Remove upstream",
+      "entry": "Upstream #{{index}}"
+    },
     "tree": {
       "defaultHint": "Default: {{value}}",
       "lockedByGroup": "Set by group {{name}}",

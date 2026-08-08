@@ -447,6 +447,13 @@
       "hotHint": "Применяется немедленно",
       "reloadHint": "Применяется через внутрипроцессную перезагрузку Telemt (без перезапуска процесса)"
     },
+    "upstreams": {
+      "title": "Upstream-соединения",
+      "empty": "Upstream не настроены — Telemt подключается к Telegram напрямую.",
+      "add": "Добавить upstream",
+      "remove": "Удалить upstream",
+      "entry": "Upstream №{{index}}"
+    },
     "tree": {
       "defaultHint": "По умолчанию: {{value}}",
       "lockedByGroup": "Управляется группой {{name}}",
