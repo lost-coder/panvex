@@ -319,6 +319,27 @@ describe("ConfigTab", () => {
     expect(body.censorship).toMatchObject({ exclusive_mask: {} });
   });
 
+  // Follow-up to F2: buildSections' "is this container non-empty" gate used
+  // to count raw keys in `containers.dcOverrides` — but MapEditor's "Add
+  // entry" button seeds a new row as `{"": ""}`, a blank key with a blank
+  // value. That inflates the raw key count to 1 (truthy) even though
+  // `writeMap` itself already strips blank keys/values from what it writes.
+  // Net effect: one stray Add click, with nothing actually typed, plus Save,
+  // was enough to plant an empty `dc_overrides: {}` into a node's desired
+  // snapshot that never had one — reintroducing F2's own phantom-container
+  // hazard (permanent drift, since a persisted-but-empty container is
+  // legitimately "already present" from then on) through a different door.
+  it("пустая строка от «Добавить» в dc_overrides не создаёт фантомный контейнер при Save", () => {
+    render(<ConfigTab server={server} />);
+    const section = screen.getByText("DC overrides").closest("section");
+    if (!section) throw new Error("DC overrides section not found");
+    fireEvent.click(within(section).getByRole("button", { name: "Add entry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const body = putMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty("dc_overrides");
+  });
+
   // Task 6: the Save payload must carry both the flat scalar overrides (via
   // dotted-path unflatten) AND the structural containers the two new
   // editors (UpstreamsEditor / MapEditor) manage — omitting an unchanged

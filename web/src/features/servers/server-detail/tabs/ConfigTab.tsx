@@ -44,7 +44,7 @@ import {
   unflattenPaths,
 } from "@/features/servers/config/sections";
 import {
-  readUpstreams, writeUpstreams, readMap, writeMap,
+  readUpstreams, writeUpstreams, readMap, writeMap, mapHasContent,
   type UpstreamEntry,
 } from "@/features/servers/config/containers";
 import { UpstreamsEditor } from "@/features/servers/config/UpstreamsEditor";
@@ -255,17 +255,24 @@ export function ConfigTab({
   // upstream-ы при перерисовке секции. Но если контейнер УЖЕ есть в desired
   // (даже пустым), его нужно писать и пустым — иначе оператор не сможет
   // очистить существующий контейнер.
+  //
+  // Follow-up: map-контейнеры проверяются через mapHasContent, а не сырой
+  // Object.keys(...).length > 0 — «Добавить» в MapEditor заводит пустую
+  // строку {"": ""}, и сырой счёт ключей считает её «непустой», хотя
+  // writeMap сама отбросит и пустой ключ, и пустое значение. Без этого один
+  // случайный клик «Добавить» плюс Save создавал бы тот же фантомный
+  // пустой контейнер, который весь этот блок должен предотвращать.
   function buildSections(): Record<string, unknown> {
     const out = unflattenPaths(values);
     const stored = data?.desired ?? {};
     if (containers.upstreams.length > 0 || hasPath(stored, "upstreams")) {
       writeUpstreams(out, containers.upstreams);
     }
-    if (Object.keys(containers.dcOverrides).length > 0 || hasPath(stored, "dc_overrides")) {
+    if (mapHasContent(containers.dcOverrides) || hasPath(stored, "dc_overrides")) {
       writeMap(out, "dc_overrides", containers.dcOverrides);
     }
     if (
-      Object.keys(containers.exclusiveMask).length > 0 ||
+      mapHasContent(containers.exclusiveMask) ||
       hasPath(stored, "censorship.exclusive_mask")
     ) {
       writeMap(out, "censorship.exclusive_mask", containers.exclusiveMask);

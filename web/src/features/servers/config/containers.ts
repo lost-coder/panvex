@@ -34,6 +34,22 @@ export function writeUpstreams(sections: Record<string, unknown>, list: Upstream
   sections["upstreams"] = list;
 }
 
+/**
+ * Есть ли в map-контейнере хотя бы одна запись, которая переживёт writeMap
+ * (непустой ключ и непустое после trim значение). Используется вместо
+ * сырого `Object.keys(map).length > 0` там, где нужно решить, писать ли
+ * контейнер вовсе: пустая строка, которую заводит кнопка «Добавить»
+ * (`{"": ""}`), инфлирует счёт ключей до 1, хотя writeMap эту запись сама
+ * отбросит — сырой счёт увидел бы контейнер «непустым» и создал бы
+ * пустой, но присутствующий раздел там, где оператор ничего не ввёл.
+ */
+export function mapHasContent(map: Record<string, MapValue>): boolean {
+  return Object.entries(map).some(([key, value]) => {
+    if (key.trim() === "") return false;
+    return Array.isArray(value) ? value.some((s) => s.trim() !== "") : value.trim() !== "";
+  });
+}
+
 /** Читает map-контейнер, сохраняя форму каждого значения (скаляр или массив). */
 export function readMap(
   sections: Record<string, unknown>,
