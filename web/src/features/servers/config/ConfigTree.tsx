@@ -5,29 +5,23 @@
 // search box and two toggle-button filters ("changed only" / "drifted
 // only") above the list.
 //
-// Phantom container rows: the generated catalog lists ~16 flat
-// "upstreams.*" sub-paths and a bare "dc_overrides" entry even though the
-// real Telemt config nests both as structured containers (an array and an
-// object respectively), never as flat dotted keys. buildTree.ts (Task 1)
-// still emits them as ordinary TreeFields — readonly:true (isContainerPath),
-// with both value and observed undefined whenever the actual config has no
-// data under that path (which is always, since nothing ever writes flat
-// "upstreams.address" keys). Rendered raw those are blank rows with no
-// value, no observed value, and a disabled input — pure noise. We suppress
-// exactly that shape (readonly && value===undefined && observed===undefined)
-// before any other filtering runs, so a container section with only phantom
-// sub-rows (upstreams, dc_overrides in the default catalog) simply never
-// renders. A container path that DOES carry data (observed reports it) is
-// intentionally left alone — isPhantomContainerRow only matches the
-// no-data case, so it stays visible as a readonly row via the existing
-// readonlyContainer note in ConfigTreeField.
+// Container rows (upstreams, dc_overrides, censorship.exclusive_mask):
+// since the container split (Task 2 — see paramCatalog.ts/containers.ts),
+// PARAM_CATALOG no longer lists these paths at all, so buildTree.ts only
+// ever produces a TreeField for one of them when the node's *observed*
+// config actually reports data there — a phantom no-data row (readonly with
+// both value and observed undefined) can no longer occur for them, so no
+// filtering is needed here. A container path that DOES carry data renders
+// as an ordinary readonly row via the existing readonlyContainer note in
+// ConfigTreeField; a real structured editor (UpstreamsEditor/MapEditor,
+// backed by containers.ts) is out of scope for this component.
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, Input } from "@/ui";
 import type { ConfigSections } from "@/shared/api/schemas/config";
 
-import { buildTree, type TreeField } from "./buildTree";
+import { buildTree } from "./buildTree";
 import { ConfigTreeField } from "./ConfigTreeField";
 
 export interface ConfigTreeProps {
@@ -40,10 +34,6 @@ export interface ConfigTreeProps {
   /** P4-T4: per-field drift-resolution actions, threaded through to ConfigTreeField. */
   onAcceptNode?: ((path: string) => void) | undefined;
   onRevertPanel?: ((path: string) => void) | undefined;
-}
-
-function isPhantomContainerRow(field: TreeField): boolean {
-  return field.readonly && field.value === undefined && field.observed === undefined;
 }
 
 function snapshotValues(desired: ConfigSections, observed: ConfigSections, groupPaths: Set<string>) {
@@ -88,8 +78,6 @@ export function ConfigTree({
       .map((section) => ({
         section: section.section,
         fields: section.fields.filter((field) => {
-          if (isPhantomContainerRow(field)) return false;
-
           if (searchLower) {
             const matchesPath = field.path.toLowerCase().includes(searchLower);
             const matchesEntry =

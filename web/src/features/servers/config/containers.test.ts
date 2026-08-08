@@ -21,24 +21,56 @@ describe("контейнеры конфига", () => {
       censorship: { exclusive_mask: { "hv24s.metrion.icu": "127.0.0.1:8085" } },
     };
     expect(readMap(sections, "censorship.exclusive_mask")).toEqual({
-      "hv24s.metrion.icu": ["127.0.0.1:8085"],
+      "hv24s.metrion.icu": "127.0.0.1:8085",
     });
   });
 
   it("пишет таблицу, сохраняя точки в ключе целиком", () => {
     const out: Record<string, unknown> = {};
-    writeMap(out, "censorship.exclusive_mask", { "hv24s.metrion.icu": ["127.0.0.1:8085"] });
+    writeMap(out, "censorship.exclusive_mask", { "hv24s.metrion.icu": "127.0.0.1:8085" });
     expect(out).toEqual({
       censorship: { exclusive_mask: { "hv24s.metrion.icu": "127.0.0.1:8085" } },
     });
   });
 
-  it("dc_overrides сохраняет форму массива адресов", () => {
+  // Форму значения НЕ трогаем: на живой ноде dc_overrides.203 записан массивом
+  // из одного элемента, а exclusive_mask — скалярами. Свернуть одиночный
+  // список в скаляр значило бы породить ложный дрейф при первом же Save.
+  it("сохраняет массив из одного элемента массивом", () => {
     const sections = { dc_overrides: { "203": ["91.105.192.100:443"] } };
     expect(readMap(sections, "dc_overrides")).toEqual({ "203": ["91.105.192.100:443"] });
 
     const out: Record<string, unknown> = {};
+    writeMap(out, "dc_overrides", { "203": ["91.105.192.100:443"] });
+    expect(out).toEqual({ dc_overrides: { "203": ["91.105.192.100:443"] } });
+  });
+
+  it("round-trip не меняет форму ни скаляра, ни массива", () => {
+    const sections = {
+      dc_overrides: { "203": ["91.105.192.100:443"], "204": "1.2.3.4:443" },
+    };
+    const out: Record<string, unknown> = {};
+    writeMap(out, "dc_overrides", readMap(sections, "dc_overrides"));
+    expect(out).toEqual(sections);
+  });
+
+  it("пишет многоэлементный массив как массив", () => {
+    const out: Record<string, unknown> = {};
     writeMap(out, "dc_overrides", { "203": ["91.105.192.100:443", "1.2.3.4:443"] });
     expect(out).toEqual({ dc_overrides: { "203": ["91.105.192.100:443", "1.2.3.4:443"] } });
+  });
+
+  it("отбрасывает пустые записи, но не трогает остальные", () => {
+    const out: Record<string, unknown> = {};
+    writeMap(out, "dc_overrides", { "203": "1.2.3.4:443", "": "", "204": [] });
+    expect(out).toEqual({ dc_overrides: { "203": "1.2.3.4:443" } });
+  });
+
+  it("нечужая форма контейнера не роняет чтение", () => {
+    expect(readMap({ dc_overrides: "мусор" }, "dc_overrides")).toEqual({});
+    expect(readMap({}, "dc_overrides")).toEqual({});
+    expect(readUpstreams({ upstreams: ["мусор", { type: "direct" }] })).toEqual([
+      { type: "direct" },
+    ]);
   });
 });

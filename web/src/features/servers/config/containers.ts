@@ -7,15 +7,22 @@
 // "censorship.exclusive_mask.hv24s.metrion.icu" неразличимо разбирается на
 // сегменты. Отсюда отдельный модуль вместо sections.ts.
 //
-// Значения map-контейнеров нормализуются к string[]: Telemt принимает и
-// скаляр, и массив ip:port (dc_overrides документирован как "one or more"),
-// а редактору удобнее одна форма. На запись список из одного элемента
-// сворачивается обратно в скаляр — чтобы Save не порождал ложный дрейф
-// против конфига, где записан скаляр.
+// Форма значений map-контейнеров переносится БЕЗ преобразования. Telemt
+// принимает и скаляр, и массив ip:port (dc_overrides документирован как
+// "one or more"), и на живой ноде встречаются обе формы одновременно:
+// dc_overrides.203 записан массивом из одного элемента, exclusive_mask —
+// скалярами. Нормализация к string[] с обратным сворачиванием одиночного
+// списка в скаляр переписала бы такой массив при первом же Save, а
+// configDrift сравнивает канонические байты — получился бы ложный дрейф без
+// единой правки оператора. Разбор строки в список живёт в MapEditor, который
+// сохраняет исходную форму поля.
 
 import { getPath, setPath } from "./sections";
 
 export type UpstreamEntry = Record<string, unknown>;
+
+/** Значение map-контейнера ровно в той форме, в какой оно лежит в конфиге. */
+export type MapValue = string | string[];
 
 /** Читает массив upstreams. Отсутствие или чужая форма -> пустой список. */
 export function readUpstreams(sections: Record<string, unknown>): UpstreamEntry[] {
@@ -29,31 +36,38 @@ export function writeUpstreams(sections: Record<string, unknown>, list: Upstream
   sections["upstreams"] = list;
 }
 
-/** Читает map-контейнер, нормализуя значения к string[]. */
+/** Читает map-контейнер, сохраняя форму каждого значения (скаляр или массив). */
 export function readMap(
   sections: Record<string, unknown>,
   path: string,
-): Record<string, string[]> {
+): Record<string, MapValue> {
   const raw = getPath(sections, path);
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const out: Record<string, string[]> = {};
+  const out: Record<string, MapValue> = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    out[key] = Array.isArray(value) ? value.map(String) : [String(value)];
+    out[key] = Array.isArray(value) ? value.map(String) : String(value);
   }
   return out;
 }
 
-/** Пишет map-контейнер; список из одного элемента сворачивается в скаляр. */
+/** Пишет map-контейнер, сохраняя форму значений; пустые записи опускает. */
 export function writeMap(
   sections: Record<string, unknown>,
   path: string,
-  map: Record<string, string[]>,
+  map: Record<string, MapValue>,
 ): void {
   const out: Record<string, unknown> = {};
-  for (const [key, list] of Object.entries(map)) {
-    const clean = list.map((s) => s.trim()).filter((s) => s.length > 0);
-    if (clean.length === 0) continue;
-    out[key] = clean.length === 1 ? clean[0] : clean;
+  for (const [key, value] of Object.entries(map)) {
+    if (key.trim() === "") continue;
+    if (Array.isArray(value)) {
+      const clean = value.map((s) => s.trim()).filter((s) => s.length > 0);
+      if (clean.length === 0) continue;
+      out[key] = clean;
+    } else {
+      const clean = value.trim();
+      if (clean === "") continue;
+      out[key] = clean;
+    }
   }
   setPath(sections, path, out);
 }
