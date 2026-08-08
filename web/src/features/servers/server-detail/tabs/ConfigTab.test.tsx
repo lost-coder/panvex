@@ -403,6 +403,70 @@ describe("ConfigTab", () => {
     expect(screen.getByDisplayValue("dirty.example.com")).toBeInTheDocument();
   });
 
+  // Review round 2 (Task 6): mirrors the scalar test directly above, but
+  // dirties a CONTAINER field (an UpstreamsEditor control) instead of a
+  // ConfigTree scalar. agentId stays the SAME throughout, so `idChanged`
+  // stays false — unlike the node-switch draft-leak test below, this one
+  // genuinely exercises `lastSeededContainersRef` / the container arm of
+  // `hasUnsavedEdits` in the re-seed effect, which that test cannot (its
+  // `idChanged` branch bypasses that guard entirely, so it passes or fails
+  // purely on `key={agentId}`, not on the dirty-check).
+  //
+  // UpstreamsEditor (not MapEditor) is used deliberately here: it is fully
+  // controlled with no internal draft state, so the rendered value is a
+  // direct read of `containers.upstreams` — there is no risk of a
+  // component-local draft masking whether the container state itself was
+  // actually reset.
+  //
+  // The "weight" lookup is scoped to the Upstreams `<section>` via
+  // `within(...)`: with the catalog's ~120 number fields also rendered as
+  // spinbuttons, an unscoped `getByRole("spinbutton", { name: "weight" })`
+  // (or `getByLabelText`) has to compute an accessible name for every
+  // candidate to filter by name, which is measurably slow (several
+  // seconds) in jsdom on a tree this size — scoping to the handful of
+  // controls inside the Upstreams section avoids that.
+  function getWeightInput(): HTMLElement {
+    const section = screen.getByText("Upstreams").closest("section");
+    if (!section) throw new Error("Upstreams section not found");
+    return within(section).getByLabelText("weight");
+  }
+
+  it("does NOT clobber an unsaved container edit when the query data is refetched (same server)", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {
+          censorship: { tls_domain: "old.example.com" },
+          upstreams: [{ type: "direct", weight: 1 }],
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    const { rerender } = render(<ConfigTab server={server} />);
+
+    const weightInput = getWeightInput();
+    fireEvent.change(weightInput, { target: { value: "5" } });
+    expect(weightInput).toHaveValue(5);
+
+    // Simulate a same-server refetch (e.g. the WS seq-gap full-cache
+    // invalidation) that returns a NEW object with the SAME logical
+    // upstreams — identity changes on every query settle even when the
+    // server-side value hasn't changed.
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {
+          censorship: { tls_domain: "old.example.com" },
+          upstreams: [{ type: "direct", weight: 1 }],
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ConfigTab server={server} />);
+
+    expect(getWeightInput()).toHaveValue(5);
+  });
+
   it("re-seeds the editor when the server id changes, even mid-edit", () => {
     const { rerender } = render(<ConfigTab server={server} />);
     const input = screen.getByDisplayValue("old.example.com");
