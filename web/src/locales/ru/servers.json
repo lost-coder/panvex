@@ -452,7 +452,8 @@
       "empty": "Upstream не настроены — Telemt подключается к Telegram напрямую.",
       "add": "Добавить upstream",
       "remove": "Удалить upstream",
-      "entry": "Upstream №{{index}}"
+      "entry": "Upstream №{{index}}",
+      "showRemaining": "Показать остальные поля"
     },
     "map": {
       "add": "Добавить запись",

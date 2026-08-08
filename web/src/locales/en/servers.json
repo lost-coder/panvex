@@ -441,7 +441,8 @@
       "empty": "No upstreams configured — Telemt connects to Telegram directly.",
       "add": "Add upstream",
       "remove": "Remove upstream",
-      "entry": "Upstream #{{index}}"
+      "entry": "Upstream #{{index}}",
+      "showRemaining": "Show remaining fields"
     },
     "map": {
       "add": "Add entry",

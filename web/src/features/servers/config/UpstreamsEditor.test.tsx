@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { UpstreamsEditor } from "./UpstreamsEditor";
 import type { UpstreamEntry } from "./containers";
@@ -124,5 +124,37 @@ describe("UpstreamsEditor", () => {
     );
     rerender(<UpstreamsEditor value={[{ type: "direct", weight: 7 }]} onChange={() => {}} />);
     expect(screen.getByLabelText("weight 1")).toHaveValue(7);
+  });
+
+  // D2: on the (empty) most-common configuration (type=direct) most of the
+  // 16 schema fields are irrelevant — username/password/address are SOCKS,
+  // url is Shadowsocks, user_id is SOCKS4. Rendering all 16 flat made the
+  // form "huge and uncomfortable" per the owner's live review. The
+  // type-irrelevant fields must still be reachable (operators can legally
+  // set anything) but hidden behind a disclosure by default.
+  it("D2: для type=direct прячет password/url/user_id за раскрывающимся списком", () => {
+    render(<UpstreamsEditor value={[{ type: "direct", weight: 1 }]} onChange={() => {}} />);
+    expect(screen.queryByLabelText("password 1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("url 1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("user_id 1")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /show remaining|показать остальные/i }));
+
+    expect(screen.getByLabelText("password 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("url 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("user_id 1")).toBeInTheDocument();
+  });
+
+  // D2: SOCKS5 entries need address/username/password up front — those are
+  // exactly the fields an operator configuring a SOCKS5 upstream must set,
+  // so they must NOT be gated behind the disclosure for this type.
+  it("D2: для type=socks5 показывает address/username/password сразу", () => {
+    render(<UpstreamsEditor value={[{ type: "socks5", weight: 1 }]} onChange={() => {}} />);
+    expect(screen.getByLabelText("address 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("username 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("password 1")).toBeInTheDocument();
+    // Still irrelevant for socks5.
+    expect(screen.queryByLabelText("url 1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("user_id 1")).not.toBeInTheDocument();
   });
 });
