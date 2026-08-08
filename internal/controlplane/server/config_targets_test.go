@@ -63,3 +63,46 @@ func TestValidateNoProcessOwnedFieldsAcceptsNormalGeneralField(t *testing.T) {
 		t.Fatalf("unexpected error for normal general field: %v", err)
 	}
 }
+
+func TestValidateNoDottedKeys(t *testing.T) {
+	t.Run("отвергает плоский точечный ключ в схемной секции", func(t *testing.T) {
+		err := validateNoDottedKeys(map[string]any{
+			"general": map[string]any{"links.public_host": "example.com"},
+		})
+		if err == nil {
+			t.Fatal("ожидалась ошибка на плоский ключ general.links.public_host")
+		}
+	})
+
+	t.Run("пропускает корректную вложенную таблицу", func(t *testing.T) {
+		err := validateNoDottedKeys(map[string]any{
+			"general": map[string]any{"links": map[string]any{"public_host": "example.com"}},
+		})
+		if err != nil {
+			t.Fatalf("вложенная таблица должна проходить: %v", err)
+		}
+	})
+
+	t.Run("разрешает точки в ключах map-контейнеров", func(t *testing.T) {
+		err := validateNoDottedKeys(map[string]any{
+			"dc_overrides": map[string]any{"203": []any{"91.105.192.100:443"}},
+			"censorship": map[string]any{
+				"exclusive_mask": map[string]any{"hv24s.metrion.icu": "127.0.0.1:8085"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("ключи map-контейнеров должны проходить: %v", err)
+		}
+	})
+
+	t.Run("ловит точечный ключ во вложенной схемной таблице", func(t *testing.T) {
+		err := validateNoDottedKeys(map[string]any{
+			"censorship": map[string]any{
+				"tls_fetch": map[string]any{"strict.route": true},
+			},
+		})
+		if err == nil {
+			t.Fatal("ожидалась ошибка на censorship.tls_fetch.strict.route")
+		}
+	})
+}

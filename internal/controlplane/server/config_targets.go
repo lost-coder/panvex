@@ -56,6 +56,50 @@ func validateNoProcessOwnedFields(sections map[string]any) error {
 	return nil
 }
 
+// mapContainerPaths — узлы, чьи дочерние ключи задаёт оператор, а не схема
+// Telemt: dc_overrides ("203") и censorship.exclusive_mask ("hv24s.metrion.icu").
+// Точка в таком ключе легитимна, поэтому обход в них не спускается.
+// Зеркалит CONTAINER_PATHS в web/src/features/servers/config/paramCatalog.ts.
+var mapContainerPaths = map[string]struct{}{
+	"dc_overrides":              {},
+	"censorship.exclusive_mask": {},
+}
+
+// validateNoDottedKeys отвергает ключ с точкой внутри секции, вложенность
+// которой задаёт схема Telemt (например {"general": {"links.public_host": …}}
+// вместо {"general": {"links": {"public_host": …}}}).
+//
+// Такой ключ рождался, когда каталог параметров кодировал вложенность в поле
+// key, а редактор трактовал его как один уровень. В конфиг-структурах Telemt
+// нет deny_unknown_fields, поэтому serde молча выбрасывал ключ: PATCH отвечал
+// 200, на ноде не менялось ничего, а applyDiff находил путь отсутствующим в
+// observed на каждом проходе — дрейф не сходился никогда. Фронт починен, но
+// проверка живёт и здесь: config target можно записать и мимо UI.
+func validateNoDottedKeys(sections map[string]any) error {
+	var walk func(prefix string, node map[string]any) error
+	walk = func(prefix string, node map[string]any) error {
+		for k, v := range node {
+			path := k
+			if prefix != "" {
+				path = prefix + "." + k
+			}
+			if _, isContainer := mapContainerPaths[path]; isContainer {
+				continue
+			}
+			if strings.Contains(k, ".") {
+				return fmt.Errorf("invalid config key %q in %q: nested tables must be nested, not dotted", k, prefix)
+			}
+			if sub, ok := v.(map[string]any); ok {
+				if err := walk(path, sub); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	return walk("", sections)
+}
+
 // resolveEffectiveConfig merges a group config target with an agent override.
 // The agent override wins per field (deep-merged: nested section tables merge
 // key-by-key; scalars and arrays in the override replace the group value).
