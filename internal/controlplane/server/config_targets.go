@@ -56,10 +56,16 @@ func validateNoProcessOwnedFields(sections map[string]any) error {
 	return nil
 }
 
-// mapContainerPaths — узлы, чьи дочерние ключи задаёт оператор, а не схема
+// mapContainerPaths — узлы, чьи дочерние ключи задаёт ОПЕРАТОР, а не схема
 // Telemt: dc_overrides ("203") и censorship.exclusive_mask ("hv24s.metrion.icu").
 // Точка в таком ключе легитимна, поэтому обход в них не спускается.
-// Зеркалит CONTAINER_PATHS в web/src/features/servers/config/paramCatalog.ts.
+//
+// Это НАМЕРЕННО более узкий список, чем CONTAINER_PATHS в
+// web/src/features/servers/config/paramCatalog.ts: там есть ещё upstreams, здесь
+// его быть не должно. upstreams — МАССИВ таблиц, ключи внутри его элементов
+// задаёт схема Telemt, поэтому плоский точечный ключ там так же невалиден, как
+// в обычной секции, и элементы массива обходятся наравне с остальными. Добавить
+// сюда upstreams значило бы навсегда ослепить гард на этой ветке.
 var mapContainerPaths = map[string]struct{}{
 	"dc_overrides":              {},
 	"censorship.exclusive_mask": {},
@@ -77,6 +83,26 @@ var mapContainerPaths = map[string]struct{}{
 // проверка живёт и здесь: config target можно записать и мимо UI.
 func validateNoDottedKeys(sections map[string]any) error {
 	var walk func(prefix string, node map[string]any) error
+	var walkValue func(path string, value any) error
+
+	// Спускаться надо и в массивы: upstreams — массив таблиц, и плоский ключ
+	// внутри его элемента Telemt проглотит ровно так же молча, как в обычной
+	// секции. Элемент массива делит путь с самим массивом — отдельного имени у
+	// него нет, а для сообщения об ошибке важна секция, а не индекс.
+	walkValue = func(path string, value any) error {
+		switch typed := value.(type) {
+		case map[string]any:
+			return walk(path, typed)
+		case []any:
+			for _, item := range typed {
+				if err := walkValue(path, item); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+
 	walk = func(prefix string, node map[string]any) error {
 		for k, v := range node {
 			path := k
@@ -87,12 +113,14 @@ func validateNoDottedKeys(sections map[string]any) error {
 				continue
 			}
 			if strings.Contains(k, ".") {
-				return fmt.Errorf("invalid config key %q in %q: nested tables must be nested, not dotted", k, prefix)
-			}
-			if sub, ok := v.(map[string]any); ok {
-				if err := walk(path, sub); err != nil {
-					return err
+				where := prefix
+				if where == "" {
+					where = "config root"
 				}
+				return fmt.Errorf("invalid config key %q in %q: nested tables must be nested, not dotted", k, where)
+			}
+			if err := walkValue(path, v); err != nil {
+				return err
 			}
 		}
 		return nil

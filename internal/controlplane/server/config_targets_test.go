@@ -105,4 +105,30 @@ func TestValidateNoDottedKeys(t *testing.T) {
 			t.Fatal("ожидалась ошибка на censorship.tls_fetch.strict.route")
 		}
 	})
+
+	// upstreams — массив таблиц: ключи внутри элементов задаёт схема Telemt,
+	// поэтому плоский точечный ключ там так же невалиден. Без обхода массивов
+	// исключение upstreams из mapContainerPaths не значило бы ничего.
+	t.Run("ловит точечный ключ внутри элемента массива upstreams", func(t *testing.T) {
+		err := validateNoDottedKeys(map[string]any{
+			"upstreams": []any{
+				map[string]any{"type": "socks5"},
+				map[string]any{"bind.addresses": "1.2.3.4"},
+			},
+		})
+		if err == nil {
+			t.Fatal("ожидалась ошибка на upstreams[].bind.addresses")
+		}
+	})
+
+	t.Run("пропускает корректный массив upstreams", func(t *testing.T) {
+		err := validateNoDottedKeys(map[string]any{
+			"upstreams": []any{
+				map[string]any{"type": "direct", "weight": 1, "enabled": true},
+			},
+		})
+		if err != nil {
+			t.Fatalf("корректный upstreams должен проходить: %v", err)
+		}
+	})
 }
