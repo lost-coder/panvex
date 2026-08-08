@@ -40,6 +40,7 @@ import { DriftBadge } from "@/features/servers/config/DriftBadge";
 import { ApplyConfigButton } from "@/features/servers/config/ApplyConfigButton";
 import {
   flattenSections,
+  hasPath,
   unflattenPaths,
 } from "@/features/servers/config/sections";
 import {
@@ -129,6 +130,18 @@ export function ConfigTab({
     [initialValues, values],
   );
 
+  // F3: a container edit (UpstreamsEditor / MapEditor) is an unsaved change
+  // too, exactly like a scalar one — `containers` vs. `initialContainers` is
+  // the same comparison the reseed effect below already makes. Before this,
+  // editing e.g. an upstream's weight showed no "unsaved" hint and did not
+  // block Apply, so Apply could ship the last-SAVED container state while
+  // the operator was staring at their own unsaved edit on screen.
+  const containersChanged = useMemo(
+    () => diffPaths(initialContainers, containers).length > 0,
+    [initialContainers, containers],
+  );
+  const isDirty = changedPaths.length > 0 || containersChanged;
+
   // 3.12: re-seed the editor from a fresh override on initial load, on a
   // genuine identity change (switched to a different server), or on a
   // post-Save/post-Apply refetch where the operator has no unsaved edits.
@@ -174,10 +187,22 @@ export function ConfigTab({
   // to ApplyConfigButton lets it decide whether a reload-confirmation dialog
   // is needed (e.g. a reload-mode field like censorship.tls_domain is set),
   // independent of the unsaved-edit diff above.
-  const overridePaths = useMemo(
-    () => Object.keys(initialValues),
-    [initialValues],
-  );
+  //
+  // F3: container paths belong here too — upstreams is reload-class (see
+  // UpstreamsEditor's "reload" badge), so a persisted upstreams override
+  // must be visible to ApplyConfigButton's reload decision the same way a
+  // scalar reload-mode field already is. Only paths for containers that are
+  // actually non-empty in the persisted override: an absent/empty container
+  // isn't part of what Apply will push (see buildSections' F2 comment).
+  const overridePaths = useMemo(() => {
+    const paths = Object.keys(initialValues);
+    if (initialContainers.upstreams.length > 0) paths.push("upstreams");
+    if (Object.keys(initialContainers.dcOverrides).length > 0) paths.push("dc_overrides");
+    if (Object.keys(initialContainers.exclusiveMask).length > 0) {
+      paths.push("censorship.exclusive_mask");
+    }
+    return paths;
+  }, [initialValues, initialContainers]);
 
   if (isLoading) {
     return (
@@ -202,15 +227,33 @@ export function ConfigTab({
 
   const drift = data.drift;
 
-  // Тело PUT: скаляры по dotted-путям + контейнеры целиком. Сервер мержит
-  // это в сохранённый снапшот (upsertAgentConfigTarget), поэтому опускать
-  // неизменённые контейнеры нельзя — иначе они останутся от прошлого Save,
-  // а операторская правка потеряется.
+  // Тело PUT: скаляры по dotted-путям + контейнеры, но только те, что
+  // непусты или уже присутствуют в сохранённом снапшоте.
+  //
+  // Контейнер пишется, только если он непустой ИЛИ уже присутствует в
+  // сохранённом снапшоте. Безусловная запись вписывала бы пустые upstreams /
+  // dc_overrides / exclusive_mask на ноду, где их нет вовсе: configDrift —
+  // проекция desired на observed, поэтому три несуществующие секции навсегда
+  // уходили бы в дрейф, applyDiff не дал бы для пустых таблиц ни одного листа
+  // (свести нечем), а `upstreams: []` доехал бы до ноды и стёр реальные
+  // upstream-ы при перерисовке секции. Но если контейнер УЖЕ есть в desired
+  // (даже пустым), его нужно писать и пустым — иначе оператор не сможет
+  // очистить существующий контейнер.
   function buildSections(): Record<string, unknown> {
     const out = unflattenPaths(values);
-    writeUpstreams(out, containers.upstreams);
-    writeMap(out, "dc_overrides", containers.dcOverrides);
-    writeMap(out, "censorship.exclusive_mask", containers.exclusiveMask);
+    const stored = data?.desired ?? {};
+    if (containers.upstreams.length > 0 || hasPath(stored, "upstreams")) {
+      writeUpstreams(out, containers.upstreams);
+    }
+    if (Object.keys(containers.dcOverrides).length > 0 || hasPath(stored, "dc_overrides")) {
+      writeMap(out, "dc_overrides", containers.dcOverrides);
+    }
+    if (
+      Object.keys(containers.exclusiveMask).length > 0 ||
+      hasPath(stored, "censorship.exclusive_mask")
+    ) {
+      writeMap(out, "censorship.exclusive_mask", containers.exclusiveMask);
+    }
     return out;
   }
 
@@ -332,6 +375,7 @@ export function ConfigTab({
           onChange={(next) => setContainers((p) => ({ ...p, dcOverrides: next }))}
           keyLabel={t("config.dcOverrides.key")}
           valueLabel={t("config.dcOverrides.value")}
+          valueKind="list"
         />
       </section>
 
@@ -343,6 +387,7 @@ export function ConfigTab({
           onChange={(next) => setContainers((p) => ({ ...p, exclusiveMask: next }))}
           keyLabel={t("config.exclusiveMask.key")}
           valueLabel={t("config.exclusiveMask.value")}
+          valueKind="scalar"
         />
       </section>
 
@@ -353,7 +398,7 @@ export function ConfigTab({
         <Button onClick={handleSave} disabled={putMutation.isPending}>
           {t("config.save")}
         </Button>
-        {changedPaths.length > 0 && (
+        {isDirty && (
           <span className="text-micro text-fg-muted">{t("config.unsavedHint")}</span>
         )}
         <ApplyConfigButton
@@ -363,9 +408,7 @@ export function ConfigTab({
             const accepted = await applyMutation.mutateAsync(policy);
             setApplyBatchId(accepted.batch_id);
           }}
-          disabled={
-            changedPaths.length > 0 || putMutation.isPending || applyBatchId !== null
-          }
+          disabled={isDirty || putMutation.isPending || applyBatchId !== null}
         />
         {applyBatchId !== null && (
           <span

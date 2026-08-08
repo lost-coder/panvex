@@ -194,14 +194,14 @@ describe("ConfigTab", () => {
     expect(putMutate).toHaveBeenCalledTimes(2);
     // The accepted value (silent) must survive into the Save payload
     // alongside the still-dirty tls_domain edit — NOT the old desired
-    // value (normal) the stale `values` map used to carry. Plus the
-    // (empty, since this fixture has none) containers buildSections always
-    // writes alongside the scalars.
+    // value (normal) the stale `values` map used to carry. F2: this
+    // fixture's stored desired has none of the three containers, so none of
+    // them are invented into the body — an unconditional empty write would
+    // put `upstreams: []` etc. into a node's desired snapshot that never had
+    // them, and that never converges (see buildSections' comment).
     expect(putMutate.mock.calls[1]?.[0]).toEqual({
-      censorship: { tls_domain: "dirty.example.com", exclusive_mask: {} },
+      censorship: { tls_domain: "dirty.example.com" },
       general: { log_level: "silent" },
-      dc_overrides: {},
-      upstreams: [],
     });
   });
 
@@ -229,14 +229,66 @@ describe("ConfigTab", () => {
     fireEvent.change(input, { target: { value: "new.example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(putMutate).toHaveBeenCalledTimes(1);
-    // Body is the nested-sections shape produced by unflattenPaths, plus the
-    // (empty, since this fixture has none) containers buildSections always
-    // writes alongside the scalars.
+    // Body is the nested-sections shape produced by unflattenPaths. F2: this
+    // fixture's stored desired carries none of the three containers and the
+    // editor state is empty for all three, so none is invented into the
+    // body — see the dedicated F2 tests below for the full rationale.
     expect(putMutate.mock.calls[0]?.[0]).toEqual({
-      censorship: { tls_domain: "new.example.com", exclusive_mask: {} },
-      dc_overrides: {},
-      upstreams: [],
+      censorship: { tls_domain: "new.example.com" },
     });
+  });
+
+  // F2 (plan defect): the original plan required buildSections() to write
+  // all three containers unconditionally, reasoning that the server merges
+  // the PUT into the stored snapshot so omitting an unchanged container
+  // would leave a stale one behind. That reasoning only holds for a
+  // container that's already IN the snapshot — for a node with none of
+  // these sections (most real configs), the very first Save would write
+  // `{"upstreams": [], "dc_overrides": {}, "censorship": {"exclusive_mask":
+  // {}}}` into desired. configDrift projects desired onto observed, so
+  // those three phantom sections would sit in drift forever; applyDiff
+  // yields no leaves for an empty table, so Apply could never converge
+  // them; and the one patch it DOES produce sends `upstreams: []` to the
+  // node, where Telemt re-renders the section from its typed config —
+  // erasing the operator's real upstreams. This test used to assert
+  // exactly that (wrong) behavior; it now asserts its absence.
+  it("F2: узел без контейнеров не получает пустые upstreams/dc_overrides/exclusive_mask в теле PUT", () => {
+    render(<ConfigTab server={server} />);
+    const input = screen.getByDisplayValue("old.example.com");
+    fireEvent.change(input, { target: { value: "new.example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const body = putMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty("upstreams");
+    expect(body).not.toHaveProperty("dc_overrides");
+    expect(
+      (body.censorship as Record<string, unknown> | undefined)?.["exclusive_mask"],
+    ).toBeUndefined();
+  });
+
+  // F2 paired test: a container ALREADY present in the stored desired
+  // snapshot (even empty) must still round-trip through Save — otherwise
+  // the operator could never clear an existing container down to empty and
+  // have that stick.
+  it("F2: контейнер, уже присутствующий в desired, сохраняется даже пустым", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {
+          censorship: { tls_domain: "old.example.com", exclusive_mask: {} },
+          dc_overrides: {},
+          upstreams: [],
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const body = putMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(body).toHaveProperty("upstreams", []);
+    expect(body).toHaveProperty("dc_overrides", {});
+    expect(body.censorship).toMatchObject({ exclusive_mask: {} });
   });
 
   // Task 6: the Save payload must carry both the flat scalar overrides (via
@@ -381,6 +433,35 @@ describe("ConfigTab", () => {
     expect(screen.getByText("Save before applying")).toBeInTheDocument();
   });
 
+  // F3: changedPaths/overridePaths used to be scalar-only, so an unsaved
+  // container edit (UpstreamsEditor/MapEditor) showed no "unsaved" hint and
+  // did not block Apply — the operator could hit Apply while staring at
+  // their own unsaved edit on screen and have the panel push the
+  // last-SAVED container state instead. Uses the same
+  // `Upstreams`-section-scoped `weight` lookup as the sibling refetch test
+  // above (unscoped lookup is measurably slow against the full catalog).
+  it("F3: правка контейнера показывает подсказку о несохранённом и блокирует Apply", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {
+          censorship: { tls_domain: "old.example.com" },
+          upstreams: [{ type: "direct", weight: 1 }],
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+
+    expect(screen.getByRole("button", { name: "Apply to node" })).not.toBeDisabled();
+    expect(screen.queryByText("Save before applying")).not.toBeInTheDocument();
+
+    fireEvent.change(getWeightInput(), { target: { value: "5" } });
+
+    expect(screen.getByText("Save before applying")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply to node" })).toBeDisabled();
+  });
+
   // 3.12: a background refetch (e.g. the WS seq-gap full-cache
   // invalidation) firing while the operator is mid-edit must not wipe
   // their unsaved draft.
@@ -428,7 +509,7 @@ describe("ConfigTab", () => {
   function getWeightInput(): HTMLElement {
     const section = screen.getByText("Upstreams").closest("section");
     if (!section) throw new Error("Upstreams section not found");
-    return within(section).getByLabelText("weight");
+    return within(section).getByLabelText("weight 1");
   }
 
   it("does NOT clobber an unsaved container edit when the query data is refetched (same server)", () => {
