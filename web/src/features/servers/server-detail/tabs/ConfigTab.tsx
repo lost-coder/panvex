@@ -113,14 +113,30 @@ export function ConfigTab({
 
   // Контейнеры живут отдельно от плоской карты скаляров: их ключи задаёт
   // оператор и содержат точки, поэтому dotted-путь для них неоднозначен.
-  const initialContainers = useMemo(
-    () => ({
-      upstreams: readUpstreams(data?.desired ?? {}),
-      dcOverrides: readMap(data?.desired ?? {}, "dc_overrides"),
-      exclusiveMask: readMap(data?.desired ?? {}, "censorship.exclusive_mask"),
-    }),
-    [data?.desired],
-  );
+  //
+  // F7: регрессия самой волны. F4 убрал из дерева строки контейнеров,
+  // которые приходили из observed, а этот блок сеял контейнеры только из
+  // desired. Для ноды, у которой контейнер есть в конфиге, но не в
+  // desired-снапшоте, редактор оказывался пустым, read-only строки дерева
+  // для него больше нет, а configDrift тоже молчит (он проекция desired на
+  // observed) — конфигурация ноды переставала быть видна панели вообще
+  // где-либо. Сеем каждый контейнер из desired, а при его отсутствии — из
+  // observed, тем же правилом, каким дерево показывает скаляры
+  // (value = hasDesired ? desired : observed, buildTree.ts).
+  const initialContainers = useMemo(() => {
+    const desired = data?.desired ?? {};
+    const observed = data?.observed ?? {};
+    // Контейнер, которого нет в desired, показывается по observed: иначе
+    // реальная конфигурация ноды не видна нигде — строки дерева для
+    // контейнеров убраны (их владельцы теперь эти редакторы), а дрейф молчит,
+    // потому что он проекция desired на observed.
+    const seed = (path: string) => (hasPath(desired, path) ? desired : observed);
+    return {
+      upstreams: readUpstreams(seed("upstreams")),
+      dcOverrides: readMap(seed("dc_overrides"), "dc_overrides"),
+      exclusiveMask: readMap(seed("censorship.exclusive_mask"), "censorship.exclusive_mask"),
+    };
+  }, [data?.desired, data?.observed]);
   const [containers, setContainers] = useState(initialContainers);
 
   // Paths the operator has edited but not yet saved — drives the dirty

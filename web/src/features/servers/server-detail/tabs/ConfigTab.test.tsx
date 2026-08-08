@@ -113,6 +113,34 @@ describe("ConfigTab", () => {
     expect(screen.getByDisplayValue("12")).toBeInTheDocument();
   });
 
+  // F7: regression the fix wave itself introduced. F4 removed the tree rows
+  // that used to render a container path pulled from `observed` when
+  // `desired` had none — but `initialContainers` still seeded ONLY from
+  // `desired`. For a node whose config genuinely has dc_overrides but whose
+  // desired snapshot doesn't carry it (never been overridden through the
+  // panel), the editor rendered empty, the read-only tree row is gone
+  // (F4), and configDrift stays silent too (it's a projection of desired
+  // onto observed) — the node's real configuration became invisible
+  // everywhere in the panel. Mirrors the scalar fallback rule
+  // ("falls back to the observed value for fields with no desired
+  // override" above) but for a container.
+  it("F7: контейнер, отсутствующий в desired, показывается по observed", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {},
+        effective: {},
+        observed: {
+          dc_overrides: { "203": ["91.105.192.100:443"] },
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+    expect(screen.getByDisplayValue("203")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("91.105.192.100:443")).toBeInTheDocument();
+  });
+
   it("renders the config tree seeded from desired and shows drift actions", () => {
     useAgentConfig.mockReturnValue({
       data: {
