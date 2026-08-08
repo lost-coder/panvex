@@ -4,16 +4,7 @@
 // схемы висели в плоском каталоге мёртвым грузом и подавлялись как
 // phantom-строки, а сам массив рендерился как "[object Object]". Схема
 // ОДНОГО элемента теперь живёт в UPSTREAM_FIELDS (catalog.upstreamFields),
-// и здесь она разворачивается в карточку на каждую запись: каждое поле
-// схемы — своя строка, всегда видимая (полная схема на виду), но живой
-// контрол рендерится только для полей, которые реально присутствуют в
-// записи (плюс boolean/select — они не участвуют в displayValue-коллизиях
-// и всегда предсказуемы). Отсутствующее строковое/числовое поле показывает
-// ту же подпись "не задано", что и ConfigTreeField (config.tree.notSet*) —
-// это НЕ рендерит его как пустой <input>, что важно и содержательно
-// (отсутствие ключа ощутимо отличается от пустой строки), и технически
-// (десяток одновременно пустых текстовых input на одной карточке иначе
-// неразличимы для getByDisplayValue(""), в т.ч. в реальном UI).
+// и здесь она разворачивается в карточку на каждую запись.
 //
 // Пустые значения не пишутся в объект записи вовсе (delete, а не ""), чтобы
 // Save не порождал ключи, которых в конфиге ноды нет, — иначе дрейф не
@@ -31,6 +22,21 @@ export interface UpstreamsEditorProps {
   disabled?: boolean | undefined;
 }
 
+// Контролы КОНТРОЛИРУЕМЫЕ (value, не defaultValue): родитель пересевает
+// состояние после Save и при переключении на другую ноду, а неуправляемое
+// поле показало бы устаревшее значение — ключи карточек (индекс записи и
+// путь поля) при таком пересеве не меняются, значит React не перемонтирует
+// input и defaultValue уже не применится.
+//
+// Отсутствующий ключ показывается ЖИВЫМ пустым контролом с дефолтом каталога
+// в плейсхолдере — так же, как ConfigTreeField показывает незаданные поля
+// дерева. Иначе запись socks5 без ключа password стало бы невозможно
+// дополнить: у оператора просто нет другого места, где эти поля задаются.
+//
+// aria-label — это и доступность (двухколоночная вёрстка разрывает связь
+// подписи с контролом, ровно как в ConfigTreeField), и способ однозначно
+// адресовать поле: у записи одновременно пусты около десятка полей, и
+// искать их по отображаемому значению нельзя.
 function EntryControl({
   entry, value, disabled, onChange,
 }: Readonly<{
@@ -39,18 +45,26 @@ function EntryControl({
   disabled: boolean;
   onChange: (value: unknown) => void;
 }>) {
+  const label = entry.path;
+  const placeholder = value === undefined ? entry.default : undefined;
+
   switch (entry.type) {
     case "boolean":
-      return <Toggle checked={value === true} onChange={onChange} disabled={disabled} />;
+      return (
+        <Toggle
+          aria-label={label}
+          checked={value === true}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      );
     case "number":
-      // Uncontrolled: an entry field's value round-trips through the parent
-      // only on Save, not on every keystroke, so a `value=` prop here would
-      // fight the user's typing (React resets a controlled input back to
-      // its last-known prop on every change it doesn't see reflected back).
       return (
         <Input
+          aria-label={label}
           type="number"
-          defaultValue={value === undefined || value === null ? "" : String(value)}
+          placeholder={placeholder}
+          value={value === undefined || value === null ? "" : String(value)}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
         />
@@ -58,6 +72,7 @@ function EntryControl({
     case "select":
       return (
         <Select
+          aria-label={label}
           value={typeof value === "string" ? value : ""}
           disabled={disabled}
           onChange={onChange}
@@ -67,8 +82,10 @@ function EntryControl({
     case "string[]":
       return (
         <Input
+          aria-label={label}
           type="text"
-          defaultValue={Array.isArray(value) ? value.map(String).join(", ") : ""}
+          placeholder={placeholder}
+          value={Array.isArray(value) ? value.map(String).join(", ") : ""}
           disabled={disabled}
           onChange={(e) => {
             const list = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
@@ -79,8 +96,10 @@ function EntryControl({
     default:
       return (
         <Input
+          aria-label={label}
           type="text"
-          defaultValue={typeof value === "string" ? value : ""}
+          placeholder={placeholder}
+          value={typeof value === "string" ? value : ""}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
         />
@@ -130,36 +149,20 @@ export function UpstreamsEditor({ value, onChange, disabled = false }: Readonly<
           </div>
 
           <div className="flex flex-col gap-3">
-            {UPSTREAM_FIELDS.map((field) => {
-              const present = field.path in upstream;
-              // boolean/select всегда живые: Toggle не участвует в
-              // displayValue-сопоставлении, а select "type" на карточке
-              // ровно один — коллизии не возникает ни в том, ни в другом
-              // случае, поэтому их можно смело показывать даже отсутствующими.
-              const alwaysLive = field.type === "boolean" || field.type === "select";
-              return (
-                <div
-                  key={field.path}
-                  className="flex flex-col gap-1.5 sm:grid sm:grid-cols-[minmax(0,1fr)_18rem] sm:items-center sm:gap-4"
-                >
-                  <label className="font-mono text-sm text-fg">{field.path}</label>
-                  {present || alwaysLive ? (
-                    <EntryControl
-                      entry={field}
-                      value={upstream[field.path]}
-                      disabled={disabled}
-                      onChange={(next) => updateField(index, field.path, next)}
-                    />
-                  ) : (
-                    <p className="text-caption text-fg-muted">
-                      {field.default !== undefined
-                        ? t("config.tree.notSetWithDefault", { value: field.default })
-                        : t("config.tree.notSet")}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
+            {UPSTREAM_FIELDS.map((field) => (
+              <div
+                key={field.path}
+                className="flex flex-col gap-1.5 sm:grid sm:grid-cols-[minmax(0,1fr)_18rem] sm:items-center sm:gap-4"
+              >
+                <label className="font-mono text-sm text-fg">{field.path}</label>
+                <EntryControl
+                  entry={field}
+                  value={upstream[field.path]}
+                  disabled={disabled}
+                  onChange={(next) => updateField(index, field.path, next)}
+                />
+              </div>
+            ))}
           </div>
         </div>
       ))}

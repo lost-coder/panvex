@@ -15,15 +15,20 @@ export interface SelectProps {
   disabled?: boolean | undefined;
   className?: string | undefined;
   id?: string | undefined;
+  "aria-label"?: string | undefined;
 }
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ options, value, onChange, placeholder = "Select…", disabled = false, className, id }, ref) => {
+  (
+    { options, value, onChange, placeholder = "Select…", disabled = false, className, id, "aria-label": ariaLabel },
+    ref,
+  ) => {
     return (
       <div className={cn("relative", className)}>
         <select
           id={id}
           ref={ref}
+          aria-label={ariaLabel}
           value={value ?? ""}
           onChange={(e) => onChange?.(e.target.value)}
           disabled={disabled}

@@ -7,6 +7,7 @@ export interface ToggleProps {
   size?: "sm" | "md";
   className?: string;
   id?: string | undefined;
+  "aria-label"?: string | undefined;
 }
 
 const trackSize = { sm: "h-5 w-9", md: "h-6 w-11" } as const;
@@ -20,6 +21,7 @@ export function Toggle({
   size = "md",
   className,
   id,
+  "aria-label": ariaLabel,
 }: Readonly<ToggleProps>) {
   return (
     <button
@@ -27,6 +29,7 @@ export function Toggle({
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
