@@ -454,6 +454,13 @@
       "remove": "Удалить upstream",
       "entry": "Upstream №{{index}}"
     },
+    "map": {
+      "add": "Добавить запись",
+      "remove": "Удалить запись",
+      "empty": "Записей нет."
+    },
+    "dcOverrides": { "title": "Переопределения DC", "key": "Индекс DC", "value": "Адреса (ip:port, через запятую)" },
+    "exclusiveMask": { "title": "Mask-бэкенды по SNI", "key": "SNI-домен", "value": "Бэкенд (ip:port)" },
     "tree": {
       "defaultHint": "По умолчанию: {{value}}",
       "lockedByGroup": "Управляется группой {{name}}",
