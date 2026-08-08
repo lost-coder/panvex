@@ -38,4 +38,24 @@ describe("buildTree", () => {
     const f = tree.flatMap((s) => s.fields).find((x) => x.path === "censorship.tls_domains")!;
     expect(f.drifted).toBe(true);
   });
+
+  it("помечает present=false для пути, которого нет ни в desired, ни в observed", () => {
+    const sections = buildTree({}, { general: { fast_mode: true } }, new Set());
+    const fields = sections.flatMap((s) => s.fields);
+
+    const known = fields.find((f) => f.path === "general.fast_mode");
+    expect(known?.present).toBe(true);
+    expect(known?.value).toBe(true);
+
+    // proxy_config_v4_url есть в каталоге, но Telemt его не сериализовал.
+    const absent = fields.find((f) => f.path === "general.proxy_config_v4_url");
+    expect(absent?.present).toBe(false);
+    expect(absent?.value).toBeUndefined();
+  });
+
+  it("present=true для поля, заданного только в desired", () => {
+    const sections = buildTree({ general: { log_level: "debug" } }, {}, new Set());
+    const field = sections.flatMap((s) => s.fields).find((f) => f.path === "general.log_level");
+    expect(field?.present).toBe(true);
+  });
 });

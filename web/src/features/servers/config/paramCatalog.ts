@@ -7,7 +7,6 @@ import catalog from "./paramCatalog.gen.json";
 export interface ParamCatalogEntry {
   path: string;
   section: string;
-  key: string;
   type: "boolean" | "number" | "string" | "string[]" | "select";
   applyMode: "hot" | "reload";
   options?: string[];
@@ -40,3 +39,18 @@ const BY_PATH = new Map(PARAM_CATALOG.map((f) => [f.path, f]));
 export function catalogEntry(path: string): ParamCatalogEntry | undefined {
   return BY_PATH.get(path);
 }
+
+// Контейнеры: узлы, чьи дочерние ключи задаёт оператор, а не схема Telemt.
+// Ключи dc_overrides ("203") и censorship.exclusive_mask ("hv24s.metrion.icu")
+// сами содержат точки, поэтому адресация плоским dotted-путём для них
+// неоднозначна — они редактируются структурно (MapEditor/UpstreamsEditor).
+export const CONTAINER_PATHS = [
+  "upstreams",
+  "dc_overrides",
+  "censorship.exclusive_mask",
+] as const;
+
+/** Схема ОДНОГО элемента массива upstreams; path здесь относительные ("type", "weight"). */
+export const UPSTREAM_FIELDS: ParamCatalogEntry[] = Object.freeze(
+  (catalog.upstreamFields ?? []) as ParamCatalogEntry[],
+) as ParamCatalogEntry[];

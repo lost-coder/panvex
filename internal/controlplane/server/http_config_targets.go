@@ -117,6 +117,10 @@ func (s *Server) upsertConfigTarget(w http.ResponseWriter, r *http.Request, scop
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := validateNoDottedKeys(request.Sections); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := s.configTargets.Upsert(r.Context(), scopeType, scopeID, request.Sections); err != nil {
 		writeErrorLogged(r.Context(), w, http.StatusInternalServerError, msgInternalError, err)
 		return
@@ -151,6 +155,10 @@ func (s *Server) upsertAgentConfigTarget(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if err := validateNoProcessOwnedFields(request.Sections); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateNoDottedKeys(request.Sections); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

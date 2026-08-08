@@ -436,6 +436,27 @@
       "hotHint": "Applied immediately",
       "reloadHint": "Applied via an in-process Telemt reload (no process restart)"
     },
+    "upstreams": {
+      "title": "Upstreams",
+      "empty": "No upstreams configured — Telemt connects to Telegram directly.",
+      "add": "Add upstream",
+      "remove": "Remove upstream",
+      "entry": "Upstream #{{index}}",
+      "showRemaining": "Show remaining fields"
+    },
+    "map": {
+      "add": "Add entry",
+      "remove": "Remove entry",
+      "empty": "No entries.",
+      "duplicateKey": "This key is already used by another entry",
+      "unmanaged": {
+        "label": "unmanaged",
+        "note": "On the node, not managed by the panel.",
+        "adopt": "Take under management"
+      }
+    },
+    "dcOverrides": { "title": "DC overrides", "key": "DC index", "value": "Endpoints (ip:port, comma-separated)" },
+    "exclusiveMask": { "title": "Per-SNI mask backends", "key": "SNI domain", "value": "Backend (ip:port)" },
     "tree": {
       "defaultHint": "Default: {{value}}",
       "lockedByGroup": "Set by group {{name}}",
@@ -455,7 +476,9 @@
       "addFieldTitle": "Add a field to this group",
       "allGoverned": "Every catalog field is already governed by this group.",
       "addField": "Add to group",
-      "removeField": "Remove from group"
+      "removeField": "Remove from group",
+      "notSet": "Not set on the node — Telemt's built-in default applies",
+      "notSetWithDefault": "Not set on the node — default {{value}} applies"
     },
     "currentValue": {
       "label": "Current on node: {{value}}",

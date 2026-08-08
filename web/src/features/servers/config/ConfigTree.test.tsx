@@ -43,7 +43,7 @@ describe("ConfigTree", () => {
     expect(screen.queryByText("ad_tag")).not.toBeInTheDocument();
   });
 
-  it("does not render phantom container catalog rows with no data (upstreams.*, dc_overrides)", () => {
+  it("does not render rows for container paths absent from both catalog and data (upstreams.*, dc_overrides)", () => {
     render(
       <ConfigTree
         desired={{ general: { log_level: "normal" } }}
@@ -52,14 +52,50 @@ describe("ConfigTree", () => {
         onChange={() => {}}
       />,
     );
-    // The generated catalog lists ~16 flat "upstreams.*" sub-paths and a bare
-    // "dc_overrides" entry even though the real config nests upstreams as an
-    // array, not flat keys. With no desired/observed data for them, buildTree
-    // still emits them as readonly TreeFields with value/observed undefined —
-    // ConfigTree must suppress those instead of showing blank phantom rows.
+    // Container split (Task 2): the generated catalog no longer lists
+    // upstreams.* / dc_overrides at all — they moved to
+    // catalog.upstreamFields / CONTAINER_PATHS (containers.ts), since a flat
+    // dotted path through an operator-chosen key (an array index, or a
+    // dc_overrides/exclusive_mask key that itself contains dots) is
+    // ambiguous. With no catalog entry and no observed data for these paths,
+    // buildTree never produces a TreeField for them in the first place, so
+    // there is nothing for ConfigTree's phantom-row filter to suppress here
+    // — this guards the end state (no blank rows), not the old mechanism.
     expect(screen.queryByText("address")).not.toBeInTheDocument();
     expect(screen.queryByText("upstreams")).not.toBeInTheDocument();
     expect(screen.queryByText("dc_overrides")).not.toBeInTheDocument();
+  });
+
+  // F4: buildTree DOES emit a TreeField for a container path when the
+  // node's observed config actually reports data there (the comment atop
+  // ConfigTree.tsx describes the no-data case only). flattenAll treats an
+  // array as a leaf, so `observed.upstreams` becomes one field whose value
+  // is the whole array — String([{...}]) renders as the literal text
+  // "[object Object]" right above the real UpstreamsEditor below the tree.
+  // Each dc_overrides/exclusive_mask entry likewise gets a redundant
+  // read-only row in the tree in addition to the editable MapEditor row.
+  // ConfigTree must filter CONTAINER_PATHS (and everything nested under
+  // them) out of what it renders, regardless of whether buildTree found
+  // data for them.
+  it("filters out container paths (and their children) even when observed carries data for them", () => {
+    render(
+      <ConfigTree
+        desired={{}}
+        observed={{
+          general: { log_level: "normal" },
+          upstreams: [{ type: "direct", weight: 1 }],
+          dc_overrides: { "203": ["1.1.1.1:443"] },
+        }}
+        groupPaths={new Set()}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.queryByText("upstreams")).not.toBeInTheDocument();
+    expect(screen.queryByText("dc_overrides")).not.toBeInTheDocument();
+    expect(screen.queryByText("203")).not.toBeInTheDocument();
+    expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
+    // The rest of the tree still renders normally.
+    expect(screen.getByText("log_level")).toBeInTheDocument();
   });
 
   it("changed-only filter hides fields still equal to their initial value", () => {

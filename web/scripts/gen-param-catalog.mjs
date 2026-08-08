@@ -78,13 +78,19 @@ export function buildCatalog(enMd, ruMd, tag) {
   const dEn = parseDescriptions(enMd);
   const dRu = parseDescriptions(ruMd);
   const fields = [];
+  const upstreamFields = [];
+  const allPaths = [...tables.keys()];
+  // Зонтичная запись описывает таблицу, а не скаляр: у неё есть потомки
+  // "<path>.<...>" среди других записей. В плоском каталоге ей не место —
+  // иначе она перекрывает реальную вложенную таблицу строковым полем.
+  const isUmbrella = (path) => allPaths.some((p) => p.startsWith(`${path}.`));
   for (const [path, row] of tables) {
     const section = path.split(".")[0];
     if (!EDITABLE.includes(section)) continue;
+    if (isUmbrella(path)) continue;
     const options = parseEnumOptions(row.type);
-    const key = path.includes(".") ? path.slice(section.length + 1) : path;
     const entry = {
-      path, section, key,
+      path, section,
       type: fieldType(row.type, options),
       applyMode: row.hot ? "hot" : "reload",
       en: dEn.get(path) ?? "", ru: dRu.get(path) ?? "",
@@ -93,11 +99,23 @@ export function buildCatalog(enMd, ruMd, tag) {
     let def = row.default === "—" ? "" : row.default;
     if (def.length >= 2 && def.startsWith('"') && def.endsWith('"')) def = def.slice(1, -1);
     if (def) entry.default = def;
+
+    // upstreams — массив таблиц: его записи описывают поля ОДНОГО элемента,
+    // а не пути в конфиге. dc_overrides — операторская таблица, ключи которой
+    // схема не знает. Оба редактируются структурно (UpstreamsEditor/MapEditor),
+    // а не плоским dotted-путём.
+    if (section === "upstreams") {
+      upstreamFields.push({ ...entry, path: path.slice("upstreams.".length), section: "upstreams" });
+      continue;
+    }
+    if (section === "dc_overrides") continue;
+
     fields.push(entry);
   }
   fields.sort((a, b) =>
     EDITABLE.indexOf(a.section) - EDITABLE.indexOf(b.section) || a.path.localeCompare(b.path));
-  return { version: tag, fields };
+  upstreamFields.sort((a, b) => a.path.localeCompare(b.path));
+  return { version: tag, fields, upstreamFields };
 }
 
 export async function fetchAndVerify(source, fetchImpl = fetch) {

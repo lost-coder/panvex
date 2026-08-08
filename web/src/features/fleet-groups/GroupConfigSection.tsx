@@ -39,7 +39,7 @@ import {
   type DriftStatus,
 } from "@/features/servers/config/DriftBadge";
 import { ApplyConfigButton } from "@/features/servers/config/ApplyConfigButton";
-import { flattenSections } from "@/features/servers/config/sections";
+import { flattenSections, setPath } from "@/features/servers/config/sections";
 import { catalogEntry } from "@/features/servers/config/paramCatalog";
 
 // Fix round: governing a field is an explicit operator action (Add/Remove in
@@ -56,7 +56,7 @@ function toGovernedPayload(values: Record<string, unknown>): Record<string, unkn
   for (const [path, value] of Object.entries(values)) {
     const entry = catalogEntry(path);
     if (!entry) continue; // not a governable catalog field — ignore defensively
-    ((out[entry.section] ??= {}) as Record<string, unknown>)[entry.key] = value;
+    setPath(out, path, value);
   }
   return out;
 }

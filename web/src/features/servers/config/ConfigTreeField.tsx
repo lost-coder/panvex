@@ -70,12 +70,14 @@ function FieldControl({
   value,
   disabled,
   id,
+  placeholder,
   onChange,
 }: Readonly<{
   entry: ParamCatalogEntry;
   value: unknown;
   disabled: boolean;
   id?: string | undefined;
+  placeholder?: string | undefined;
   onChange: (value: unknown) => void;
 }>) {
   switch (entry.type) {
@@ -88,6 +90,7 @@ function FieldControl({
           type="number"
           value={value === undefined || value === null ? "" : String(value)}
           disabled={disabled}
+          placeholder={placeholder}
           onChange={(e) => {
             const raw = e.target.value;
             onChange(raw === "" ? "" : Number(raw));
@@ -111,6 +114,7 @@ function FieldControl({
           type="text"
           value={listToText(value)}
           disabled={disabled}
+          placeholder={placeholder}
           onChange={(e) => onChange(textToList(e.target.value))}
         />
       );
@@ -122,6 +126,7 @@ function FieldControl({
           type="text"
           value={typeof value === "string" ? value : ""}
           disabled={disabled}
+          placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
         />
       );
@@ -146,10 +151,15 @@ export function ConfigTreeField({
   onRevertPanel,
 }: Readonly<ConfigTreeFieldProps>) {
   const { t } = useTranslation("servers");
-  const { entry, path, value, observed, drifted, locked, readonly, unknown } = field;
+  const { entry, path, value, observed, drifted, locked, readonly, unknown, present } = field;
   const key = path.split(".").pop() ?? path;
   const processOwned = isProcessOwned(path);
   const disabled = readonly || locked;
+  // Незаданное поле: Telemt его не сериализовал, значит на ноде действует
+  // встроенный дефолт. Показываем дефолт приглушённым плейсхолдером, а не
+  // пустым значением, — иначе панель утверждает, что поле пусто/выключено.
+  const notSet = !present && !readonly;
+  const defaultHint = entry?.default;
   // Explicit id/htmlFor (instead of FormField's cloneElement) so the
   // label↔control a11y association survives the two-column layout: the
   // control is no longer FormField's sole direct child.
@@ -180,21 +190,32 @@ export function ConfigTreeField({
               {entry && <InfoTooltip entry={entry} />}
             </span>
           </label>
-          {entry?.default !== undefined && (
+          {notSet ? (
             <p className="text-caption text-fg-muted">
-              {t("config.tree.defaultHint", { value: entry.default })}
+              {defaultHint !== undefined
+                ? t("config.tree.notSetWithDefault", { value: defaultHint })
+                : t("config.tree.notSet")}
             </p>
+          ) : (
+            defaultHint !== undefined && (
+              <p className="text-caption text-fg-muted">
+                {t("config.tree.defaultHint", { value: defaultHint })}
+              </p>
+            )
           )}
         </div>
         <div className="min-w-0">
           {entry ? (
-            <FieldControl
-              entry={entry}
-              value={value}
-              disabled={disabled}
-              id={fieldId}
-              onChange={handleChange}
-            />
+            <div className={notSet ? "opacity-60" : undefined}>
+              <FieldControl
+                entry={entry}
+                value={value}
+                disabled={disabled}
+                id={fieldId}
+                placeholder={notSet ? defaultHint : undefined}
+                onChange={handleChange}
+              />
+            </div>
           ) : (
             <RawValueInput value={value} disabled={disabled} id={fieldId} />
           )}

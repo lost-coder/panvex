@@ -447,6 +447,27 @@
       "hotHint": "Применяется немедленно",
       "reloadHint": "Применяется через внутрипроцессную перезагрузку Telemt (без перезапуска процесса)"
     },
+    "upstreams": {
+      "title": "Upstream-соединения",
+      "empty": "Upstream не настроены — Telemt подключается к Telegram напрямую.",
+      "add": "Добавить upstream",
+      "remove": "Удалить upstream",
+      "entry": "Upstream №{{index}}",
+      "showRemaining": "Показать остальные поля"
+    },
+    "map": {
+      "add": "Добавить запись",
+      "remove": "Удалить запись",
+      "empty": "Записей нет.",
+      "duplicateKey": "Такой ключ уже занят другой записью",
+      "unmanaged": {
+        "label": "неуправляемая",
+        "note": "Есть на ноде, панель этой записью не управляет.",
+        "adopt": "Взять под управление"
+      }
+    },
+    "dcOverrides": { "title": "Переопределения DC", "key": "Индекс DC", "value": "Адреса (ip:port, через запятую)" },
+    "exclusiveMask": { "title": "Mask-бэкенды по SNI", "key": "SNI-домен", "value": "Бэкенд (ip:port)" },
     "tree": {
       "defaultHint": "По умолчанию: {{value}}",
       "lockedByGroup": "Управляется группой {{name}}",
@@ -466,7 +487,9 @@
       "addFieldTitle": "Добавить поле в группу",
       "allGoverned": "Все поля каталога уже управляются этой группой.",
       "addField": "Добавить в группу",
-      "removeField": "Убрать из группы"
+      "removeField": "Убрать из группы",
+      "notSet": "На ноде не задано — действует встроенный дефолт Telemt",
+      "notSetWithDefault": "На ноде не задано — действует дефолт {{value}}"
     },
     "currentValue": {
       "label": "Сейчас на ноде: {{value}}",

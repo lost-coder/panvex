@@ -113,6 +113,77 @@ describe("ConfigTab", () => {
     expect(screen.getByDisplayValue("12")).toBeInTheDocument();
   });
 
+  // F7: regression the fix wave itself introduced. F4 removed the tree rows
+  // that used to render a container path pulled from `observed` when
+  // `desired` had none — but `initialContainers` still seeded ONLY from
+  // `desired`. For a node whose config genuinely has dc_overrides but whose
+  // desired snapshot doesn't carry it (never been overridden through the
+  // panel), the editor rendered empty, the read-only tree row is gone
+  // (F4), and configDrift stays silent too (it's a projection of desired
+  // onto observed) — the node's real configuration became invisible
+  // everywhere in the panel. Mirrors the scalar fallback rule
+  // ("falls back to the observed value for fields with no desired
+  // override" above) but for a container.
+  it("F7: контейнер, отсутствующий в desired, показывается по observed", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {},
+        effective: {},
+        observed: {
+          dc_overrides: { "203": ["91.105.192.100:443"] },
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+    expect(screen.getByDisplayValue("203")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("91.105.192.100:443")).toBeInTheDocument();
+  });
+
+  // D5: the owner's live-review finding. The node's dc_overrides has keys
+  // 1/2/3/203; desired carries only 203 (F7's whole-container observed
+  // fallback only fires when desired lacks the container ENTIRELY — here it
+  // has it, just poorer). The editor must show the union: 203 editable, the
+  // rest visible but marked as node-only/unmanaged, with an action to take
+  // one under management.
+  it("D5: dc_overrides показывает записи, которых нет в desired, как неуправляемые", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: { dc_overrides: { "203": ["91.105.192.100:443"] } },
+        observed: {
+          dc_overrides: {
+            "1": ["1.1.1.1:443"],
+            "203": ["91.105.192.100:443"],
+          },
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+
+    // 203 is managed/editable.
+    expect(screen.getByDisplayValue("203")).toBeInTheDocument();
+    // 1 is visible but unmanaged.
+    expect(screen.getByDisplayValue("1")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("1.1.1.1:443")).toBeInTheDocument();
+    expect(
+      screen.getByText(/not managed by the panel|не управляет/i),
+    ).toBeInTheDocument();
+
+    // Taking it under management makes it part of what Save persists.
+    fireEvent.click(
+      screen.getByRole("button", { name: /take under management|взять под управление/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const body = putMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(body.dc_overrides).toEqual({
+      "203": ["91.105.192.100:443"],
+      "1": ["1.1.1.1:443"],
+    });
+  });
+
   it("renders the config tree seeded from desired and shows drift actions", () => {
     useAgentConfig.mockReturnValue({
       data: {
@@ -194,7 +265,11 @@ describe("ConfigTab", () => {
     expect(putMutate).toHaveBeenCalledTimes(2);
     // The accepted value (silent) must survive into the Save payload
     // alongside the still-dirty tls_domain edit — NOT the old desired
-    // value (normal) the stale `values` map used to carry.
+    // value (normal) the stale `values` map used to carry. F2: this
+    // fixture's stored desired has none of the three containers, so none of
+    // them are invented into the body — an unconditional empty write would
+    // put `upstreams: []` etc. into a node's desired snapshot that never had
+    // them, and that never converges (see buildSections' comment).
     expect(putMutate.mock.calls[1]?.[0]).toEqual({
       censorship: { tls_domain: "dirty.example.com" },
       general: { log_level: "silent" },
@@ -225,9 +300,123 @@ describe("ConfigTab", () => {
     fireEvent.change(input, { target: { value: "new.example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(putMutate).toHaveBeenCalledTimes(1);
-    // Body is the nested-sections shape produced by unflattenPaths.
+    // Body is the nested-sections shape produced by unflattenPaths. F2: this
+    // fixture's stored desired carries none of the three containers and the
+    // editor state is empty for all three, so none is invented into the
+    // body — see the dedicated F2 tests below for the full rationale.
     expect(putMutate.mock.calls[0]?.[0]).toEqual({
       censorship: { tls_domain: "new.example.com" },
+    });
+  });
+
+  // F2 (plan defect): the original plan required buildSections() to write
+  // all three containers unconditionally, reasoning that the server merges
+  // the PUT into the stored snapshot so omitting an unchanged container
+  // would leave a stale one behind. That reasoning only holds for a
+  // container that's already IN the snapshot — for a node with none of
+  // these sections (most real configs), the very first Save would write
+  // `{"upstreams": [], "dc_overrides": {}, "censorship": {"exclusive_mask":
+  // {}}}` into desired. configDrift projects desired onto observed, so
+  // those three phantom sections would sit in drift forever; applyDiff
+  // yields no leaves for an empty table, so Apply could never converge
+  // them; and the one patch it DOES produce sends `upstreams: []` to the
+  // node, where Telemt re-renders the section from its typed config —
+  // erasing the operator's real upstreams. This test used to assert
+  // exactly that (wrong) behavior; it now asserts its absence.
+  it("F2: узел без контейнеров не получает пустые upstreams/dc_overrides/exclusive_mask в теле PUT", () => {
+    render(<ConfigTab server={server} />);
+    const input = screen.getByDisplayValue("old.example.com");
+    fireEvent.change(input, { target: { value: "new.example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const body = putMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty("upstreams");
+    expect(body).not.toHaveProperty("dc_overrides");
+    expect(
+      (body.censorship as Record<string, unknown> | undefined)?.["exclusive_mask"],
+    ).toBeUndefined();
+  });
+
+  // F2 paired test: a container ALREADY present in the stored desired
+  // snapshot (even empty) must still round-trip through Save — otherwise
+  // the operator could never clear an existing container down to empty and
+  // have that stick.
+  it("F2: контейнер, уже присутствующий в desired, сохраняется даже пустым", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {
+          censorship: { tls_domain: "old.example.com", exclusive_mask: {} },
+          dc_overrides: {},
+          upstreams: [],
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const body = putMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(body).toHaveProperty("upstreams", []);
+    expect(body).toHaveProperty("dc_overrides", {});
+    expect(body.censorship).toMatchObject({ exclusive_mask: {} });
+  });
+
+  // Follow-up to F2: buildSections' "is this container non-empty" gate used
+  // to count raw keys in `containers.dcOverrides` — but MapEditor's "Add
+  // entry" button seeds a new row as `{"": ""}`, a blank key with a blank
+  // value. That inflates the raw key count to 1 (truthy) even though
+  // `writeMap` itself already strips blank keys/values from what it writes.
+  // Net effect: one stray Add click, with nothing actually typed, plus Save,
+  // was enough to plant an empty `dc_overrides: {}` into a node's desired
+  // snapshot that never had one — reintroducing F2's own phantom-container
+  // hazard (permanent drift, since a persisted-but-empty container is
+  // legitimately "already present" from then on) through a different door.
+  it("пустая строка от «Добавить» в dc_overrides не создаёт фантомный контейнер при Save", () => {
+    render(<ConfigTab server={server} />);
+    const section = screen.getByText("DC overrides").closest("section");
+    if (!section) throw new Error("DC overrides section not found");
+    fireEvent.click(within(section).getByRole("button", { name: "Add entry" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const body = putMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(body).not.toHaveProperty("dc_overrides");
+  });
+
+  // Task 6: the Save payload must carry both the flat scalar overrides (via
+  // dotted-path unflatten) AND the structural containers the two new
+  // editors (UpstreamsEditor / MapEditor) manage — omitting an unchanged
+  // container would leave a stale one behind, since the server MERGES the
+  // PUT into the stored snapshot rather than replacing it.
+  it("PUT несёт и скаляры, и контейнеры во вложенной форме", () => {
+    useAgentConfig.mockReturnValue({
+      data: {
+        desired: {
+          general: { log_level: "silent", links: { public_host: "ds87j.metrion.click" } },
+          upstreams: [{ type: "direct", weight: 1 }],
+          dc_overrides: { "203": ["91.105.192.100:443"] },
+          censorship: { exclusive_mask: { "hv24s.metrion.icu": "127.0.0.1:8085" } },
+        },
+        effective: {},
+        observed: {},
+        drift: { status: "in_sync", fields: [] },
+        group_paths: [],
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<ConfigTab server={server} />);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const body = putMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    // Nested table, not a flat "links.public_host" key.
+    expect(body.general).toMatchObject({ links: { public_host: "ds87j.metrion.click" } });
+    // Containers are not lost on Save.
+    expect(body.upstreams).toEqual([{ type: "direct", weight: 1 }]);
+    expect(body.dc_overrides).toEqual({ "203": ["91.105.192.100:443"] });
+    expect(body.censorship).toMatchObject({
+      exclusive_mask: { "hv24s.metrion.icu": "127.0.0.1:8085" },
     });
   });
 
@@ -336,6 +525,35 @@ describe("ConfigTab", () => {
     expect(screen.getByText("Save before applying")).toBeInTheDocument();
   });
 
+  // F3: changedPaths/overridePaths used to be scalar-only, so an unsaved
+  // container edit (UpstreamsEditor/MapEditor) showed no "unsaved" hint and
+  // did not block Apply — the operator could hit Apply while staring at
+  // their own unsaved edit on screen and have the panel push the
+  // last-SAVED container state instead. Uses the same
+  // `Upstreams`-section-scoped `weight` lookup as the sibling refetch test
+  // above (unscoped lookup is measurably slow against the full catalog).
+  it("F3: правка контейнера показывает подсказку о несохранённом и блокирует Apply", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {
+          censorship: { tls_domain: "old.example.com" },
+          upstreams: [{ type: "direct", weight: 1 }],
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+
+    expect(screen.getByRole("button", { name: "Apply to node" })).not.toBeDisabled();
+    expect(screen.queryByText("Save before applying")).not.toBeInTheDocument();
+
+    fireEvent.change(getWeightInput(), { target: { value: "5" } });
+
+    expect(screen.getByText("Save before applying")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply to node" })).toBeDisabled();
+  });
+
   // 3.12: a background refetch (e.g. the WS seq-gap full-cache
   // invalidation) firing while the operator is mid-edit must not wipe
   // their unsaved draft.
@@ -358,6 +576,70 @@ describe("ConfigTab", () => {
     expect(screen.getByDisplayValue("dirty.example.com")).toBeInTheDocument();
   });
 
+  // Review round 2 (Task 6): mirrors the scalar test directly above, but
+  // dirties a CONTAINER field (an UpstreamsEditor control) instead of a
+  // ConfigTree scalar. agentId stays the SAME throughout, so `idChanged`
+  // stays false — unlike the node-switch draft-leak test below, this one
+  // genuinely exercises `lastSeededContainersRef` / the container arm of
+  // `hasUnsavedEdits` in the re-seed effect, which that test cannot (its
+  // `idChanged` branch bypasses that guard entirely, so it passes or fails
+  // purely on `key={agentId}`, not on the dirty-check).
+  //
+  // UpstreamsEditor (not MapEditor) is used deliberately here: it is fully
+  // controlled with no internal draft state, so the rendered value is a
+  // direct read of `containers.upstreams` — there is no risk of a
+  // component-local draft masking whether the container state itself was
+  // actually reset.
+  //
+  // The "weight" lookup is scoped to the Upstreams `<section>` via
+  // `within(...)`: with the catalog's ~120 number fields also rendered as
+  // spinbuttons, an unscoped `getByRole("spinbutton", { name: "weight" })`
+  // (or `getByLabelText`) has to compute an accessible name for every
+  // candidate to filter by name, which is measurably slow (several
+  // seconds) in jsdom on a tree this size — scoping to the handful of
+  // controls inside the Upstreams section avoids that.
+  function getWeightInput(): HTMLElement {
+    const section = screen.getByText("Upstreams").closest("section");
+    if (!section) throw new Error("Upstreams section not found");
+    return within(section).getByLabelText("weight 1");
+  }
+
+  it("does NOT clobber an unsaved container edit when the query data is refetched (same server)", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {
+          censorship: { tls_domain: "old.example.com" },
+          upstreams: [{ type: "direct", weight: 1 }],
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    const { rerender } = render(<ConfigTab server={server} />);
+
+    const weightInput = getWeightInput();
+    fireEvent.change(weightInput, { target: { value: "5" } });
+    expect(weightInput).toHaveValue(5);
+
+    // Simulate a same-server refetch (e.g. the WS seq-gap full-cache
+    // invalidation) that returns a NEW object with the SAME logical
+    // upstreams — identity changes on every query settle even when the
+    // server-side value hasn't changed.
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: {
+          censorship: { tls_domain: "old.example.com" },
+          upstreams: [{ type: "direct", weight: 1 }],
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ConfigTab server={server} />);
+
+    expect(getWeightInput()).toHaveValue(5);
+  });
+
   it("re-seeds the editor when the server id changes, even mid-edit", () => {
     const { rerender } = render(<ConfigTab server={server} />);
     const input = screen.getByDisplayValue("old.example.com");
@@ -372,6 +654,50 @@ describe("ConfigTab", () => {
     rerender(<ConfigTab server={otherServer} />);
 
     expect(screen.getByDisplayValue("fresh.example.com")).toBeInTheDocument();
+  });
+
+  // Task 6 finding: MapEditor keeps a per-row text draft keyed by ROW INDEX
+  // while the operator types (cleared on that row's blur, not on every
+  // keystroke). A same-node background refetch is guarded against wiping a
+  // dirty container edit (see the test above), but a server SWITCH forces
+  // the containers to re-seed unconditionally, same as the scalar values —
+  // and ConfigTab does not remount on a prop change alone. Without
+  // `key={agentId}` on the MapEditor instances, the old node's live draft
+  // would keep pointing at row index 0 after the switch, masking the new
+  // node's value.
+  it("does not leak a MapEditor draft across a server switch", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: { dc_overrides: { "203": "91.105.192.100:443" } },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    const { rerender } = render(<ConfigTab server={server} />);
+
+    const valueInput = screen.getByRole("textbox", {
+      name: "Endpoints (ip:port, comma-separated) 1",
+    });
+    // Type without blurring — this is what creates a live per-row draft.
+    fireEvent.change(valueInput, { target: { value: "91.105.192.100:443, " } });
+    expect(valueInput).toHaveValue("91.105.192.100:443, ");
+
+    const otherServer = { id: "agent-99", name: "edge-2" } as ServerDetailPageProps["server"];
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: { dc_overrides: { "301": "8.8.8.8:443" } },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ConfigTab server={otherServer} />);
+
+    // The new node's row must show ITS value, not the previous node's
+    // in-flight draft text.
+    const freshInput = screen.getByRole("textbox", {
+      name: "Endpoints (ip:port, comma-separated) 1",
+    });
+    expect(freshInput).toHaveValue("8.8.8.8:443");
   });
 
   it("re-seeds the editor on refetch when the draft is NOT dirty", () => {

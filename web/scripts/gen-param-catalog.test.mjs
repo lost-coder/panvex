@@ -79,9 +79,18 @@ describe("buildCatalog", () => {
     const ch = cat.fields.find((f) => f.path === "timeouts.client_handshake");
     expect(ch.default).toBe("30");
   });
-  it("uses the whole path as key for a bare top-level editable key", () => {
-    const dc = cat.fields.find((f) => f.path === "dc_overrides");
-    expect(dc.key).toBe("dc_overrides");
+  it("does not compute a separate key field — entries address by full path only", () => {
+    // Regression guard for the key/section split bug: the generator used to
+    // additionally emit `key` (the path remainder after the section), which
+    // sections.ts then mis-treated as a single nesting level. Entries now
+    // carry only path + section. dc_overrides used to be the fixture's
+    // example of a bare (no-dot) top-level path, but the container split
+    // (Task 2) moved it out of cat.fields entirely — see the "контейнеры"
+    // describe below. upstreamFields exercises the same bare-path shape now
+    // (its entries are relative to one upstreams element, e.g. "type").
+    const type = cat.upstreamFields.find((f) => f.path === "type");
+    expect(type.section).toBe("upstreams");
+    expect(type).not.toHaveProperty("key");
   });
   it("recovers descriptions after a bracketless dotted sub-heading without losing the section", () => {
     // RU doc has a malformed "# censorship.tls_fetch" (no brackets) where EN has
@@ -94,17 +103,65 @@ describe("buildCatalog", () => {
     expect(mask.ru).toMatch(/маскировки/i);
   });
   it("extracts descriptions for h2 headings with a disambiguating parenthetical", () => {
-    const ipv4 = cat.fields.find((f) => f.path === "upstreams.ipv4");
+    // upstreams entries no longer live in cat.fields (container split, Task 2) —
+    // they moved to upstreamFields with relative (no-dot) paths.
+    const ipv4 = cat.upstreamFields.find((f) => f.path === "ipv4");
     expect(ipv4.en).toMatch(/IPv4/);
     expect(ipv4.ru).toMatch(/IPv4/);
   });
   it("recognizes the Russian 'Top-level keys' heading so bare-key RU descriptions aren't dropped", () => {
-    const dc = cat.fields.find((f) => f.path === "dc_overrides");
-    expect(dc.ru).toMatch(/переопределяет/i);
+    // dc_overrides is a container now (Task 2) and no longer survives into
+    // cat.fields, so this asserts against parseDescriptions directly —
+    // that's the actual unit that resolves the "Top-level keys" heading;
+    // whether the resulting path stays in the flat catalog is a separate
+    // concern (see the "контейнеры" describe below).
+    const d = parseDescriptions(ru);
+    expect(d.get("dc_overrides")).toMatch(/переопределяет/i);
   });
 });
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
+
+const EN = `
+# [general]
+| [\`fast_mode\`](#fast_mode) | bool | \`true\` | \`✔\` |
+# [censorship.tls_fetch]
+| [\`strict_route\`](#strict_route) | bool | \`true\` | \`✘\` |
+# [censorship]
+| [\`tls_fetch\`](#tls_fetch) | Table | \`built-in\` | \`✘\` |
+| [\`tls_domain\`](#tls_domain) | String | — | \`✘\` |
+# [upstreams]
+| [\`type\`](#type) | \`"direct"\`, or \`"socks5"\` | — | \`✘\` |
+| [\`weight\`](#weight) | u32 | \`1\` | \`✘\` |
+# [dc_overrides]
+| [\`dc_overrides\`](#dc_overrides) | Table | \`{}\` | \`✘\` |
+`;
+
+describe("контейнеры", () => {
+  const cat = buildCatalog(EN, EN, "3.4.25");
+  const paths = cat.fields.map((f) => f.path);
+
+  it("зонтичная запись-таблица не попадает в плоский каталог", () => {
+    expect(paths).not.toContain("censorship.tls_fetch");
+    expect(paths).toContain("censorship.tls_fetch.strict_route");
+    expect(paths).toContain("censorship.tls_domain");
+  });
+
+  it("upstreams.* уходят в схему элемента, а не в плоские поля", () => {
+    expect(paths.some((p) => p.startsWith("upstreams"))).toBe(false);
+    expect(cat.upstreamFields.map((f) => f.path).sort()).toEqual(["type", "weight"]);
+    expect(cat.upstreamFields.find((f) => f.path === "type")?.options)
+      .toEqual(["direct", "socks5"]);
+  });
+
+  it("dc_overrides не попадает в плоский каталог", () => {
+    expect(paths).not.toContain("dc_overrides");
+  });
+
+  it("в записях нет поля key", () => {
+    expect(cat.fields.every((f) => !("key" in f))).toBe(true);
+  });
+});
 
 describe("fetchAndVerify", () => {
   const src = { tag: "3.4.25", repo: "telemt/telemt",
