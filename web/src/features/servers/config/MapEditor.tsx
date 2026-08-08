@@ -12,11 +12,19 @@
 // перестраивает объект, сохраняя позицию.
 //
 // Здесь же — единственное место, где строка из поля превращается в значение
-// конфига, поэтому именно здесь сохраняется его ФОРМА. Telemt принимает и
-// скаляр, и массив ip:port, и на живой ноде есть обе формы сразу
-// (dc_overrides.203 — массив из одного элемента, exclusive_mask — скаляры).
-// Свернуть массив из одного элемента в скаляр значило бы переписать конфиг
-// при первом же Save и породить ложный дрейф.
+// конфига, поэтому именно здесь решается его ФОРМА. Форму задаёт ТИП
+// контейнера в Telemt, а не то, что оператор набрал или что было записано
+// раньше:
+//   - dc_overrides — HashMap<String, Vec<String>>. Скаляр Telemt примет, но
+//     при записи секции обратно (toml::Value::try_from) канонизирует его в
+//     массив, поэтому панель обязана слать список — иначе получит из
+//     observed массив против своего скаляра и уйдёт в вечный дрейф на этом
+//     ключе.
+//   - censorship.exclusive_mask — HashMap<String, String>. Массив вообще не
+//     десериализуется в это поле — merged.try_into() падает, и Telemt
+//     отклоняет ВЕСЬ патч целиком, включая не связанные с этим ключом
+//     правки в том же Apply.
+// См. valueKind ниже и обязательный проп у вызывающей стороны (ConfigTab).
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -29,6 +37,14 @@ export interface MapEditorProps {
   onChange: (next: Record<string, MapValue>) => void;
   keyLabel: string;
   valueLabel: string;
+  /**
+   * Форму значения задаёт ТИП контейнера в Telemt, а не выбор оператора:
+   * dc_overrides — HashMap<String, Vec<String>> (скаляр принимается, но при
+   * записи секции обратно канонизируется в массив, поэтому панель обязана
+   * слать список); censorship.exclusive_mask — HashMap<String, String>
+   * (массив не десериализуется, и Telemt отклоняет ВЕСЬ патч целиком).
+   */
+  valueKind: "list" | "scalar";
   disabled?: boolean | undefined;
 }
 
@@ -38,21 +54,19 @@ function toText(value: MapValue): string {
 }
 
 /**
- * Разбирает введённый текст, сохраняя форму значения. Признак списка —
- * ЗАПЯТАЯ В СЫРОМ ТЕКСТЕ, а не количество непустых частей после разбора:
- * иначе едва набранная "1.1.1.1:443," давала бы один элемент, значение
- * оставалось бы скаляром, и запятая исчезала бы из поля прежде, чем
- * оператор успеет набрать второй адрес.
+ * Разбирает введённый текст в значение нужной формы. Черновик строки
+ * (drafts, см. ниже) — отдельная задача: он держит запятую живой под
+ * пальцами, пока оператор набирает список; fromText здесь лишь решает,
+ * скаляр это или массив, и решает это по valueKind, а не по содержимому
+ * текста.
  */
-function fromText(text: string, previous: MapValue): MapValue {
-  const parts = text.split(",").map((s) => s.trim()).filter(Boolean);
-  if (text.includes(",")) return parts;
-  if (Array.isArray(previous)) return parts;
-  return parts[0] ?? "";
+function fromText(text: string, valueKind: "list" | "scalar"): MapValue {
+  if (valueKind === "scalar") return text.trim();
+  return text.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
 export function MapEditor({
-  value, onChange, keyLabel, valueLabel, disabled = false,
+  value, onChange, keyLabel, valueLabel, valueKind, disabled = false,
 }: Readonly<MapEditorProps>) {
   const { t } = useTranslation("servers");
   const rows = Object.entries(value);
@@ -71,8 +85,13 @@ export function MapEditor({
   const [conflict, setConflict] = useState<number | null>(null);
 
   function renameKey(index: number, nextKey: string) {
+    // F5: пустой ключ не освобождён от проверки на коллизию. Очистить поле,
+    // чтобы набрать заново, — обычный способ переименования; если
+    // очистить так две строки подряд, вторая целится в тот же пустой ключ,
+    // что и первая, и без этой проверки объект схлопнул бы их в одну,
+    // молча потеряв значение первой строки.
     const taken = rows.some(([key], i) => i !== index && key === nextKey);
-    if (taken && nextKey !== "") {
+    if (taken) {
       setConflict(index);
       return;
     }
@@ -86,7 +105,7 @@ export function MapEditor({
 
   function setAddresses(index: number, key: string, text: string) {
     setDrafts((prev) => ({ ...prev, [index]: text }));
-    onChange({ ...value, [key]: fromText(text, value[key] ?? "") });
+    onChange({ ...value, [key]: fromText(text, valueKind) });
   }
 
   function commitDraft(index: number) {
