@@ -14,7 +14,7 @@
 // CONFIG_FIELDS (i.e. the catalog itself), which would silently drop any
 // observed path with no catalog entry — exactly the "unknown" case this
 // view model needs to surface.
-import { PARAM_CATALOG, catalogEntry, type ParamCatalogEntry } from "./paramCatalog";
+import { CONTAINER_PATHS, PARAM_CATALOG, catalogEntry, type ParamCatalogEntry } from "./paramCatalog";
 import { isProcessOwned } from "./guard";
 import type { ConfigSections } from "@/shared/api/schemas/config";
 
@@ -27,6 +27,14 @@ export interface TreeField {
   locked: boolean;
   readonly: boolean;
   unknown: boolean;
+  /**
+   * Есть ли путь хоть в desired, хоть в observed. false означает, что Telemt
+   * поле не сериализовал — оно не задано в конфиге ноды и работает по
+   * встроенному дефолту. Отличать это от «задано и равно пустому/false»
+   * обязательно: иначе панель показывает выключенный тумблер там, где на
+   * деле действует дефолт.
+   */
+  present: boolean;
 }
 
 export interface TreeSection {
@@ -34,11 +42,8 @@ export interface TreeSection {
   fields: TreeField[];
 }
 
-const CONTAINER_SECTIONS = ["upstreams", "dc_overrides"];
-
 function isContainerPath(path: string): boolean {
-  const top = path.split(".")[0] ?? "";
-  return CONTAINER_SECTIONS.includes(top) || path.startsWith("censorship.exclusive_mask.");
+  return CONTAINER_PATHS.some((c) => path === c || path.startsWith(`${c}.`));
 }
 
 // Recursively flattens a nested config-sections object into a
@@ -94,6 +99,7 @@ export function buildTree(
       locked: groupPaths.has(path),
       readonly: !entry || isProcessOwned(path) || container,
       unknown: !entry && !container,
+      present: hasDesired || hasObserved,
     });
   }
 

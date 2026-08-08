@@ -455,7 +455,9 @@
       "addFieldTitle": "Add a field to this group",
       "allGoverned": "Every catalog field is already governed by this group.",
       "addField": "Add to group",
-      "removeField": "Remove from group"
+      "removeField": "Remove from group",
+      "notSet": "Not set on the node — Telemt's built-in default applies",
+      "notSetWithDefault": "Not set on the node — default {{value}} applies"
     },
     "currentValue": {
       "label": "Current on node: {{value}}",

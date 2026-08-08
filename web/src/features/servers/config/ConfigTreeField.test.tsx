@@ -4,7 +4,7 @@ import { ConfigTreeField } from "./ConfigTreeField";
 import type { TreeField } from "./buildTree";
 
 const base: TreeField = { path: "general.log_level", value: "normal", observed: "silent",
-  drifted: false, locked: false, readonly: false, unknown: false,
+  drifted: false, locked: false, readonly: false, unknown: false, present: true,
   entry: { path: "general.log_level", section: "general",
     type: "select", applyMode: "hot", options: ["debug","verbose","normal","silent"],
     en: "Runtime logging verbosity", ru: "Уровень детализации логов" } };
@@ -53,6 +53,7 @@ describe("ConfigTreeField", () => {
           locked: false,
           readonly: true,
           unknown: true,
+          present: true,
           entry: null,
         }}
         onChange={() => {}}
@@ -73,6 +74,7 @@ describe("ConfigTreeField", () => {
           locked: false,
           readonly: true,
           unknown: true,
+          present: true,
           entry: null,
         }}
         onChange={() => {}}
@@ -116,5 +118,56 @@ describe("ConfigTreeField", () => {
     rerender(<ConfigTreeField field={{ ...base, locked: true }} onChange={() => {}} />);
     expect(screen.queryByText(/\{\{name\}\}/)).not.toBeInTheDocument();
     expect(screen.getByText(/set by group/i)).toBeInTheDocument();
+  });
+
+  it("незаданное строковое поле показывает дефолт плейсхолдером и подпись «не задано»", () => {
+    render(
+      <ConfigTreeField
+        field={{
+          entry: {
+            path: "general.proxy_config_v4_url",
+            section: "general",
+            type: "string",
+            applyMode: "reload",
+            default: "https://core.telegram.org/getProxyConfig",
+            en: "", ru: "",
+          },
+          path: "general.proxy_config_v4_url",
+          value: undefined,
+          observed: undefined,
+          drifted: false,
+          locked: false,
+          readonly: false,
+          unknown: false,
+          present: false,
+        }}
+        onChange={() => {}}
+      />,
+    );
+
+    const input = screen.getByRole("textbox");
+    expect(input).toHaveValue("");
+    expect(input).toHaveAttribute("placeholder", "https://core.telegram.org/getProxyConfig");
+    expect(screen.getByText(/не задано|Not set/i)).toBeInTheDocument();
+  });
+
+  it("заданное поле не показывает подпись «не задано»", () => {
+    render(
+      <ConfigTreeField
+        field={{
+          entry: {
+            path: "general.log_level", section: "general", type: "string",
+            applyMode: "hot", en: "", ru: "",
+          },
+          path: "general.log_level",
+          value: "silent",
+          observed: "silent",
+          drifted: false, locked: false, readonly: false, unknown: false,
+          present: true,
+        }}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/не задано|Not set/i)).not.toBeInTheDocument();
   });
 });
