@@ -45,6 +45,28 @@ describe("ApplyConfigButton", () => {
     expect(toastApi.error).not.toHaveBeenCalled();
   });
 
+  // F8: upstreams/dc_overrides/censorship.exclusive_mask have no PARAM_CATALOG
+  // entry at all (their keys are operator-chosen), so catalogEntry(p) is
+  // always undefined for them — needsReload's catalogEntry-only check could
+  // never see them as reload-class, even though all 16 upstream element
+  // fields are reload-mode and every container only applies through a
+  // Maestro reload. An upstreams-only Apply must still show the
+  // session-policy dialog.
+  it("F8: контейнерный путь (upstreams) относится к reload-классу и требует подтверждения", async () => {
+    const onApply = vi.fn().mockResolvedValue(undefined);
+    render(<ApplyConfigButton changedPaths={["upstreams"]} onApply={onApply} />);
+    await userEvent.click(screen.getByRole("button", { name: "Apply to node" }));
+    expect(screen.getByRole("heading", { name: "Reload required" })).toBeInTheDocument();
+    expect(onApply).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(onApply).toHaveBeenCalledWith({
+        reload_mode: "drain",
+        reload_timeout_secs: 30,
+      }),
+    );
+  });
+
   it("offers a session-policy choice for reload changes, defaulting to drain, and applies on confirm", async () => {
     const onApply = vi.fn().mockResolvedValue(undefined);
     render(

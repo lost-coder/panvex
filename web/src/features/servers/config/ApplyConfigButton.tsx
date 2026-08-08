@@ -35,6 +35,7 @@ import { Button, ConfirmDialog } from "@/ui";
 import type { ApplyConfigRequest } from "@/shared/api/schemas/requests/applyConfigRequest";
 
 import { catalogEntry } from "./paramCatalog";
+import { isContainerPath } from "@/features/servers/config/buildTree";
 
 // Matches the panel's own default (see applyConfigRequest.ts / P5-T5
 // config_apply_reload.go): an absent policy resolves to a 30s drain. The
@@ -72,7 +73,12 @@ export function ApplyConfigButton({
   const [inFlight, setInFlight] = useState(false);
   const [reloadChoice, setReloadChoice] = useState<ReloadChoice>("drain");
 
-  const needsReload = changedPaths.some((p) => catalogEntry(p)?.applyMode === "reload");
+  // F8: контейнеры в каталоге не представлены (у них нет записей — ключи
+  // задаёт оператор), но все три применяются только через перезагрузку
+  // Maestro, поэтому классифицируются по пути, а не по записи каталога.
+  const needsReload = changedPaths.some(
+    (p) => catalogEntry(p)?.applyMode === "reload" || isContainerPath(p),
+  );
   const drifted = driftedFields ?? [];
   const hasDrift = drifted.length > 0;
   const needsConfirm = needsReload || hasDrift;
