@@ -194,10 +194,14 @@ describe("ConfigTab", () => {
     expect(putMutate).toHaveBeenCalledTimes(2);
     // The accepted value (silent) must survive into the Save payload
     // alongside the still-dirty tls_domain edit — NOT the old desired
-    // value (normal) the stale `values` map used to carry.
+    // value (normal) the stale `values` map used to carry. Plus the
+    // (empty, since this fixture has none) containers buildSections always
+    // writes alongside the scalars.
     expect(putMutate.mock.calls[1]?.[0]).toEqual({
-      censorship: { tls_domain: "dirty.example.com" },
+      censorship: { tls_domain: "dirty.example.com", exclusive_mask: {} },
       general: { log_level: "silent" },
+      dc_overrides: {},
+      upstreams: [],
     });
   });
 
@@ -225,9 +229,50 @@ describe("ConfigTab", () => {
     fireEvent.change(input, { target: { value: "new.example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(putMutate).toHaveBeenCalledTimes(1);
-    // Body is the nested-sections shape produced by unflattenPaths.
+    // Body is the nested-sections shape produced by unflattenPaths, plus the
+    // (empty, since this fixture has none) containers buildSections always
+    // writes alongside the scalars.
     expect(putMutate.mock.calls[0]?.[0]).toEqual({
-      censorship: { tls_domain: "new.example.com" },
+      censorship: { tls_domain: "new.example.com", exclusive_mask: {} },
+      dc_overrides: {},
+      upstreams: [],
+    });
+  });
+
+  // Task 6: the Save payload must carry both the flat scalar overrides (via
+  // dotted-path unflatten) AND the structural containers the two new
+  // editors (UpstreamsEditor / MapEditor) manage — omitting an unchanged
+  // container would leave a stale one behind, since the server MERGES the
+  // PUT into the stored snapshot rather than replacing it.
+  it("PUT несёт и скаляры, и контейнеры во вложенной форме", () => {
+    useAgentConfig.mockReturnValue({
+      data: {
+        desired: {
+          general: { log_level: "silent", links: { public_host: "ds87j.metrion.click" } },
+          upstreams: [{ type: "direct", weight: 1 }],
+          dc_overrides: { "203": ["91.105.192.100:443"] },
+          censorship: { exclusive_mask: { "hv24s.metrion.icu": "127.0.0.1:8085" } },
+        },
+        effective: {},
+        observed: {},
+        drift: { status: "in_sync", fields: [] },
+        group_paths: [],
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<ConfigTab server={server} />);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const body = putMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    // Nested table, not a flat "links.public_host" key.
+    expect(body.general).toMatchObject({ links: { public_host: "ds87j.metrion.click" } });
+    // Containers are not lost on Save.
+    expect(body.upstreams).toEqual([{ type: "direct", weight: 1 }]);
+    expect(body.dc_overrides).toEqual({ "203": ["91.105.192.100:443"] });
+    expect(body.censorship).toMatchObject({
+      exclusive_mask: { "hv24s.metrion.icu": "127.0.0.1:8085" },
     });
   });
 
@@ -372,6 +417,50 @@ describe("ConfigTab", () => {
     rerender(<ConfigTab server={otherServer} />);
 
     expect(screen.getByDisplayValue("fresh.example.com")).toBeInTheDocument();
+  });
+
+  // Task 6 finding: MapEditor keeps a per-row text draft keyed by ROW INDEX
+  // while the operator types (cleared on that row's blur, not on every
+  // keystroke). A same-node background refetch is guarded against wiping a
+  // dirty container edit (see the test above), but a server SWITCH forces
+  // the containers to re-seed unconditionally, same as the scalar values —
+  // and ConfigTab does not remount on a prop change alone. Without
+  // `key={agentId}` on the MapEditor instances, the old node's live draft
+  // would keep pointing at row index 0 after the switch, masking the new
+  // node's value.
+  it("does not leak a MapEditor draft across a server switch", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: { dc_overrides: { "203": "91.105.192.100:443" } },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    const { rerender } = render(<ConfigTab server={server} />);
+
+    const valueInput = screen.getByRole("textbox", {
+      name: "Endpoints (ip:port, comma-separated) 1",
+    });
+    // Type without blurring — this is what creates a live per-row draft.
+    fireEvent.change(valueInput, { target: { value: "91.105.192.100:443, " } });
+    expect(valueInput).toHaveValue("91.105.192.100:443, ");
+
+    const otherServer = { id: "agent-99", name: "edge-2" } as ServerDetailPageProps["server"];
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: { dc_overrides: { "301": "8.8.8.8:443" } },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    rerender(<ConfigTab server={otherServer} />);
+
+    // The new node's row must show ITS value, not the previous node's
+    // in-flight draft text.
+    const freshInput = screen.getByRole("textbox", {
+      name: "Endpoints (ip:port, comma-separated) 1",
+    });
+    expect(freshInput).toHaveValue("8.8.8.8:443");
   });
 
   it("re-seeds the editor on refetch when the draft is NOT dirty", () => {

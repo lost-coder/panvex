@@ -42,6 +42,12 @@ import {
   flattenSections,
   unflattenPaths,
 } from "@/features/servers/config/sections";
+import {
+  readUpstreams, writeUpstreams, readMap, writeMap,
+  type UpstreamEntry,
+} from "@/features/servers/config/containers";
+import { UpstreamsEditor } from "@/features/servers/config/UpstreamsEditor";
+import { MapEditor } from "@/features/servers/config/MapEditor";
 
 // Compute the set of dotted paths whose current value differs from the
 // initial (override-seeded) flatten. Used both for the Apply gate and the
@@ -104,6 +110,18 @@ export function ConfigTab({
   );
   const [values, setValues] = useState<Record<string, unknown>>(initialValues);
 
+  // Контейнеры живут отдельно от плоской карты скаляров: их ключи задаёт
+  // оператор и содержат точки, поэтому dotted-путь для них неоднозначен.
+  const initialContainers = useMemo(
+    () => ({
+      upstreams: readUpstreams(data?.desired ?? {}),
+      dcOverrides: readMap(data?.desired ?? {}, "dc_overrides"),
+      exclusiveMask: readMap(data?.desired ?? {}, "censorship.exclusive_mask"),
+    }),
+    [data?.desired],
+  );
+  const [containers, setContainers] = useState(initialContainers);
+
   // Paths the operator has edited but not yet saved — drives the dirty
   // state that blocks Apply (you save the override before pushing it).
   const changedPaths = useMemo(
@@ -126,19 +144,31 @@ export function ConfigTab({
   // `initialValues` would spuriously read as "dirty" and block the very
   // re-seed an id-change is supposed to force.
   const lastSeededRef = useRef(initialValues);
+  // Same "don't clobber an unsaved edit" contract as `lastSeededRef`, but for
+  // the container state — a background refetch must not wipe an in-progress
+  // upstreams/dc_overrides/exclusive_mask edit any more than it wipes a
+  // scalar one. `diffPaths` works fine here too: it only needs a
+  // Record<string, unknown> and JSON.stringify-compares each key, which
+  // covers the (small, three-key) container shape.
+  const lastSeededContainersRef = useRef(initialContainers);
   const lastAgentIdRef = useRef(agentId);
   useEffect(() => {
     const idChanged = lastAgentIdRef.current !== agentId;
     lastAgentIdRef.current = agentId;
-    if (!idChanged && diffPaths(lastSeededRef.current, values).length > 0) {
+    const hasUnsavedEdits =
+      diffPaths(lastSeededRef.current, values).length > 0 ||
+      diffPaths(lastSeededContainersRef.current, containers).length > 0;
+    if (!idChanged && hasUnsavedEdits) {
       // Refetch landed while the operator has unsaved edits on the SAME
       // server — keep their draft.
       return;
     }
     lastSeededRef.current = initialValues;
+    lastSeededContainersRef.current = initialContainers;
     setValues(initialValues);
+    setContainers(initialContainers);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, initialValues]);
+  }, [agentId, initialValues, initialContainers]);
 
   // What Apply will push: the persisted override's own paths. Feeding these
   // to ApplyConfigButton lets it decide whether a reload-confirmation dialog
@@ -172,8 +202,20 @@ export function ConfigTab({
 
   const drift = data.drift;
 
+  // Тело PUT: скаляры по dotted-путям + контейнеры целиком. Сервер мержит
+  // это в сохранённый снапшот (upsertAgentConfigTarget), поэтому опускать
+  // неизменённые контейнеры нельзя — иначе они останутся от прошлого Save,
+  // а операторская правка потеряется.
+  function buildSections(): Record<string, unknown> {
+    const out = unflattenPaths(values);
+    writeUpstreams(out, containers.upstreams);
+    writeMap(out, "dc_overrides", containers.dcOverrides);
+    writeMap(out, "censorship.exclusive_mask", containers.exclusiveMask);
+    return out;
+  }
+
   function handleSave() {
-    putMutation.mutate(unflattenPaths(values), {
+    putMutation.mutate(buildSections(), {
       onSuccess: () => toast.success(t("config.saved")),
     });
   }
@@ -259,6 +301,50 @@ export function ConfigTab({
         onAcceptNode={handleAcceptNode}
         onRevertPanel={handleRevertPanel}
       />
+
+      {/* Structural containers — upstreams / dc_overrides /
+          censorship.exclusive_mask. Their keys are operator-chosen (and, for
+          the two maps, can contain dots), so they live outside the dotted-
+          path catalog the tree above edits; see containers.ts.
+
+          MapEditor keeps a per-row text draft keyed by ROW INDEX while the
+          operator types. A node switch forces this tab to re-seed
+          `containers` unconditionally (see the effect above), which would
+          otherwise leave MapEditor's internal draft state pointing at the
+          PREVIOUS node's rows — masking the new node's value or attaching
+          the stale draft to the wrong row. `key={agentId}` remounts the map
+          editors on a node switch so no draft survives across that
+          identity change. UpstreamsEditor has no internal state (fully
+          controlled), so it doesn't need the same key. */}
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t("config.upstreams.title")} />
+        <UpstreamsEditor
+          value={containers.upstreams}
+          onChange={(next: UpstreamEntry[]) => setContainers((p) => ({ ...p, upstreams: next }))}
+        />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t("config.dcOverrides.title")} />
+        <MapEditor
+          key={agentId}
+          value={containers.dcOverrides}
+          onChange={(next) => setContainers((p) => ({ ...p, dcOverrides: next }))}
+          keyLabel={t("config.dcOverrides.key")}
+          valueLabel={t("config.dcOverrides.value")}
+        />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={t("config.exclusiveMask.title")} />
+        <MapEditor
+          key={agentId}
+          value={containers.exclusiveMask}
+          onChange={(next) => setContainers((p) => ({ ...p, exclusiveMask: next }))}
+          keyLabel={t("config.exclusiveMask.key")}
+          valueLabel={t("config.exclusiveMask.value")}
+        />
+      </section>
 
       {/* Actions — Save persists the override, Apply pushes it to the node.
           Apply is gated on there being changed paths; ApplyConfigButton
