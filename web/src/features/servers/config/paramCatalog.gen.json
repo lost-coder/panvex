@@ -1724,15 +1724,6 @@
       "default": "true"
     },
     {
-      "path": "censorship.tls_fetch",
-      "section": "censorship",
-      "type": "string",
-      "applyMode": "reload",
-      "en": "TLS-front metadata fetch strategy settings (bootstrap + refresh behavior for TLS emulation data).",
-      "ru": "Настройки стратегии получения TLS-front метаданных (поведение загрузки и обновления bootstrap и данных эмуляции TLS)..",
-      "default": "built-in defaults"
-    },
-    {
       "path": "censorship.tls_fetch_scope",
       "section": "censorship",
       "type": "string",
@@ -1844,9 +1835,11 @@
         "reject_handshake"
       ],
       "default": "drop"
-    },
+    }
+  ],
+  "upstreamFields": [
     {
-      "path": "upstreams.address",
+      "path": "address",
       "section": "upstreams",
       "type": "string",
       "applyMode": "reload",
@@ -1854,7 +1847,7 @@
       "ru": "Endpoint прокси-сервера SOCKS, используемый для  upstream-подключений."
     },
     {
-      "path": "upstreams.bind_addresses",
+      "path": "bind_addresses",
       "section": "upstreams",
       "type": "string[]",
       "applyMode": "reload",
@@ -1862,7 +1855,7 @@
       "ru": "Явно заданные локальные source адреса для исходящих прямых TCP-соединений. Если указано несколько адресов, они выбираются по алгоритму round-robin."
     },
     {
-      "path": "upstreams.bindtodevice",
+      "path": "bindtodevice",
       "section": "upstreams",
       "type": "string",
       "applyMode": "reload",
@@ -1870,7 +1863,7 @@
       "ru": "Жёсткая привязка исходящих direct TCP-connect к интерфейсу через `SO_BINDTODEVICE`."
     },
     {
-      "path": "upstreams.enabled",
+      "path": "enabled",
       "section": "upstreams",
       "type": "boolean",
       "applyMode": "reload",
@@ -1879,7 +1872,7 @@
       "default": "true"
     },
     {
-      "path": "upstreams.force_bind",
+      "path": "force_bind",
       "section": "upstreams",
       "type": "string",
       "applyMode": "reload",
@@ -1887,7 +1880,7 @@
       "ru": "Обратно-совместимый алиас для жёсткой Linux-привязки к интерфейсу через `SO_BINDTODEVICE`."
     },
     {
-      "path": "upstreams.interface",
+      "path": "interface",
       "section": "upstreams",
       "type": "string",
       "applyMode": "reload",
@@ -1895,7 +1888,7 @@
       "ru": "Передаётся в коннектор Shadowsocks как необязательная подсказка для outbound bind."
     },
     {
-      "path": "upstreams.ipv4",
+      "path": "ipv4",
       "section": "upstreams",
       "type": "boolean",
       "applyMode": "reload",
@@ -1904,7 +1897,7 @@
       "default": "— (auto)"
     },
     {
-      "path": "upstreams.ipv6",
+      "path": "ipv6",
       "section": "upstreams",
       "type": "boolean",
       "applyMode": "reload",
@@ -1913,7 +1906,7 @@
       "default": "— (auto)"
     },
     {
-      "path": "upstreams.password",
+      "path": "password",
       "section": "upstreams",
       "type": "string",
       "applyMode": "reload",
@@ -1921,7 +1914,7 @@
       "ru": "Пароль SOCKS5 (для аутентификации по username/password). Примечание: если для запроса выбран scope, Telemt может переопределить это значение на выбранный scope."
     },
     {
-      "path": "upstreams.prefer",
+      "path": "prefer",
       "section": "upstreams",
       "type": "string",
       "applyMode": "reload",
@@ -1930,7 +1923,7 @@
       "default": "effective [network].prefer"
     },
     {
-      "path": "upstreams.scopes",
+      "path": "scopes",
       "section": "upstreams",
       "type": "string",
       "applyMode": "reload",
@@ -1938,7 +1931,7 @@
       "ru": "Теги области (`scope`), используемые для фильтрации upstream-серверов на уровне запроса. Если в запросе указан `scope`, выбираются только те upstream’ы, у которых поле `scopes` содержит этот тег. Если scope в запросе не указан, допускаются только upstream’ы с пустым scopes."
     },
     {
-      "path": "upstreams.type",
+      "path": "type",
       "section": "upstreams",
       "type": "select",
       "applyMode": "reload",
@@ -1952,7 +1945,7 @@
       ]
     },
     {
-      "path": "upstreams.url",
+      "path": "url",
       "section": "upstreams",
       "type": "string",
       "applyMode": "reload",
@@ -1960,7 +1953,7 @@
       "ru": "URL-адрес сервера Shadowsocks, используемый для подключения к Telegram через Shadowsocks."
     },
     {
-      "path": "upstreams.user_id",
+      "path": "user_id",
       "section": "upstreams",
       "type": "string",
       "applyMode": "reload",
@@ -1968,7 +1961,7 @@
       "ru": "User ID для команды CONNECT в SOCKS4. Примечание: если для запроса выбран scope, Telemt может переопределить это значение на выбранный scope."
     },
     {
-      "path": "upstreams.username",
+      "path": "username",
       "section": "upstreams",
       "type": "string",
       "applyMode": "reload",
@@ -1976,22 +1969,13 @@
       "ru": "Имя пользователя SOCKS5 (для аутентификации по username/password). Примечание: если для запроса выбран scope, Telemt может переопределить это значение на выбранный scope."
     },
     {
-      "path": "upstreams.weight",
+      "path": "weight",
       "section": "upstreams",
       "type": "number",
       "applyMode": "reload",
       "en": "Base weight used by weighted-random upstream selection (higher = chosen more often).",
       "ru": "Приоритет, используемый при случайном выборе upstream-сервера (чем выше значение, тем чаще он выбирается).",
       "default": "1"
-    },
-    {
-      "path": "dc_overrides",
-      "section": "dc_overrides",
-      "type": "string",
-      "applyMode": "reload",
-      "en": "Overrides DC endpoints for non-standard DCs; key is DC index string, value is one or more `ip:port` addresses.",
-      "ru": "Переопределяет DC эндпоинты для запросов с нестандартными DC; задается в виде строки с индексом DC, значение — один или несколько адресов `ip:port`.",
-      "default": "{}"
     }
   ]
 }

@@ -43,7 +43,7 @@ describe("ConfigTree", () => {
     expect(screen.queryByText("ad_tag")).not.toBeInTheDocument();
   });
 
-  it("does not render phantom container catalog rows with no data (upstreams.*, dc_overrides)", () => {
+  it("does not render rows for container paths absent from both catalog and data (upstreams.*, dc_overrides)", () => {
     render(
       <ConfigTree
         desired={{ general: { log_level: "normal" } }}
@@ -52,11 +52,15 @@ describe("ConfigTree", () => {
         onChange={() => {}}
       />,
     );
-    // The generated catalog lists ~16 flat "upstreams.*" sub-paths and a bare
-    // "dc_overrides" entry even though the real config nests upstreams as an
-    // array, not flat keys. With no desired/observed data for them, buildTree
-    // still emits them as readonly TreeFields with value/observed undefined —
-    // ConfigTree must suppress those instead of showing blank phantom rows.
+    // Container split (Task 2): the generated catalog no longer lists
+    // upstreams.* / dc_overrides at all — they moved to
+    // catalog.upstreamFields / CONTAINER_PATHS (containers.ts), since a flat
+    // dotted path through an operator-chosen key (an array index, or a
+    // dc_overrides/exclusive_mask key that itself contains dots) is
+    // ambiguous. With no catalog entry and no observed data for these paths,
+    // buildTree never produces a TreeField for them in the first place, so
+    // there is nothing for ConfigTree's phantom-row filter to suppress here
+    // — this guards the end state (no blank rows), not the old mechanism.
     expect(screen.queryByText("address")).not.toBeInTheDocument();
     expect(screen.queryByText("upstreams")).not.toBeInTheDocument();
     expect(screen.queryByText("dc_overrides")).not.toBeInTheDocument();
