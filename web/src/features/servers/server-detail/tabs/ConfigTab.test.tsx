@@ -1,6 +1,14 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Этот набор рендерит вкладку целиком, то есть дерево из ~200 полей каталога
+// плюс три структурных редактора, и каждый fireEvent перерисовывает всё
+// заново. Самый тяжёлый тест занимает ~3.6 с локально, а в CI прогон идёт под
+// coverage-инструментацией на более медленной машине — с дефолтными 5 с такие
+// тесты падают по таймауту, хотя проходят (CI ловил ровно это). Поднимаем
+// лимит для файла: тесты не зависают, они объективно тяжёлые.
+vi.setConfig({ testTimeout: 30_000 });
+
 import type { AgentConfig } from "@/shared/api/schemas/config";
 import type { ServerDetailPageProps } from "@/shared/api/types-pages/pages";
 
