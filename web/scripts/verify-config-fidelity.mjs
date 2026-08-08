@@ -3,14 +3,24 @@
 // способен показать. Автотесты этого не ловят — здесь нужен живой Telemt.
 //
 // Запуск:
-//   node scripts/verify-config-fidelity.mjs <agentId> [panelUrl] [telemtUrl]
-// Логин берётся из PANVEX_USER / PANVEX_PASS (по умолчанию admin/Qwerty123456).
+//   PANVEX_PASS=... node scripts/verify-config-fidelity.mjs <agentId> [panelUrl] <telemtUrl>
+// Логин — PANVEX_USER (по умолчанию admin) / обязательный PANVEX_PASS. Оба
+// параметра обязательны: дефолтный пароль — плохая практика даже для
+// dev-скрипта, а дефолтный telemtUrl раньше указывал на 127.0.0.1:9091 —
+// это SSH-туннель к БОЕВОЙ ноде (см. panvex/CLAUDE.md), а не на локальный
+// стенд.
 import { readFileSync } from "node:fs";
 
-const [, , agentId, panelUrl = "http://127.0.0.1:8080", telemtUrl = "http://127.0.0.1:9091"] =
-  process.argv;
-if (!agentId) {
-  console.error("usage: node scripts/verify-config-fidelity.mjs <agentId> [panelUrl] [telemtUrl]");
+const [, , agentId, panelUrl = "http://127.0.0.1:8080", telemtUrl] = process.argv;
+if (!agentId || !telemtUrl) {
+  console.error(
+    "usage: PANVEX_PASS=... node scripts/verify-config-fidelity.mjs <agentId> [panelUrl] <telemtUrl>",
+  );
+  process.exit(2);
+}
+const password = process.env.PANVEX_PASS;
+if (!password) {
+  console.error("PANVEX_PASS is required — no default password");
   process.exit(2);
 }
 
@@ -38,7 +48,7 @@ const login = await fetch(`${panelUrl}/api/auth/login`, {
   headers: { "Content-Type": "application/json", Origin: panelUrl },
   body: JSON.stringify({
     username: process.env.PANVEX_USER ?? "admin",
-    password: process.env.PANVEX_PASS ?? "Qwerty123456",
+    password,
   }),
 });
 if (!login.ok) throw new Error(`login failed: ${login.status}`);

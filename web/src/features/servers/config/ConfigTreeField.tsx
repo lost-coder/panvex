@@ -192,7 +192,7 @@ export function ConfigTreeField({
           </label>
           {notSet ? (
             <p className="text-caption text-fg-muted">
-              {defaultHint
+              {defaultHint !== undefined
                 ? t("config.tree.notSetWithDefault", { value: defaultHint })
                 : t("config.tree.notSet")}
             </p>

@@ -9,6 +9,13 @@
 // Пустые значения не пишутся в объект записи вовсе (delete, а не ""), чтобы
 // Save не порождал ключи, которых в конфиге ноды нет, — иначе дрейф не
 // сойдётся, как это было с плоскими ключами до фикса адресации.
+//
+// F6: карточек несколько, и у каждой одинаковый набор путей полей (type,
+// weight, ...), поэтому голого entry.path недостаточно ни для aria-label
+// (скринридер читает «weight» дважды, не различая карточки), ни для id/
+// htmlFor (два <input> с одним id — невалидный HTML). Оба адресуются
+// построчным индексом, как это уже сделано в MapEditor.
+import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Badge, Button, Input, Select, Toggle } from "@/ui";
@@ -38,21 +45,23 @@ export interface UpstreamsEditorProps {
 // адресовать поле: у записи одновременно пусты около десятка полей, и
 // искать их по отображаемому значению нельзя.
 function EntryControl({
-  entry, value, disabled, onChange,
+  entry, value, disabled, id, ariaLabel, onChange,
 }: Readonly<{
   entry: ParamCatalogEntry;
   value: unknown;
   disabled: boolean;
+  id: string;
+  ariaLabel: string;
   onChange: (value: unknown) => void;
 }>) {
-  const label = entry.path;
   const placeholder = value === undefined ? entry.default : undefined;
 
   switch (entry.type) {
     case "boolean":
       return (
         <Toggle
-          aria-label={label}
+          id={id}
+          aria-label={ariaLabel}
           checked={value === true}
           onChange={onChange}
           disabled={disabled}
@@ -61,7 +70,8 @@ function EntryControl({
     case "number":
       return (
         <Input
-          aria-label={label}
+          id={id}
+          aria-label={ariaLabel}
           type="number"
           placeholder={placeholder}
           value={value === undefined || value === null ? "" : String(value)}
@@ -72,7 +82,8 @@ function EntryControl({
     case "select":
       return (
         <Select
-          aria-label={label}
+          id={id}
+          aria-label={ariaLabel}
           value={typeof value === "string" ? value : ""}
           disabled={disabled}
           onChange={onChange}
@@ -82,7 +93,8 @@ function EntryControl({
     case "string[]":
       return (
         <Input
-          aria-label={label}
+          id={id}
+          aria-label={ariaLabel}
           type="text"
           placeholder={placeholder}
           value={Array.isArray(value) ? value.map(String).join(", ") : ""}
@@ -96,7 +108,8 @@ function EntryControl({
     default:
       return (
         <Input
-          aria-label={label}
+          id={id}
+          aria-label={ariaLabel}
           type="text"
           placeholder={placeholder}
           value={typeof value === "string" ? value : ""}
@@ -109,6 +122,12 @@ function EntryControl({
 
 export function UpstreamsEditor({ value, onChange, disabled = false }: Readonly<UpstreamsEditorProps>) {
   const { t } = useTranslation("servers");
+  // One id per UpstreamsEditor instance, not one per field: useId() inside
+  // the per-field .map() callback would call the hook a variable number of
+  // times across renders (entries/fields count changes), which breaks the
+  // Rules of Hooks. Suffixing this single id with the row index + field
+  // path instead gives every control its own stable, unique id.
+  const baseId = useId();
 
   function updateField(index: number, key: string, next: unknown) {
     const list = value.map((e, i) => {
@@ -149,20 +168,27 @@ export function UpstreamsEditor({ value, onChange, disabled = false }: Readonly<
           </div>
 
           <div className="flex flex-col gap-3">
-            {UPSTREAM_FIELDS.map((field) => (
-              <div
-                key={field.path}
-                className="flex flex-col gap-1.5 sm:grid sm:grid-cols-[minmax(0,1fr)_18rem] sm:items-center sm:gap-4"
-              >
-                <label className="font-mono text-sm text-fg">{field.path}</label>
-                <EntryControl
-                  entry={field}
-                  value={upstream[field.path]}
-                  disabled={disabled}
-                  onChange={(next) => updateField(index, field.path, next)}
-                />
-              </div>
-            ))}
+            {UPSTREAM_FIELDS.map((field) => {
+              const fieldId = `${baseId}-${index}-${field.path}`;
+              return (
+                <div
+                  key={field.path}
+                  className="flex flex-col gap-1.5 sm:grid sm:grid-cols-[minmax(0,1fr)_18rem] sm:items-center sm:gap-4"
+                >
+                  <label htmlFor={fieldId} className="font-mono text-sm text-fg">
+                    {field.path}
+                  </label>
+                  <EntryControl
+                    entry={field}
+                    value={upstream[field.path]}
+                    disabled={disabled}
+                    id={fieldId}
+                    ariaLabel={`${field.path} ${index + 1}`}
+                    onChange={(next) => updateField(index, field.path, next)}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       ))}

@@ -27,8 +27,36 @@ function Harness({
 describe("UpstreamsEditor", () => {
   it("рендерит по карточке на каждый upstream", () => {
     render(<UpstreamsEditor value={[{ type: "direct", weight: 1 }]} onChange={() => {}} />);
-    expect(screen.getByLabelText("type")).toHaveValue("direct");
-    expect(screen.getByLabelText("weight")).toHaveValue(1);
+    expect(screen.getByLabelText("type 1")).toHaveValue("direct");
+    expect(screen.getByLabelText("weight 1")).toHaveValue(1);
+  });
+
+  // F6: two cards used to share the identical unindexed aria-label
+  // ("weight" on both), so a screen reader read just "weight" twice with no
+  // way to tell the cards apart, and getByLabelText("weight") itself was
+  // ambiguous — tests had no way to address one card's field over the
+  // other's. Indexing the label the same way MapEditor already does
+  // ("weight 1" / "weight 2") fixes both.
+  it("различает поля с одинаковым именем в разных карточках по индексу строки", () => {
+    render(
+      <UpstreamsEditor
+        value={[{ type: "direct", weight: 1 }, { type: "socks5", weight: 2 }]}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("weight 1")).toHaveValue(1);
+    expect(screen.getByLabelText("weight 2")).toHaveValue(2);
+  });
+
+  // F6: the visible <label> was never wired to its control via htmlFor —
+  // ConfigTreeField.tsx:163-166 already establishes the pattern (useId() +
+  // htmlFor) this component should follow.
+  it("связывает подпись поля с контролом через htmlFor", () => {
+    render(<UpstreamsEditor value={[{ type: "direct", weight: 1 }]} onChange={() => {}} />);
+    const control = screen.getByLabelText("weight 1");
+    const label = screen.getByText("weight", { selector: "label" });
+    expect(label.getAttribute("for")).toBeTruthy();
+    expect(label.getAttribute("for")).toBe(control.id);
   });
 
   it("добавляет запись со значением type=direct по умолчанию", async () => {
@@ -59,8 +87,8 @@ describe("UpstreamsEditor", () => {
         onChange={onChange}
       />,
     );
-    await userEvent.clear(screen.getByLabelText("weight"));
-    await userEvent.type(screen.getByLabelText("weight"), "5");
+    await userEvent.clear(screen.getByLabelText("weight 1"));
+    await userEvent.type(screen.getByLabelText("weight 1"), "5");
     const last = onChange.mock.calls.at(-1)?.[0];
     expect(last[0].weight).toBe(5);
     expect(last[0].type).toBe("socks5");
@@ -72,19 +100,19 @@ describe("UpstreamsEditor", () => {
     render(<Harness initial={[{ type: "socks5" }]} onChange={onChange} />);
 
     // password на записи нет — но задать его через редактор можно.
-    const password = screen.getByLabelText("password");
+    const password = screen.getByLabelText("password 1");
     expect(password).toHaveValue("");
     await userEvent.type(password, "s3cret");
     expect(onChange.mock.calls.at(-1)?.[0][0].password).toBe("s3cret");
 
     // weight не задан -> в поле пусто, а дефолт каталога виден плейсхолдером.
-    expect(screen.getByLabelText("weight")).toHaveAttribute("placeholder", "1");
+    expect(screen.getByLabelText("weight 1")).toHaveAttribute("placeholder", "1");
   });
 
   it("очистка поля удаляет ключ, а не пишет пустую строку", async () => {
     const onChange = vi.fn();
     render(<Harness initial={[{ type: "socks5", password: "s3cret" }]} onChange={onChange} />);
-    await userEvent.clear(screen.getByLabelText("password"));
+    await userEvent.clear(screen.getByLabelText("password 1"));
     const last = onChange.mock.calls.at(-1)?.[0];
     expect(last[0]).not.toHaveProperty("password");
     expect(last[0].type).toBe("socks5");
@@ -95,6 +123,6 @@ describe("UpstreamsEditor", () => {
       <UpstreamsEditor value={[{ type: "direct", weight: 1 }]} onChange={() => {}} />,
     );
     rerender(<UpstreamsEditor value={[{ type: "direct", weight: 7 }]} onChange={() => {}} />);
-    expect(screen.getByLabelText("weight")).toHaveValue(7);
+    expect(screen.getByLabelText("weight 1")).toHaveValue(7);
   });
 });
