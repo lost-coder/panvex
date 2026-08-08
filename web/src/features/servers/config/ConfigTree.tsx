@@ -9,20 +9,34 @@
 // since the container split (Task 2 — see paramCatalog.ts/containers.ts),
 // PARAM_CATALOG no longer lists these paths at all, so buildTree.ts only
 // ever produces a TreeField for one of them when the node's *observed*
-// config actually reports data there — a phantom no-data row (readonly with
-// both value and observed undefined) can no longer occur for them, so no
-// filtering is needed here. A container path that DOES carry data renders
-// as an ordinary readonly row via the existing readonlyContainer note in
-// ConfigTreeField; a real structured editor (UpstreamsEditor/MapEditor,
-// backed by containers.ts) is out of scope for this component.
+// config actually reports data there. F4 (fixwave): flattenAll (buildTree's
+// generic walk, unlike sections.ts's catalog-scoped flatten) treats an
+// array as a leaf, so an observed `upstreams` array becomes ONE field whose
+// value is the whole array — String([{...}]) renders as the literal text
+// "[object Object]" right above the real UpstreamsEditor a few sections
+// down. Each dc_overrides/exclusive_mask entry likewise gets a redundant
+// read-only row here in addition to its editable MapEditor row below. Both
+// editors (UpstreamsEditor/MapEditor, backed by containers.ts) now own
+// these paths exclusively, so CONTAINER_PATHS (and everything nested under
+// them) is filtered out of the tree before it ever reaches the section
+// list — not left to render as a stray readonly row.
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, Input } from "@/ui";
 import type { ConfigSections } from "@/shared/api/schemas/config";
 
-import { buildTree } from "./buildTree";
+import { buildTree, isContainerPath, type TreeField, type TreeSection } from "./buildTree";
 import { ConfigTreeField } from "./ConfigTreeField";
+
+function stripContainerFields(sections: TreeSection[]): TreeSection[] {
+  return sections
+    .map((section) => ({
+      section: section.section,
+      fields: section.fields.filter((field: TreeField) => !isContainerPath(field.path)),
+    }))
+    .filter((section) => section.fields.length > 0);
+}
 
 export interface ConfigTreeProps {
   desired: ConfigSections;
@@ -67,7 +81,7 @@ export function ConfigTree({
   );
 
   const sections = useMemo(
-    () => buildTree(desired, observed, groupPaths),
+    () => stripContainerFields(buildTree(desired, observed, groupPaths)),
     [desired, observed, groupPaths],
   );
 

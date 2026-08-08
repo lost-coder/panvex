@@ -6,8 +6,10 @@
 // The catalog (PARAM_CATALOG) never lists container-shaped paths
 // (upstreams, dc_overrides, censorship.exclusive_mask.*) — they're
 // structurally editable elsewhere in the config, not through the flat
-// param editor — so isContainerPath is defined locally here and treated as
-// "known but uneditable", distinct from "unknown parameter".
+// param editor. The path LIST lives in paramCatalog.CONTAINER_PATHS; the
+// isContainerPath predicate below is defined here (and exported for
+// ConfigTree's own filtering) and treats a match as "known but
+// uneditable", distinct from "unknown parameter".
 //
 // Values are flattened with a generic recursive walk rather than
 // `flattenSections` (./sections): that helper only emits paths present in
@@ -42,7 +44,8 @@ export interface TreeSection {
   fields: TreeField[];
 }
 
-function isContainerPath(path: string): boolean {
+/** Exported so ConfigTree can filter container paths (and their children) out of what it renders — see its own comment for why. */
+export function isContainerPath(path: string): boolean {
   return CONTAINER_PATHS.some((c) => path === c || path.startsWith(`${c}.`));
 }
 
