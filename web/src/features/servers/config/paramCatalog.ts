@@ -7,7 +7,6 @@ import catalog from "./paramCatalog.gen.json";
 export interface ParamCatalogEntry {
   path: string;
   section: string;
-  key: string;
   type: "boolean" | "number" | "string" | "string[]" | "select";
   applyMode: "hot" | "reload";
   options?: string[];

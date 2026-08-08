@@ -5,7 +5,7 @@ import type { TreeField } from "./buildTree";
 
 const base: TreeField = { path: "general.log_level", value: "normal", observed: "silent",
   drifted: false, locked: false, readonly: false, unknown: false,
-  entry: { path: "general.log_level", section: "general", key: "log_level",
+  entry: { path: "general.log_level", section: "general",
     type: "select", applyMode: "hot", options: ["debug","verbose","normal","silent"],
     en: "Runtime logging verbosity", ru: "Уровень детализации логов" } };
 

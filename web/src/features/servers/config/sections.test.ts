@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { flattenSections, unflattenPaths } from "./sections";
+import { flattenSections, unflattenPaths, getPath, setPath, hasPath } from "./sections";
 
 describe("flattenSections", () => {
   it("flattens only curated CONFIG_FIELDS paths and drops unmanaged fields", () => {
@@ -81,5 +81,52 @@ describe("round-trip", () => {
       general: { log_level: "info", update_every: 5 },
       censorship: { tls_domain: "a.com", tls_domains: ["b.com", "c.com"] },
     });
+  });
+});
+
+describe("вложенные пути каталога", () => {
+  it("flattenSections читает лист сквозь вложенную таблицу", () => {
+    const flat = flattenSections({
+      general: { links: { public_host: "ds87j.metrion.click", public_port: 443 } },
+      censorship: { tls_fetch: { strict_route: true } },
+    });
+    expect(flat["general.links.public_host"]).toBe("ds87j.metrion.click");
+    expect(flat["general.links.public_port"]).toBe(443);
+    expect(flat["censorship.tls_fetch.strict_route"]).toBe(true);
+  });
+
+  it("unflattenPaths строит ВЛОЖЕННУЮ таблицу, а не плоский ключ с точкой", () => {
+    const nested = unflattenPaths({
+      "general.links.public_host": "new.example.com",
+      "general.modes.tls": false,
+      "censorship.tls_fetch.strict_route": false,
+    });
+    expect(nested).toEqual({
+      general: { links: { public_host: "new.example.com" }, modes: { tls: false } },
+      censorship: { tls_fetch: { strict_route: false } },
+    });
+    // Ключ-с-точкой — ровно тот дефект, который Telemt молча проглатывает.
+    expect(Object.keys(nested.general as object)).not.toContain("links.public_host");
+  });
+
+  it("round-trip сохраняет вложенные листья", () => {
+    const original = {
+      general: { log_level: "debug", links: { show: "*" }, telemetry: { me_level: "normal" } },
+    };
+    expect(unflattenPaths(flattenSections(original))).toEqual(original);
+  });
+
+  it("getPath/setPath/hasPath работают по dotted-пути", () => {
+    const obj: Record<string, unknown> = {};
+    setPath(obj, "general.links.public_port", 443);
+    expect(obj).toEqual({ general: { links: { public_port: 443 } } });
+    expect(getPath(obj, "general.links.public_port")).toBe(443);
+    expect(hasPath(obj, "general.links.public_port")).toBe(true);
+    expect(hasPath(obj, "general.links.public_host")).toBe(false);
+    expect(getPath(obj, "general.links.public_host")).toBeUndefined();
+  });
+
+  it("getPath не проваливается сквозь скаляр", () => {
+    expect(getPath({ general: { log_level: "debug" } }, "general.log_level.nope")).toBeUndefined();
   });
 });

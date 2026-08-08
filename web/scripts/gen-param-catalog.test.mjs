@@ -79,9 +79,15 @@ describe("buildCatalog", () => {
     const ch = cat.fields.find((f) => f.path === "timeouts.client_handshake");
     expect(ch.default).toBe("30");
   });
-  it("uses the whole path as key for a bare top-level editable key", () => {
+  it("does not compute a separate key field — entries address by full path only", () => {
+    // Regression guard for the key/section split bug: the generator used to
+    // additionally emit `key` (the path remainder after the section), which
+    // sections.ts then mis-treated as a single nesting level. Entries now
+    // carry only path + section; a bare top-level path (no dot) is its own
+    // section with no key field at all.
     const dc = cat.fields.find((f) => f.path === "dc_overrides");
-    expect(dc.key).toBe("dc_overrides");
+    expect(dc.section).toBe("dc_overrides");
+    expect(dc).not.toHaveProperty("key");
   });
   it("recovers descriptions after a bracketless dotted sub-heading without losing the section", () => {
     // RU doc has a malformed "# censorship.tls_fetch" (no brackets) where EN has

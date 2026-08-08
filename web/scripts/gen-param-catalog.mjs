@@ -82,9 +82,8 @@ export function buildCatalog(enMd, ruMd, tag) {
     const section = path.split(".")[0];
     if (!EDITABLE.includes(section)) continue;
     const options = parseEnumOptions(row.type);
-    const key = path.includes(".") ? path.slice(section.length + 1) : path;
     const entry = {
-      path, section, key,
+      path, section,
       type: fieldType(row.type, options),
       applyMode: row.hot ? "hot" : "reload",
       en: dEn.get(path) ?? "", ru: dRu.get(path) ?? "",

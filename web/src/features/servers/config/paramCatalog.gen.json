@@ -4,7 +4,6 @@
     {
       "path": "general.ad_tag",
       "section": "general",
-      "key": "ad_tag",
       "type": "string",
       "applyMode": "hot",
       "en": "Global fallback sponsored-channel `ad_tag` (used when user has no override in `access.user_ad_tags`). An all-zero tag is accepted but has no effect (and is warned about) until replaced with a real tag from `@MTProxybot`.",
@@ -13,7 +12,6 @@
     {
       "path": "general.auto_degradation_enabled",
       "section": "general",
-      "key": "auto_degradation_enabled",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Reserved for future use. Currently this key is parsed but not used by the runtime.",
@@ -23,7 +21,6 @@
     {
       "path": "general.beobachten",
       "section": "general",
-      "key": "beobachten",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables per-IP forensic observation buckets and appends TLS JA3/JA4 fingerprint snapshots to Beobachten output when available.",
@@ -33,7 +30,6 @@
     {
       "path": "general.beobachten_file",
       "section": "general",
-      "key": "beobachten_file",
       "type": "string",
       "applyMode": "reload",
       "en": "Observation snapshot output file path.",
@@ -43,7 +39,6 @@
     {
       "path": "general.beobachten_flush_secs",
       "section": "general",
-      "key": "beobachten_flush_secs",
       "type": "number",
       "applyMode": "reload",
       "en": "Snapshot flush interval (seconds) for observation output file.",
@@ -53,7 +48,6 @@
     {
       "path": "general.beobachten_minutes",
       "section": "general",
-      "key": "beobachten_minutes",
       "type": "number",
       "applyMode": "reload",
       "en": "Retention window (minutes) for per-IP observation buckets and in-memory TLS fingerprint buckets.",
@@ -63,7 +57,6 @@
     {
       "path": "general.config_strict",
       "section": "general",
-      "key": "config_strict",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Rejects unknown TOML keys during config load. Startup fails fast; hot-reload rejects the new snapshot and keeps the current config.",
@@ -73,7 +66,6 @@
     {
       "path": "general.crypto_pending_buffer",
       "section": "general",
-      "key": "crypto_pending_buffer",
       "type": "number",
       "applyMode": "reload",
       "en": "Max pending ciphertext buffer per client writer (bytes).",
@@ -83,7 +75,6 @@
     {
       "path": "general.data_path",
       "section": "general",
-      "key": "data_path",
       "type": "string",
       "applyMode": "reload",
       "en": "Optional runtime data directory path.",
@@ -92,7 +83,6 @@
     {
       "path": "general.degradation_min_unavailable_dc_groups",
       "section": "general",
-      "key": "degradation_min_unavailable_dc_groups",
       "type": "number",
       "applyMode": "reload",
       "en": "Reserved for future use. Currently this key is parsed but not used by the runtime.",
@@ -102,7 +92,6 @@
     {
       "path": "general.desync_all_full",
       "section": "general",
-      "key": "desync_all_full",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Emits full crypto-desync forensic logs for every event.",
@@ -112,7 +101,6 @@
     {
       "path": "general.direct_relay_copy_buf_c2s_bytes",
       "section": "general",
-      "key": "direct_relay_copy_buf_c2s_bytes",
       "type": "number",
       "applyMode": "hot",
       "en": "Copy buffer size for client->DC direction in direct relay.",
@@ -122,7 +110,6 @@
     {
       "path": "general.direct_relay_copy_buf_s2c_bytes",
       "section": "general",
-      "key": "direct_relay_copy_buf_s2c_bytes",
       "type": "number",
       "applyMode": "hot",
       "en": "Copy buffer size for DC->client direction in direct relay.",
@@ -132,7 +119,6 @@
     {
       "path": "general.disable_colors",
       "section": "general",
-      "key": "disable_colors",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Disables ANSI colors in logs (useful for files/systemd). This affects log formatting only and does not change the log level/filtering.",
@@ -142,7 +128,6 @@
     {
       "path": "general.fast_mode",
       "section": "general",
-      "key": "fast_mode",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables fast-path optimizations for traffic processing.",
@@ -152,7 +137,6 @@
     {
       "path": "general.fast_mode_min_tls_record",
       "section": "general",
-      "key": "fast_mode_min_tls_record",
       "type": "number",
       "applyMode": "reload",
       "en": "Minimum TLS record size when fast-mode coalescing is enabled.",
@@ -162,7 +146,6 @@
     {
       "path": "general.hardswap",
       "section": "general",
-      "key": "hardswap",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Enables generation-based ME hardswap strategy.",
@@ -172,7 +155,6 @@
     {
       "path": "general.links.public_host",
       "section": "general",
-      "key": "links.public_host",
       "type": "string",
       "applyMode": "reload",
       "en": "Public hostname/IP override used for generated `tg://` links (overrides detected IP).",
@@ -181,7 +163,6 @@
     {
       "path": "general.links.public_port",
       "section": "general",
-      "key": "links.public_port",
       "type": "number",
       "applyMode": "reload",
       "en": "Public port override used for generated `tg://` links (overrides `server.port`).",
@@ -190,7 +171,6 @@
     {
       "path": "general.links.show",
       "section": "general",
-      "key": "links.show",
       "type": "string",
       "applyMode": "reload",
       "en": "Selects users whose `tg://` proxy links are shown at startup.",
@@ -200,7 +180,6 @@
     {
       "path": "general.log_level",
       "section": "general",
-      "key": "log_level",
       "type": "select",
       "applyMode": "hot",
       "en": "Runtime logging verbosity level (used when `RUST_LOG` is not set). If `RUST_LOG` is set in the environment, it takes precedence over this setting.",
@@ -216,7 +195,6 @@
     {
       "path": "general.max_client_frame",
       "section": "general",
-      "key": "max_client_frame",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum allowed client MTProto frame size (bytes).",
@@ -226,7 +204,6 @@
     {
       "path": "general.me_adaptive_floor_cpu_cores_override",
       "section": "general",
-      "key": "me_adaptive_floor_cpu_cores_override",
       "type": "number",
       "applyMode": "hot",
       "en": "Override logical CPU core count used for adaptive floor calculations.",
@@ -236,7 +213,6 @@
     {
       "path": "general.me_adaptive_floor_idle_secs",
       "section": "general",
-      "key": "me_adaptive_floor_idle_secs",
       "type": "number",
       "applyMode": "hot",
       "en": "Idle time before adaptive floor may reduce the single-endpoint writer target.",
@@ -246,7 +222,6 @@
     {
       "path": "general.me_adaptive_floor_max_active_writers_global",
       "section": "general",
-      "key": "me_adaptive_floor_max_active_writers_global",
       "type": "number",
       "applyMode": "hot",
       "en": "Hard global cap for active ME writers.",
@@ -256,7 +231,6 @@
     {
       "path": "general.me_adaptive_floor_max_active_writers_per_core",
       "section": "general",
-      "key": "me_adaptive_floor_max_active_writers_per_core",
       "type": "number",
       "applyMode": "hot",
       "en": "Hard cap for active ME writers per logical CPU core.",
@@ -266,7 +240,6 @@
     {
       "path": "general.me_adaptive_floor_max_extra_writers_multi_per_core",
       "section": "general",
-      "key": "me_adaptive_floor_max_extra_writers_multi_per_core",
       "type": "number",
       "applyMode": "hot",
       "en": "Per-core max extra writers above base required floor for multi-endpoint DC groups.",
@@ -276,7 +249,6 @@
     {
       "path": "general.me_adaptive_floor_max_extra_writers_single_per_core",
       "section": "general",
-      "key": "me_adaptive_floor_max_extra_writers_single_per_core",
       "type": "number",
       "applyMode": "hot",
       "en": "Per-core max extra writers above base required floor for single-endpoint DC groups.",
@@ -286,7 +258,6 @@
     {
       "path": "general.me_adaptive_floor_max_warm_writers_global",
       "section": "general",
-      "key": "me_adaptive_floor_max_warm_writers_global",
       "type": "number",
       "applyMode": "hot",
       "en": "Hard global cap for warm ME writers.",
@@ -296,7 +267,6 @@
     {
       "path": "general.me_adaptive_floor_max_warm_writers_per_core",
       "section": "general",
-      "key": "me_adaptive_floor_max_warm_writers_per_core",
       "type": "number",
       "applyMode": "hot",
       "en": "Hard cap for warm ME writers per logical CPU core.",
@@ -306,7 +276,6 @@
     {
       "path": "general.me_adaptive_floor_min_writers_multi_endpoint",
       "section": "general",
-      "key": "me_adaptive_floor_min_writers_multi_endpoint",
       "type": "number",
       "applyMode": "hot",
       "en": "Minimum writer target for multi-endpoint DC groups in adaptive floor mode.",
@@ -316,7 +285,6 @@
     {
       "path": "general.me_adaptive_floor_min_writers_single_endpoint",
       "section": "general",
-      "key": "me_adaptive_floor_min_writers_single_endpoint",
       "type": "number",
       "applyMode": "hot",
       "en": "Minimum writer target for single-endpoint DC groups in adaptive floor mode.",
@@ -326,7 +294,6 @@
     {
       "path": "general.me_adaptive_floor_recover_grace_secs",
       "section": "general",
-      "key": "me_adaptive_floor_recover_grace_secs",
       "type": "number",
       "applyMode": "hot",
       "en": "Grace period to hold static floor after activity in adaptive mode.",
@@ -336,7 +303,6 @@
     {
       "path": "general.me_adaptive_floor_writers_per_core_total",
       "section": "general",
-      "key": "me_adaptive_floor_writers_per_core_total",
       "type": "number",
       "applyMode": "hot",
       "en": "Global ME writer budget per logical CPU core in adaptive mode.",
@@ -346,7 +312,6 @@
     {
       "path": "general.me_admission_poll_ms",
       "section": "general",
-      "key": "me_admission_poll_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "Poll interval for conditional-admission state checks.",
@@ -356,7 +321,6 @@
     {
       "path": "general.me_bind_stale_mode",
       "section": "general",
-      "key": "me_bind_stale_mode",
       "type": "select",
       "applyMode": "hot",
       "en": "Policy for new binds on stale draining writers.",
@@ -371,7 +335,6 @@
     {
       "path": "general.me_bind_stale_ttl_secs",
       "section": "general",
-      "key": "me_bind_stale_ttl_secs",
       "type": "number",
       "applyMode": "hot",
       "en": "TTL for stale bind allowance when stale mode is `ttl`.",
@@ -381,7 +344,6 @@
     {
       "path": "general.me_c2me_channel_capacity",
       "section": "general",
-      "key": "me_c2me_channel_capacity",
       "type": "number",
       "applyMode": "reload",
       "en": "Capacity of per-client command queue (client reader -> ME sender).",
@@ -391,7 +353,6 @@
     {
       "path": "general.me_c2me_send_timeout_ms",
       "section": "general",
-      "key": "me_c2me_send_timeout_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum wait for enqueueing client->ME commands when the per-client queue is full (`0` keeps legacy unbounded wait).",
@@ -401,7 +362,6 @@
     {
       "path": "general.me_config_apply_cooldown_secs",
       "section": "general",
-      "key": "me_config_apply_cooldown_secs",
       "type": "number",
       "applyMode": "hot",
       "en": "Cooldown between applied ME endpoint-map updates. `0` disables the cooldown.",
@@ -411,7 +371,6 @@
     {
       "path": "general.me_config_stable_snapshots",
       "section": "general",
-      "key": "me_config_stable_snapshots",
       "type": "number",
       "applyMode": "hot",
       "en": "Number of identical ME config snapshots required before apply.",
@@ -421,7 +380,6 @@
     {
       "path": "general.me_d2c_ack_flush_immediate",
       "section": "general",
-      "key": "me_d2c_ack_flush_immediate",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Flushes client writer immediately after quick-ack write.",
@@ -431,7 +389,6 @@
     {
       "path": "general.me_d2c_flush_batch_max_bytes",
       "section": "general",
-      "key": "me_d2c_flush_batch_max_bytes",
       "type": "number",
       "applyMode": "hot",
       "en": "Max ME->client payload bytes coalesced before flush.",
@@ -441,7 +398,6 @@
     {
       "path": "general.me_d2c_flush_batch_max_delay_us",
       "section": "general",
-      "key": "me_d2c_flush_batch_max_delay_us",
       "type": "number",
       "applyMode": "hot",
       "en": "Max microsecond wait for coalescing more ME->client frames (`0` disables timed coalescing).",
@@ -451,7 +407,6 @@
     {
       "path": "general.me_d2c_flush_batch_max_frames",
       "section": "general",
-      "key": "me_d2c_flush_batch_max_frames",
       "type": "number",
       "applyMode": "hot",
       "en": "Max ME->client frames coalesced before flush.",
@@ -461,7 +416,6 @@
     {
       "path": "general.me_d2c_frame_buf_shrink_threshold_bytes",
       "section": "general",
-      "key": "me_d2c_frame_buf_shrink_threshold_bytes",
       "type": "number",
       "applyMode": "hot",
       "en": "Threshold for shrinking oversized ME->client frame-aggregation buffers after flush.",
@@ -471,7 +425,6 @@
     {
       "path": "general.me_deterministic_writer_sort",
       "section": "general",
-      "key": "me_deterministic_writer_sort",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Enables deterministic candidate sort for writer binding path.",
@@ -481,7 +434,6 @@
     {
       "path": "general.me_floor_mode",
       "section": "general",
-      "key": "me_floor_mode",
       "type": "select",
       "applyMode": "hot",
       "en": "Floor policy mode for ME writer targets.",
@@ -495,7 +447,6 @@
     {
       "path": "general.me_hardswap_warmup_delay_max_ms",
       "section": "general",
-      "key": "me_hardswap_warmup_delay_max_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "Upper bound for hardswap warmup dial spacing.",
@@ -505,7 +456,6 @@
     {
       "path": "general.me_hardswap_warmup_delay_min_ms",
       "section": "general",
-      "key": "me_hardswap_warmup_delay_min_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "Lower bound for hardswap warmup dial spacing.",
@@ -515,7 +465,6 @@
     {
       "path": "general.me_hardswap_warmup_extra_passes",
       "section": "general",
-      "key": "me_hardswap_warmup_extra_passes",
       "type": "number",
       "applyMode": "hot",
       "en": "Additional warmup passes after the base pass in one hardswap cycle.",
@@ -525,7 +474,6 @@
     {
       "path": "general.me_hardswap_warmup_pass_backoff_base_ms",
       "section": "general",
-      "key": "me_hardswap_warmup_pass_backoff_base_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "Base backoff between extra hardswap warmup passes when the floor is still incomplete.",
@@ -535,7 +483,6 @@
     {
       "path": "general.me_health_interval_ms_healthy",
       "section": "general",
-      "key": "me_health_interval_ms_healthy",
       "type": "number",
       "applyMode": "hot",
       "en": "Health monitor interval while ME writer coverage is stable/healthy.",
@@ -545,7 +492,6 @@
     {
       "path": "general.me_health_interval_ms_unhealthy",
       "section": "general",
-      "key": "me_health_interval_ms_unhealthy",
       "type": "number",
       "applyMode": "hot",
       "en": "Health monitor interval while ME writer coverage is degraded.",
@@ -555,7 +501,6 @@
     {
       "path": "general.me_init_retry_attempts",
       "section": "general",
-      "key": "me_init_retry_attempts",
       "type": "number",
       "applyMode": "reload",
       "en": "Startup retries for ME pool initialization.",
@@ -565,7 +510,6 @@
     {
       "path": "general.me_instadrain",
       "section": "general",
-      "key": "me_instadrain",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Forces draining stale writers to be removed on the next cleanup tick, bypassing TTL/deadline waiting.",
@@ -575,7 +519,6 @@
     {
       "path": "general.me_keepalive_enabled",
       "section": "general",
-      "key": "me_keepalive_enabled",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables periodic ME keepalive padding frames.",
@@ -585,7 +528,6 @@
     {
       "path": "general.me_keepalive_interval_secs",
       "section": "general",
-      "key": "me_keepalive_interval_secs",
       "type": "number",
       "applyMode": "reload",
       "en": "Base ME keepalive interval in seconds.",
@@ -595,7 +537,6 @@
     {
       "path": "general.me_keepalive_jitter_secs",
       "section": "general",
-      "key": "me_keepalive_jitter_secs",
       "type": "number",
       "applyMode": "reload",
       "en": "Keepalive jitter in seconds to reduce synchronized bursts.",
@@ -605,7 +546,6 @@
     {
       "path": "general.me_keepalive_payload_random",
       "section": "general",
-      "key": "me_keepalive_payload_random",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Randomizes keepalive payload bytes instead of fixed zero payload.",
@@ -615,7 +555,6 @@
     {
       "path": "general.me_pool_drain_soft_evict_budget_per_core",
       "section": "general",
-      "key": "me_pool_drain_soft_evict_budget_per_core",
       "type": "number",
       "applyMode": "reload",
       "en": "Per-core budget limiting aggregate soft-eviction work per pass.",
@@ -625,7 +564,6 @@
     {
       "path": "general.me_pool_drain_soft_evict_cooldown_ms",
       "section": "general",
-      "key": "me_pool_drain_soft_evict_cooldown_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Cooldown between repetitive soft-eviction on the same writer.",
@@ -635,7 +573,6 @@
     {
       "path": "general.me_pool_drain_soft_evict_enabled",
       "section": "general",
-      "key": "me_pool_drain_soft_evict_enabled",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables gradual soft-eviction of stale writers during drain/reinit instead of immediate hard close.",
@@ -645,7 +582,6 @@
     {
       "path": "general.me_pool_drain_soft_evict_grace_secs",
       "section": "general",
-      "key": "me_pool_drain_soft_evict_grace_secs",
       "type": "number",
       "applyMode": "reload",
       "en": "Extra grace (after drain TTL) before soft-eviction stage starts.",
@@ -655,7 +591,6 @@
     {
       "path": "general.me_pool_drain_soft_evict_per_writer",
       "section": "general",
-      "key": "me_pool_drain_soft_evict_per_writer",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum stale routes soft-evicted per writer in one eviction pass.",
@@ -665,7 +600,6 @@
     {
       "path": "general.me_pool_drain_threshold",
       "section": "general",
-      "key": "me_pool_drain_threshold",
       "type": "number",
       "applyMode": "hot",
       "en": "Maximum number of draining stale writers before oldest ones are force-closed in batches.",
@@ -675,7 +609,6 @@
     {
       "path": "general.me_pool_drain_ttl_secs",
       "section": "general",
-      "key": "me_pool_drain_ttl_secs",
       "type": "number",
       "applyMode": "hot",
       "en": "Drain-TTL time window for stale ME writers after endpoint map changes. During the TTL, stale writers may be used only as fallback for new bindings (depending on bind policy).",
@@ -685,7 +618,6 @@
     {
       "path": "general.me_pool_min_fresh_ratio",
       "section": "general",
-      "key": "me_pool_min_fresh_ratio",
       "type": "number",
       "applyMode": "hot",
       "en": "Minimum fresh desired-DC coverage ratio before stale writers are drained.",
@@ -695,7 +627,6 @@
     {
       "path": "general.me_quota_soft_overshoot_bytes",
       "section": "general",
-      "key": "me_quota_soft_overshoot_bytes",
       "type": "number",
       "applyMode": "hot",
       "en": "Extra per-route quota allowance (bytes) tolerated before writer-side quota enforcement drops route data.",
@@ -705,7 +636,6 @@
     {
       "path": "general.me_reader_route_data_wait_ms",
       "section": "general",
-      "key": "me_reader_route_data_wait_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "Bounded wait for routing ME DATA to per-connection queue (`0` = no wait).",
@@ -715,7 +645,6 @@
     {
       "path": "general.me_reconnect_backoff_base_ms",
       "section": "general",
-      "key": "me_reconnect_backoff_base_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Initial reconnect backoff in milliseconds.",
@@ -725,7 +654,6 @@
     {
       "path": "general.me_reconnect_backoff_cap_ms",
       "section": "general",
-      "key": "me_reconnect_backoff_cap_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum reconnect backoff cap in milliseconds.",
@@ -735,7 +663,6 @@
     {
       "path": "general.me_reconnect_fast_retry_count",
       "section": "general",
-      "key": "me_reconnect_fast_retry_count",
       "type": "number",
       "applyMode": "reload",
       "en": "Immediate retry budget before long backoff behavior applies.",
@@ -745,7 +672,6 @@
     {
       "path": "general.me_reconnect_max_concurrent_per_dc",
       "section": "general",
-      "key": "me_reconnect_max_concurrent_per_dc",
       "type": "number",
       "applyMode": "reload",
       "en": "Limits concurrent reconnect workers per DC during health recovery.",
@@ -755,7 +681,6 @@
     {
       "path": "general.me_reinit_coalesce_window_ms",
       "section": "general",
-      "key": "me_reinit_coalesce_window_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "Trigger coalescing window before starting reinit (ms).",
@@ -765,7 +690,6 @@
     {
       "path": "general.me_reinit_drain_timeout_secs",
       "section": "general",
-      "key": "me_reinit_drain_timeout_secs",
       "type": "number",
       "applyMode": "hot",
       "en": "Force-close timeout for draining stale writers. When set to `0`, the effective timeout is the runtime safety fallback (300 seconds).",
@@ -775,7 +699,6 @@
     {
       "path": "general.me_reinit_every_secs",
       "section": "general",
-      "key": "me_reinit_every_secs",
       "type": "number",
       "applyMode": "hot",
       "en": "Periodic interval for zero-downtime ME reinit cycle.",
@@ -785,7 +708,6 @@
     {
       "path": "general.me_reinit_singleflight",
       "section": "general",
-      "key": "me_reinit_singleflight",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Serializes ME reinit cycles across trigger sources.",
@@ -795,7 +717,6 @@
     {
       "path": "general.me_reinit_trigger_channel",
       "section": "general",
-      "key": "me_reinit_trigger_channel",
       "type": "number",
       "applyMode": "reload",
       "en": "Trigger queue capacity for reinit scheduler.",
@@ -805,7 +726,6 @@
     {
       "path": "general.me_route_backpressure_base_timeout_ms",
       "section": "general",
-      "key": "me_route_backpressure_base_timeout_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "Base backpressure timeout in milliseconds for ME route-channel send.",
@@ -815,7 +735,6 @@
     {
       "path": "general.me_route_backpressure_enabled",
       "section": "general",
-      "key": "me_route_backpressure_enabled",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Enables channel-pressure-aware route send timeouts.",
@@ -825,7 +744,6 @@
     {
       "path": "general.me_route_backpressure_high_timeout_ms",
       "section": "general",
-      "key": "me_route_backpressure_high_timeout_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "High backpressure timeout in milliseconds when queue occupancy is above watermark.",
@@ -835,7 +753,6 @@
     {
       "path": "general.me_route_backpressure_high_watermark_pct",
       "section": "general",
-      "key": "me_route_backpressure_high_watermark_pct",
       "type": "number",
       "applyMode": "hot",
       "en": "Queue occupancy percent threshold for switching to high backpressure timeout.",
@@ -845,7 +762,6 @@
     {
       "path": "general.me_route_blocking_send_timeout_ms",
       "section": "general",
-      "key": "me_route_blocking_send_timeout_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum wait for blocking route-channel send fallback.",
@@ -855,7 +771,6 @@
     {
       "path": "general.me_route_channel_capacity",
       "section": "general",
-      "key": "me_route_channel_capacity",
       "type": "number",
       "applyMode": "reload",
       "en": "Capacity of per-connection ME response route channel.",
@@ -865,7 +780,6 @@
     {
       "path": "general.me_route_fairshare_enabled",
       "section": "general",
-      "key": "me_route_fairshare_enabled",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Enables fair-share routing admission across writer workers.",
@@ -875,7 +789,6 @@
     {
       "path": "general.me_route_hybrid_max_wait_ms",
       "section": "general",
-      "key": "me_route_hybrid_max_wait_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum cumulative wait in hybrid no-writer mode before failfast fallback.",
@@ -885,7 +798,6 @@
     {
       "path": "general.me_route_inline_recovery_attempts",
       "section": "general",
-      "key": "me_route_inline_recovery_attempts",
       "type": "number",
       "applyMode": "reload",
       "en": "Number of inline recovery attempts in legacy mode.",
@@ -895,7 +807,6 @@
     {
       "path": "general.me_route_inline_recovery_wait_ms",
       "section": "general",
-      "key": "me_route_inline_recovery_wait_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Max inline recovery wait in legacy mode.",
@@ -905,7 +816,6 @@
     {
       "path": "general.me_route_no_writer_mode",
       "section": "general",
-      "key": "me_route_no_writer_mode",
       "type": "select",
       "applyMode": "reload",
       "en": "ME route behavior when no writer is immediately available.",
@@ -920,7 +830,6 @@
     {
       "path": "general.me_route_no_writer_wait_ms",
       "section": "general",
-      "key": "me_route_no_writer_wait_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Max wait time used by async-recovery failfast mode before falling back.",
@@ -930,7 +839,6 @@
     {
       "path": "general.me_secret_atomic_snapshot",
       "section": "general",
-      "key": "me_secret_atomic_snapshot",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Keeps selector and secret bytes from the same snapshot atomically. When `general.use_middle_proxy = true`, this is auto-enabled during config load to keep ME KDF material coherent.",
@@ -940,7 +848,6 @@
     {
       "path": "general.me_single_endpoint_outage_backoff_max_ms",
       "section": "general",
-      "key": "me_single_endpoint_outage_backoff_max_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "Maximum reconnect backoff in single-endpoint outage mode.",
@@ -950,7 +857,6 @@
     {
       "path": "general.me_single_endpoint_outage_backoff_min_ms",
       "section": "general",
-      "key": "me_single_endpoint_outage_backoff_min_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "Minimum reconnect backoff in single-endpoint outage mode.",
@@ -960,7 +866,6 @@
     {
       "path": "general.me_single_endpoint_outage_disable_quarantine",
       "section": "general",
-      "key": "me_single_endpoint_outage_disable_quarantine",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Ignores endpoint quarantine while in single-endpoint outage mode.",
@@ -970,7 +875,6 @@
     {
       "path": "general.me_single_endpoint_outage_mode_enabled",
       "section": "general",
-      "key": "me_single_endpoint_outage_mode_enabled",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Enables aggressive outage recovery mode for DC groups with exactly one endpoint.",
@@ -980,7 +884,6 @@
     {
       "path": "general.me_single_endpoint_shadow_rotate_every_secs",
       "section": "general",
-      "key": "me_single_endpoint_shadow_rotate_every_secs",
       "type": "number",
       "applyMode": "hot",
       "en": "Periodic shadow writer rotation interval for single-endpoint DC groups.",
@@ -990,7 +893,6 @@
     {
       "path": "general.me_single_endpoint_shadow_writers",
       "section": "general",
-      "key": "me_single_endpoint_shadow_writers",
       "type": "number",
       "applyMode": "hot",
       "en": "Additional reserve writers for DC groups with exactly one endpoint.",
@@ -1000,7 +902,6 @@
     {
       "path": "general.me_snapshot_min_proxy_for_lines",
       "section": "general",
-      "key": "me_snapshot_min_proxy_for_lines",
       "type": "number",
       "applyMode": "hot",
       "en": "Minimum parsed `proxy_for` rows required to accept snapshot.",
@@ -1010,7 +911,6 @@
     {
       "path": "general.me_snapshot_reject_empty_map",
       "section": "general",
-      "key": "me_snapshot_reject_empty_map",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Rejects empty ME config snapshots (no endpoints). When `false`, an empty snapshot can be applied (subject to other gates), which may temporarily reduce/clear the ME map.",
@@ -1020,7 +920,6 @@
     {
       "path": "general.me_snapshot_require_http_2xx",
       "section": "general",
-      "key": "me_snapshot_require_http_2xx",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Requires 2xx HTTP responses for applying ME config snapshots. When `false`, non-2xx responses may still be parsed/considered by the updater.",
@@ -1030,7 +929,6 @@
     {
       "path": "general.me_socks_kdf_policy",
       "section": "general",
-      "key": "me_socks_kdf_policy",
       "type": "select",
       "applyMode": "hot",
       "en": "SOCKS-bound KDF fallback policy for Middle-End handshake.",
@@ -1044,7 +942,6 @@
     {
       "path": "general.me_warmup_stagger_enabled",
       "section": "general",
-      "key": "me_warmup_stagger_enabled",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Staggers extra ME warmup dials to avoid connection spikes.",
@@ -1054,7 +951,6 @@
     {
       "path": "general.me_warmup_step_delay_ms",
       "section": "general",
-      "key": "me_warmup_step_delay_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Base delay in milliseconds between warmup dial steps.",
@@ -1064,7 +960,6 @@
     {
       "path": "general.me_warmup_step_jitter_ms",
       "section": "general",
-      "key": "me_warmup_step_jitter_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Additional random delay in milliseconds for warmup steps.",
@@ -1074,7 +969,6 @@
     {
       "path": "general.me_warn_rate_limit_ms",
       "section": "general",
-      "key": "me_warn_rate_limit_ms",
       "type": "number",
       "applyMode": "hot",
       "en": "Cooldown for repetitive ME warning logs.",
@@ -1084,7 +978,6 @@
     {
       "path": "general.me_writer_cmd_channel_capacity",
       "section": "general",
-      "key": "me_writer_cmd_channel_capacity",
       "type": "number",
       "applyMode": "reload",
       "en": "Capacity of per-writer command channel.",
@@ -1094,7 +987,6 @@
     {
       "path": "general.me_writer_pick_mode",
       "section": "general",
-      "key": "me_writer_pick_mode",
       "type": "select",
       "applyMode": "hot",
       "en": "Writer selection mode for route bind path.",
@@ -1108,7 +1000,6 @@
     {
       "path": "general.me_writer_pick_sample_size",
       "section": "general",
-      "key": "me_writer_pick_sample_size",
       "type": "number",
       "applyMode": "hot",
       "en": "Number of candidates sampled by picker in `p2c` mode.",
@@ -1118,7 +1009,6 @@
     {
       "path": "general.me2dc_fallback",
       "section": "general",
-      "key": "me2dc_fallback",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Allows Direct-DC fallback when ME is unavailable. With `use_middle_proxy = true`, startup opens Direct-DC routing first and moves new sessions to ME after ME readiness is observed.",
@@ -1128,7 +1018,6 @@
     {
       "path": "general.me2dc_fast",
       "section": "general",
-      "key": "me2dc_fast",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Fast ME->Direct fallback mode for new sessions after ME was ready at least once. Initial direct-first startup fallback is controlled by `me2dc_fallback`.",
@@ -1138,7 +1027,6 @@
     {
       "path": "general.middle_proxy_nat_ip",
       "section": "general",
-      "key": "middle_proxy_nat_ip",
       "type": "string",
       "applyMode": "reload",
       "en": "Manual public NAT IP override used as ME address material when set.",
@@ -1147,7 +1035,6 @@
     {
       "path": "general.middle_proxy_nat_probe",
       "section": "general",
-      "key": "middle_proxy_nat_probe",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables STUN-based NAT probing to discover public IP:port used by ME key derivation in NAT environments.",
@@ -1157,7 +1044,6 @@
     {
       "path": "general.middle_proxy_nat_stun",
       "section": "general",
-      "key": "middle_proxy_nat_stun",
       "type": "string",
       "applyMode": "reload",
       "en": "Deprecated legacy single STUN server for NAT probing. During config load it is merged into `network.stun_servers` unless `network.stun_servers` is explicitly set.",
@@ -1166,7 +1052,6 @@
     {
       "path": "general.middle_proxy_nat_stun_servers",
       "section": "general",
-      "key": "middle_proxy_nat_stun_servers",
       "type": "string[]",
       "applyMode": "reload",
       "en": "Deprecated legacy STUN list for NAT probing fallback. During config load it is merged into `network.stun_servers` unless `network.stun_servers` is explicitly set.",
@@ -1176,7 +1061,6 @@
     {
       "path": "general.middle_proxy_pool_size",
       "section": "general",
-      "key": "middle_proxy_pool_size",
       "type": "number",
       "applyMode": "reload",
       "en": "Target size of active ME writer pool.",
@@ -1186,7 +1070,6 @@
     {
       "path": "general.middle_proxy_warm_standby",
       "section": "general",
-      "key": "middle_proxy_warm_standby",
       "type": "number",
       "applyMode": "reload",
       "en": "Number of warm standby ME connections kept pre-initialized.",
@@ -1196,7 +1079,6 @@
     {
       "path": "general.modes.classic",
       "section": "general",
-      "key": "modes.classic",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables classic MTProxy mode.",
@@ -1206,7 +1088,6 @@
     {
       "path": "general.modes.secure",
       "section": "general",
-      "key": "modes.secure",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables secure mode.",
@@ -1216,7 +1097,6 @@
     {
       "path": "general.modes.tls",
       "section": "general",
-      "key": "modes.tls",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables TLS mode.",
@@ -1226,7 +1106,6 @@
     {
       "path": "general.ntp_check",
       "section": "general",
-      "key": "ntp_check",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Reserved for future use. Currently this key is parsed but not used by the runtime.",
@@ -1236,7 +1115,6 @@
     {
       "path": "general.ntp_servers",
       "section": "general",
-      "key": "ntp_servers",
       "type": "string[]",
       "applyMode": "reload",
       "en": "Reserved for future use. Currently this key is parsed but not used by the runtime.",
@@ -1246,7 +1124,6 @@
     {
       "path": "general.prefer_ipv6",
       "section": "general",
-      "key": "prefer_ipv6",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Deprecated legacy IPv6 preference flag migrated to `network.prefer`.",
@@ -1256,7 +1133,6 @@
     {
       "path": "general.proxy_config_auto_reload_secs",
       "section": "general",
-      "key": "proxy_config_auto_reload_secs",
       "type": "number",
       "applyMode": "hot",
       "en": "Deprecated legacy ME config refresh interval. Used only when `general.update_every` is not set.",
@@ -1266,7 +1142,6 @@
     {
       "path": "general.proxy_config_v4_cache_path",
       "section": "general",
-      "key": "proxy_config_v4_cache_path",
       "type": "string",
       "applyMode": "reload",
       "en": "Optional disk cache path for raw `getProxyConfig` (IPv4) snapshot. At startup Telemt tries to fetch a fresh snapshot first; on fetch failure or empty snapshot it falls back to this cache file when present and non-empty.",
@@ -1276,7 +1151,6 @@
     {
       "path": "general.proxy_config_v4_url",
       "section": "general",
-      "key": "proxy_config_v4_url",
       "type": "string",
       "applyMode": "reload",
       "en": "Optional URL to obtain raw `getProxyConfig` (IPv4). Telemt always tries a fresh download from this URL first (with fallback to `https://core.telegram.org/getProxyConfig` if absent).",
@@ -1286,7 +1160,6 @@
     {
       "path": "general.proxy_config_v6_cache_path",
       "section": "general",
-      "key": "proxy_config_v6_cache_path",
       "type": "string",
       "applyMode": "reload",
       "en": "Optional disk cache path for raw `getProxyConfigV6` (IPv6) snapshot. At startup Telemt tries to fetch a fresh snapshot first; on fetch failure or empty snapshot it falls back to this cache file when present and non-empty.",
@@ -1296,7 +1169,6 @@
     {
       "path": "general.proxy_config_v6_url",
       "section": "general",
-      "key": "proxy_config_v6_url",
       "type": "string",
       "applyMode": "reload",
       "en": "Optional URL to obtain raw `getProxyConfigV6` (IPv6). Telemt always tries a fresh download from this URL first (with fallback to `https://core.telegram.org/getProxyConfigV6` if absent).",
@@ -1306,7 +1178,6 @@
     {
       "path": "general.proxy_secret_auto_reload_secs",
       "section": "general",
-      "key": "proxy_secret_auto_reload_secs",
       "type": "number",
       "applyMode": "hot",
       "en": "Deprecated legacy proxy-secret refresh interval. Used only when `general.update_every` is not set.",
@@ -1316,7 +1187,6 @@
     {
       "path": "general.proxy_secret_len_max",
       "section": "general",
-      "key": "proxy_secret_len_max",
       "type": "number",
       "applyMode": "hot",
       "en": "Upper length limit (bytes) for accepted proxy-secret during startup and runtime refresh.",
@@ -1326,7 +1196,6 @@
     {
       "path": "general.proxy_secret_path",
       "section": "general",
-      "key": "proxy_secret_path",
       "type": "string",
       "applyMode": "reload",
       "en": "Path to Telegram infrastructure `proxy-secret` cache file used by ME handshake/RPC auth. Telemt always tries a fresh download from `https://core.telegram.org/getProxySecret` first (unless `proxy_secret_url` is set) , caches it to this path on success, and falls back to reading the cached file (any age) on download failure.",
@@ -1336,7 +1205,6 @@
     {
       "path": "general.proxy_secret_rotate_runtime",
       "section": "general",
-      "key": "proxy_secret_rotate_runtime",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Enables runtime proxy-secret rotation from updater snapshots.",
@@ -1346,7 +1214,6 @@
     {
       "path": "general.proxy_secret_stable_snapshots",
       "section": "general",
-      "key": "proxy_secret_stable_snapshots",
       "type": "number",
       "applyMode": "hot",
       "en": "Number of identical proxy-secret snapshots required before rotation.",
@@ -1356,7 +1223,6 @@
     {
       "path": "general.proxy_secret_url",
       "section": "general",
-      "key": "proxy_secret_url",
       "type": "string",
       "applyMode": "reload",
       "en": "Optional URL to obtain `proxy-secret` file used by ME handshake/RPC auth. Telemt always tries a fresh download from this URL first (with fallback to `https://core.telegram.org/getProxySecret` if absent).",
@@ -1366,7 +1232,6 @@
     {
       "path": "general.quota_state_path",
       "section": "general",
-      "key": "quota_state_path",
       "type": "string",
       "applyMode": "reload",
       "en": "JSON state file used to persist runtime per-user quota consumption.",
@@ -1376,7 +1241,6 @@
     {
       "path": "general.rpc_proxy_req_every",
       "section": "general",
-      "key": "rpc_proxy_req_every",
       "type": "number",
       "applyMode": "reload",
       "en": "Interval for service `RPC_PROXY_REQ` activity signals to ME (`0` disables).",
@@ -1386,7 +1250,6 @@
     {
       "path": "general.rst_on_close",
       "section": "general",
-      "key": "rst_on_close",
       "type": "select",
       "applyMode": "reload",
       "en": "Controls `SO_LINGER(0)` behaviour on accepted client TCP sockets.",
@@ -1401,7 +1264,6 @@
     {
       "path": "general.stun_iface_mismatch_ignore",
       "section": "general",
-      "key": "stun_iface_mismatch_ignore",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Compatibility flag reserved for future use. Currently this key is parsed but not used by the runtime.",
@@ -1411,7 +1273,6 @@
     {
       "path": "general.stun_nat_probe_concurrency",
       "section": "general",
-      "key": "stun_nat_probe_concurrency",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum number of parallel STUN probes during NAT/public endpoint discovery.",
@@ -1421,7 +1282,6 @@
     {
       "path": "general.telemetry.core_enabled",
       "section": "general",
-      "key": "telemetry.core_enabled",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Enables core hot-path telemetry counters.",
@@ -1431,7 +1291,6 @@
     {
       "path": "general.telemetry.me_level",
       "section": "general",
-      "key": "telemetry.me_level",
       "type": "select",
       "applyMode": "hot",
       "en": "Middle-End telemetry verbosity level.",
@@ -1446,7 +1305,6 @@
     {
       "path": "general.telemetry.user_enabled",
       "section": "general",
-      "key": "telemetry.user_enabled",
       "type": "boolean",
       "applyMode": "hot",
       "en": "Enables per-user telemetry counters.",
@@ -1456,7 +1314,6 @@
     {
       "path": "general.tg_connect",
       "section": "general",
-      "key": "tg_connect",
       "type": "number",
       "applyMode": "reload",
       "en": "Upstream Telegram connect timeout.",
@@ -1466,7 +1323,6 @@
     {
       "path": "general.unknown_dc_file_log_enabled",
       "section": "general",
-      "key": "unknown_dc_file_log_enabled",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables unknown-DC file logging (writes `dc_idx=<N>` lines). Requires `unknown_dc_log_path` to be set and, on non-Unix platforms, may be unsupported. Logging is deduplicated and capped (only the first ~1024 distinct unknown DC indices are recorded).",
@@ -1476,7 +1332,6 @@
     {
       "path": "general.unknown_dc_log_path",
       "section": "general",
-      "key": "unknown_dc_log_path",
       "type": "string",
       "applyMode": "reload",
       "en": "Log file path for unknown (non-standard) DC requests when `unknown_dc_file_log_enabled = true`. Omit this key to disable file logging.",
@@ -1486,7 +1341,6 @@
     {
       "path": "general.update_every",
       "section": "general",
-      "key": "update_every",
       "type": "number",
       "applyMode": "hot",
       "en": "Unified refresh interval for ME updater tasks (`getProxyConfig`, `getProxyConfigV6`, `getProxySecret`). When set, it overrides legacy proxy reload intervals.",
@@ -1496,7 +1350,6 @@
     {
       "path": "general.upstream_connect_budget_ms",
       "section": "general",
-      "key": "upstream_connect_budget_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Total wall-clock budget in milliseconds for one upstream connect request across retries.",
@@ -1506,7 +1359,6 @@
     {
       "path": "general.upstream_connect_failfast_hard_errors",
       "section": "general",
-      "key": "upstream_connect_failfast_hard_errors",
       "type": "boolean",
       "applyMode": "reload",
       "en": "When true, skips additional retries for hard non-transient upstream connect errors.",
@@ -1516,7 +1368,6 @@
     {
       "path": "general.upstream_connect_retry_attempts",
       "section": "general",
-      "key": "upstream_connect_retry_attempts",
       "type": "number",
       "applyMode": "reload",
       "en": "Connect attempts for the selected upstream before returning error/fallback.",
@@ -1526,7 +1377,6 @@
     {
       "path": "general.upstream_connect_retry_backoff_ms",
       "section": "general",
-      "key": "upstream_connect_retry_backoff_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Delay in milliseconds between upstream connect attempts.",
@@ -1536,7 +1386,6 @@
     {
       "path": "general.upstream_unhealthy_fail_threshold",
       "section": "general",
-      "key": "upstream_unhealthy_fail_threshold",
       "type": "number",
       "applyMode": "reload",
       "en": "Consecutive failed requests before upstream is marked unhealthy.",
@@ -1546,7 +1395,6 @@
     {
       "path": "general.use_middle_proxy",
       "section": "general",
-      "key": "use_middle_proxy",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables ME transport mode; if `false`, runtime falls back to direct DC routing.",
@@ -1556,7 +1404,6 @@
     {
       "path": "timeouts.client_ack",
       "section": "timeouts",
-      "key": "client_ack",
       "type": "number",
       "applyMode": "reload",
       "en": "Client ACK timeout (seconds).",
@@ -1566,7 +1413,6 @@
     {
       "path": "timeouts.client_first_byte_idle_secs",
       "section": "timeouts",
-      "key": "client_first_byte_idle_secs",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum idle time to wait for the first client payload byte after session setup.",
@@ -1576,7 +1422,6 @@
     {
       "path": "timeouts.client_handshake",
       "section": "timeouts",
-      "key": "client_handshake",
       "type": "number",
       "applyMode": "reload",
       "en": "Client handshake timeout (seconds).",
@@ -1586,7 +1431,6 @@
     {
       "path": "timeouts.client_keepalive",
       "section": "timeouts",
-      "key": "client_keepalive",
       "type": "number",
       "applyMode": "reload",
       "en": "Client keepalive timeout (seconds).",
@@ -1596,7 +1440,6 @@
     {
       "path": "timeouts.me_one_retry",
       "section": "timeouts",
-      "key": "me_one_retry",
       "type": "number",
       "applyMode": "reload",
       "en": "Fast reconnect attempts budget for single-endpoint DC scenarios.",
@@ -1606,7 +1449,6 @@
     {
       "path": "timeouts.me_one_timeout_ms",
       "section": "timeouts",
-      "key": "me_one_timeout_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Timeout per quick attempt (ms) for single-endpoint DC reconnect logic.",
@@ -1616,7 +1458,6 @@
     {
       "path": "timeouts.relay_client_idle_hard_secs",
       "section": "timeouts",
-      "key": "relay_client_idle_hard_secs",
       "type": "number",
       "applyMode": "reload",
       "en": "Hard idle threshold (seconds) for middle-relay client uplink inactivity. Hitting this threshold closes the session.",
@@ -1626,7 +1467,6 @@
     {
       "path": "timeouts.relay_client_idle_soft_secs",
       "section": "timeouts",
-      "key": "relay_client_idle_soft_secs",
       "type": "number",
       "applyMode": "reload",
       "en": "Soft idle threshold (seconds) for middle-relay client uplink inactivity. Hitting this threshold marks the session as an idle-candidate (it may be eligible for cleanup depending on policy).",
@@ -1636,7 +1476,6 @@
     {
       "path": "timeouts.relay_idle_grace_after_downstream_activity_secs",
       "section": "timeouts",
-      "key": "relay_idle_grace_after_downstream_activity_secs",
       "type": "number",
       "applyMode": "reload",
       "en": "Extra hard-idle grace period (seconds) added after recent downstream activity.",
@@ -1646,7 +1485,6 @@
     {
       "path": "timeouts.relay_idle_policy_v2_enabled",
       "section": "timeouts",
-      "key": "relay_idle_policy_v2_enabled",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables soft/hard middle-relay client idle policy.",
@@ -1656,7 +1494,6 @@
     {
       "path": "censorship.alpn_enforce",
       "section": "censorship",
-      "key": "alpn_enforce",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enforces ALPN echo behavior based on client preference.",
@@ -1666,7 +1503,6 @@
     {
       "path": "censorship.fake_cert_len",
       "section": "censorship",
-      "key": "fake_cert_len",
       "type": "number",
       "applyMode": "reload",
       "en": "Length of synthetic certificate payload when emulation data is unavailable.",
@@ -1676,7 +1512,6 @@
     {
       "path": "censorship.mask",
       "section": "censorship",
-      "key": "mask",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables masking / fronting relay mode.",
@@ -1686,7 +1521,6 @@
     {
       "path": "censorship.mask_classifier_prefetch_timeout_ms",
       "section": "censorship",
-      "key": "mask_classifier_prefetch_timeout_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Timeout budget (ms) for extending fragmented initial classifier window on masking fallback.",
@@ -1696,7 +1530,6 @@
     {
       "path": "censorship.mask_host",
       "section": "censorship",
-      "key": "mask_host",
       "type": "string",
       "applyMode": "reload",
       "en": "Upstream mask host for TLS fronting relay.",
@@ -1705,7 +1538,6 @@
     {
       "path": "censorship.mask_port",
       "section": "censorship",
-      "key": "mask_port",
       "type": "number",
       "applyMode": "reload",
       "en": "Upstream mask port for TLS fronting relay.",
@@ -1715,7 +1547,6 @@
     {
       "path": "censorship.mask_proxy_protocol",
       "section": "censorship",
-      "key": "mask_proxy_protocol",
       "type": "number",
       "applyMode": "reload",
       "en": "Sends PROXY protocol header when connecting to mask backend, allowing the backend to see the real client IP.",
@@ -1725,7 +1556,6 @@
     {
       "path": "censorship.mask_relay_idle_timeout_ms",
       "section": "censorship",
-      "key": "mask_relay_idle_timeout_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Per-read idle timeout on masking relay and drain paths. Limits resource consumption by slow-loris attacks and port scanners. A read call stalling beyond this value is treated as an abandoned connection. Default: 5 000 ms (5 s).",
@@ -1735,7 +1565,6 @@
     {
       "path": "censorship.mask_relay_max_bytes",
       "section": "censorship",
-      "key": "mask_relay_max_bytes",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum relayed bytes per direction on unauthenticated masking fallback path.",
@@ -1745,7 +1574,6 @@
     {
       "path": "censorship.mask_relay_timeout_ms",
       "section": "censorship",
-      "key": "mask_relay_timeout_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Wall-clock cap for the full masking relay on non-MTProto fallback paths. Raise when the mask target is a long-lived service (e.g. WebSocket). Default: 60 000 ms (1 minute).",
@@ -1755,7 +1583,6 @@
     {
       "path": "censorship.mask_shape_above_cap_blur",
       "section": "censorship",
-      "key": "mask_shape_above_cap_blur",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Adds bounded randomized tail bytes even when forwarded size already exceeds cap.",
@@ -1765,7 +1592,6 @@
     {
       "path": "censorship.mask_shape_above_cap_blur_max_bytes",
       "section": "censorship",
-      "key": "mask_shape_above_cap_blur_max_bytes",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum randomized extra bytes appended above cap when above-cap blur is enabled.",
@@ -1775,7 +1601,6 @@
     {
       "path": "censorship.mask_shape_bucket_cap_bytes",
       "section": "censorship",
-      "key": "mask_shape_bucket_cap_bytes",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum bucket size used by shape-channel hardening; traffic above cap is not bucket-padded further.",
@@ -1785,7 +1610,6 @@
     {
       "path": "censorship.mask_shape_bucket_floor_bytes",
       "section": "censorship",
-      "key": "mask_shape_bucket_floor_bytes",
       "type": "number",
       "applyMode": "reload",
       "en": "Minimum bucket size used by shape-channel hardening.",
@@ -1795,7 +1619,6 @@
     {
       "path": "censorship.mask_shape_hardening",
       "section": "censorship",
-      "key": "mask_shape_hardening",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables client->mask shape-channel hardening by applying controlled tail padding to bucket boundaries on mask relay shutdown.",
@@ -1805,7 +1628,6 @@
     {
       "path": "censorship.mask_shape_hardening_aggressive_mode",
       "section": "censorship",
-      "key": "mask_shape_hardening_aggressive_mode",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Opt-in aggressive shaping profile (stronger anti-classifier behavior with different shaping semantics).",
@@ -1815,7 +1637,6 @@
     {
       "path": "censorship.mask_timing_normalization_ceiling_ms",
       "section": "censorship",
-      "key": "mask_timing_normalization_ceiling_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Upper bound (ms) for masking outcome normalization target.",
@@ -1825,7 +1646,6 @@
     {
       "path": "censorship.mask_timing_normalization_enabled",
       "section": "censorship",
-      "key": "mask_timing_normalization_enabled",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables timing envelope normalization on masking outcomes.",
@@ -1835,7 +1655,6 @@
     {
       "path": "censorship.mask_timing_normalization_floor_ms",
       "section": "censorship",
-      "key": "mask_timing_normalization_floor_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Lower bound (ms) for masking outcome normalization target.",
@@ -1845,7 +1664,6 @@
     {
       "path": "censorship.mask_unix_sock",
       "section": "censorship",
-      "key": "mask_unix_sock",
       "type": "string",
       "applyMode": "reload",
       "en": "Unix socket path for mask backend instead of TCP `mask_host`/`mask_port`.",
@@ -1854,7 +1672,6 @@
     {
       "path": "censorship.server_hello_delay_max_ms",
       "section": "censorship",
-      "key": "server_hello_delay_max_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Maximum `server_hello` delay for anti-fingerprint behavior (ms).",
@@ -1864,7 +1681,6 @@
     {
       "path": "censorship.server_hello_delay_min_ms",
       "section": "censorship",
-      "key": "server_hello_delay_min_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Minimum `server_hello` delay for anti-fingerprint behavior (ms).",
@@ -1874,7 +1690,6 @@
     {
       "path": "censorship.serverhello_compact",
       "section": "censorship",
-      "key": "serverhello_compact",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables compact ServerHello/Fake-TLS profile to reduce response-size signature.",
@@ -1884,7 +1699,6 @@
     {
       "path": "censorship.tls_domain",
       "section": "censorship",
-      "key": "tls_domain",
       "type": "string",
       "applyMode": "reload",
       "en": "Primary domain used for Fake-TLS masking / fronting profile and as the default SNI domain presented to clients.",
@@ -1894,7 +1708,6 @@
     {
       "path": "censorship.tls_domains",
       "section": "censorship",
-      "key": "tls_domains",
       "type": "string[]",
       "applyMode": "reload",
       "en": "Additional TLS domains for generating multiple proxy links.",
@@ -1904,7 +1717,6 @@
     {
       "path": "censorship.tls_emulation",
       "section": "censorship",
-      "key": "tls_emulation",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables certificate/TLS behavior emulation from cached real fronts.",
@@ -1914,7 +1726,6 @@
     {
       "path": "censorship.tls_fetch",
       "section": "censorship",
-      "key": "tls_fetch",
       "type": "string",
       "applyMode": "reload",
       "en": "TLS-front metadata fetch strategy settings (bootstrap + refresh behavior for TLS emulation data).",
@@ -1924,7 +1735,6 @@
     {
       "path": "censorship.tls_fetch_scope",
       "section": "censorship",
-      "key": "tls_fetch_scope",
       "type": "string",
       "applyMode": "reload",
       "en": "Upstream scope tag used for TLS-front metadata fetches. Empty value keeps default upstream routing behavior.",
@@ -1933,7 +1743,6 @@
     {
       "path": "censorship.tls_fetch.attempt_timeout_ms",
       "section": "censorship",
-      "key": "tls_fetch.attempt_timeout_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Timeout budget per one TLS-fetch profile attempt (ms).",
@@ -1943,7 +1752,6 @@
     {
       "path": "censorship.tls_fetch.deterministic",
       "section": "censorship",
-      "key": "tls_fetch.deterministic",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables deterministic ClientHello randomness for debugging/tests.",
@@ -1953,7 +1761,6 @@
     {
       "path": "censorship.tls_fetch.grease_enabled",
       "section": "censorship",
-      "key": "tls_fetch.grease_enabled",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Enables GREASE-style random values in selected ClientHello extensions for fetch traffic.",
@@ -1963,7 +1770,6 @@
     {
       "path": "censorship.tls_fetch.profile_cache_ttl_secs",
       "section": "censorship",
-      "key": "tls_fetch.profile_cache_ttl_secs",
       "type": "number",
       "applyMode": "reload",
       "en": "TTL for winner-profile cache entries used by TLS fetch path.",
@@ -1973,7 +1779,6 @@
     {
       "path": "censorship.tls_fetch.profiles",
       "section": "censorship",
-      "key": "tls_fetch.profiles",
       "type": "string[]",
       "applyMode": "reload",
       "en": "Ordered ClientHello profile fallback chain for TLS-front metadata fetch.",
@@ -1983,7 +1788,6 @@
     {
       "path": "censorship.tls_fetch.strict_route",
       "section": "censorship",
-      "key": "tls_fetch.strict_route",
       "type": "boolean",
       "applyMode": "reload",
       "en": "When `true` and an upstream route is configured, TLS fetch fails closed on upstream connect errors instead of falling back to direct TCP.",
@@ -1993,7 +1797,6 @@
     {
       "path": "censorship.tls_fetch.total_budget_ms",
       "section": "censorship",
-      "key": "tls_fetch.total_budget_ms",
       "type": "number",
       "applyMode": "reload",
       "en": "Total wall-clock budget across all TLS-fetch attempts (ms).",
@@ -2003,7 +1806,6 @@
     {
       "path": "censorship.tls_front_dir",
       "section": "censorship",
-      "key": "tls_front_dir",
       "type": "string",
       "applyMode": "reload",
       "en": "Directory path for TLS front cache storage.",
@@ -2013,7 +1815,6 @@
     {
       "path": "censorship.tls_full_cert_ttl_secs",
       "section": "censorship",
-      "key": "tls_full_cert_ttl_secs",
       "type": "number",
       "applyMode": "reload",
       "en": "TTL for sending full cert payload per (domain, client IP) tuple.",
@@ -2023,7 +1824,6 @@
     {
       "path": "censorship.tls_new_session_tickets",
       "section": "censorship",
-      "key": "tls_new_session_tickets",
       "type": "number",
       "applyMode": "reload",
       "en": "Number of `NewSessionTicket` messages to emit after handshake.",
@@ -2033,7 +1833,6 @@
     {
       "path": "censorship.unknown_sni_action",
       "section": "censorship",
-      "key": "unknown_sni_action",
       "type": "select",
       "applyMode": "reload",
       "en": "Action for TLS ClientHello with unknown / non-configured SNI.",
@@ -2049,7 +1848,6 @@
     {
       "path": "upstreams.address",
       "section": "upstreams",
-      "key": "address",
       "type": "string",
       "applyMode": "reload",
       "en": "SOCKS proxy server endpoint used for upstream connects.",
@@ -2058,7 +1856,6 @@
     {
       "path": "upstreams.bind_addresses",
       "section": "upstreams",
-      "key": "bind_addresses",
       "type": "string[]",
       "applyMode": "reload",
       "en": "Explicit local source addresses for outgoing direct TCP connects. When multiple addresses are provided, selection is round-robin.",
@@ -2067,7 +1864,6 @@
     {
       "path": "upstreams.bindtodevice",
       "section": "upstreams",
-      "key": "bindtodevice",
       "type": "string",
       "applyMode": "reload",
       "en": "Hard interface pinning via `SO_BINDTODEVICE` for outgoing direct TCP connects.",
@@ -2076,7 +1872,6 @@
     {
       "path": "upstreams.enabled",
       "section": "upstreams",
-      "key": "enabled",
       "type": "boolean",
       "applyMode": "reload",
       "en": "When `false`, this entry is ignored and not used for any upstream selection.",
@@ -2086,7 +1881,6 @@
     {
       "path": "upstreams.force_bind",
       "section": "upstreams",
-      "key": "force_bind",
       "type": "string",
       "applyMode": "reload",
       "en": "Backward-compatible alias for Linux `SO_BINDTODEVICE` hard interface pinning.",
@@ -2095,7 +1889,6 @@
     {
       "path": "upstreams.interface",
       "section": "upstreams",
-      "key": "interface",
       "type": "string",
       "applyMode": "reload",
       "en": "Optional outbound interface / local bind hint for the upstream connect socket.",
@@ -2104,7 +1897,6 @@
     {
       "path": "upstreams.ipv4",
       "section": "upstreams",
-      "key": "ipv4",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Allows IPv4 DC targets for this upstream. When omitted, Telemt auto-detects support from runtime connectivity state.",
@@ -2114,7 +1906,6 @@
     {
       "path": "upstreams.ipv6",
       "section": "upstreams",
-      "key": "ipv6",
       "type": "boolean",
       "applyMode": "reload",
       "en": "Allows IPv6 DC targets for this upstream. When omitted, Telemt auto-detects support from runtime connectivity state. Set this to `true` when the upstream proxy is reachable from the local host over IPv4 but the proxy itself can connect to Telegram DCs over IPv6.",
@@ -2124,7 +1915,6 @@
     {
       "path": "upstreams.password",
       "section": "upstreams",
-      "key": "password",
       "type": "string",
       "applyMode": "reload",
       "en": "SOCKS5 password (for username/password authentication). Note: when a request scope is selected, Telemt may override this with the selected scope value.",
@@ -2133,7 +1923,6 @@
     {
       "path": "upstreams.prefer",
       "section": "upstreams",
-      "key": "prefer",
       "type": "string",
       "applyMode": "reload",
       "en": "Overrides the IP family preference for Telegram DC targets selected through this upstream. When omitted, the upstream inherits the effective global `[network].prefer` decision. Use `prefer = 6` together with `ipv6 = true` for a SOCKS or Shadowsocks upstream that can egress over IPv6 even when the local Telemt host is IPv4-only.",
@@ -2143,7 +1932,6 @@
     {
       "path": "upstreams.scopes",
       "section": "upstreams",
-      "key": "scopes",
       "type": "string",
       "applyMode": "reload",
       "en": "Scope tags used for request-level upstream filtering. If a request specifies a scope, only upstreams whose `scopes` contains that tag can be selected. If a request does not specify a scope, only upstreams with empty `scopes` are eligible.",
@@ -2152,7 +1940,6 @@
     {
       "path": "upstreams.type",
       "section": "upstreams",
-      "key": "type",
       "type": "select",
       "applyMode": "reload",
       "en": "Selects the upstream transport implementation for this `[[upstreams]]` entry.",
@@ -2167,7 +1954,6 @@
     {
       "path": "upstreams.url",
       "section": "upstreams",
-      "key": "url",
       "type": "string",
       "applyMode": "reload",
       "en": "Shadowsocks server URL used for connecting to Telegram via a Shadowsocks relay.",
@@ -2176,7 +1962,6 @@
     {
       "path": "upstreams.user_id",
       "section": "upstreams",
-      "key": "user_id",
       "type": "string",
       "applyMode": "reload",
       "en": "SOCKS4 CONNECT user ID. Note: when a request scope is selected, Telemt may override this with the selected scope value.",
@@ -2185,7 +1970,6 @@
     {
       "path": "upstreams.username",
       "section": "upstreams",
-      "key": "username",
       "type": "string",
       "applyMode": "reload",
       "en": "SOCKS5 username (for username/password authentication). Note: when a request scope is selected, Telemt may override this with the selected scope value.",
@@ -2194,7 +1978,6 @@
     {
       "path": "upstreams.weight",
       "section": "upstreams",
-      "key": "weight",
       "type": "number",
       "applyMode": "reload",
       "en": "Base weight used by weighted-random upstream selection (higher = chosen more often).",
@@ -2204,7 +1987,6 @@
     {
       "path": "dc_overrides",
       "section": "dc_overrides",
-      "key": "dc_overrides",
       "type": "string",
       "applyMode": "reload",
       "en": "Overrides DC endpoints for non-standard DCs; key is DC index string, value is one or more `ip:port` addresses.",
