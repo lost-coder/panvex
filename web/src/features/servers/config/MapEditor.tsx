@@ -46,6 +46,17 @@ export interface MapEditorProps {
    */
   valueKind: "list" | "scalar";
   disabled?: boolean | undefined;
+  /**
+   * D5: entries the node reports (observed) that `value` (the managed/
+   * save-state map) doesn't cover — desired can carry the container with
+   * FEWER keys than the node actually has, and F7's whole-container
+   * observed-fallback only fires when desired lacks the container
+   * ENTIRELY. Rendered read-only with a "take under management" action
+   * that folds the entry into `value` via onChange; merely receiving this
+   * prop must never itself call onChange — display state stays separate
+   * from save state until the operator explicitly acts.
+   */
+  unmanaged?: Record<string, MapValue> | undefined;
 }
 
 /** Текст поля для значения любой формы. */
@@ -66,7 +77,7 @@ function fromText(text: string, valueKind: "list" | "scalar"): MapValue {
 }
 
 export function MapEditor({
-  value, onChange, keyLabel, valueLabel, valueKind, disabled = false,
+  value, onChange, keyLabel, valueLabel, valueKind, disabled = false, unmanaged,
 }: Readonly<MapEditorProps>) {
   const { t } = useTranslation("servers");
   const rows = Object.entries(value);
@@ -132,7 +143,13 @@ export function MapEditor({
       {rows.map(([key, addresses], index) => (
         // Ключ может быть пустым (только что добавленная строка) и меняется
         // при переименовании — позиция здесь стабильнее самого ключа.
-        <div key={index} className="flex flex-col gap-1">
+        //
+        // D1: max-w-4xl bounds the row the same way ConfigTreeField.tsx:166
+        // bounds a tree field row — without it, on a wide screen the row
+        // stretched across the whole panel width with ~1100px of dead space
+        // between the key and the (previously sm:flex-1, now bounded) value
+        // input.
+        <div key={index} className="flex max-w-4xl flex-col gap-1">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Input
               type="text"
@@ -149,7 +166,7 @@ export function MapEditor({
               disabled={disabled}
               onChange={(e) => setAddresses(index, key, e.target.value)}
               onBlur={() => commitDraft(index)}
-              className="sm:flex-1"
+              className="sm:w-80"
             />
             <Button
               type="button"
@@ -171,6 +188,47 @@ export function MapEditor({
           )}
         </div>
       ))}
+
+      {/* D5: entries the node reports that `value` doesn't cover — visible,
+          read-only, explicitly marked as node-only. "Take under management"
+          folds the entry into `value` via the SAME onChange the managed
+          rows use, so it becomes part of what Save persists from that
+          click onward; merely rendering this block never calls onChange
+          itself. */}
+      {unmanaged &&
+        Object.entries(unmanaged).map(([key, addresses], index) => (
+          <div
+            key={`unmanaged-${key}`}
+            className="flex max-w-4xl flex-col gap-1 rounded-sm border border-dashed border-divider p-2"
+          >
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                type="text"
+                aria-label={`${keyLabel} (${t("config.map.unmanaged.label")}) ${index + 1}`}
+                value={key}
+                disabled
+                className="sm:w-64"
+              />
+              <Input
+                type="text"
+                aria-label={`${valueLabel} (${t("config.map.unmanaged.label")}) ${index + 1}`}
+                value={toText(addresses)}
+                disabled
+                className="sm:w-80"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={disabled}
+                onClick={() => onChange({ ...value, [key]: addresses })}
+              >
+                {t("config.map.unmanaged.adopt")}
+              </Button>
+            </div>
+            <p className="text-caption text-fg-muted">{t("config.map.unmanaged.note")}</p>
+          </div>
+        ))}
 
       <div>
         <Button

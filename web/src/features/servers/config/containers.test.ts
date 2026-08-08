@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readUpstreams, writeUpstreams, readMap, writeMap } from "./containers";
+import { readUpstreams, writeUpstreams, readMap, writeMap, unmanagedMapEntries } from "./containers";
 
 describe("контейнеры конфига", () => {
   it("читает и пишет массив upstreams", () => {
@@ -64,6 +64,28 @@ describe("контейнеры конфига", () => {
     const out: Record<string, unknown> = {};
     writeMap(out, "dc_overrides", { "203": "1.2.3.4:443", "": "", "204": [] });
     expect(out).toEqual({ dc_overrides: { "203": "1.2.3.4:443" } });
+  });
+
+  // D5: desired can carry the container with SOME keys while the node's
+  // observed config has MORE — F7's whole-container fallback only fires
+  // when desired lacks the container entirely, so a poorer-but-present
+  // desired hid the node's other keys nowhere. unmanagedMapEntries surfaces
+  // exactly those observed-only keys, for display — never mutating the
+  // managed map itself.
+  it("D5: unmanagedMapEntries возвращает ключи observed, которых нет в managed", () => {
+    const managed = { "203": ["91.105.192.100:443"] };
+    const observedSections = {
+      dc_overrides: { "1": ["1.2.3.4:443"], "203": ["91.105.192.100:443"] },
+    };
+    expect(unmanagedMapEntries(managed, observedSections, "dc_overrides")).toEqual({
+      "1": ["1.2.3.4:443"],
+    });
+  });
+
+  it("D5: unmanagedMapEntries пуст, когда managed уже покрывает всё, что есть на ноде", () => {
+    const managed = { "203": ["91.105.192.100:443"] };
+    const observedSections = { dc_overrides: { "203": ["91.105.192.100:443"] } };
+    expect(unmanagedMapEntries(managed, observedSections, "dc_overrides")).toEqual({});
   });
 
   it("нечужая форма контейнера не роняет чтение", () => {

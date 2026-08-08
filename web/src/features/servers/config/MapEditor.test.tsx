@@ -253,6 +253,50 @@ describe("MapEditor", () => {
 
   // Позиции строк сдвигаются при удалении: оставленная метка конфликта
   // всплыла бы под непричастной строкой.
+  // D5: entries that only exist in observed (not in `value`, the managed/
+  // save-state map) must still be visible — marked unmanaged — with an
+  // action that takes them under management by folding them into `value`.
+  // Merely displaying them must NOT itself call onChange.
+  it("D5: показывает unmanaged-запись отдельно от управляемых и не пишет её в value сама по себе", () => {
+    const onChange = vi.fn();
+    render(
+      <MapEditor
+        value={{ "203": ["91.105.192.100:443"] }}
+        onChange={onChange}
+        keyLabel="DC"
+        valueLabel="Endpoints"
+        valueKind="list"
+        unmanaged={{ "1": ["1.2.3.4:443"] }}
+      />,
+    );
+    expect(screen.getByDisplayValue("203")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("1")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("1.2.3.4:443")).toBeInTheDocument();
+    expect(screen.getByText(/not managed by the panel|не управляет/i)).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("D5: «взять под управление» переносит unmanaged-запись в value", async () => {
+    const onChange = vi.fn();
+    render(
+      <MapEditor
+        value={{ "203": ["91.105.192.100:443"] }}
+        onChange={onChange}
+        keyLabel="DC"
+        valueLabel="Endpoints"
+        valueKind="list"
+        unmanaged={{ "1": ["1.2.3.4:443"] }}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /take under management|взять под управление/i }),
+    );
+    expect(onChange).toHaveBeenCalledWith({
+      "203": ["91.105.192.100:443"],
+      "1": ["1.2.3.4:443"],
+    });
+  });
+
   it("снимает сообщение о конфликте при удалении строки", async () => {
     const onChange = vi.fn();
     render(

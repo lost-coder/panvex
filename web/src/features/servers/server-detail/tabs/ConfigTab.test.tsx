@@ -141,6 +141,49 @@ describe("ConfigTab", () => {
     expect(screen.getByDisplayValue("91.105.192.100:443")).toBeInTheDocument();
   });
 
+  // D5: the owner's live-review finding. The node's dc_overrides has keys
+  // 1/2/3/203; desired carries only 203 (F7's whole-container observed
+  // fallback only fires when desired lacks the container ENTIRELY — here it
+  // has it, just poorer). The editor must show the union: 203 editable, the
+  // rest visible but marked as node-only/unmanaged, with an action to take
+  // one under management.
+  it("D5: dc_overrides показывает записи, которых нет в desired, как неуправляемые", () => {
+    useAgentConfig.mockReturnValue({
+      data: makeConfig({
+        desired: { dc_overrides: { "203": ["91.105.192.100:443"] } },
+        observed: {
+          dc_overrides: {
+            "1": ["1.1.1.1:443"],
+            "203": ["91.105.192.100:443"],
+          },
+        },
+      }),
+      isLoading: false,
+      isError: false,
+    });
+    render(<ConfigTab server={server} />);
+
+    // 203 is managed/editable.
+    expect(screen.getByDisplayValue("203")).toBeInTheDocument();
+    // 1 is visible but unmanaged.
+    expect(screen.getByDisplayValue("1")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("1.1.1.1:443")).toBeInTheDocument();
+    expect(
+      screen.getByText(/not managed by the panel|не управляет/i),
+    ).toBeInTheDocument();
+
+    // Taking it under management makes it part of what Save persists.
+    fireEvent.click(
+      screen.getByRole("button", { name: /take under management|взять под управление/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const body = putMutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(body.dc_overrides).toEqual({
+      "203": ["91.105.192.100:443"],
+      "1": ["1.1.1.1:443"],
+    });
+  });
+
   it("renders the config tree seeded from desired and shows drift actions", () => {
     useAgentConfig.mockReturnValue({
       data: {

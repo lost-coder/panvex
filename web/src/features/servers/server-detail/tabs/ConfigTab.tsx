@@ -44,7 +44,7 @@ import {
   unflattenPaths,
 } from "@/features/servers/config/sections";
 import {
-  readUpstreams, writeUpstreams, readMap, writeMap, mapHasContent,
+  readUpstreams, writeUpstreams, readMap, writeMap, mapHasContent, unmanagedMapEntries,
   type UpstreamEntry,
 } from "@/features/servers/config/containers";
 import { UpstreamsEditor } from "@/features/servers/config/UpstreamsEditor";
@@ -138,6 +138,30 @@ export function ConfigTab({
     };
   }, [data?.desired, data?.observed]);
   const [containers, setContainers] = useState(initialContainers);
+
+  // D5: desired can carry a map container with FEWER keys than the node
+  // actually has — F7's whole-container observed-fallback above only fires
+  // when desired lacks the container entirely, not when it's merely
+  // poorer. Owner's live-review finding: the node had dc_overrides
+  // 1/2/3/203, desired carried only 203, and the editor showed just that
+  // one. These are DISPLAY-ONLY — computed against the live `containers`
+  // state so an entry disappears from "unmanaged" the moment it's taken
+  // under management, but never themselves written into `containers`/
+  // `values`, so merely showing them can't resurrect the "panel silently
+  // adopts the node's section" problem F2 fixed.
+  const unmanagedDcOverrides = useMemo(
+    () => unmanagedMapEntries(containers.dcOverrides, data?.observed ?? {}, "dc_overrides"),
+    [containers.dcOverrides, data?.observed],
+  );
+  const unmanagedExclusiveMask = useMemo(
+    () =>
+      unmanagedMapEntries(
+        containers.exclusiveMask,
+        data?.observed ?? {},
+        "censorship.exclusive_mask",
+      ),
+    [containers.exclusiveMask, data?.observed],
+  );
 
   // Paths the operator has edited but not yet saved — drives the dirty
   // state that blocks Apply (you save the override before pushing it).
@@ -382,7 +406,11 @@ export function ConfigTab({
           editors on a node switch so no draft survives across that
           identity change. UpstreamsEditor has no internal state (fully
           controlled), so it doesn't need the same key. */}
-      <section className="flex flex-col gap-3">
+      {/* D4: the same card treatment ConfigTree uses for its own sections
+          (rounded-md border border-divider p-3) — without it these three
+          sat as bare SectionHeaders one level above the tree, looking
+          bolted onto the page rather than part of the same editor. */}
+      <section className="flex flex-col gap-3 rounded-md border border-divider p-3">
         <SectionHeader title={t("config.upstreams.title")} />
         <UpstreamsEditor
           value={containers.upstreams}
@@ -390,7 +418,7 @@ export function ConfigTab({
         />
       </section>
 
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3 rounded-md border border-divider p-3">
         <SectionHeader title={t("config.dcOverrides.title")} />
         <MapEditor
           key={agentId}
@@ -399,10 +427,11 @@ export function ConfigTab({
           keyLabel={t("config.dcOverrides.key")}
           valueLabel={t("config.dcOverrides.value")}
           valueKind="list"
+          unmanaged={unmanagedDcOverrides}
         />
       </section>
 
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3 rounded-md border border-divider p-3">
         <SectionHeader title={t("config.exclusiveMask.title")} />
         <MapEditor
           key={agentId}
@@ -411,6 +440,7 @@ export function ConfigTab({
           keyLabel={t("config.exclusiveMask.key")}
           valueLabel={t("config.exclusiveMask.value")}
           valueKind="scalar"
+          unmanaged={unmanagedExclusiveMask}
         />
       </section>
 

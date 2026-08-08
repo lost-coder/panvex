@@ -64,6 +64,28 @@ export function readMap(
   return out;
 }
 
+/**
+ * D5: ключи map-контейнера в observed, которых нет в managed (то, что
+ * реально сохранится при Save). desired может нести контейнер БЕДНЕЕ, чем
+ * то, что на ноде, — F7's фолбэк на observed срабатывает только когда
+ * контейнера в desired нет вовсе, а тут он есть, просто не полный. Результат
+ * — чисто для отображения ("на ноде, панель не управляет"); он никогда не
+ * пишется в managed сам по себе, только явным действием оператора
+ * ("взять под управление", см. MapEditor).
+ */
+export function unmanagedMapEntries(
+  managed: Record<string, MapValue>,
+  observedSections: Record<string, unknown>,
+  path: string,
+): Record<string, MapValue> {
+  const observedMap = readMap(observedSections, path);
+  const out: Record<string, MapValue> = {};
+  for (const [key, value] of Object.entries(observedMap)) {
+    if (!Object.prototype.hasOwnProperty.call(managed, key)) out[key] = value;
+  }
+  return out;
+}
+
 /** Пишет map-контейнер, сохраняя форму значений; пустые записи опускает. */
 export function writeMap(
   sections: Record<string, unknown>,
