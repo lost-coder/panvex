@@ -97,6 +97,15 @@ export function MapEditor({
     });
   }
 
+  // Черновики и метка конфликта адресуются позицией строки, а удаление
+  // сдвигает позиции: оставленные записи прилипли бы к соседней строке, и
+  // оператор увидел бы чужой текст или ошибку «ключ занят» под строкой, где
+  // никакого конфликта нет. Структурные изменения снимают и то, и другое.
+  function resetRowState() {
+    setDrafts({});
+    setConflict(null);
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {rows.length === 0 && <p className="text-sm text-fg-muted">{t("config.map.empty")}</p>}
@@ -131,6 +140,7 @@ export function MapEditor({
               onClick={() => {
                 const next = { ...value };
                 delete next[key];
+                resetRowState();
                 onChange(next);
               }}
             >
@@ -151,7 +161,10 @@ export function MapEditor({
           // Вторая пустая строка перезаписала бы первую: ключ "" уже занят, и
           // объект схлопнул бы их, потеряв набранное значение.
           disabled={disabled || Object.prototype.hasOwnProperty.call(value, "")}
-          onClick={() => onChange({ ...value, "": "" })}
+          onClick={() => {
+            resetRowState();
+            onChange({ ...value, "": "" });
+          }}
         >
           {t("config.map.add")}
         </Button>

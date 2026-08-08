@@ -152,4 +152,23 @@ describe("MapEditor", () => {
     );
     expect(screen.getByRole("button", { name: /добавить|add/i })).toBeDisabled();
   });
+
+  // Позиции строк сдвигаются при удалении: оставленная метка конфликта
+  // всплыла бы под непричастной строкой.
+  it("снимает сообщение о конфликте при удалении строки", async () => {
+    const onChange = vi.fn();
+    render(
+      <Harness
+        initial={{ "a.b": "1.1.1.1:443", "c.d": "2.2.2.2:443" }}
+        onChange={onChange}
+      />,
+    );
+    const keyInput = screen.getByLabelText("K 1");
+    await userEvent.clear(keyInput);
+    await userEvent.type(keyInput, "c.d");
+    expect(screen.getByText(/уже занят|already used/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByRole("button", { name: /удалить|remove/i })[0] as HTMLElement);
+    expect(screen.queryByText(/уже занят|already used/i)).not.toBeInTheDocument();
+  });
 });
