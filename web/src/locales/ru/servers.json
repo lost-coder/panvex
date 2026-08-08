@@ -457,7 +457,8 @@
     "map": {
       "add": "Добавить запись",
       "remove": "Удалить запись",
-      "empty": "Записей нет."
+      "empty": "Записей нет.",
+      "duplicateKey": "Такой ключ уже занят другой записью"
     },
     "dcOverrides": { "title": "Переопределения DC", "key": "Индекс DC", "value": "Адреса (ip:port, через запятую)" },
     "exclusiveMask": { "title": "Mask-бэкенды по SNI", "key": "SNI-домен", "value": "Бэкенд (ip:port)" },

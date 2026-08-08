@@ -17,6 +17,7 @@
 // (dc_overrides.203 — массив из одного элемента, exclusive_mask — скаляры).
 // Свернуть массив из одного элемента в скаляр значило бы переписать конфиг
 // при первом же Save и породить ложный дрейф.
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, Input } from "@/ui";
@@ -37,13 +38,15 @@ function toText(value: MapValue): string {
 }
 
 /**
- * Разбирает введённый текст, сохраняя форму прежнего значения: массив
- * остаётся массивом даже из одного элемента, скаляр остаётся скаляром, а
- * несколько адресов дают массив в любом случае.
+ * Разбирает введённый текст, сохраняя форму значения. Признак списка —
+ * ЗАПЯТАЯ В СЫРОМ ТЕКСТЕ, а не количество непустых частей после разбора:
+ * иначе едва набранная "1.1.1.1:443," давала бы один элемент, значение
+ * оставалось бы скаляром, и запятая исчезала бы из поля прежде, чем
+ * оператор успеет набрать второй адрес.
  */
 function fromText(text: string, previous: MapValue): MapValue {
   const parts = text.split(",").map((s) => s.trim()).filter(Boolean);
-  if (parts.length > 1) return parts;
+  if (text.includes(",")) return parts;
   if (Array.isArray(previous)) return parts;
   return parts[0] ?? "";
 }
@@ -54,7 +57,26 @@ export function MapEditor({
   const { t } = useTranslation("servers");
   const rows = Object.entries(value);
 
+  // Черновик текста строки, пока оператор её редактирует. Контролируемое поле
+  // с разбором на каждое нажатие не даёт набрать список: "1.1.1.1:443, " не
+  // выживает круг parse→serialize, и пробел с запятой стираются под пальцами.
+  // Черновик показывается как есть, наверх при этом уходит уже разобранное
+  // значение; на blur черновик снимается, и поле снова следует за value —
+  // так внешний пересев (Save, переключение ноды) по-прежнему виден.
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+
+  // Ключ, который оператор пытается ввести, хотя он уже занят другой строкой.
+  // Такое переименование не применяется: объект схлопнул бы две строки в одну
+  // и молча потерял значение той, что стояла раньше.
+  const [conflict, setConflict] = useState<number | null>(null);
+
   function renameKey(index: number, nextKey: string) {
+    const taken = rows.some(([key], i) => i !== index && key === nextKey);
+    if (taken && nextKey !== "") {
+      setConflict(index);
+      return;
+    }
+    setConflict(null);
     const next: Record<string, MapValue> = {};
     rows.forEach(([key, addresses], i) => {
       next[i === index ? nextKey : key] = addresses;
@@ -62,8 +84,17 @@ export function MapEditor({
     onChange(next);
   }
 
-  function setAddresses(key: string, text: string) {
+  function setAddresses(index: number, key: string, text: string) {
+    setDrafts((prev) => ({ ...prev, [index]: text }));
     onChange({ ...value, [key]: fromText(text, value[key] ?? "") });
+  }
+
+  function commitDraft(index: number) {
+    setDrafts((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
   }
 
   return (
@@ -73,36 +104,42 @@ export function MapEditor({
       {rows.map(([key, addresses], index) => (
         // Ключ может быть пустым (только что добавленная строка) и меняется
         // при переименовании — позиция здесь стабильнее самого ключа.
-        <div key={index} className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Input
-            type="text"
-            aria-label={keyLabel}
-            value={key}
-            disabled={disabled}
-            onChange={(e) => renameKey(index, e.target.value)}
-            className="sm:w-64"
-          />
-          <Input
-            type="text"
-            aria-label={valueLabel}
-            value={toText(addresses)}
-            disabled={disabled}
-            onChange={(e) => setAddresses(key, e.target.value)}
-            className="sm:flex-1"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={disabled}
-            onClick={() => {
-              const next = { ...value };
-              delete next[key];
-              onChange(next);
-            }}
-          >
-            {t("config.map.remove")}
-          </Button>
+        <div key={index} className="flex flex-col gap-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              type="text"
+              aria-label={`${keyLabel} ${index + 1}`}
+              value={key}
+              disabled={disabled}
+              onChange={(e) => renameKey(index, e.target.value)}
+              className="sm:w-64"
+            />
+            <Input
+              type="text"
+              aria-label={`${valueLabel} ${index + 1}`}
+              value={drafts[index] ?? toText(addresses)}
+              disabled={disabled}
+              onChange={(e) => setAddresses(index, key, e.target.value)}
+              onBlur={() => commitDraft(index)}
+              className="sm:flex-1"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={disabled}
+              onClick={() => {
+                const next = { ...value };
+                delete next[key];
+                onChange(next);
+              }}
+            >
+              {t("config.map.remove")}
+            </Button>
+          </div>
+          {conflict === index && (
+            <p className="text-caption text-status-error">{t("config.map.duplicateKey")}</p>
+          )}
         </div>
       ))}
 
@@ -111,7 +148,9 @@ export function MapEditor({
           type="button"
           variant="outline"
           size="sm"
-          disabled={disabled}
+          // Вторая пустая строка перезаписала бы первую: ключ "" уже занят, и
+          // объект схлопнул бы их, потеряв набранное значение.
+          disabled={disabled || Object.prototype.hasOwnProperty.call(value, "")}
           onClick={() => onChange({ ...value, "": "" })}
         >
           {t("config.map.add")}

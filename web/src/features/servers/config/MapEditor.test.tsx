@@ -1,15 +1,14 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MapEditor } from "./MapEditor";
 import type { MapValue } from "./containers";
 
-// Контролы КОНТРОЛИРУЕМЫЕ (см. UpstreamsEditor.test.tsx), поэтому напечатать
-// в них можно только если значение возвращается обратно через value —
-// иначе React откатывает DOM к прежнему value после каждого нажатия. Harness
-// держит состояние и сообщает наружу последнее значение, так тест проверяет
-// реальное поведение компонента, а не обходит его.
+// Поля контролируемые, поэтому напечатать в них можно только если значение
+// возвращается обратно через value. Harness держит состояние и сообщает
+// наружу последнее значение — так тест проверяет реальное поведение
+// компонента, а не обходит его атомарным fireEvent.change.
 function Harness({
   initial, onChange,
 }: Readonly<{
@@ -40,43 +39,51 @@ describe("MapEditor", () => {
         valueLabel="Backend"
       />,
     );
-    expect(screen.getByDisplayValue("hv24s.metrion.icu")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("127.0.0.1:8085")).toBeInTheDocument();
+    expect(screen.getByLabelText("SNI 1")).toHaveValue("hv24s.metrion.icu");
+    expect(screen.getByLabelText("Backend 1")).toHaveValue("127.0.0.1:8085");
   });
 
   it("скаляр остаётся скаляром после правки в один адрес", async () => {
     const onChange = vi.fn();
     render(<Harness initial={{ "a.b": "1.1.1.1:443" }} onChange={onChange} />);
-    const valueInput = screen.getByDisplayValue("1.1.1.1:443");
-    await userEvent.clear(valueInput);
-    await userEvent.type(valueInput, "2.2.2.2:443");
+    await userEvent.clear(screen.getByLabelText("V 1"));
+    await userEvent.type(screen.getByLabelText("V 1"), "2.2.2.2:443");
     expect(onChange.mock.calls.at(-1)?.[0]).toEqual({ "a.b": "2.2.2.2:443" });
   });
 
   it("массив из одного элемента остаётся массивом после правки", async () => {
     const onChange = vi.fn();
     render(<Harness initial={{ "203": ["1.1.1.1:443"] }} onChange={onChange} />);
-    const valueInput = screen.getByDisplayValue("1.1.1.1:443");
-    await userEvent.clear(valueInput);
-    await userEvent.type(valueInput, "2.2.2.2:443");
+    await userEvent.clear(screen.getByLabelText("V 1"));
+    await userEvent.type(screen.getByLabelText("V 1"), "2.2.2.2:443");
     expect(onChange.mock.calls.at(-1)?.[0]).toEqual({ "203": ["2.2.2.2:443"] });
   });
 
-  it("скаляр становится массивом, когда адресов больше одного", () => {
-    // Одно атомарное изменение (как при вставке или быстром наборе), а не
-    // посимвольный userEvent.type: React откатывает контролируемый input к
-    // последнему value между каждым нажатием, а на полпути к запятой без
-    // второго адреса fromText ещё не видит второй элемент и возвращает
-    // прежний скаляр без изменений — DOM откатывается и запятая теряется
-    // ДО того, как успевает набраться второй адрес. Само событие onChange
-    // получает полный текст независимо от того, как он туда попал.
+  // Регрессия на съеденную запятую: разбор на каждое нажатие выбрасывал
+  // пустой хвост, значение оставалось скаляром, и запятая пропадала из поля
+  // раньше, чем оператор успевал набрать второй адрес.
+  it("даёт набрать второй адрес посимвольно, не съедая запятую", async () => {
     const onChange = vi.fn();
     render(<Harness initial={{ "203": "1.1.1.1:443" }} onChange={onChange} />);
-    const valueInput = screen.getByDisplayValue("1.1.1.1:443");
-    fireEvent.change(valueInput, { target: { value: "1.1.1.1:443, 2.2.2.2:443" } });
+    const input = screen.getByLabelText("V 1");
+
+    await userEvent.type(input, ",");
+    expect(input).toHaveValue("1.1.1.1:443,");
+
+    await userEvent.type(input, "2.2.2.2:443");
+    expect(input).toHaveValue("1.1.1.1:443,2.2.2.2:443");
     expect(onChange.mock.calls.at(-1)?.[0]).toEqual({
       "203": ["1.1.1.1:443", "2.2.2.2:443"],
     });
+  });
+
+  it("после потери фокуса поле показывает нормализованный текст", async () => {
+    const onChange = vi.fn();
+    render(<Harness initial={{ "203": "1.1.1.1:443" }} onChange={onChange} />);
+    const input = screen.getByLabelText("V 1");
+    await userEvent.type(input, ",2.2.2.2:443");
+    await userEvent.tab();
+    expect(input).toHaveValue("1.1.1.1:443, 2.2.2.2:443");
   });
 
   it("несколько адресов показывает списком через запятую", () => {
@@ -87,16 +94,39 @@ describe("MapEditor", () => {
         keyLabel="DC" valueLabel="Endpoints"
       />,
     );
-    expect(screen.getByDisplayValue("91.105.192.100:443, 1.2.3.4:443")).toBeInTheDocument();
+    expect(screen.getByLabelText("Endpoints 1")).toHaveValue("91.105.192.100:443, 1.2.3.4:443");
   });
 
   it("переименование ключа сохраняет значение и его форму", async () => {
     const onChange = vi.fn();
     render(<Harness initial={{ "a.b": ["1.1.1.1:443"] }} onChange={onChange} />);
-    const keyInput = screen.getByDisplayValue("a.b");
+    const keyInput = screen.getByLabelText("K 1");
     await userEvent.clear(keyInput);
     await userEvent.type(keyInput, "c.d");
     expect(onChange.mock.calls.at(-1)?.[0]).toEqual({ "c.d": ["1.1.1.1:443"] });
+  });
+
+  // Объект схлопнул бы две строки в одну и молча потерял значение той, что
+  // стояла раньше, — поэтому переименование в занятый ключ не применяется.
+  it("не применяет переименование в уже занятый ключ и сообщает об этом", async () => {
+    const onChange = vi.fn();
+    render(
+      <Harness
+        initial={{ "a.b": "1.1.1.1:443", "c.d": "2.2.2.2:443" }}
+        onChange={onChange}
+      />,
+    );
+    const keyInput = screen.getByLabelText("K 1");
+    await userEvent.clear(keyInput);
+    await userEvent.type(keyInput, "c.d");
+
+    expect(screen.getByText(/уже занят|already used/i)).toBeInTheDocument();
+    const last = onChange.mock.calls.at(-1)?.[0] ?? {
+      "a.b": "1.1.1.1:443",
+      "c.d": "2.2.2.2:443",
+    };
+    expect(last["c.d"]).toBe("2.2.2.2:443");
+    expect(Object.keys(last)).toHaveLength(2);
   });
 
   it("удаляет строку", async () => {
@@ -113,5 +143,13 @@ describe("MapEditor", () => {
     render(<MapEditor value={{}} onChange={onChange} keyLabel="K" valueLabel="V" />);
     await userEvent.click(screen.getByRole("button", { name: /добавить|add/i }));
     expect(onChange).toHaveBeenCalledWith({ "": "" });
+  });
+
+  // Вторая пустая строка перезаписала бы первую: ключ "" уже занят.
+  it("не даёт добавить вторую незаполненную строку", () => {
+    render(
+      <MapEditor value={{ "": "1.2.3.4:443" }} onChange={() => {}} keyLabel="K" valueLabel="V" />,
+    );
+    expect(screen.getByRole("button", { name: /добавить|add/i })).toBeDisabled();
   });
 });

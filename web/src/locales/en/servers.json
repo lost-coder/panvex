@@ -446,7 +446,8 @@
     "map": {
       "add": "Add entry",
       "remove": "Remove entry",
-      "empty": "No entries."
+      "empty": "No entries.",
+      "duplicateKey": "This key is already used by another entry"
     },
     "dcOverrides": { "title": "DC overrides", "key": "DC index", "value": "Endpoints (ip:port, comma-separated)" },
     "exclusiveMask": { "title": "Per-SNI mask backends", "key": "SNI domain", "value": "Backend (ip:port)" },
