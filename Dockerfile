@@ -75,7 +75,7 @@ RUN go build -ldflags="-s -w" -trimpath -o /out/panvex-control-plane ./cmd/contr
 # shell — a shell-form RUN inside it fails with `exec: "/bin/sh": no such
 # file or directory`. Copy the pinned syft binary into an alpine stage
 # (busybox sh/test/head/grep) and run it there instead.
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS sbom-builder
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS sbom-builder
 COPY --from=anchore/syft:v1.45.1@sha256:c6d5719f48f5a5986acf2847eb1ed7c53176e712d5721fcd156184cfb262f6eb /syft /usr/local/bin/syft
 COPY --from=control-plane-builder /out/panvex-control-plane /panvex-control-plane
 RUN syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json && \
@@ -85,7 +85,7 @@ RUN syft /panvex-control-plane -o cyclonedx-json=/sbom/control-plane.cdx.json &&
     test -s /sbom/control-plane.cdx.json && \
     head -c1 /sbom/control-plane.cdx.json | grep -q '{'
 
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS control-plane
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS control-plane
 WORKDIR /app
 
 # OCI image labels — operator scanners look these up to attribute the
